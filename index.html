@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 21:54 -->
+<!-- VERSION: 16.04.2026 21:59 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -106,7 +106,7 @@ textarea{resize:vertical;min-height:70px}
 .fgg{display:flex;flex-direction:column;gap:5px}
 .fgg label{font-size:12px;color:var(--text-secondary);font-weight:500}
 .ff{grid-column:1/-1}
-.mw{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-start;justify-content:center;z-index:600;padding-top:24px;overflow-y:auto}
+.mw{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-start;justify-content:center;z-index:9000;padding-top:24px;overflow-y:auto}
 .mw.open{display:flex}
 .mo{background:var(--bg-primary);border-radius:var(--radius-lg);border:0.5px solid var(--border-light);padding:1.75rem;width:580px;max-width:95vw;margin:auto}
 .moti{font-size:17px;font-weight:500;margin-bottom:1.5rem}
@@ -378,7 +378,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-subtitle">CRM-System — Bitte anmelden</div>
-    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 21:54</div>
+    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 21:59</div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-field">
       <label>E-Mail</label>
@@ -1114,13 +1114,18 @@ async function loadUsersPage(){
 }
 
 function openNewUserModal(){
-  if(currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
-  document.getElementById('nu-name').value = '';
-  document.getElementById('nu-email').value = '';
-  document.getElementById('nu-password').value = '';
-  document.getElementById('nu-role').value = 'techniker';
-  renderPermissionBoxes('nu-permissions', 'techniker', []);
-  document.getElementById('modal-new-user').classList.add('open');
+  try {
+    if(currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
+    const modal = document.getElementById('modal-new-user');
+    if(!modal){ alert('Modal nicht gefunden!'); return; }
+    document.getElementById('nu-name').value = '';
+    document.getElementById('nu-email').value = '';
+    document.getElementById('nu-password').value = '';
+    document.getElementById('nu-role').value = 'techniker';
+    renderPermissionBoxes('nu-permissions', 'techniker', []);
+    modal.style.display = 'flex';
+    modal.classList.add('open');
+  } catch(e) { alert('Fehler: ' + e.message); }
 }
 
 async function createNewUser(){
