@@ -105,7 +105,7 @@ textarea{resize:vertical;min-height:70px}
 .fgg{display:flex;flex-direction:column;gap:5px}
 .fgg label{font-size:12px;color:var(--text-secondary);font-weight:500}
 .ff{grid-column:1/-1}
-.mw{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-start;justify-content:center;z-index:500;padding-top:24px;overflow-y:auto}
+.mw{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-start;justify-content:center;z-index:600;padding-top:24px;overflow-y:auto}
 .mw.open{display:flex}
 .mo{background:var(--bg-primary);border-radius:var(--radius-lg);border:0.5px solid var(--border-light);padding:1.75rem;width:580px;max-width:95vw;margin:auto}
 .moti{font-size:17px;font-weight:500;margin-bottom:1.5rem}
@@ -1006,10 +1006,13 @@ async function loadUsersPage(){
 }
 
 function openNewUserModal(){
-  if(currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
-  ['nu-name','nu-email','nu-password'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('nu-role').value = 'vertrieb';
-  document.getElementById('modal-new-user').classList.add('open');
+  if(currentRole && currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
+  const modal = document.getElementById('modal-new-user');
+  if(!modal){ showToast('Modal nicht gefunden.', true); return; }
+  ['nu-name','nu-email','nu-password'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  const roleEl = document.getElementById('nu-role');
+  if(roleEl) roleEl.value = 'vertrieb';
+  modal.classList.add('open');
 }
 
 async function createNewUser(){
