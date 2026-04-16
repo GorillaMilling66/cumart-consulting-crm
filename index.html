@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 22:53 -->
+<!-- VERSION: 16.04.2026 22:58 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -182,7 +182,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-sub">CRM-System — Bitte anmelden</div>
-    <div class="auth-ver">v16.04.2026 22:53</div>
+    <div class="auth-ver">v16.04.2026 22:58</div>
     <div class="auth-err" id="login-err"></div>
     <div class="auth-field"><label>E-Mail</label><input type="email" id="login-email" placeholder="ihre@email.de" autocomplete="email"></div>
     <div class="auth-field"><label>Passwort</label><input type="password" id="login-pw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
@@ -780,10 +780,17 @@ async function submitNewUser(){
   if(!name||!email||!pw){showToast('Bitte alle Pflichtfelder ausfüllen.',true);return;}
   if(pw.length<6){showToast('Passwort mind. 6 Zeichen.',true);return;}
   try {
-    const { data:{session} } = await db.auth.getSession();
+    // Get fresh session token
+    const { data: sessionData, error: sessionError } = await db.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if(!token){ showToast('Nicht eingeloggt. Bitte neu anmelden.',true); return; }
     const resp = await fetch(SUPABASE_URL+'/functions/v1/create-user',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_KEY},
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+token,
+        'apikey':SUPABASE_KEY
+      },
       body:JSON.stringify({email,password:pw,name,role,permissions:perms})
     });
     const result = await resp.json();
@@ -807,10 +814,12 @@ async function submitDeleteUser(){
   const id=document.getElementById('uo-id')?.value;
   if(!confirm('Benutzer wirklich löschen?'))return;
   try {
-    const {data:{session}}=await db.auth.getSession();
+    const { data: sessionData } = await db.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if(!token){ showToast('Nicht eingeloggt.',true); return; }
     const resp=await fetch(SUPABASE_URL+'/functions/v1/delete-user',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_KEY},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SUPABASE_KEY},
       body:JSON.stringify({userId:id})
     });
     const result=await resp.json();
