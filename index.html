@@ -937,7 +937,12 @@ function showLoginScreen(){
 async function onLogin(user){
   currentUser = user;
   // Load profile from user_profiles table
-  const { data: profile } = await db.from('user_profiles').select('*').eq('id', user.id).single();
+  let profile = null;
+  try {
+    const { data, error } = await db.from('user_profiles').select('*').eq('id', user.id).single();
+    if(!error) profile = data;
+  } catch(e) { console.warn('Profile load error:', e); }
+
   currentRole = profile?.role || 'techniker';
   userPermissions = profile?.permissions || [];
   const displayName = profile?.name || user.email;
@@ -997,9 +1002,21 @@ async function doLogin(){
   btn.textContent = 'Anmelden ...';
   errEl.classList.remove('show');
 
-  const { error } = await db.auth.signInWithPassword({ email, password });
-  if(error){
-    errEl.textContent = 'Anmeldung fehlgeschlagen: ' + (error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : error.message);
+  try {
+    const { data, error } = await db.auth.signInWithPassword({ email, password });
+    if(error){
+      errEl.textContent = 'Anmeldung fehlgeschlagen: ' + (error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : error.message);
+      errEl.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Anmelden';
+      return;
+    }
+    // Login successful - manually call onLogin since onAuthStateChange might be slow
+    if(data.user) {
+      await onLogin(data.user);
+    }
+  } catch(err) {
+    errEl.textContent = 'Fehler: ' + err.message;
     errEl.classList.add('show');
     btn.disabled = false;
     btn.textContent = 'Anmelden';
