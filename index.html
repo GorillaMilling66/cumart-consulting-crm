@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
+<!-- VERSION: 16.04.2026 21:54 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -377,6 +378,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-subtitle">CRM-System — Bitte anmelden</div>
+    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 21:54</div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-field">
       <label>E-Mail</label>
@@ -906,27 +908,27 @@ function canAccess(page){
 
 async function initAuth(){
   checkPasswordResetRedirect();
+  
+  // Check for existing session first
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if(session && document.getElementById('new-password-screen').style.display !== 'flex'){
+      await onLogin(session.user);
+      return;
+    }
+  } catch(e) { console.warn('Session check error:', e); }
+  
+  // No session - show login
+  showLoginScreen();
 
+  // Listen for future auth changes
   db.auth.onAuthStateChange(async (event, session) => {
     if(event === 'PASSWORD_RECOVERY'){
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('new-password-screen').style.display = 'flex';
-      return;
-    }
-    if(event === 'SIGNED_IN' && session){
-      // Don't auto-login if we're in password recovery flow
-      if(document.getElementById('new-password-screen').style.display === 'flex') return;
-      await onLogin(session.user);
     }
     if(event === 'SIGNED_OUT') showLoginScreen();
   });
-
-  const { data: { session } } = await db.auth.getSession();
-  if(session && document.getElementById('new-password-screen').style.display !== 'flex'){
-    await onLogin(session.user);
-  } else if(!session && document.getElementById('new-password-screen').style.display !== 'flex'){
-    showLoginScreen();
-  }
 }
 
 function showLoginScreen(){
@@ -962,12 +964,19 @@ async function onLogin(user){
   const displayName = profile?.name || user.email;
 
   // Update sidebar user bar
-  const bar = document.getElementById('sb-user-bar');
-  if(bar){
-    const roleColors = {admin:'#3C3489',techniker:'#085041',assistenz:'#854F0B',vertrieb:'#854F0B'};
-    const roleLabels = {admin:'Admin',techniker:'Techniker',assistenz:'Assistenz',vertrieb:'Vertrieb'};
-    bar.innerHTML = `<div style="width:32px;height:32px;border-radius:50%;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;margin:0 auto 4px">${ini(displayName)}</div><div style="font-size:10px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${displayName.split('@')[0]}</div><div style="margin-top:2px"><span style="background:${roleColors[currentRole]}22;color:${roleColors[currentRole]};padding:1px 6px;border-radius:100px;font-size:9px;font-weight:500">${roleLabels[currentRole]}</span></div>`;
-  }
+  try {
+    const bar = document.getElementById('sb-user-bar');
+    if(bar){
+      const roleColors = {admin:'#3C3489',techniker:'#085041',assistenz:'#854F0B',vertrieb:'#854F0B'};
+      const roleLabels = {admin:'Admin',techniker:'Techniker',assistenz:'Assistenz',vertrieb:'Vertrieb'};
+      const rc = roleColors[currentRole] || '#444';
+      const rl = roleLabels[currentRole] || currentRole;
+      const dn = displayName.split('@')[0];
+      bar.innerHTML = '<div style="width:32px;height:32px;border-radius:50%;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;margin:0 auto 4px">'+ini(displayName)+'</div>'
+        + '<div style="font-size:10px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+dn+'</div>'
+        + '<div style="margin-top:2px"><span style="background:'+rc+'22;color:'+rc+';padding:1px 6px;border-radius:100px;font-size:9px;font-weight:500">'+rl+'</span></div>';
+    }
+  } catch(e) { console.warn('Sidebar bar error:', e); }
 
   // Hide/show nav items based on role
   applyRoleToNav();
