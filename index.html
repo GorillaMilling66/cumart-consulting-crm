@@ -272,6 +272,56 @@ textarea{resize:vertical;min-height:70px}
 .sri-badge{margin-left:auto;flex-shrink:0}
 .search-empty{padding:3rem 2rem;text-align:center;color:var(--text-secondary);font-size:13px}
 .search-hint{padding:2rem;text-align:center;color:var(--text-secondary);font-size:13px;line-height:1.7}
+
+/* ==========================================
+   AUTH / LOGIN
+   ========================================== */
+.auth-screen{
+  position:fixed;inset:0;background:var(--bg-tertiary);
+  display:flex;align-items:center;justify-content:center;
+  z-index:1000;padding:1rem;
+}
+.auth-card{
+  background:var(--bg-primary);border-radius:var(--radius-lg);
+  border:0.5px solid var(--border-light);
+  padding:2.5rem;width:400px;max-width:100%;
+}
+.auth-logo{font-size:22px;font-weight:600;margin-bottom:4px}
+.auth-subtitle{font-size:13px;color:var(--text-secondary);margin-bottom:2rem}
+.auth-field{display:flex;flex-direction:column;gap:5px;margin-bottom:1rem}
+.auth-field label{font-size:12px;font-weight:500;color:var(--text-secondary)}
+.auth-error{font-size:13px;color:var(--danger);background:#fef2f2;padding:10px 12px;border-radius:var(--radius-md);margin-bottom:1rem;display:none}
+.auth-error.show{display:block}
+.auth-btn{width:100%;padding:10px;border-radius:var(--radius-md);font-size:14px;cursor:pointer;border:none;background:var(--text-primary);color:#fff;font-family:inherit;font-weight:500;margin-top:.5rem}
+.auth-btn:hover{opacity:.85}
+.auth-btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* USER BAR */
+.user-bar{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;margin-bottom:12px;
+  background:var(--bg-secondary);border-radius:var(--radius-md);
+  font-size:12px;
+}
+.user-bar-info{flex:1;min-width:0}
+.user-bar-name{font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-bar-role{font-size:11px;color:var(--text-secondary);margin-top:1px}
+.role-badge-admin{background:#EEEDFE;color:#3C3489;padding:2px 7px;border-radius:100px;font-size:10px;font-weight:500}
+.role-badge-techniker{background:#E1F5EE;color:#085041;padding:2px 7px;border-radius:100px;font-size:10px;font-weight:500}
+.role-badge-vertrieb{background:#FAEEDA;color:#633806;padding:2px 7px;border-radius:100px;font-size:10px;font-weight:500}
+.logout-btn{font-size:11px;color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:var(--radius-md);border:0.5px solid var(--border-light);background:var(--bg-primary);font-family:inherit}
+.logout-btn:hover{background:var(--bg-secondary)}
+
+/* USER MANAGEMENT PAGE */
+.user-list-item{display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:var(--radius-md);background:var(--bg-secondary);margin-bottom:8px}
+.user-list-info{flex:1;min-width:0}
+.user-list-email{font-size:13px;font-weight:500}
+.user-list-meta{font-size:11px;color:var(--text-secondary);margin-top:2px}
+
+/* ROLE RESTRICTED */
+.role-blocked{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;color:var(--text-secondary)}
+.role-blocked svg{margin-bottom:1rem;opacity:.4}
+.role-blocked h3{font-size:16px;font-weight:500;color:var(--text-primary);margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -279,21 +329,49 @@ textarea{resize:vertical;min-height:70px}
 <div class="loading-overlay" id="loading-overlay">Daten werden geladen ...</div>
 <div class="toast" id="toast"></div>
 
-<div class="app">
+
+<!-- LOGIN SCREEN -->
+<div class="auth-screen" id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">Cumart Consulting</div>
+    <div class="auth-subtitle">CRM-System — Bitte anmelden</div>
+    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-field">
+      <label>E-Mail</label>
+      <input type="email" id="auth-email" placeholder="ihre@email.de" autocomplete="email">
+    </div>
+    <div class="auth-field">
+      <label>Passwort</label>
+      <input type="password" id="auth-password" placeholder="Passwort eingeben" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="auth-btn" id="auth-btn" onclick="doLogin()">Anmelden</button>
+  </div>
+</div>
+
+<div class="app" id="app-container" style="display:none">
 <div class="sidebar">
   <div class="sidebar-logo">CC</div>
-  <div class="nav-top">
+  <div style="padding:0 8px 10px;width:100%">
+  <div id="sb-user-bar" style="text-align:center;font-size:10px;color:var(--text-secondary);cursor:pointer" onclick="showPage('users',null)" title="Eingeloggter Benutzer"></div>
+</div>
+<div class="nav-top">
     <button class="nb active" id="sb-dashboard" onclick="showPage('dashboard',this)"><div class="tip">Dashboard</div><svg viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/></svg></button>
     <button class="nb" id="sb-contacts" onclick="showPage('contacts',this)"><div class="tip">Kontakte</div><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.5" stroke="currentColor" stroke-width="1.5"/><path d="M3 17c0-3.866 3.134-6 7-6s7 2.134 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
     <button class="nb" onclick="showPage('companies',this)"><div class="tip">Unternehmen</div><svg viewBox="0 0 20 20" fill="none"><rect x="2" y="6" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M6 6V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" stroke-width="1.5"/><path d="M2 11h16" stroke="currentColor" stroke-width="1.5"/></svg></button>
     <button class="nb" onclick="showPage('appointments',this)"><div class="tip">Termine</div><svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 2v3M13 2v3M3 9h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
     <button class="nb" onclick="showPage('einsaetze',this)"><div class="tip">Kundeneinsätze</div><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h3l2-6 3 12 2-6h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="nb" onclick="showPage('notes',this)"><div class="tip">Notizen</div><svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+    <button class="nb" id="sb-users" data-role="admin" onclick="showPage('users',this)"><div class="tip">Benutzer</div>
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M1 17c0-3.314 2.686-5 6-5"/><circle cx="14" cy="11" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M11 17c0-2.21 1.343-3.5 3-3.5s3 1.29 3 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
     <button class="nb" onclick="showPage('import',this)"><div class="tip">CSV-Import</div><svg viewBox="0 0 20 20" fill="none"><path d="M10 3v10M6 9l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
   </div>
   <div class="nav-bot">
     <button class="nb" onclick="openSearchModal()"><div class="tip">Suche</div>
       <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M13.5 13.5L17 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <button class="nb" onclick="doLogout()" title="Abmelden" style="margin-bottom:4px"><div class="tip">Abmelden</div>
+      <svg viewBox="0 0 20 20" fill="none"><path d="M13 10H3M13 10l-3-3M13 10l-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 6V5a2 2 0 012-2h5a2 2 0 012 2v10a2 2 0 01-2 2H9a2 2 0 01-2-2v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
     <button class="nb" onclick="showPage('settings',this)"><div class="tip">Einstellungen</div>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -452,6 +530,19 @@ textarea{resize:vertical;min-height:70px}
   <div class="card"><div class="ct" style="margin-bottom:.75rem">Vorlage herunterladen</div><button class="btn" onclick="downloadTemplate()">Vorlage herunterladen</button></div>
 </div>
 
+
+<!-- BENUTZERVERWALTUNG -->
+<div class="page" id="page-users">
+  <div class="ph"><div class="pt">Benutzerverwaltung</div>
+    <button class="btn btp" onclick="openNewUserModal()">+ Neuer Benutzer</button>
+  </div>
+  <div class="card">
+    <div class="stitle">Aktive Benutzer</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1rem;line-height:1.6">Benutzer werden direkt in Supabase angelegt. Hier kannst du Rollen und Namen verwalten.</p>
+    <div id="users-list"><div class="empty">Lade Benutzer ...</div></div>
+  </div>
+</div>
+
 <!-- EINSTELLUNGEN -->
 <div class="page" id="page-settings">
   <div class="pt" style="margin-bottom:1.75rem">Einstellungen</div>
@@ -566,9 +657,263 @@ textarea{resize:vertical;min-height:70px}
   <div id="copy-opts"></div>
   <div id="copy-prev-box" style="display:none"><div class="copy-preview" id="copy-prev-text"></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btp" onclick="doCopy()">In Zwischenablage kopieren</button><button class="btn" onclick="document.getElementById('copy-prev-box').style.display='none';document.getElementById('copy-opts').style.display='block'">Zurück</button></div><div id="copy-ok" style="font-size:12px;color:#16a34a;margin-top:6px;display:none">Kopiert!</div></div>
   <div class="mof"><button class="btn" onclick="closeM('modal-copy')">Schließen</button></div>
-</div></div>
+</div>
+<!-- NEW USER MODAL -->
+<div class="mw" id="modal-new-user">
+  <div class="mo" style="width:460px">
+    <div class="moti">Neuen Benutzer anlegen</div>
+    <div class="fg">
+      <div class="fgg ff"><label>Name *</label><input type="text" id="nu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg ff"><label>E-Mail *</label><input type="email" id="nu-email" placeholder="max@cumart.de"></div>
+      <div class="fgg ff"><label>Passwort *</label><input type="password" id="nu-password" placeholder="Mindestens 6 Zeichen"></div>
+      <div class="fgg ff">
+        <label>Rolle *</label>
+        <select id="nu-role">
+          <option value="admin">Admin — voller Zugriff</option>
+          <option value="vertrieb">Vertrieb — Kontakte, Termine, Umsatz</option>
+          <option value="techniker">Techniker — Kundeneinsätze</option>
+        </select>
+      </div>
+    </div>
+    <div style="background:#E6F1FB;border-radius:var(--radius-md);padding:12px;margin-top:4px">
+      <div style="font-size:12px;color:#0C447C;line-height:1.6"><strong>Rollen-Übersicht:</strong><br>
+      Admin: Alle Bereiche + Benutzerverwaltung<br>
+      Vertrieb: Kontakte, Unternehmen, Termine, Notizen<br>
+      Techniker: Kundeneinsätze, Kontakte (nur lesen)</div>
+    </div>
+    <div class="mof">
+      <button class="btn" onclick="closeM('modal-new-user')">Abbrechen</button>
+      <button class="btn btp" onclick="createNewUser()">Benutzer anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT USER MODAL -->
+<div class="mw" id="modal-edit-user">
+  <div class="mo" style="width:460px">
+    <div class="moti">Benutzer bearbeiten</div>
+    <div class="fg">
+      <div class="fgg ff"><label>Name</label><input type="text" id="eu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg ff">
+        <label>Rolle</label>
+        <select id="eu-role">
+          <option value="admin">Admin</option>
+          <option value="vertrieb">Vertrieb</option>
+          <option value="techniker">Techniker</option>
+        </select>
+      </div>
+      <div class="fgg ff"><label>Neues Passwort (leer = unverändert)</label><input type="password" id="eu-password" placeholder="Neues Passwort ..."></div>
+    </div>
+    <input type="hidden" id="eu-userid">
+    <div class="mof">
+      <button class="btn btd" onclick="deleteUser()" style="margin-right:auto">Benutzer löschen</button>
+      <button class="btn" onclick="closeM('modal-edit-user')">Abbrechen</button>
+      <button class="btn btp" onclick="saveEditUser()">Speichern</button>
+    </div>
+  </div>
+</div>
+</div>
 
 <script>
+
+// ==========================================
+// AUTH & USER MANAGEMENT
+// ==========================================
+let currentUser = null;
+let currentRole = null;
+let userProfiles = {}; // userId -> {name, role}
+
+const ROLE_ACCESS = {
+  admin:     ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings','users'],
+  vertrieb:  ['dashboard','contacts','companies','appointments','notes','import','settings'],
+  techniker: ['dashboard','einsaetze','contacts','settings'],
+};
+
+async function initAuth(){
+  const { data: { session } } = await db.auth.getSession();
+  if(session){
+    await onLogin(session.user);
+  } else {
+    showLoginScreen();
+  }
+  db.auth.onAuthStateChange(async (event, session) => {
+    if(event === 'SIGNED_IN' && session) await onLogin(session.user);
+    if(event === 'SIGNED_OUT') showLoginScreen();
+  });
+}
+
+function showLoginScreen(){
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app-container').style.display = 'none';
+}
+
+async function onLogin(user){
+  currentUser = user;
+  // Load profile from user_profiles table
+  const { data: profile } = await db.from('user_profiles').select('*').eq('id', user.id).single();
+  currentRole = profile?.role || 'techniker';
+  const displayName = profile?.name || user.email;
+
+  // Update sidebar user bar
+  const bar = document.getElementById('sb-user-bar');
+  if(bar){
+    const roleColors = {admin:'#3C3489',vertrieb:'#854F0B',techniker:'#085041'};
+    const roleLabels = {admin:'Admin',vertrieb:'Vertrieb',techniker:'Techniker'};
+    bar.innerHTML = `<div style="width:32px;height:32px;border-radius:50%;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;margin:0 auto 4px">${ini(displayName)}</div><div style="font-size:10px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${displayName.split('@')[0]}</div><div style="margin-top:2px"><span style="background:${roleColors[currentRole]}22;color:${roleColors[currentRole]};padding:1px 6px;border-radius:100px;font-size:9px;font-weight:500">${roleLabels[currentRole]}</span></div>`;
+  }
+
+  // Hide/show nav items based on role
+  applyRoleToNav();
+
+  // Show app
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-container').style.display = 'flex';
+
+  // Load data
+  await loadAll();
+}
+
+function applyRoleToNav(){
+  const allowed = ROLE_ACCESS[currentRole] || [];
+  // Sidebar buttons
+  document.querySelectorAll('.nb[data-role]').forEach(btn => {
+    const requiredRole = btn.getAttribute('data-role');
+    btn.style.display = allowed.includes('users') ? 'flex' : 'none';
+  });
+}
+
+async function doLogin(){
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  const btn = document.getElementById('auth-btn');
+
+  if(!email || !password){
+    errEl.textContent = 'Bitte E-Mail und Passwort eingeben.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Anmelden ...';
+  errEl.classList.remove('show');
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if(error){
+    errEl.textContent = 'Anmeldung fehlgeschlagen: ' + (error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : error.message);
+    errEl.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Anmelden';
+  }
+}
+
+async function doLogout(){
+  if(!confirm('Möchten Sie sich wirklich abmelden?')) return;
+  await db.auth.signOut();
+}
+
+// ==========================================
+// USER MANAGEMENT (Admin only)
+// ==========================================
+async function loadUsersPage(){
+  const el = document.getElementById('users-list');
+  if(!el) return;
+  if(currentRole !== 'admin'){
+    el.innerHTML = '<div class="role-blocked"><svg width="40" height="40" viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><h3>Kein Zugriff</h3><p>Nur Administratoren können Benutzer verwalten.</p></div>';
+    return;
+  }
+  el.innerHTML = '<div class="empty">Lade Benutzer ...</div>';
+
+  const { data: profiles, error } = await db.from('user_profiles').select('*').order('created_at');
+  if(error){ el.innerHTML = '<div class="empty">Fehler beim Laden.</div>'; return; }
+
+  if(!profiles.length){ el.innerHTML = '<div class="empty">Noch keine Benutzer in der Datenbank.</div>'; return; }
+
+  const roleLabels = {admin:'Admin',vertrieb:'Vertrieb',techniker:'Techniker'};
+  const roleCols = {admin:'bp',vertrieb:'ba',techniker:'bt'};
+  el.innerHTML = profiles.map(p => `
+    <div class="user-list-item">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+        <div class="av">${ini(p.name||p.email||'?')}</div>
+        <div class="user-list-info">
+          <div class="user-list-email">${p.name||'—'}</div>
+          <div class="user-list-meta">${p.email||''}</div>
+        </div>
+        <span class="badge b${roleCols[p.role]||'gy'}">${roleLabels[p.role]||p.role}</span>
+      </div>
+      ${p.id !== currentUser?.id ? `<button class="btn btn-sm" style="margin-left:10px;flex-shrink:0" onclick="openEditUser('${p.id}','${(p.name||'').replace(/'/g,"\'")}','${p.role}')">Bearbeiten</button>` : '<span style="font-size:11px;color:var(--text-secondary);margin-left:10px">Du</span>'}
+    </div>`).join('');
+}
+
+function openNewUserModal(){
+  if(currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
+  ['nu-name','nu-email','nu-password'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('nu-role').value = 'vertrieb';
+  document.getElementById('modal-new-user').classList.add('open');
+}
+
+async function createNewUser(){
+  const name = document.getElementById('nu-name').value.trim();
+  const email = document.getElementById('nu-email').value.trim();
+  const password = document.getElementById('nu-password').value;
+  const role = document.getElementById('nu-role').value;
+
+  if(!name || !email || !password){ showToast('Bitte alle Felder ausfüllen.', true); return; }
+  if(password.length < 6){ showToast('Passwort muss mindestens 6 Zeichen haben.', true); return; }
+
+  showToast('Benutzer wird angelegt ...');
+
+  // Use Supabase admin API via service role - we'll create via signUp and immediately set profile
+  const { data, error } = await db.auth.signUp({ email, password, options: { data: { name } } });
+  if(error){ showToast('Fehler: ' + error.message, true); return; }
+
+  if(data.user){
+    await db.from('user_profiles').upsert({ id: data.user.id, email, name, role });
+  }
+
+  closeM('modal-new-user');
+  showToast('Benutzer angelegt! Passwort: ' + password);
+  loadUsersPage();
+}
+
+function openEditUser(id, name, role){
+  document.getElementById('eu-userid').value = id;
+  document.getElementById('eu-name').value = name;
+  document.getElementById('eu-role').value = role;
+  document.getElementById('eu-password').value = '';
+  document.getElementById('modal-edit-user').classList.add('open');
+}
+
+async function saveEditUser(){
+  const id = document.getElementById('eu-userid').value;
+  const name = document.getElementById('eu-name').value.trim();
+  const role = document.getElementById('eu-role').value;
+  const password = document.getElementById('eu-password').value;
+
+  const { error } = await db.from('user_profiles').update({ name, role }).eq('id', id);
+  if(error){ showToast('Fehler: ' + error.message, true); return; }
+
+  closeM('modal-edit-user');
+  showToast('Benutzer aktualisiert');
+  loadUsersPage();
+}
+
+async function deleteUser(){
+  const id = document.getElementById('eu-userid').value;
+  if(!confirm('Benutzer wirklich löschen?')) return;
+  await db.from('user_profiles').delete().eq('id', id);
+  closeM('modal-edit-user');
+  showToast('Benutzer entfernt');
+  loadUsersPage();
+}
+
+// ==========================================
+// ROLE-BASED PAGE ACCESS
+// ==========================================
+function canAccess(page){
+  return (ROLE_ACCESS[currentRole] || []).includes(page);
+}
+
 // ==========================================
 // SUPABASE KONFIGURATION
 // ==========================================
@@ -652,6 +997,10 @@ async function saveSetting(key,value){
 // NAVIGATION
 // ==========================================
 function showPage(name,el){
+  if(currentRole && !canAccess(name)){
+    showToast('Kein Zugriff für deine Rolle.', true);
+    return;
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.bn').forEach(b=>b.classList.remove('active'));
@@ -664,6 +1013,7 @@ function showPage(name,el){
   if(name==='companies')renderCompanies();
   if(name==='appointments'){populateStatusFilter('ap-filter');renderAppointments();}
   if(name==='einsaetze'){populateStatusFilter('e-filter');renderEinsaetze();}
+  if(name==='users')loadUsersPage();
 }
 
 function populateStatusFilter(id){
@@ -1379,7 +1729,7 @@ function closeMoreMenu(){
 // ==========================================
 // START
 // ==========================================
-loadAll();
+initAuth();
 </script>
 </body>
 </html>
