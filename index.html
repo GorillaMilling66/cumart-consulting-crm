@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 22:58 -->
+<!-- VERSION: 16.04.2026 23:11 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -182,7 +182,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-sub">CRM-System — Bitte anmelden</div>
-    <div class="auth-ver">v16.04.2026 22:58</div>
+    <div class="auth-ver">v16.04.2026 23:11</div>
     <div class="auth-err" id="login-err"></div>
     <div class="auth-field"><label>E-Mail</label><input type="email" id="login-email" placeholder="ihre@email.de" autocomplete="email"></div>
     <div class="auth-field"><label>Passwort</label><input type="password" id="login-pw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
@@ -454,6 +454,7 @@ textarea{resize:vertical;min-height:70px}
 // ==========================================
 const SUPABASE_URL = 'https://nuojosgnmnymlyrCdsgg.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_hVPcDeYcW3MV_bp4BdcyfA_kHcSVbli';
+const SUPABASE_LEGACY_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51b2pvc2dubW55bWx5cmNkc2dnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDI1MTQsImV4cCI6MjA5MTkxODUxNH0.87KeNAHGumEZhFqARggbdeII1ZXbk69L9x4hCnI2Wo8';
 
 // ==========================================
 // AUTH STATE
@@ -789,7 +790,7 @@ async function submitNewUser(){
       headers:{
         'Content-Type':'application/json',
         'Authorization':'Bearer '+token,
-        'apikey':SUPABASE_KEY
+        'apikey':SUPABASE_LEGACY_KEY
       },
       body:JSON.stringify({email,password:pw,name,role,permissions:perms})
     });
@@ -819,7 +820,7 @@ async function submitDeleteUser(){
     if(!token){ showToast('Nicht eingeloggt.',true); return; }
     const resp=await fetch(SUPABASE_URL+'/functions/v1/delete-user',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SUPABASE_KEY},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SUPABASE_LEGACY_KEY},
       body:JSON.stringify({userId:id})
     });
     const result=await resp.json();
