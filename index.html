@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 22:49 -->
+<!-- VERSION: 16.04.2026 22:53 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -182,7 +182,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-sub">CRM-System — Bitte anmelden</div>
-    <div class="auth-ver">v16.04.2026 22:49</div>
+    <div class="auth-ver">v16.04.2026 22:53</div>
     <div class="auth-err" id="login-err"></div>
     <div class="auth-field"><label>E-Mail</label><input type="email" id="login-email" placeholder="ihre@email.de" autocomplete="email"></div>
     <div class="auth-field"><label>Passwort</label><input type="password" id="login-pw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
@@ -645,47 +645,94 @@ function openUserOverlay(mode, userId, userName, userRole, userPerms){
   const body = document.getElementById('user-overlay-body');
   const footer = document.getElementById('user-overlay-footer');
   
-  const fieldStyle = 'display:flex;flex-direction:column;gap:5px';
-  const labelStyle = 'font-size:12px;color:#78716c;font-weight:500';
-  const inputStyle = 'padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;width:100%';
-  const selectStyle = inputStyle;
+  title.textContent = mode==='new' ? 'Neuer Benutzer' : 'Benutzer bearbeiten';
+  body.innerHTML = '';
+  footer.innerHTML = '';
+  
+  // Helper to add a field
+  function addField(colSpan, labelText, inputHtml) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;flex-direction:column;gap:5px' + (colSpan===2?';grid-column:1/-1':'');
+    div.innerHTML = '<label style="font-size:12px;color:#78716c;font-weight:500">'+labelText+'</label>' + inputHtml;
+    body.appendChild(div);
+  }
+  
+  const iStyle = 'padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;width:100%';
   
   if(mode==='new'){
-    title.textContent = 'Neuer Benutzer';
-    body.innerHTML = 
-      '<div style="'+fieldStyle+'"><label style="'+labelStyle+'">Name *</label><input type="text" id="uo-name" placeholder="Max Mustermann" style="'+inputStyle+'"></div>'
-      +'<div style="'+fieldStyle+'"><label style="'+labelStyle+'">E-Mail *</label><input type="email" id="uo-email" placeholder="max@cumart.de" style="'+inputStyle+'"></div>'
-      +'<div style="'+fieldStyle+'"><label style="'+labelStyle+'">Passwort *</label><input type="password" id="uo-pw" placeholder="Mind. 6 Zeichen" style="'+inputStyle+'"></div>'
-      +'<div style="'+fieldStyle+'"><label style="'+labelStyle+'">Rolle</label>'
-      +'<select id="uo-role" style="'+selectStyle+'" onchange="buildPermBoxes('uo-perms',this.value,[])">'
-      +'<option value="techniker">Techniker</option><option value="assistenz">Assistenz</option><option value="admin">Admin</option>'
-      +'</select></div>'
-      +'<div id="uo-perms"></div>';
-    footer.innerHTML = 
-      '<button onclick="closeUserOverlay()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ccc;background:#fff">Abbrechen</button>'
-      +'<button onclick="submitNewUser()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:none;background:#1c1917;color:#fff;font-weight:500">Anlegen</button>';
-    buildPermBoxes('uo-perms','techniker',[]);
+    addField(1, 'Name *', '<input type="text" id="uo-name" placeholder="Max Mustermann" style="'+iStyle+'">');
+    addField(1, 'E-Mail *', '<input type="email" id="uo-email" placeholder="max@cumart.de" style="'+iStyle+'">');
+    addField(1, 'Passwort *', '<input type="password" id="uo-pw" placeholder="Mind. 6 Zeichen" style="'+iStyle+'">');
   } else {
-    title.textContent = 'Benutzer bearbeiten';
-    body.innerHTML = 
-      '<div style="'+fieldStyle+'"><label style="'+labelStyle+'">Name</label><input type="text" id="uo-name" value="'+(userName||'')+'" style="'+inputStyle+'"></div>'
-      +'<div style="'+fieldStyle+'"><label style="'+labelStyle+'">Rolle</label>'
-      +'<select id="uo-role" style="'+selectStyle+'" onchange="buildPermBoxes('uo-perms',this.value,[])">'
-      +'<option value="techniker"'+(userRole==='techniker'?' selected':'')+'>Techniker</option>'
-      +'<option value="assistenz"'+(userRole==='assistenz'?' selected':'')+'>Assistenz</option>'
-      +'<option value="admin"'+(userRole==='admin'?' selected':'')+'>Admin</option>'
-      +'</select></div>'
-      +'<div style="'+fieldStyle+';grid-column:1/-1"><label style="'+labelStyle+'">Neues Passwort (leer = unverändert)</label><input type="password" id="uo-pw" placeholder="Neues Passwort ..." style="'+inputStyle+'"></div>'
-      +'<div id="uo-perms"></div>'
-      +'<input type="hidden" id="uo-id" value="'+(userId||'')+'">';
-    footer.innerHTML = 
-      '<button onclick="submitDeleteUser()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #dc2626;background:#fff;color:#dc2626;margin-right:auto">Löschen</button>'
-      +'<button onclick="closeUserOverlay()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ccc;background:#fff">Abbrechen</button>'
-      +'<button onclick="submitEditUser()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:none;background:#1c1917;color:#fff;font-weight:500">Speichern</button>';
-    buildPermBoxes('uo-perms', userRole||'techniker', userPerms||[]);
+    addField(1, 'Name', '<input type="text" id="uo-name" value="'+(userName||'')+'" style="'+iStyle+'">');
+    addField(2, 'Neues Passwort (leer = unverändert)', '<input type="password" id="uo-pw" placeholder="Neues Passwort ..." style="'+iStyle+'">');
   }
+  
+  // Role select
+  const roleDiv = document.createElement('div');
+  roleDiv.style.cssText = 'display:flex;flex-direction:column;gap:5px';
+  const roleLabel = document.createElement('label');
+  roleLabel.style.cssText = 'font-size:12px;color:#78716c;font-weight:500';
+  roleLabel.textContent = 'Rolle';
+  const roleSelect = document.createElement('select');
+  roleSelect.id = 'uo-role';
+  roleSelect.style.cssText = iStyle;
+  ['techniker','assistenz','admin'].forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r;
+    opt.textContent = r.charAt(0).toUpperCase()+r.slice(1);
+    if(r === (userRole||'techniker')) opt.selected = true;
+    roleSelect.appendChild(opt);
+  });
+  roleSelect.onchange = function(){ buildPermBoxes('uo-perms', this.value, []); };
+  roleDiv.appendChild(roleLabel);
+  roleDiv.appendChild(roleSelect);
+  body.appendChild(roleDiv);
+  
+  // Permissions div
+  const permsDiv = document.createElement('div');
+  permsDiv.id = 'uo-perms';
+  permsDiv.style.gridColumn = '1/-1';
+  body.appendChild(permsDiv);
+  
+  // Hidden ID field for edit mode
+  if(mode==='edit' && userId){
+    const hiddenId = document.createElement('input');
+    hiddenId.type = 'hidden';
+    hiddenId.id = 'uo-id';
+    hiddenId.value = userId;
+    body.appendChild(hiddenId);
+  }
+  
+  // Footer buttons
+  const btnStyle = 'padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit';
+  
+  if(mode==='edit'){
+    const delBtn = document.createElement('button');
+    delBtn.style.cssText = btnStyle+';border:1px solid #dc2626;background:#fff;color:#dc2626;margin-right:auto';
+    delBtn.textContent = 'Löschen';
+    delBtn.onclick = submitDeleteUser;
+    footer.appendChild(delBtn);
+  }
+  
+  const cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = btnStyle+';border:1px solid #ccc;background:#fff';
+  cancelBtn.textContent = 'Abbrechen';
+  cancelBtn.onclick = closeUserOverlay;
+  footer.appendChild(cancelBtn);
+  
+  const saveBtn = document.createElement('button');
+  saveBtn.style.cssText = btnStyle+';border:none;background:#1c1917;color:#fff;font-weight:500';
+  saveBtn.textContent = mode==='new' ? 'Anlegen' : 'Speichern';
+  saveBtn.onclick = mode==='new' ? submitNewUser : submitEditUser;
+  footer.appendChild(saveBtn);
+  
+  buildPermBoxes('uo-perms', userRole||'techniker', userPerms||[]);
   ov.style.display = 'block';
 }
+
+
+let _userProfiles = [];
 
 async function loadUsersPage(){
   const el = document.getElementById('users-list');
@@ -694,25 +741,35 @@ async function loadUsersPage(){
   const { data:profiles, error } = await db.from('user_profiles').select('*').order('created_at');
   if(error){ el.innerHTML='<div class="empty">Fehler: '+error.message+'</div>'; return; }
   if(!profiles||!profiles.length){ el.innerHTML='<div class="empty">Noch keine Benutzer.</div>'; return; }
+  _userProfiles = profiles;
   const rCol={admin:'#EEEDFE',techniker:'#E1F5EE',assistenz:'#FAEEDA'};
   const rTxt={admin:'#3C3489',techniker:'#085041',assistenz:'#633806'};
   const rLbl={admin:'Admin',techniker:'Techniker',assistenz:'Assistenz'};
-  el.innerHTML = profiles.map(p=>{
+  el.innerHTML = profiles.map((p,idx)=>{
     const perms=p.permissions||[];
     const permTxt=(perms.length>0?perms:ROLE_DEFAULTS[p.role]||[]).map(m=>MOD_LABELS[m]||m).join(', ');
     const isMe=p.id===currentUser?.id;
     return '<div style="background:#f5f5f4;border-radius:8px;padding:12px;margin-bottom:8px">'
       +'<div style="display:flex;align-items:center;gap:10px">'
       +'<div class="av">'+ini(p.name||p.email||'?')+'</div>'
-      +'<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:500">'+( p.name||'—')+(isMe?' <span style="font-size:11px;color:#78716c">(Du)</span>':'')+'</div>'
-      +'<div style="font-size:12px;color:#78716c">'+(p.email||'')+'</div></div>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:14px;font-weight:500">'+(p.name||'—')+(isMe?' <span style="font-size:11px;color:#78716c">(Du)</span>':'')+'</div>'
+      +'<div style="font-size:12px;color:#78716c">'+(p.email||'')+'</div>'
+      +'</div>'
       +'<span style="padding:3px 10px;border-radius:100px;font-size:11px;font-weight:500;background:'+(rCol[p.role]||'#eee')+';color:'+(rTxt[p.role]||'#444')+'">'+(rLbl[p.role]||p.role)+'</span>'
-      +(!isMe?'<button class="btn btn-sm" onclick="openUserOverlay('edit',''+p.id+'',''+( p.name||'').replace(/'/g,"\'")+'',''+p.role+'','+JSON.stringify(perms)+')">Bearbeiten</button>':'')
+      +(!isMe ? '<button class="btn btn-sm" data-uidx="'+idx+'" onclick="editUserByIdx(this.dataset.uidx)">Bearbeiten</button>' : '')
       +'</div>'
       +'<div style="font-size:11px;color:#78716c;padding-left:44px;margin-top:6px"><strong>Zugriff:</strong> '+permTxt+'</div>'
       +'</div>';
   }).join('');
 }
+
+function editUserByIdx(idx){
+  const p = _userProfiles[parseInt(idx)];
+  if(!p) return;
+  openUserOverlay('edit', p.id, p.name||'', p.role||'techniker', p.permissions||[]);
+}
+
 
 async function submitNewUser(){
   const name=document.getElementById('uo-name')?.value?.trim();
