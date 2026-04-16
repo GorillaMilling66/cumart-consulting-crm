@@ -576,12 +576,12 @@ textarea{resize:vertical;min-height:70px}
 
 <!-- BENUTZERVERWALTUNG -->
 <div class="page" id="page-users">
-  <div class="ph"><div class="pt">Benutzerverwaltung</div>
+  <div class="ph">
+    <div class="pt">Benutzerverwaltung</div>
     <button class="btn btp" onclick="openNewUserModal()">+ Neuer Benutzer</button>
   </div>
   <div class="card">
     <div class="stitle">Aktive Benutzer</div>
-    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1rem;line-height:1.6">Benutzer werden direkt in Supabase angelegt. Hier kannst du Rollen und Namen verwalten.</p>
     <div id="users-list"><div class="empty">Lade Benutzer ...</div></div>
   </div>
 </div>
@@ -713,53 +713,55 @@ textarea{resize:vertical;min-height:70px}
 </div>
 <!-- NEW USER MODAL -->
 <div class="mw" id="modal-new-user">
-  <div class="mo" style="width:460px">
-    <div class="moti">Neuen Benutzer anlegen</div>
+  <div class="mo" style="width:520px">
+    <div class="moti">Neuer Benutzer</div>
     <div class="fg">
-      <div class="fgg ff"><label>Name *</label><input type="text" id="nu-name" placeholder="Max Mustermann"></div>
-      <div class="fgg ff"><label>E-Mail *</label><input type="email" id="nu-email" placeholder="max@cumart.de"></div>
-      <div class="fgg ff"><label>Passwort *</label><input type="password" id="nu-password" placeholder="Mindestens 6 Zeichen"></div>
-      <div class="fgg ff">
-        <label>Rolle *</label>
-        <select id="nu-role">
-          <option value="admin">Admin — voller Zugriff</option>
-          <option value="vertrieb">Vertrieb — Kontakte, Termine, Umsatz</option>
-          <option value="techniker">Techniker — Kundeneinsätze</option>
+      <div class="fgg"><label>Name *</label><input type="text" id="nu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg"><label>E-Mail *</label><input type="email" id="nu-email" placeholder="max@cumart.de"></div>
+      <div class="fgg"><label>Passwort *</label><input type="password" id="nu-password" placeholder="Mind. 6 Zeichen"></div>
+      <div class="fgg">
+        <label>Rolle</label>
+        <select id="nu-role" onchange="applyRoleDefaults('nu')">
+          <option value="techniker">Techniker</option>
+          <option value="assistenz">Assistenz</option>
+          <option value="admin">Admin</option>
         </select>
       </div>
-    </div>
-    <div style="background:#E6F1FB;border-radius:var(--radius-md);padding:12px;margin-top:4px">
-      <div style="font-size:12px;color:#0C447C;line-height:1.6"><strong>Rollen-Übersicht:</strong><br>
-      Admin: Alle Bereiche + Benutzerverwaltung<br>
-      Vertrieb: Kontakte, Unternehmen, Termine, Notizen<br>
-      Techniker: Kundeneinsätze, Kontakte (nur lesen)</div>
+      <div class="fgg ff">
+        <label>Zugriffsrechte (individuell anpassbar)</label>
+        <div id="nu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
+      </div>
     </div>
     <div class="mof">
       <button class="btn" onclick="closeM('modal-new-user')">Abbrechen</button>
-      <button class="btn btp" onclick="createNewUser()">Benutzer anlegen</button>
+      <button class="btn btp" onclick="createNewUser()">Anlegen</button>
     </div>
   </div>
 </div>
 
 <!-- EDIT USER MODAL -->
 <div class="mw" id="modal-edit-user">
-  <div class="mo" style="width:460px">
+  <div class="mo" style="width:520px">
     <div class="moti">Benutzer bearbeiten</div>
     <div class="fg">
-      <div class="fgg ff"><label>Name</label><input type="text" id="eu-name" placeholder="Max Mustermann"></div>
-      <div class="fgg ff">
+      <div class="fgg"><label>Name</label><input type="text" id="eu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg">
         <label>Rolle</label>
-        <select id="eu-role">
-          <option value="admin">Admin</option>
-          <option value="vertrieb">Vertrieb</option>
+        <select id="eu-role" onchange="applyRoleDefaults('eu')">
           <option value="techniker">Techniker</option>
+          <option value="assistenz">Assistenz</option>
+          <option value="admin">Admin</option>
         </select>
       </div>
-      <div class="fgg ff"><label>Neues Passwort (leer = unverändert)</label><input type="password" id="eu-password" placeholder="Neues Passwort ..."></div>
+      <div class="fgg ff"><label>Neues Passwort (leer lassen = unverändert)</label><input type="password" id="eu-password" placeholder="Neues Passwort ..."></div>
+      <div class="fgg ff">
+        <label>Zugriffsrechte</label>
+        <div id="eu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
+      </div>
     </div>
     <input type="hidden" id="eu-userid">
     <div class="mof">
-      <button class="btn btd" onclick="deleteUser()" style="margin-right:auto">Benutzer löschen</button>
+      <button class="btn btd" onclick="deleteUser()" style="margin-right:auto">Löschen</button>
       <button class="btn" onclick="closeM('modal-edit-user')">Abbrechen</button>
       <button class="btn btp" onclick="saveEditUser()">Speichern</button>
     </div>
@@ -871,11 +873,36 @@ let currentUser = null;
 let currentRole = null;
 let userProfiles = {}; // userId -> {name, role}
 
-const ROLE_ACCESS = {
-  admin:     ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings','users'],
-  vertrieb:  ['dashboard','contacts','companies','appointments','notes','import','settings'],
-  techniker: ['dashboard','einsaetze','contacts','settings'],
+// All available modules
+const ALL_MODULES = ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings'];
+const MODULE_LABELS = {
+  dashboard:    'Dashboard',
+  contacts:     'Kontakte',
+  companies:    'Unternehmen',
+  appointments: 'Termine',
+  einsaetze:   'Kundeneinsätze',
+  notes:        'Notizen',
+  import:       'CSV-Import',
+  settings:     'Einstellungen',
 };
+
+// Default permissions per role (fallback if no individual permissions set)
+const ROLE_DEFAULTS = {
+  admin:     ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings'],
+  techniker: ['dashboard','contacts','companies','appointments','einsaetze','settings'],
+  assistenz: ['dashboard','contacts','appointments','notes','settings'],
+};
+
+// Current user's actual permissions (loaded from DB, overrides role defaults)
+let userPermissions = [];
+
+function canAccess(page){
+  if(page === 'users') return currentRole === 'admin';
+  if(!currentRole) return false;
+  // Per-user permissions override role defaults
+  const perms = userPermissions.length > 0 ? userPermissions : (ROLE_DEFAULTS[currentRole] || []);
+  return perms.includes(page);
+}
 
 async function initAuth(){
   checkPasswordResetRedirect();
@@ -912,6 +939,7 @@ async function onLogin(user){
   // Load profile from user_profiles table
   const { data: profile } = await db.from('user_profiles').select('*').eq('id', user.id).single();
   currentRole = profile?.role || 'techniker';
+  userPermissions = profile?.permissions || [];
   const displayName = profile?.name || user.email;
 
   // Update sidebar user bar
@@ -934,12 +962,23 @@ async function onLogin(user){
 }
 
 function applyRoleToNav(){
-  const allowed = ROLE_ACCESS[currentRole] || [];
-  // Sidebar buttons
-  document.querySelectorAll('.nb[data-role]').forEach(btn => {
-    const requiredRole = btn.getAttribute('data-role');
-    btn.style.display = allowed.includes('users') ? 'flex' : 'none';
+  // Show/hide sidebar nav buttons based on permissions
+  const navMap = {
+    'sb-contacts': 'contacts',
+    'sb-companies': 'companies', 
+    'sb-appointments': 'appointments',
+    'sb-einsaetze': 'einsaetze',
+    'sb-notes': 'notes',
+    'sb-import': 'import',
+    'sb-users': 'users',
+  };
+  Object.entries(navMap).forEach(([btnId, page]) => {
+    const btn = document.getElementById(btnId);
+    if(btn) btn.style.display = canAccess(page) ? 'flex' : 'none';
   });
+  // Admin users button
+  const usersBtn = document.getElementById('sb-users');
+  if(usersBtn) usersBtn.style.display = currentRole === 'admin' ? 'flex' : 'none';
 }
 
 async function doLogin(){
@@ -975,44 +1014,73 @@ async function doLogout(){
 // ==========================================
 // USER MANAGEMENT (Admin only)
 // ==========================================
+
+function renderPermissionBoxes(containerId, role, existingPerms){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const defaults = existingPerms && existingPerms.length > 0 ? existingPerms : (ROLE_DEFAULTS[role] || []);
+  container.innerHTML = ALL_MODULES.map(mod => `
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:4px 0">
+      <input type="checkbox" value="${mod}" ${defaults.includes(mod)?'checked':''} style="width:15px;height:15px;cursor:pointer">
+      ${MODULE_LABELS[mod]}
+    </label>`).join('');
+}
+
+function getCheckedPermissions(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return [];
+  return [...container.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+}
+
+function applyRoleDefaults(prefix){
+  const role = document.getElementById(prefix+'-role').value;
+  const containerId = prefix+'-permissions';
+  renderPermissionBoxes(containerId, role, []);
+}
+
 async function loadUsersPage(){
   const el = document.getElementById('users-list');
   if(!el) return;
-  if(currentRole !== 'admin'){
-    el.innerHTML = '<div class="role-blocked"><svg width="40" height="40" viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><h3>Kein Zugriff</h3><p>Nur Administratoren können Benutzer verwalten.</p></div>';
-    return;
-  }
   el.innerHTML = '<div class="empty">Lade Benutzer ...</div>';
 
   const { data: profiles, error } = await db.from('user_profiles').select('*').order('created_at');
-  if(error){ el.innerHTML = '<div class="empty">Fehler beim Laden.</div>'; return; }
+  if(error){ el.innerHTML = '<div class="empty">Fehler: ' + error.message + '</div>'; return; }
+  if(!profiles || !profiles.length){ el.innerHTML = '<div class="empty">Noch keine Benutzer.</div>'; return; }
 
-  if(!profiles.length){ el.innerHTML = '<div class="empty">Noch keine Benutzer in der Datenbank.</div>'; return; }
+  const roleCols = {admin:'bp', techniker:'bt', assistenz:'ba'};
+  const roleLabels = {admin:'Admin', techniker:'Techniker', assistenz:'Assistenz'};
 
-  const roleLabels = {admin:'Admin',vertrieb:'Vertrieb',techniker:'Techniker'};
-  const roleCols = {admin:'bp',vertrieb:'ba',techniker:'bt'};
-  el.innerHTML = profiles.map(p => `
-    <div class="user-list-item">
-      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+  el.innerHTML = profiles.map(p => {
+    const perms = p.permissions || [];
+    const permText = perms.length > 0
+      ? perms.map(m => MODULE_LABELS[m] || m).join(', ')
+      : (ROLE_DEFAULTS[p.role] || []).map(m => MODULE_LABELS[m] || m).join(', ');
+    const isMe = p.id === currentUser?.id;
+    return `<div class="user-list-item" style="flex-direction:column;align-items:flex-start;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px;width:100%">
         <div class="av">${ini(p.name||p.email||'?')}</div>
         <div class="user-list-info">
-          <div class="user-list-email">${p.name||'—'}</div>
+          <div class="user-list-email">${p.name||'—'} ${isMe?'<span style="font-size:11px;color:var(--text-secondary)">(Du)</span>':''}</div>
           <div class="user-list-meta">${p.email||''}</div>
         </div>
-        <span class="badge b${roleCols[p.role]||'gy'}">${roleLabels[p.role]||p.role}</span>
+        <span class="badge ${roleCols[p.role]||'bgy'}" style="flex-shrink:0">${roleLabels[p.role]||p.role}</span>
+        ${!isMe ? `<button class="btn btn-sm" style="flex-shrink:0" onclick="openEditUser('${p.id}','${(p.name||'').replace(/'/g,"\'")}','${p.role||'techniker'}',${JSON.stringify(p.permissions||[])})">Bearbeiten</button>` : ''}
       </div>
-      ${p.id !== currentUser?.id ? `<button class="btn btn-sm" style="margin-left:10px;flex-shrink:0" onclick="openEditUser('${p.id}','${(p.name||'').replace(/'/g,"\'")}','${p.role}')">Bearbeiten</button>` : '<span style="font-size:11px;color:var(--text-secondary);margin-left:10px">Du</span>'}
-    </div>`).join('');
+      <div style="font-size:11px;color:var(--text-secondary);padding-left:44px;line-height:1.5">
+        <strong>Zugriff:</strong> ${permText||'—'}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function openNewUserModal(){
-  if(currentRole && currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
-  const modal = document.getElementById('modal-new-user');
-  if(!modal){ showToast('Modal nicht gefunden.', true); return; }
-  ['nu-name','nu-email','nu-password'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  const roleEl = document.getElementById('nu-role');
-  if(roleEl) roleEl.value = 'vertrieb';
-  modal.classList.add('open');
+  if(currentRole !== 'admin'){ showToast('Nur Admins können Benutzer anlegen.', true); return; }
+  document.getElementById('nu-name').value = '';
+  document.getElementById('nu-email').value = '';
+  document.getElementById('nu-password').value = '';
+  document.getElementById('nu-role').value = 'techniker';
+  renderPermissionBoxes('nu-permissions', 'techniker', []);
+  document.getElementById('modal-new-user').classList.add('open');
 }
 
 async function createNewUser(){
@@ -1020,9 +1088,10 @@ async function createNewUser(){
   const email = document.getElementById('nu-email').value.trim();
   const password = document.getElementById('nu-password').value;
   const role = document.getElementById('nu-role').value;
+  const permissions = getCheckedPermissions('nu-permissions');
 
-  if(!name || !email || !password){ showToast('Bitte alle Felder ausfüllen.', true); return; }
-  if(password.length < 6){ showToast('Passwort muss mindestens 6 Zeichen haben.', true); return; }
+  if(!name || !email || !password){ showToast('Bitte alle Pflichtfelder ausfüllen.', true); return; }
+  if(password.length < 6){ showToast('Passwort muss mindestens 6 Zeichen lang sein.', true); return; }
 
   const btn = document.querySelector('#modal-new-user .btp');
   if(btn){ btn.disabled = true; btn.textContent = 'Wird angelegt ...'; }
@@ -1036,7 +1105,7 @@ async function createNewUser(){
         'Authorization': 'Bearer ' + session.access_token,
         'apikey': SUPABASE_KEY,
       },
-      body: JSON.stringify({ email, password, name, role })
+      body: JSON.stringify({ email, password, name, role, permissions })
     });
     const result = await resp.json();
     if(!resp.ok || result.error){
@@ -1048,15 +1117,17 @@ async function createNewUser(){
     }
   } catch(err){
     showToast('Netzwerkfehler: ' + err.message, true);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Anlegen'; }
   }
-  if(btn){ btn.disabled = false; btn.textContent = 'Benutzer anlegen'; }
 }
 
-function openEditUser(id, name, role){
+function openEditUser(id, name, role, permissions){
   document.getElementById('eu-userid').value = id;
   document.getElementById('eu-name').value = name;
   document.getElementById('eu-role').value = role;
   document.getElementById('eu-password').value = '';
+  renderPermissionBoxes('eu-permissions', role, permissions);
   document.getElementById('modal-edit-user').classList.add('open');
 }
 
@@ -1064,19 +1135,22 @@ async function saveEditUser(){
   const id = document.getElementById('eu-userid').value;
   const name = document.getElementById('eu-name').value.trim();
   const role = document.getElementById('eu-role').value;
+  const permissions = getCheckedPermissions('eu-permissions');
   const password = document.getElementById('eu-password').value;
 
-  const { error } = await db.from('user_profiles').update({ name, role }).eq('id', id);
+  if(!name){ showToast('Bitte Namen eingeben.', true); return; }
+
+  const { error } = await db.from('user_profiles').update({ name, role, permissions }).eq('id', id);
   if(error){ showToast('Fehler: ' + error.message, true); return; }
 
   closeM('modal-edit-user');
-  showToast('Benutzer aktualisiert');
+  showToast('Benutzer aktualisiert.');
   loadUsersPage();
 }
 
 async function deleteUser(){
   const id = document.getElementById('eu-userid').value;
-  if(!confirm('Benutzer wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+  if(!confirm('Benutzer wirklich löschen?')) return;
   try {
     const { data: { session } } = await db.auth.getSession();
     const resp = await fetch(SUPABASE_URL + '/functions/v1/delete-user', {
@@ -1093,19 +1167,12 @@ async function deleteUser(){
       showToast('Fehler: ' + (result.error || 'Unbekannter Fehler'), true);
     } else {
       closeM('modal-edit-user');
-      showToast('Benutzer wurde gelöscht.');
+      showToast('Benutzer gelöscht.');
       loadUsersPage();
     }
   } catch(err){
     showToast('Netzwerkfehler: ' + err.message, true);
   }
-}
-
-// ==========================================
-// ROLE-BASED PAGE ACCESS
-// ==========================================
-function canAccess(page){
-  return (ROLE_ACCESS[currentRole] || []).includes(page);
 }
 
 // ==========================================
