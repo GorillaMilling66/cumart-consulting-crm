@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 22:27 -->
+<!-- VERSION: 16.04.2026 22:12 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -378,7 +378,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-subtitle">CRM-System — Bitte anmelden</div>
-    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 22:27</div>
+    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 22:12</div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-field">
       <label>E-Mail</label>
@@ -580,20 +580,11 @@ textarea{resize:vertical;min-height:70px}
 <div class="page" id="page-users">
   <div class="ph">
     <div class="pt">Benutzerverwaltung</div>
-    <button class="btn btp" onclick="openUserOverlay('new')">+ Neuer Benutzer</button>
+    <button class="btn btp" onclick="openNewUserModal()">+ Neuer Benutzer</button>
   </div>
   <div class="card">
     <div class="stitle">Aktive Benutzer</div>
     <div id="users-list"><div class="empty">Lade Benutzer ...</div></div>
-  </div>
-</div>
-
-<!-- USER OVERLAY - completely standalone, no CSS class dependencies -->
-<div id="user-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;overflow-y:auto;">
-  <div style="background:#fff;border-radius:12px;margin:40px auto;width:540px;max-width:94vw;padding:28px;position:relative;">
-    <div id="user-overlay-title" style="font-size:18px;font-weight:500;margin-bottom:20px;"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" id="user-overlay-body"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid #eee;" id="user-overlay-footer"></div>
   </div>
 </div>
 
@@ -727,474 +718,6 @@ textarea{resize:vertical;min-height:70px}
 // ==========================================
 // AUTH & USER MANAGEMENT
 // ==========================================
-
-// ==========================================
-// PASSWORD RESET
-// ==========================================
-function showResetScreen(){
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('reset-screen').style.display = 'flex';
-  document.getElementById('reset-error').classList.remove('show');
-  document.getElementById('reset-success').classList.remove('show');
-  document.getElementById('reset-email').value = document.getElementById('auth-email').value || '';
-}
-
-function showLoginFromReset(){
-  document.getElementById('reset-screen').style.display = 'none';
-  document.getElementById('auth-screen').style.display = 'flex';
-}
-
-async function doPasswordReset(){
-  const email = document.getElementById('reset-email').value.trim();
-  const errEl = document.getElementById('reset-error');
-  const sucEl = document.getElementById('reset-success');
-  const btn = document.getElementById('reset-btn');
-
-  if(!email){
-    errEl.textContent = 'Bitte E-Mail eingeben.';
-    errEl.classList.add('show');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Wird gesendet ...';
-  errEl.classList.remove('show');
-
-  const { error } = await db.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + '/?reset=true'
-  });
-
-  btn.disabled = false;
-  btn.textContent = 'Link senden';
-
-  if(error){
-    errEl.textContent = 'Fehler: ' + error.message;
-    errEl.classList.add('show');
-  } else {
-    sucEl.classList.add('show');
-    errEl.classList.remove('show');
-  }
-}
-
-async function doSetNewPassword(){
-  const pw1 = document.getElementById('newpw-1').value;
-  const pw2 = document.getElementById('newpw-2').value;
-  const errEl = document.getElementById('newpw-error');
-  const btn = document.getElementById('newpw-btn');
-
-  if(pw1.length < 6){
-    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
-    errEl.classList.add('show');
-    return;
-  }
-  if(pw1 !== pw2){
-    errEl.textContent = 'Passwörter stimmen nicht überein.';
-    errEl.classList.add('show');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Wird gespeichert ...';
-
-  const { error } = await db.auth.updateUser({ password: pw1 });
-
-  if(error){
-    errEl.textContent = 'Fehler: ' + error.message;
-    errEl.classList.add('show');
-    btn.disabled = false;
-    btn.textContent = 'Passwort speichern';
-  } else {
-    document.getElementById('new-password-screen').style.display = 'none';
-    showToast('Passwort erfolgreich geändert!');
-    // User is now logged in automatically
-    const { data: { session } } = await db.auth.getSession();
-    if(session) await onLogin(session.user);
-  }
-}
-
-// Check if coming back from password reset link
-function checkPasswordResetRedirect(){
-  const hash = window.location.hash;
-  if(hash.includes('type=recovery') || window.location.search.includes('reset=true')){
-    // Hide all screens, show new password screen
-    document.getElementById('auth-screen').style.display = 'none';
-    document.getElementById('new-password-screen').style.display = 'flex';
-  }
-}
-
-let currentUser = null;
-let currentRole = null;
-let userProfiles = {}; // userId -> {name, role}
-
-// All available modules
-const ALL_MODULES = ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings'];
-const MODULE_LABELS = {
-  dashboard:    'Dashboard',
-  contacts:     'Kontakte',
-  companies:    'Unternehmen',
-  appointments: 'Termine',
-  einsaetze:   'Kundeneinsätze',
-  notes:        'Notizen',
-  import:       'CSV-Import',
-  settings:     'Einstellungen',
-};
-
-// Default permissions per role (fallback if no individual permissions set)
-const ROLE_DEFAULTS = {
-  admin:     ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings'],
-  techniker: ['dashboard','contacts','companies','appointments','einsaetze','settings'],
-  assistenz: ['dashboard','contacts','appointments','notes','settings'],
-};
-
-// Current user's actual permissions (loaded from DB, overrides role defaults)
-let userPermissions = [];
-
-function canAccess(page){
-  if(page === 'users') return currentRole === 'admin';
-  if(!currentRole) return false;
-  // Per-user permissions override role defaults
-  const perms = userPermissions.length > 0 ? userPermissions : (ROLE_DEFAULTS[currentRole] || []);
-  return perms.includes(page);
-}
-
-async function initAuth(){
-  checkPasswordResetRedirect();
-  
-  // Check for existing session first
-  try {
-    const { data: { session } } = await db.auth.getSession();
-    if(session && document.getElementById('new-password-screen').style.display !== 'flex'){
-      await onLogin(session.user);
-      return;
-    }
-  } catch(e) { console.warn('Session check error:', e); }
-  
-  // No session - show login
-  showLoginScreen();
-
-  // Listen for future auth changes
-  db.auth.onAuthStateChange(async (event, session) => {
-    if(event === 'PASSWORD_RECOVERY'){
-      document.getElementById('auth-screen').style.display = 'none';
-      document.getElementById('new-password-screen').style.display = 'flex';
-    }
-    if(event === 'SIGNED_OUT') showLoginScreen();
-  });
-}
-
-function showLoginScreen(){
-  document.getElementById('auth-screen').style.display = 'flex';
-  document.getElementById('app-container').style.display = 'none';
-}
-
-async function onLogin(user){
-  currentUser = user;
-  
-  // Show debug status on login screen temporarily
-  const dbg = document.getElementById('auth-error');
-  if(dbg){ dbg.textContent = 'Lade Profil ...'; dbg.classList.add('show'); dbg.style.background='#e6f1fb'; dbg.style.color='#0C447C'; }
-  
-  // Load profile from user_profiles table
-  let profile = null;
-  try {
-    const { data, error } = await db.from('user_profiles').select('*').eq('id', user.id).single();
-    if(error){
-      if(dbg){ dbg.textContent = 'Profil-Fehler: ' + error.message; }
-      console.error('Profile error:', error);
-    } else {
-      profile = data;
-      if(dbg){ dbg.textContent = 'Profil geladen: ' + (data?.role||'?'); }
-    }
-  } catch(e) { 
-    if(dbg){ dbg.textContent = 'Exception: ' + e.message; }
-    console.warn('Profile load error:', e); 
-  }
-
-  currentRole = profile?.role || 'techniker';
-  userPermissions = profile?.permissions || [];
-  const displayName = profile?.name || user.email;
-
-  // Update sidebar user bar
-  try {
-    const bar = document.getElementById('sb-user-bar');
-    if(bar){
-      const roleColors = {admin:'#3C3489',techniker:'#085041',assistenz:'#854F0B',vertrieb:'#854F0B'};
-      const roleLabels = {admin:'Admin',techniker:'Techniker',assistenz:'Assistenz',vertrieb:'Vertrieb'};
-      const rc = roleColors[currentRole] || '#444';
-      const rl = roleLabels[currentRole] || currentRole;
-      const dn = displayName.split('@')[0];
-      bar.innerHTML = '<div style="width:32px;height:32px;border-radius:50%;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;margin:0 auto 4px">'+ini(displayName)+'</div>'
-        + '<div style="font-size:10px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+dn+'</div>'
-        + '<div style="margin-top:2px"><span style="background:'+rc+'22;color:'+rc+';padding:1px 6px;border-radius:100px;font-size:9px;font-weight:500">'+rl+'</span></div>';
-    }
-  } catch(e) { console.warn('Sidebar bar error:', e); }
-
-  // Hide/show nav items based on role
-  applyRoleToNav();
-
-  // Show app
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('app-container').style.display = 'flex';
-
-  // Load data
-  await loadAll();
-}
-
-function applyRoleToNav(){
-  // Show/hide sidebar nav buttons based on permissions
-  const navMap = {
-    'sb-contacts': 'contacts',
-    'sb-companies': 'companies', 
-    'sb-appointments': 'appointments',
-    'sb-einsaetze': 'einsaetze',
-    'sb-notes': 'notes',
-    'sb-import': 'import',
-    'sb-users': 'users',
-  };
-  Object.entries(navMap).forEach(([btnId, page]) => {
-    const btn = document.getElementById(btnId);
-    if(btn) btn.style.display = canAccess(page) ? 'flex' : 'none';
-  });
-  // Admin users button
-  const usersBtn = document.getElementById('sb-users');
-  if(usersBtn) usersBtn.style.display = currentRole === 'admin' ? 'flex' : 'none';
-}
-
-async function doLogin(){
-  const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value;
-  const errEl = document.getElementById('auth-error');
-  const btn = document.getElementById('auth-btn');
-
-  if(!email || !password){
-    errEl.textContent = 'Bitte E-Mail und Passwort eingeben.';
-    errEl.classList.add('show');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Anmelden ...';
-  errEl.classList.remove('show');
-
-  try {
-    const { data, error } = await db.auth.signInWithPassword({ email, password });
-    if(error){
-      errEl.textContent = 'Anmeldung fehlgeschlagen: ' + (error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : error.message);
-      errEl.classList.add('show');
-      btn.disabled = false;
-      btn.textContent = 'Anmelden';
-      return;
-    }
-    // Login successful - manually call onLogin since onAuthStateChange might be slow
-    if(data.user) {
-      await onLogin(data.user);
-    }
-  } catch(err) {
-    errEl.textContent = 'Fehler: ' + err.message;
-    errEl.classList.add('show');
-    btn.disabled = false;
-    btn.textContent = 'Anmelden';
-  }
-}
-
-async function doLogout(){
-  if(!confirm('Möchten Sie sich wirklich abmelden?')) return;
-  await db.auth.signOut();
-}
-
-// ==========================================
-// USER MANAGEMENT (Admin only)
-// ==========================================
-
-function openNewUserModal(){ openUserOverlay('new'); }
-
-const ALL_MOD_LABELS = {
-  dashboard:'Dashboard', contacts:'Kontakte', companies:'Unternehmen',
-  appointments:'Termine', einsaetze:'Kundeneinsätze', notes:'Notizen',
-  import:'CSV-Import', settings:'Einstellungen'
-};
-const ROLE_DEF = {
-  admin:     ['dashboard','contacts','companies','appointments','einsaetze','notes','import','settings'],
-  techniker: ['dashboard','contacts','companies','appointments','einsaetze','settings'],
-  assistenz: ['dashboard','contacts','appointments','notes','settings'],
-};
-
-function getPermCheckboxes(containerId){
-  const el = document.getElementById(containerId);
-  if(!el) return [];
-  return [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb=>cb.value);
-}
-
-function buildPermBoxes(containerId, role, existing){
-  const el = document.getElementById(containerId);
-  if(!el) return;
-  const active = existing && existing.length > 0 ? existing : (ROLE_DEF[role]||[]);
-  el.innerHTML = Object.entries(ALL_MOD_LABELS).map(([k,v])=>
-    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:5px 0">'
-    +'<input type="checkbox" value="'+k+'" '+(active.includes(k)?'checked':'')
-    +' style="width:16px;height:16px;cursor:pointer"> '+v+'</label>'
-  ).join('');
-}
-
-function applyRoleDefaults(val){
-  // val can be a role value directly (from onchange) or a prefix string
-  const role = (val === 'techniker' || val === 'assistenz' || val === 'admin') ? val : (document.getElementById(val+'-role')?.value || 'techniker');
-  buildPermBoxes('uo-perms', role, []);
-}
-
-function closeUserOverlay(){
-  const ov = document.getElementById('user-overlay');
-  if(ov) ov.style.display = 'none';
-}
-
-function openUserOverlay(mode, userId, userName, userRole, userPerms){
-  const ov = document.getElementById('user-overlay');
-  const title = document.getElementById('user-overlay-title');
-  const body = document.getElementById('user-overlay-body');
-  const footer = document.getElementById('user-overlay-footer');
-  if(!ov){ alert('Overlay Element fehlt!'); return; }
-
-  if(mode === 'new'){
-    title.textContent = 'Neuer Benutzer';
-    body.innerHTML =
-      '<div style="display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Name *</label>'
-      +'<input type="text" id="uo-name" placeholder="Max Mustermann" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'</div>'
-      +'<div style="display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">E-Mail *</label>'
-      +'<input type="email" id="uo-email" placeholder="max@cumart.de" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'</div>'
-      +'<div style="display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Passwort *</label>'
-      +'<input type="password" id="uo-password" placeholder="Mind. 6 Zeichen" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'</div>'
-      +'<div style="display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Rolle</label>'
-      +'<select id="uo-role" onchange="applyRoleDefaults(this.value)" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'<option value="techniker">Techniker</option>'
-      +'<option value="assistenz">Assistenz</option>'
-      +'<option value="admin">Admin</option>'
-      +'</select></div>'
-      +'<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:6px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Zugriffsrechte</label>'
-      +'<div id="uo-perms" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:12px;background:#f5f5f4;border-radius:8px"></div>'
-      +'</div>';
-    footer.innerHTML =
-      '<button onclick="closeUserOverlay()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ccc;background:#fff">Abbrechen</button>'
-      +'<button onclick="submitNewUser()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:none;background:#1c1917;color:#fff;font-weight:500">Anlegen</button>';
-    buildPermBoxes('uo-perms', 'techniker', []);
-  } else {
-    title.textContent = 'Benutzer bearbeiten';
-    const safePerms = userPerms||[];
-    body.innerHTML =
-      '<div style="display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Name</label>'
-      +'<input type="text" id="uo-name" value="'+(userName||'')+'" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'</div>'
-      +'<div style="display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Rolle</label>'
-      +'<select id="uo-role" onchange="applyRoleDefaults(this.value)" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'<option value="techniker"'+(userRole==='techniker'?' selected':'')+'>Techniker</option>'
-      +'<option value="assistenz"'+(userRole==='assistenz'?' selected':'')+'>Assistenz</option>'
-      +'<option value="admin"'+(userRole==='admin'?' selected':'')+'>Admin</option>'
-      +'</select></div>'
-      +'<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:5px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Neues Passwort (leer = unverändert)</label>'
-      +'<input type="password" id="uo-password" placeholder="Neues Passwort ..." style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
-      +'</div>'
-      +'<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:6px">'
-      +'<label style="font-size:12px;color:#78716c;font-weight:500">Zugriffsrechte</label>'
-      +'<div id="uo-perms" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:12px;background:#f5f5f4;border-radius:8px"></div>'
-      +'</div>'
-      +'<input type="hidden" id="uo-userid" value="'+(userId||'')+'">';
-    footer.innerHTML =
-      '<button onclick="submitDeleteUser()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #dc2626;background:#fff;color:#dc2626;margin-right:auto">Löschen</button>'
-      +'<button onclick="closeUserOverlay()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ccc;background:#fff">Abbrechen</button>'
-      +'<button onclick="submitEditUser()" style="padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:none;background:#1c1917;color:#fff;font-weight:500">Speichern</button>';
-    buildPermBoxes('uo-perms', userRole||'techniker', safePerms);
-  }
-  ov.style.display = 'block';
-}
-
-async function loadUsersPage(){
-  const el = document.getElementById('users-list');
-  if(!el) return;
-  el.innerHTML = '<div class="empty">Lade Benutzer ...</div>';
-  const { data: profiles, error } = await db.from('user_profiles').select('*').order('created_at');
-  if(error){ el.innerHTML = '<div class="empty">Fehler: '+error.message+'</div>'; return; }
-  if(!profiles||!profiles.length){ el.innerHTML = '<div class="empty">Noch keine Benutzer.</div>'; return; }
-  const roleColors = {admin:'#EEEDFE',techniker:'#E1F5EE',assistenz:'#FAEEDA'};
-  const roleTextCol = {admin:'#3C3489',techniker:'#085041',assistenz:'#633806'};
-  const roleLabels = {admin:'Admin',techniker:'Techniker',assistenz:'Assistenz'};
-  el.innerHTML = profiles.map(p => {
-    const perms = p.permissions||[];
-    const permList = (perms.length>0?perms:(ROLE_DEF[p.role]||[])).map(m=>ALL_MOD_LABELS[m]||m).join(', ');
-    const isMe = p.id === currentUser?.id;
-    return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;background:#f5f5f4;margin-bottom:8px">'
-      +'<div style="display:flex;align-items:center;gap:10px">'
-      +'<div style="width:34px;height:34px;border-radius:50%;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0">'+ini(p.name||p.email||'?')+'</div>'
-      +'<div style="flex:1;min-width:0">'
-      +'<div style="font-size:14px;font-weight:500">'+( p.name||'—')+(isMe?' <span style="font-size:11px;color:#78716c">(Du)</span>':'')+'</div>'
-      +'<div style="font-size:12px;color:#78716c">'+(p.email||'')+'</div>'
-      +'</div>'
-      +'<span style="padding:3px 10px;border-radius:100px;font-size:11px;font-weight:500;background:'+(roleColors[p.role]||'#eee')+';color:'+(roleTextCol[p.role]||'#444')+'">'+(roleLabels[p.role]||p.role)+'</span>'
-      +(!isMe ? '<button onclick="openUserOverlay('edit',''+p.id+'',''+( p.name||'').replace(/'/g,"\'")
-        +'',''+p.role+'','+JSON.stringify(perms)+')" style="padding:5px 12px;border-radius:8px;font-size:12px;cursor:pointer;border:1px solid #ccc;background:#fff">Bearbeiten</button>' : '')
-      +'</div>'
-      +'<div style="font-size:11px;color:#78716c;padding-left:44px"><strong>Zugriff:</strong> '+permList+'</div>'
-      +'</div>';
-  }).join('');
-}
-
-async function submitNewUser(){
-  const name = document.getElementById('uo-name')?.value?.trim();
-  const email = document.getElementById('uo-email')?.value?.trim();
-  const password = document.getElementById('uo-password')?.value;
-  const role = document.getElementById('uo-role')?.value;
-  const permissions = getPermCheckboxes('uo-perms');
-  if(!name||!email||!password){ showToast('Bitte alle Pflichtfelder ausfüllen.',true); return; }
-  if(password.length<6){ showToast('Passwort mind. 6 Zeichen.',true); return; }
-  try {
-    const { data:{ session } } = await db.auth.getSession();
-    const resp = await fetch(SUPABASE_URL+'/functions/v1/create-user',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_KEY},
-      body:JSON.stringify({email,password,name,role,permissions})
-    });
-    const result = await resp.json();
-    if(!resp.ok||result.error){ showToast('Fehler: '+(result.error||'Unbekannt'),true); }
-    else { closeUserOverlay(); showToast('Benutzer "'+name+'" angelegt.'); loadUsersPage(); }
-  } catch(e){ showToast('Fehler: '+e.message,true); }
-}
-
-async function submitEditUser(){
-  const id = document.getElementById('uo-userid')?.value;
-  const name = document.getElementById('uo-name')?.value?.trim();
-  const role = document.getElementById('uo-role')?.value;
-  const permissions = getPermCheckboxes('uo-perms');
-  if(!name){ showToast('Bitte Namen eingeben.',true); return; }
-  const { error } = await db.from('user_profiles').update({name,role,permissions}).eq('id',id);
-  if(error){ showToast('Fehler: '+error.message,true); return; }
-  closeUserOverlay(); showToast('Benutzer aktualisiert.'); loadUsersPage();
-}
-
-async function submitDeleteUser(){
-  const id = document.getElementById('uo-userid')?.value;
-  if(!confirm('Benutzer wirklich löschen?')) return;
-  try {
-    const { data:{ session } } = await db.auth.getSession();
-    const resp = await fetch(SUPABASE_URL+'/functions/v1/delete-user',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_KEY},
-      body:JSON.stringify({userId:id})
-    });
-    const result = await resp.json();
-    if(!resp.ok||result.error){ showToast('Fehler: '+(result.error||'Unbekannt'),true); }
-    else { closeUserOverlay(); showToast('Benutzer gelöscht.'); loadUsersPage(); }
-  } catch(e){ showToast('Fehler: '+e.message,true); }
-}
-
 
 // ==========================================
 // PASSWORD RESET
@@ -2484,6 +2007,64 @@ function closeMoreMenu(){
 // ==========================================
 initAuth();
 </script>
+
+<!-- NEW USER MODAL -->
+<div class="mw" id="modal-new-user">
+  <div class="mo" style="width:520px">
+    <div class="moti">Neuer Benutzer</div>
+    <div class="fg">
+      <div class="fgg"><label>Name *</label><input type="text" id="nu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg"><label>E-Mail *</label><input type="email" id="nu-email" placeholder="max@cumart.de"></div>
+      <div class="fgg"><label>Passwort *</label><input type="password" id="nu-password" placeholder="Mind. 6 Zeichen"></div>
+      <div class="fgg">
+        <label>Rolle</label>
+        <select id="nu-role" onchange="applyRoleDefaults('nu')">
+          <option value="techniker">Techniker</option>
+          <option value="assistenz">Assistenz</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="fgg ff">
+        <label>Zugriffsrechte (individuell anpassbar)</label>
+        <div id="nu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
+      </div>
+    </div>
+    <div class="mof">
+      <button class="btn" onclick="closeM('modal-new-user')">Abbrechen</button>
+      <button class="btn btp" onclick="createNewUser()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT USER MODAL -->
+<div class="mw" id="modal-edit-user">
+  <div class="mo" style="width:520px">
+    <div class="moti">Benutzer bearbeiten</div>
+    <div class="fg">
+      <div class="fgg"><label>Name</label><input type="text" id="eu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg">
+        <label>Rolle</label>
+        <select id="eu-role" onchange="applyRoleDefaults('eu')">
+          <option value="techniker">Techniker</option>
+          <option value="assistenz">Assistenz</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="fgg ff"><label>Neues Passwort (leer lassen = unverändert)</label><input type="password" id="eu-password" placeholder="Neues Passwort ..."></div>
+      <div class="fgg ff">
+        <label>Zugriffsrechte</label>
+        <div id="eu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
+      </div>
+    </div>
+    <input type="hidden" id="eu-userid">
+    <div class="mof">
+      <button class="btn btd" onclick="deleteUser()" style="margin-right:auto">Löschen</button>
+      <button class="btn" onclick="closeM('modal-edit-user')">Abbrechen</button>
+      <button class="btn btp" onclick="saveEditUser()">Speichern</button>
+    </div>
+  </div>
+</div>
+</div>
 
 </body>
 </html>
