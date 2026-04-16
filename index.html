@@ -143,7 +143,7 @@ textarea{resize:vertical;min-height:70px}
 /* ===================== MOBILE ===================== */
 @media (max-width: 768px) {
   .sidebar{display:none}
-  .bottom-nav{display:flex}
+  .bottom-nav{display:flex!important}
   .main{margin-left:0;padding:1rem 1rem 80px;min-height:100vh}
   .dash-layout{grid-template-columns:1fr;gap:1rem}
   .metrics-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -177,12 +177,12 @@ textarea{resize:vertical;min-height:70px}
 
 /* Bottom Navigation für Mobile */
 .bottom-nav{
-  display:none;
   position:fixed;bottom:0;left:0;right:0;
   background:var(--bg-primary);
   border-top:0.5px solid var(--border-light);
   z-index:200;
   padding:6px 0 env(safe-area-inset-bottom,6px);
+  display:none;
 }
 .bottom-nav-inner{
   display:flex;
