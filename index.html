@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 22:24 -->
+<!-- VERSION: 16.04.2026 22:27 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -378,7 +378,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-subtitle">CRM-System — Bitte anmelden</div>
-    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 22:24</div>
+    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 22:27</div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-field">
       <label>E-Mail</label>
@@ -1036,9 +1036,10 @@ function buildPermBoxes(containerId, role, existing){
   ).join('');
 }
 
-function applyRoleDefaults(prefix){
-  const role = document.getElementById(prefix+'-role').value;
-  buildPermBoxes(prefix+'-perms', role, []);
+function applyRoleDefaults(val){
+  // val can be a role value directly (from onchange) or a prefix string
+  const role = (val === 'techniker' || val === 'assistenz' || val === 'admin') ? val : (document.getElementById(val+'-role')?.value || 'techniker');
+  buildPermBoxes('uo-perms', role, []);
 }
 
 function closeUserOverlay(){
@@ -1070,7 +1071,7 @@ function openUserOverlay(mode, userId, userName, userRole, userPerms){
       +'</div>'
       +'<div style="display:flex;flex-direction:column;gap:5px">'
       +'<label style="font-size:12px;color:#78716c;font-weight:500">Rolle</label>'
-      +'<select id="uo-role" onchange="applyRoleDefaults('uo')" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
+      +'<select id="uo-role" onchange="applyRoleDefaults(this.value)" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
       +'<option value="techniker">Techniker</option>'
       +'<option value="assistenz">Assistenz</option>'
       +'<option value="admin">Admin</option>'
@@ -1093,7 +1094,7 @@ function openUserOverlay(mode, userId, userName, userRole, userPerms){
       +'</div>'
       +'<div style="display:flex;flex-direction:column;gap:5px">'
       +'<label style="font-size:12px;color:#78716c;font-weight:500">Rolle</label>'
-      +'<select id="uo-role" onchange="applyRoleDefaults('uo')" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
+      +'<select id="uo-role" onchange="applyRoleDefaults(this.value)" style="padding:8px 11px;border:1px solid #ccc;border-radius:8px;font-size:13px;width:100%">'
       +'<option value="techniker"'+(userRole==='techniker'?' selected':'')+'>Techniker</option>'
       +'<option value="assistenz"'+(userRole==='assistenz'?' selected':'')+'>Assistenz</option>'
       +'<option value="admin"'+(userRole==='admin'?' selected':'')+'>Admin</option>'
