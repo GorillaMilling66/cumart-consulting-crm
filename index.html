@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 21:59 -->
+<!-- VERSION: 16.04.2026 22:05 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -378,7 +378,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-subtitle">CRM-System — Bitte anmelden</div>
-    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 21:59</div>
+    <div style="font-size:10px;color:var(--text-secondary);margin-top:-12px;margin-bottom:8px">v16.04.2026 22:05</div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-field">
       <label>E-Mail</label>
@@ -713,64 +713,6 @@ textarea{resize:vertical;min-height:70px}
   <div id="copy-prev-box" style="display:none"><div class="copy-preview" id="copy-prev-text"></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btp" onclick="doCopy()">In Zwischenablage kopieren</button><button class="btn" onclick="document.getElementById('copy-prev-box').style.display='none';document.getElementById('copy-opts').style.display='block'">Zurück</button></div><div id="copy-ok" style="font-size:12px;color:#16a34a;margin-top:6px;display:none">Kopiert!</div></div>
   <div class="mof"><button class="btn" onclick="closeM('modal-copy')">Schließen</button></div>
 </div>
-<!-- NEW USER MODAL -->
-<div class="mw" id="modal-new-user">
-  <div class="mo" style="width:520px">
-    <div class="moti">Neuer Benutzer</div>
-    <div class="fg">
-      <div class="fgg"><label>Name *</label><input type="text" id="nu-name" placeholder="Max Mustermann"></div>
-      <div class="fgg"><label>E-Mail *</label><input type="email" id="nu-email" placeholder="max@cumart.de"></div>
-      <div class="fgg"><label>Passwort *</label><input type="password" id="nu-password" placeholder="Mind. 6 Zeichen"></div>
-      <div class="fgg">
-        <label>Rolle</label>
-        <select id="nu-role" onchange="applyRoleDefaults('nu')">
-          <option value="techniker">Techniker</option>
-          <option value="assistenz">Assistenz</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="fgg ff">
-        <label>Zugriffsrechte (individuell anpassbar)</label>
-        <div id="nu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
-      </div>
-    </div>
-    <div class="mof">
-      <button class="btn" onclick="closeM('modal-new-user')">Abbrechen</button>
-      <button class="btn btp" onclick="createNewUser()">Anlegen</button>
-    </div>
-  </div>
-</div>
-
-<!-- EDIT USER MODAL -->
-<div class="mw" id="modal-edit-user">
-  <div class="mo" style="width:520px">
-    <div class="moti">Benutzer bearbeiten</div>
-    <div class="fg">
-      <div class="fgg"><label>Name</label><input type="text" id="eu-name" placeholder="Max Mustermann"></div>
-      <div class="fgg">
-        <label>Rolle</label>
-        <select id="eu-role" onchange="applyRoleDefaults('eu')">
-          <option value="techniker">Techniker</option>
-          <option value="assistenz">Assistenz</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="fgg ff"><label>Neues Passwort (leer lassen = unverändert)</label><input type="password" id="eu-password" placeholder="Neues Passwort ..."></div>
-      <div class="fgg ff">
-        <label>Zugriffsrechte</label>
-        <div id="eu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
-      </div>
-    </div>
-    <input type="hidden" id="eu-userid">
-    <div class="mof">
-      <button class="btn btd" onclick="deleteUser()" style="margin-right:auto">Löschen</button>
-      <button class="btn" onclick="closeM('modal-edit-user')">Abbrechen</button>
-      <button class="btn btp" onclick="saveEditUser()">Speichern</button>
-    </div>
-  </div>
-</div>
-</div>
-
 <script>
 
 // ==========================================
@@ -2064,5 +2006,64 @@ function closeMoreMenu(){
 // ==========================================
 initAuth();
 </script>
+
+<!-- NEW USER MODAL -->
+<div class="mw" id="modal-new-user">
+  <div class="mo" style="width:520px">
+    <div class="moti">Neuer Benutzer</div>
+    <div class="fg">
+      <div class="fgg"><label>Name *</label><input type="text" id="nu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg"><label>E-Mail *</label><input type="email" id="nu-email" placeholder="max@cumart.de"></div>
+      <div class="fgg"><label>Passwort *</label><input type="password" id="nu-password" placeholder="Mind. 6 Zeichen"></div>
+      <div class="fgg">
+        <label>Rolle</label>
+        <select id="nu-role" onchange="applyRoleDefaults('nu')">
+          <option value="techniker">Techniker</option>
+          <option value="assistenz">Assistenz</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="fgg ff">
+        <label>Zugriffsrechte (individuell anpassbar)</label>
+        <div id="nu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
+      </div>
+    </div>
+    <div class="mof">
+      <button class="btn" onclick="closeM('modal-new-user')">Abbrechen</button>
+      <button class="btn btp" onclick="createNewUser()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT USER MODAL -->
+<div class="mw" id="modal-edit-user">
+  <div class="mo" style="width:520px">
+    <div class="moti">Benutzer bearbeiten</div>
+    <div class="fg">
+      <div class="fgg"><label>Name</label><input type="text" id="eu-name" placeholder="Max Mustermann"></div>
+      <div class="fgg">
+        <label>Rolle</label>
+        <select id="eu-role" onchange="applyRoleDefaults('eu')">
+          <option value="techniker">Techniker</option>
+          <option value="assistenz">Assistenz</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="fgg ff"><label>Neues Passwort (leer lassen = unverändert)</label><input type="password" id="eu-password" placeholder="Neues Passwort ..."></div>
+      <div class="fgg ff">
+        <label>Zugriffsrechte</label>
+        <div id="eu-permissions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md)"></div>
+      </div>
+    </div>
+    <input type="hidden" id="eu-userid">
+    <div class="mof">
+      <button class="btn btd" onclick="deleteUser()" style="margin-right:auto">Löschen</button>
+      <button class="btn" onclick="closeM('modal-edit-user')">Abbrechen</button>
+      <button class="btn btp" onclick="saveEditUser()">Speichern</button>
+    </div>
+  </div>
+</div>
+</div>
+
 </body>
 </html>
