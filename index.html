@@ -16,7 +16,7 @@
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text-primary);background:var(--bg-tertiary)}
 .app{display:flex;min-height:100vh;position:relative}
-.sidebar{display:none!important}
+.sidebar{width:68px;background:var(--bg-primary);border-right:0.5px solid var(--border-light);padding:.75rem 0;display:flex;flex-direction:column;align-items:center;flex-shrink:0;position:fixed;top:0;left:0;height:100vh;z-index:100}
 .sidebar-logo{font-size:12px;font-weight:600;text-align:center;padding:0 6px 14px;border-bottom:0.5px solid var(--border-light);margin-bottom:10px;width:100%}
 .nav-top{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;width:100%}
 .nav-bot{display:flex;flex-direction:column;align-items:center;width:100%;padding-top:10px;border-top:0.5px solid var(--border-light)}
@@ -25,7 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .nb svg{width:22px;height:22px}
 .tip{position:absolute;left:58px;top:50%;transform:translateY(-50%);background:var(--text-primary);color:#fff;font-size:11px;padding:4px 9px;border-radius:var(--radius-md);white-space:nowrap;pointer-events:none;opacity:0;z-index:400;transition:opacity .1s}
 .nb:hover .tip{opacity:1}
-.main{flex:1;margin-left:0;overflow-y:auto;padding:2rem 2.5rem;padding-bottom:90px;min-height:100vh}
+.main{flex:1;margin-left:68px;overflow-y:auto;padding:2rem 2.5rem;min-height:100vh}
 .page{display:none}.page.active{display:block}
 .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.75rem;flex-wrap:wrap;gap:12px}
 .pt{font-size:22px;font-weight:500}
@@ -142,6 +142,7 @@ textarea{resize:vertical;min-height:70px}
 
 /* ===================== MOBILE ===================== */
 @media (max-width: 768px) {
+  .sidebar{display:none!important}
   .bottom-nav{display:flex!important}
   .main{margin-left:0;padding:1rem 1rem 80px;min-height:100vh}
   .dash-layout{grid-template-columns:1fr;gap:1rem}
@@ -171,9 +172,8 @@ textarea{resize:vertical;min-height:70px}
 }
 
 @media (min-width: 769px) {
-  .bottom-nav{display:flex!important}
-  .bottom-nav-inner{max-width:700px}
-  .main{padding:2rem 2.5rem 90px}
+  .bottom-nav{display:none!important}
+  .main{margin-left:68px;padding:2rem 2.5rem}
   .dash-layout{grid-template-columns:200px 1fr}
   .metrics-col{display:flex;flex-direction:column}
   .cgrid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
@@ -283,8 +283,8 @@ textarea{resize:vertical;min-height:70px}
 <div class="sidebar">
   <div class="sidebar-logo">CC</div>
   <div class="nav-top">
-    <button class="nb active" onclick="showPage('dashboard',this)"><div class="tip">Dashboard</div><svg viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/></svg></button>
-    <button class="nb" onclick="showPage('contacts',this)"><div class="tip">Kontakte</div><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.5" stroke="currentColor" stroke-width="1.5"/><path d="M3 17c0-3.866 3.134-6 7-6s7 2.134 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+    <button class="nb active" id="sb-dashboard" onclick="showPage('dashboard',this)"><div class="tip">Dashboard</div><svg viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/></svg></button>
+    <button class="nb" id="sb-contacts" onclick="showPage('contacts',this)"><div class="tip">Kontakte</div><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.5" stroke="currentColor" stroke-width="1.5"/><path d="M3 17c0-3.866 3.134-6 7-6s7 2.134 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
     <button class="nb" onclick="showPage('companies',this)"><div class="tip">Unternehmen</div><svg viewBox="0 0 20 20" fill="none"><rect x="2" y="6" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M6 6V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" stroke-width="1.5"/><path d="M2 11h16" stroke="currentColor" stroke-width="1.5"/></svg></button>
     <button class="nb" onclick="showPage('appointments',this)"><div class="tip">Termine</div><svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 2v3M13 2v3M3 9h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
     <button class="nb" onclick="showPage('einsaetze',this)"><div class="tip">Kundeneinsätze</div><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h3l2-6 3 12 2-6h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -292,6 +292,9 @@ textarea{resize:vertical;min-height:70px}
     <button class="nb" onclick="showPage('import',this)"><div class="tip">CSV-Import</div><svg viewBox="0 0 20 20" fill="none"><path d="M10 3v10M6 9l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
   </div>
   <div class="nav-bot">
+    <button class="nb" onclick="openSearchModal()"><div class="tip">Suche</div>
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M13.5 13.5L17 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
     <button class="nb" onclick="showPage('settings',this)"><div class="tip">Einstellungen</div>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
     </button>
@@ -385,7 +388,7 @@ textarea{resize:vertical;min-height:70px}
 <!-- KONTAKTE -->
 <div class="page" id="page-contacts">
   <div class="ph"><div class="pt">Kontakte</div>
-    <div class="toolbar"><input type="text" id="c-search" placeholder="Suchen ..." style="width:210px" oninput="renderContacts()"><select id="c-fform" style="width:150px" onchange="renderContacts()"><option value="">Alle Kundenformen</option></select><button class="btn btp" onclick="openContactModal()">+ Neuer Kontakt</button></div>
+    <div class="toolbar"><input type="text" id="c-search" placeholder="Suchen ..." style="width:210px" oninput="renderContacts()"><select id="c-fform" style="width:150px" onchange="renderContacts()"><option value="">Alle Kundenformen</option></select><button class="btn btp" onclick="openContactModal()">+</button></div>
   </div>
   <div id="contacts-grid" class="cgrid"></div>
 </div>
@@ -393,7 +396,11 @@ textarea{resize:vertical;min-height:70px}
 <!-- UNTERNEHMEN -->
 <div class="page" id="page-companies">
   <div class="ph"><div class="pt">Unternehmen</div>
-    <div class="toolbar"><input type="text" id="co-search" placeholder="Suchen ..." style="width:210px" oninput="renderCompanies()"><button class="btn btp" onclick="openCompanyModal()">+ Neues Unternehmen</button></div>
+    <div class="toolbar">
+      <input type="text" id="co-search" placeholder="Suchen ..." style="width:180px" oninput="renderCompanies()">
+      <select id="co-filter-industry" style="width:160px" onchange="renderCompanies()"><option value="">Alle Branchen</option></select>
+      <button class="btn btp" onclick="openCompanyModal()">+</button>
+    </div>
   </div>
   <div id="companies-grid" class="cgrid"></div>
 </div>
@@ -401,7 +408,11 @@ textarea{resize:vertical;min-height:70px}
 <!-- TERMINE -->
 <div class="page" id="page-appointments">
   <div class="ph"><div class="pt">Termine</div>
-    <div class="toolbar"><select id="ap-filter" style="width:150px" onchange="renderAppointments()"><option value="">Alle Status</option></select><button class="btn btp" onclick="openApptModal()">+ Neuer Termin</button></div>
+    <div class="toolbar">
+      <input type="text" id="ap-search" placeholder="Titel oder Kontakt suchen ..." style="width:220px" oninput="renderAppointments()">
+      <select id="ap-filter" style="width:150px" onchange="renderAppointments()"><option value="">Alle Status</option></select>
+      <button class="btn btp" onclick="openApptModal()">+</button>
+    </div>
   </div>
   <div id="appts-list" class="aplist"></div>
 </div>
@@ -409,14 +420,23 @@ textarea{resize:vertical;min-height:70px}
 <!-- KUNDENEINSÄTZE -->
 <div class="page" id="page-einsaetze">
   <div class="ph"><div class="pt">Kundeneinsätze</div>
-    <div class="toolbar"><select id="e-filter" style="width:150px" onchange="renderEinsaetze()"><option value="">Alle Status</option></select><button class="btn btp" onclick="openEinsatzModal()">+ Neuer Einsatz</button></div>
+    <div class="toolbar">
+      <input type="text" id="e-search" placeholder="Titel oder Kontakt suchen ..." style="width:220px" oninput="renderEinsaetze()">
+      <select id="e-filter" style="width:150px" onchange="renderEinsaetze()"><option value="">Alle Status</option></select>
+      <button class="btn btp" onclick="openEinsatzModal()">+</button>
+    </div>
   </div>
   <div id="einsaetze-list" class="aplist"></div>
 </div>
 
 <!-- NOTIZEN -->
 <div class="page" id="page-notes">
-  <div class="ph"><div class="pt">Notizen</div><button class="btn btp" onclick="openNoteModal()">+ Neue Notiz</button></div>
+  <div class="ph"><div class="pt">Notizen</div>
+    <div class="toolbar">
+      <input type="text" id="n-search" placeholder="Notizen suchen ..." style="width:220px" oninput="renderNotes()">
+      <button class="btn btp" onclick="openNoteModal()">+</button>
+    </div>
+  </div>
   <div id="notes-list"><div class="card"><div class="empty">Noch keine Notizen.</div></div></div>
 </div>
 
@@ -634,8 +654,10 @@ async function saveSetting(key,value){
 function showPage(name,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  if(el)el.classList.add('active');
+  document.querySelectorAll('.bn').forEach(b=>b.classList.remove('active'));
+  const pg = document.getElementById('page-'+name);
+  if(pg) pg.classList.add('active');
+  if(el) el.classList.add('active');
   if(name==='dashboard')updateDashboard();
   if(name==='settings')renderAllSettings();
   if(name==='contacts'){updateFormFilter();renderContacts();}
@@ -781,8 +803,20 @@ function cancelCoInline(pfx){document.getElementById(pfx+'-co-inline').style.dis
 
 function renderCompanies(){
   const q=(document.getElementById('co-search')||{}).value?.toLowerCase()||'';
+  const fi=(document.getElementById('co-filter-industry')||{}).value||'';
   const grid=document.getElementById('companies-grid');if(!grid)return;
-  let list=companies.filter(c=>c.name.toLowerCase().includes(q)||(c.city||'').toLowerCase().includes(q));
+  // Populate industry filter
+  const industrySelect=document.getElementById('co-filter-industry');
+  if(industrySelect){
+    const cur=industrySelect.value;
+    const industries=[...new Set(companies.map(c=>c.industry).filter(Boolean))].sort();
+    industrySelect.innerHTML='<option value="">Alle Branchen</option>'+industries.map(i=>`<option value="${i}"${i===cur?' selected':''}>${i}</option>`).join('');
+  }
+  let list=companies.filter(c=>{
+    const mq=c.name.toLowerCase().includes(q)||(c.city||'').toLowerCase().includes(q)||(c.email||'').toLowerCase().includes(q);
+    const mi=!fi||(c.industry||'')=== fi;
+    return mq&&mi;
+  });
   if(!list.length){grid.innerHTML='<div class="card" style="grid-column:1/-1"><div class="empty">Keine Unternehmen.</div></div>';return}
   grid.innerHTML=list.map(c=>{
     const i=companies.findIndex(x=>x.id===c.id);
@@ -917,8 +951,13 @@ async function saveAppt(){
 
 function renderAppointments(){
   const sf=(document.getElementById('ap-filter')||{}).value||'';
+  const sq=(document.getElementById('ap-search')||{}).value?.toLowerCase()||'';
   const container=document.getElementById('appts-list');if(!container)return;
-  let list=[...appointments].filter(a=>!sf||a.status===sf).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let list=[...appointments].filter(a=>{
+    const ms=!sf||a.status===sf;
+    const mq=!sq||(a.title||'').toLowerCase().includes(sq)||(a.contact||'').toLowerCase().includes(sq)||(a.beschreibung||'').toLowerCase().includes(sq);
+    return ms&&mq;
+  }).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!list.length){container.innerHTML='<div class="card"><div class="empty">Keine Termine gefunden.</div></div>';return}
   container.innerHTML=list.map(a=>{const i=appointments.findIndex(x=>x.id===a.id);return`<div class="apcard"><div class="apdcol"><div class="apbig">${fmtDay(a.date)}</div><div class="apmon">${fmtMon(a.date)}</div><div class="aptime">${fmtTime(a.time_start,a.time_end)}</div></div><div><div class="aptitle">${a.title}</div><div class="apmeta">${sBadge(a.status)}${a.contact?`<span style="font-size:12px;color:var(--text-secondary)">${a.contact}</span>`:''}${a.revenue&&Number(a.revenue)>0?`<span class="rev-b">${fmtE(a.revenue)}</span>`:''}</div>${a.desc?`<div class="apdesc">${a.desc}</div>`:''}</div><div class="apact"><button class="btn btn-sm" onclick="editAppointment(${i})">Bearbeiten</button><button class="btn btn-sm btd" onclick="askDel('appointment','${a.id}')">Löschen</button></div></div>`;}).join('');
 }
@@ -959,8 +998,13 @@ async function saveEinsatz(){
 
 function renderEinsaetze(){
   const sf=(document.getElementById('e-filter')||{}).value||'';
+  const sq=(document.getElementById('e-search')||{}).value?.toLowerCase()||'';
   const container=document.getElementById('einsaetze-list');if(!container)return;
-  let list=[...einsaetze].filter(e=>!sf||e.status===sf).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let list=[...einsaetze].filter(e=>{
+    const ms=!sf||e.status===sf;
+    const mq=!sq||(e.title||'').toLowerCase().includes(sq)||(e.contact||'').toLowerCase().includes(sq)||(e.beschreibung||'').toLowerCase().includes(sq);
+    return ms&&mq;
+  }).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!list.length){container.innerHTML='<div class="card"><div class="empty">Keine Einsätze gefunden.</div></div>';return}
   container.innerHTML=list.map(e=>{const i=einsaetze.findIndex(x=>x.id===e.id);return`<div class="apcard"><div class="apdcol"><div class="apbig">${fmtDay(e.date)}</div><div class="apmon">${fmtMon(e.date)}</div><div class="aptime">${fmtTime(e.time_start,e.time_end)}</div></div><div><div class="aptitle">${e.title}</div><div class="apmeta">${sBadge(e.status)}${e.contact?`<span style="font-size:12px;color:var(--text-secondary)">${e.contact}</span>`:''}${e.revenue&&Number(e.revenue)>0?`<span class="rev-b">${fmtE(e.revenue)}</span>`:''}</div>${e.desc?`<div class="apdesc">${e.desc}</div>`:''}</div><div class="apact"><button class="btn btn-sm" onclick="openEinsatzModal(${i})">Bearbeiten</button><button class="btn btn-sm btd" onclick="askDel('einsatz','${e.id}')">Löschen</button></div></div>`;}).join('');
 }
@@ -970,8 +1014,10 @@ function renderEinsaetze(){
 // ==========================================
 function renderNotes(){
   const c=document.getElementById('notes-list');if(!c)return;
-  if(!notes.length){c.innerHTML='<div class="card"><div class="empty">Noch keine Notizen.</div></div>';return}
-  c.innerHTML=notes.map((n,i)=>`<div class="ncard"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px"><div><div style="font-size:14px;font-weight:500">${n.title}</div><div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">${n.contact?`<span class="badge bb">${n.contact}</span>`:''}<span style="font-size:11px;color:var(--text-secondary)">${new Date(n.created_at).toLocaleDateString('de-DE')}</span></div></div><button class="btn btn-sm btd" onclick="askDel('note','${n.id}')">Löschen</button></div><div style="font-size:13px;color:var(--text-secondary);line-height:1.6;white-space:pre-wrap">${n.content}</div></div>`).join('');
+  const sq=(document.getElementById('n-search')||{}).value?.toLowerCase()||'';
+  const filtered=notes.filter(n=>!sq||(n.title||'').toLowerCase().includes(sq)||(n.content||'').toLowerCase().includes(sq)||(n.contact||'').toLowerCase().includes(sq));
+  if(!filtered.length){c.innerHTML='<div class="card"><div class="empty">'+(sq?'Keine Notizen gefunden.':'Noch keine Notizen.')+'</div></div>';return}
+  c.innerHTML=filtered.map((n)=>`<div class="ncard"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px"><div><div style="font-size:14px;font-weight:500">${n.title}</div><div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">${n.contact?`<span class="badge bb">${n.contact}</span>`:''}<span style="font-size:11px;color:var(--text-secondary)">${new Date(n.created_at).toLocaleDateString('de-DE')}</span></div></div><button class="btn btn-sm btd" onclick="askDel('note','${n.id}')">Löschen</button></div><div style="font-size:13px;color:var(--text-secondary);line-height:1.6;white-space:pre-wrap">${n.content}</div></div>`).join('');
 }
 function openNoteModal(){populateSel('n-contact');['title','content'].forEach(f=>document.getElementById('n-'+f).value='');document.getElementById('modal-note').classList.add('open')}
 async function saveNote(){
@@ -1131,26 +1177,34 @@ function openSearchModal(){
 }
 
 function closeSearchModal(){
-  document.getElementById('search-modal-overlay').classList.remove('open');
-  document.getElementById('global-search').value = '';
-  document.getElementById('search-results-content').innerHTML = '<div class="search-hint">Gib einen Namen, eine Firma, einen Titel oder eine E-Mail ein um zu suchen.</div>';
+  const overlay = document.getElementById('search-modal-overlay');
+  const input = document.getElementById('global-search');
+  const results = document.getElementById('search-results-content');
+  if(overlay) overlay.classList.remove('open');
+  if(input) input.value = '';
+  if(results) results.innerHTML = '<div class="search-hint">Gib einen Namen, eine Firma, einen Titel oder eine E-Mail ein um zu suchen.</div>';
+}
+
+function activateNav(page){
+  // Works for both sidebar (nb) and bottom nav (bn)
+  document.querySelectorAll('.nb,.bn').forEach(b=>b.classList.remove('active'));
+  const map = {
+    dashboard: ['sb-dashboard','bn-dashboard'],
+    contacts: ['sb-contacts','bn-contacts'],
+    appointments: ['bn-appointments'],
+    einsaetze: ['bn-einsaetze'],
+  };
+  const ids = map[page] || [];
+  ids.forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.add('active'); });
 }
 
 function handleSearchOverlayClick(e){
   if(e.target === document.getElementById('search-modal-overlay')) closeSearchModal();
 }
 
-function openSearchPanel(){
-  const q = document.getElementById('global-search').value;
-  if(q.length > 0) showSearchResults(q);
-  document.getElementById('search-overlay').classList.add('open');
-}
 
-function closeSearchModal(){
-  document.getElementById('search-results-panel').classList.remove('open');
-  document.getElementById('search-overlay').classList.remove('open');
-  document.getElementById('global-search').value = '';
-}
+
+
 
 function globalSearch(){
   const q = document.getElementById('global-search').value.toLowerCase().trim();
@@ -1162,7 +1216,8 @@ function globalSearch(){
 }
 
 function showSearchResults(q){
-  const content = document.getElementById('search-results-content');
+  const resultsEl = document.getElementById('search-results-content');
+  if(!resultsEl) return;
 
   let html = '';
   let total = 0;
@@ -1265,7 +1320,7 @@ function showSearchResults(q){
     html = `<div class="search-empty">Keine Ergebnisse für "<strong>${q}</strong>"</div>`;
   }
 
-  content.innerHTML = html;
+  resultsEl.innerHTML = html;
 }
 
 function highlight(text, q){
@@ -1276,32 +1331,30 @@ function highlight(text, q){
 
 function goToContact(i){
   closeSearchModal();
-  showPage('contacts', document.getElementById('bn-contacts'));
-  setBn('bn-contacts');
+  showPage('contacts', null);
+  activateNav('contacts');
   setTimeout(()=>{ editContact(i); }, 100);
 }
 function goToCompany(i){
   closeSearchModal();
   showPage('companies', null);
-  setBn('bn-more');
   setTimeout(()=>{ editCompany(i); }, 100);
 }
 function goToAppointment(i){
   closeSearchModal();
-  showPage('appointments', document.getElementById('bn-appointments'));
-  setBn('bn-appointments');
+  showPage('appointments', null);
+  activateNav('appointments');
   setTimeout(()=>{ editAppointment(i); }, 100);
 }
 function goToEinsatz(i){
   closeSearchModal();
-  showPage('einsaetze', document.getElementById('bn-einsaetze'));
-  setBn('bn-einsaetze');
+  showPage('einsaetze', null);
+  activateNav('einsaetze');
   setTimeout(()=>{ openEinsatzModal(i); }, 100);
 }
 function goToNotes(){
   closeSearchModal();
   showPage('notes', null);
-  setBn('bn-more');
 }
 
 // ==========================================
