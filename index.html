@@ -936,12 +936,26 @@ function showLoginScreen(){
 
 async function onLogin(user){
   currentUser = user;
+  
+  // Show debug status on login screen temporarily
+  const dbg = document.getElementById('auth-error');
+  if(dbg){ dbg.textContent = 'Lade Profil ...'; dbg.classList.add('show'); dbg.style.background='#e6f1fb'; dbg.style.color='#0C447C'; }
+  
   // Load profile from user_profiles table
   let profile = null;
   try {
     const { data, error } = await db.from('user_profiles').select('*').eq('id', user.id).single();
-    if(!error) profile = data;
-  } catch(e) { console.warn('Profile load error:', e); }
+    if(error){
+      if(dbg){ dbg.textContent = 'Profil-Fehler: ' + error.message; }
+      console.error('Profile error:', error);
+    } else {
+      profile = data;
+      if(dbg){ dbg.textContent = 'Profil geladen: ' + (data?.role||'?'); }
+    }
+  } catch(e) { 
+    if(dbg){ dbg.textContent = 'Exception: ' + e.message; }
+    console.warn('Profile load error:', e); 
+  }
 
   currentRole = profile?.role || 'techniker';
   userPermissions = profile?.permissions || [];
