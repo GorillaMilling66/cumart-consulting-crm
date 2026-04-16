@@ -322,6 +322,13 @@ textarea{resize:vertical;min-height:70px}
 .role-blocked{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;color:var(--text-secondary)}
 .role-blocked svg{margin-bottom:1rem;opacity:.4}
 .role-blocked h3{font-size:16px;font-weight:500;color:var(--text-primary);margin-bottom:8px}
+
+/* PASSWORD RESET */
+.auth-link{font-size:12px;color:var(--text-secondary);text-align:center;margin-top:1rem;cursor:pointer}
+.auth-link span{color:var(--text-info);text-decoration:underline;cursor:pointer}
+.auth-back{font-size:12px;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:4px;margin-bottom:1.5rem}
+.auth-success{font-size:13px;color:var(--success);background:#f0fdf4;padding:10px 12px;border-radius:var(--radius-md);margin-bottom:1rem;display:none}
+.auth-success.show{display:block}
 </style>
 </head>
 <body>
@@ -329,6 +336,41 @@ textarea{resize:vertical;min-height:70px}
 <div class="loading-overlay" id="loading-overlay">Daten werden geladen ...</div>
 <div class="toast" id="toast"></div>
 
+
+
+<!-- PASSWORT VERGESSEN -->
+<div class="auth-screen" id="reset-screen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-back" onclick="showLoginFromReset()">&#8592; Zurück zum Login</div>
+    <div class="auth-logo">Passwort zurücksetzen</div>
+    <div class="auth-subtitle">Wir senden dir einen Link per E-Mail</div>
+    <div class="auth-error" id="reset-error"></div>
+    <div class="auth-success" id="reset-success">E-Mail gesendet! Bitte prüfe dein Postfach und klicke auf den Link.</div>
+    <div class="auth-field">
+      <label>E-Mail</label>
+      <input type="email" id="reset-email" placeholder="deine@email.de" autocomplete="email">
+    </div>
+    <button class="auth-btn" id="reset-btn" onclick="doPasswordReset()">Link senden</button>
+  </div>
+</div>
+
+<!-- NEUES PASSWORT SETZEN (nach Klick auf Link) -->
+<div class="auth-screen" id="new-password-screen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">Neues Passwort</div>
+    <div class="auth-subtitle">Bitte gib dein neues Passwort ein</div>
+    <div class="auth-error" id="newpw-error"></div>
+    <div class="auth-field">
+      <label>Neues Passwort</label>
+      <input type="password" id="newpw-1" placeholder="Mindestens 6 Zeichen" onkeydown="if(event.key==='Enter')doSetNewPassword()">
+    </div>
+    <div class="auth-field">
+      <label>Passwort wiederholen</label>
+      <input type="password" id="newpw-2" placeholder="Passwort wiederholen" onkeydown="if(event.key==='Enter')doSetNewPassword()">
+    </div>
+    <button class="auth-btn" id="newpw-btn" onclick="doSetNewPassword()">Passwort speichern</button>
+  </div>
+</div>
 
 <!-- LOGIN SCREEN -->
 <div class="auth-screen" id="auth-screen">
@@ -345,6 +387,7 @@ textarea{resize:vertical;min-height:70px}
       <input type="password" id="auth-password" placeholder="Passwort eingeben" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="auth-btn" id="auth-btn" onclick="doLogin()">Anmelden</button>
+    <div class="auth-link" onclick="showResetScreen()">Passwort vergessen? <span>Link anfordern</span></div>
   </div>
 </div>
 
@@ -546,6 +589,16 @@ textarea{resize:vertical;min-height:70px}
 <!-- EINSTELLUNGEN -->
 <div class="page" id="page-settings">
   <div class="pt" style="margin-bottom:1.75rem">Einstellungen</div>
+  <div class="card">
+    <div class="stitle">Mein Konto</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:14px;font-weight:500" id="settings-user-name">—</div>
+        <div style="font-size:12px;color:var(--text-secondary)" id="settings-user-email">—</div>
+      </div>
+      <button class="btn" onclick="showChangePasswordModal()">Passwort ändern</button>
+    </div>
+  </div>
   <div class="card"><div class="stitle">Status-Werte verwalten</div>
     <div style="display:flex;gap:8px;margin-bottom:1rem"><input type="text" id="ns-name" placeholder="Status-Name ..." style="flex:1"><select id="ns-col" style="width:115px"><option value="bb">Blau</option><option value="bg">Grün</option><option value="ba">Gelb</option><option value="bp">Lila</option><option value="bt">Türkis</option><option value="bpk">Pink</option><option value="br">Rot</option><option value="bgy">Grau</option></select><button class="btn btp" onclick="addStatus()">Hinzufügen</button></div>
     <div id="status-list"></div>
@@ -719,6 +772,101 @@ textarea{resize:vertical;min-height:70px}
 // ==========================================
 // AUTH & USER MANAGEMENT
 // ==========================================
+
+// ==========================================
+// PASSWORD RESET
+// ==========================================
+function showResetScreen(){
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('reset-screen').style.display = 'flex';
+  document.getElementById('reset-error').classList.remove('show');
+  document.getElementById('reset-success').classList.remove('show');
+  document.getElementById('reset-email').value = document.getElementById('auth-email').value || '';
+}
+
+function showLoginFromReset(){
+  document.getElementById('reset-screen').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+async function doPasswordReset(){
+  const email = document.getElementById('reset-email').value.trim();
+  const errEl = document.getElementById('reset-error');
+  const sucEl = document.getElementById('reset-success');
+  const btn = document.getElementById('reset-btn');
+
+  if(!email){
+    errEl.textContent = 'Bitte E-Mail eingeben.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Wird gesendet ...';
+  errEl.classList.remove('show');
+
+  const { error } = await db.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/?reset=true'
+  });
+
+  btn.disabled = false;
+  btn.textContent = 'Link senden';
+
+  if(error){
+    errEl.textContent = 'Fehler: ' + error.message;
+    errEl.classList.add('show');
+  } else {
+    sucEl.classList.add('show');
+    errEl.classList.remove('show');
+  }
+}
+
+async function doSetNewPassword(){
+  const pw1 = document.getElementById('newpw-1').value;
+  const pw2 = document.getElementById('newpw-2').value;
+  const errEl = document.getElementById('newpw-error');
+  const btn = document.getElementById('newpw-btn');
+
+  if(pw1.length < 6){
+    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
+    errEl.classList.add('show');
+    return;
+  }
+  if(pw1 !== pw2){
+    errEl.textContent = 'Passwörter stimmen nicht überein.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Wird gespeichert ...';
+
+  const { error } = await db.auth.updateUser({ password: pw1 });
+
+  if(error){
+    errEl.textContent = 'Fehler: ' + error.message;
+    errEl.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Passwort speichern';
+  } else {
+    document.getElementById('new-password-screen').style.display = 'none';
+    showToast('Passwort erfolgreich geändert!');
+    // User is now logged in automatically
+    const { data: { session } } = await db.auth.getSession();
+    if(session) await onLogin(session.user);
+  }
+}
+
+// Check if coming back from password reset link
+function checkPasswordResetRedirect(){
+  const hash = window.location.hash;
+  if(hash.includes('type=recovery') || window.location.search.includes('reset=true')){
+    // Hide all screens, show new password screen
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('new-password-screen').style.display = 'flex';
+  }
+}
+
 let currentUser = null;
 let currentRole = null;
 let userProfiles = {}; // userId -> {name, role}
@@ -730,16 +878,28 @@ const ROLE_ACCESS = {
 };
 
 async function initAuth(){
-  const { data: { session } } = await db.auth.getSession();
-  if(session){
-    await onLogin(session.user);
-  } else {
-    showLoginScreen();
-  }
+  checkPasswordResetRedirect();
+
   db.auth.onAuthStateChange(async (event, session) => {
-    if(event === 'SIGNED_IN' && session) await onLogin(session.user);
+    if(event === 'PASSWORD_RECOVERY'){
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('new-password-screen').style.display = 'flex';
+      return;
+    }
+    if(event === 'SIGNED_IN' && session){
+      // Don't auto-login if we're in password recovery flow
+      if(document.getElementById('new-password-screen').style.display === 'flex') return;
+      await onLogin(session.user);
+    }
     if(event === 'SIGNED_OUT') showLoginScreen();
   });
+
+  const { data: { session } } = await db.auth.getSession();
+  if(session && document.getElementById('new-password-screen').style.display !== 'flex'){
+    await onLogin(session.user);
+  } else if(!session && document.getElementById('new-password-screen').style.display !== 'flex'){
+    showLoginScreen();
+  }
 }
 
 function showLoginScreen(){
@@ -1461,7 +1621,17 @@ function doCopy(){navigator.clipboard.writeText(copyText).then(()=>{const el=doc
 // ==========================================
 // EINSTELLUNGEN
 // ==========================================
-function renderAllSettings(){renderStatusList();renderFormsList();renderTagsList();renderRevList();renderTemplates();}
+function renderAllSettings(){
+  renderStatusList();renderFormsList();renderTagsList();renderRevList();renderTemplates();
+  // Update user info in settings
+  if(currentUser){
+    const nameEl = document.getElementById('settings-user-name');
+    const emailEl = document.getElementById('settings-user-email');
+    const profiles = document.querySelectorAll('.user-list-item');
+    if(nameEl) nameEl.textContent = currentUser.email?.split('@')[0] || '—';
+    if(emailEl) emailEl.textContent = currentUser.email || '—';
+  }
+}
 
 function makeEditRow(badge,editFn,delFn){return`<div class="srow">${badge}<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="${editFn}">Bearbeiten</button><button class="btn btn-sm btd" onclick="${delFn}">Löschen</button></div></div>`;}
 
@@ -1738,6 +1908,23 @@ function goToNotes(){
   showPage('notes', null);
 }
 
+
+async function showChangePasswordModal(){
+  document.getElementById('cpw-1').value = '';
+  document.getElementById('cpw-2').value = '';
+  document.getElementById('modal-change-pw').classList.add('open');
+}
+
+async function doChangePassword(){
+  const pw1 = document.getElementById('cpw-1').value;
+  const pw2 = document.getElementById('cpw-2').value;
+  if(pw1.length < 6){ showToast('Mindestens 6 Zeichen.', true); return; }
+  if(pw1 !== pw2){ showToast('Passwörter stimmen nicht überein.', true); return; }
+  const { error } = await db.auth.updateUser({ password: pw1 });
+  if(error){ showToast('Fehler: ' + error.message, true); return; }
+  closeM('modal-change-pw');
+  showToast('Passwort erfolgreich geändert!');
+}
 // ==========================================
 // MOBILE NAVIGATION
 // ==========================================
