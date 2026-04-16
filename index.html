@@ -861,19 +861,32 @@ async function createNewUser(){
   if(!name || !email || !password){ showToast('Bitte alle Felder ausfüllen.', true); return; }
   if(password.length < 6){ showToast('Passwort muss mindestens 6 Zeichen haben.', true); return; }
 
-  showToast('Benutzer wird angelegt ...');
+  const btn = document.querySelector('#modal-new-user .btp');
+  if(btn){ btn.disabled = true; btn.textContent = 'Wird angelegt ...'; }
 
-  // Use Supabase admin API via service role - we'll create via signUp and immediately set profile
-  const { data, error } = await db.auth.signUp({ email, password, options: { data: { name } } });
-  if(error){ showToast('Fehler: ' + error.message, true); return; }
-
-  if(data.user){
-    await db.from('user_profiles').upsert({ id: data.user.id, email, name, role });
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': SUPABASE_KEY,
+      },
+      body: JSON.stringify({ email, password, name, role })
+    });
+    const result = await resp.json();
+    if(!resp.ok || result.error){
+      showToast('Fehler: ' + (result.error || 'Unbekannter Fehler'), true);
+    } else {
+      closeM('modal-new-user');
+      showToast('Benutzer "' + name + '" wurde angelegt.');
+      loadUsersPage();
+    }
+  } catch(err){
+    showToast('Netzwerkfehler: ' + err.message, true);
   }
-
-  closeM('modal-new-user');
-  showToast('Benutzer angelegt! Passwort: ' + password);
-  loadUsersPage();
+  if(btn){ btn.disabled = false; btn.textContent = 'Benutzer anlegen'; }
 }
 
 function openEditUser(id, name, role){
@@ -900,11 +913,29 @@ async function saveEditUser(){
 
 async function deleteUser(){
   const id = document.getElementById('eu-userid').value;
-  if(!confirm('Benutzer wirklich löschen?')) return;
-  await db.from('user_profiles').delete().eq('id', id);
-  closeM('modal-edit-user');
-  showToast('Benutzer entfernt');
-  loadUsersPage();
+  if(!confirm('Benutzer wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/delete-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': SUPABASE_KEY,
+      },
+      body: JSON.stringify({ userId: id })
+    });
+    const result = await resp.json();
+    if(!resp.ok || result.error){
+      showToast('Fehler: ' + (result.error || 'Unbekannter Fehler'), true);
+    } else {
+      closeM('modal-edit-user');
+      showToast('Benutzer wurde gelöscht.');
+      loadUsersPage();
+    }
+  } catch(err){
+    showToast('Netzwerkfehler: ' + err.message, true);
+  }
 }
 
 // ==========================================
