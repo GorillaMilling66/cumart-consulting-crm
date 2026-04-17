@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 16.04.2026 23:43 -->
+<!-- VERSION: 17.04.2026 08:22 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -182,7 +182,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-sub">CRM-System — Bitte anmelden</div>
-    <div class="auth-ver">v16.04.2026 23:43</div>
+    <div class="auth-ver">v17.04.2026 08:22</div>
     <div class="auth-err" id="login-err"></div>
     <div class="auth-field"><label>E-Mail</label><input type="email" id="login-email" placeholder="ihre@email.de" autocomplete="email"></div>
     <div class="auth-field"><label>Passwort</label><input type="password" id="login-pw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
@@ -797,11 +797,36 @@ async function submitEditUser(){
   const name=document.getElementById('uo-name')?.value?.trim();
   const role=document.getElementById('uo-role')?.value;
   const perms=getChecked('uo-perms');
+  const pw=document.getElementById('uo-pw')?.value;
   if(!name){showToast('Bitte Namen eingeben.',true);return;}
+
+  // Update profile (name, role, permissions)
   const {error}=await db.from('user_profiles').update({name,role,permissions:perms}).eq('id',id);
   if(error){showToast('Fehler: '+error.message,true);return;}
-  closeUserOverlay();showToast('Benutzer aktualisiert.');loadUsersPage();
+
+  // If password provided, update via edge function
+  if(pw && pw.length >= 6){
+    try {
+      const { data: sessionData } = await db.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const resp = await fetch(SUPABASE_URL+'/functions/v1/update-user-password',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':SUPABASE_LEGACY_KEY},
+        body:JSON.stringify({userId:id, password:pw})
+      });
+      const result = await resp.json();
+      if(!resp.ok||result.error){showToast('Profil gespeichert, aber Passwort-Fehler: '+(result.error||'Unbekannt'),true);return;}
+      showToast('Benutzer und Passwort aktualisiert.');
+    } catch(e){showToast('Profil gespeichert, Passwort-Fehler: '+e.message,true);return;}
+  } else if(pw && pw.length > 0){
+    showToast('Passwort muss mind. 6 Zeichen haben.',true);return;
+  } else {
+    showToast('Benutzer aktualisiert.');
+  }
+
+  closeUserOverlay();loadUsersPage();
 }
+
 
 async function submitDeleteUser(){
   const id=document.getElementById('uo-id')?.value;
