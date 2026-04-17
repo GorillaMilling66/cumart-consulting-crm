@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart Consulting CRM</title>
-<!-- VERSION: 17.04.2026 10:31 -->
+<!-- VERSION: 17.04.2026 10:40 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -202,7 +202,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="auth-card">
     <div class="auth-logo">Cumart Consulting</div>
     <div class="auth-sub">CRM-System — Bitte anmelden</div>
-    <div class="auth-ver">v17.04.2026 10:31</div>
+    <div class="auth-ver">v17.04.2026 10:40</div>
     <div class="auth-err" id="login-err"></div>
     <div class="auth-field"><label>E-Mail</label><input type="email" id="login-email" placeholder="ihre@email.de" autocomplete="email"></div>
     <div class="auth-field"><label>Passwort</label><input type="password" id="login-pw" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
@@ -1036,7 +1036,7 @@ async function submitDeleteUser(){
   } catch(e){showToast('Fehler: '+e.message,true);}
 }
 
-// (config now above)
+// (Supabase SDK wird über CDN geladen: @supabase/supabase-js@2)
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -1103,8 +1103,12 @@ async function loadAll(){
     renderAppointments();
     renderEinsaetze();
     renderNotes();
-  } catch(err){showToast('Fehler beim Laden: '+err.message,true)}
-  showLoading(false);
+  } catch(err){
+    showToast('Fehler beim Laden der Daten: '+err.message,true);
+    console.error('loadAll error:', err);
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function saveSetting(key,value){
@@ -1219,7 +1223,13 @@ function openContactModal(idx){
 function editContact(i){openContactModal(i)}
 
 async function saveContact(){
-  const name=document.getElementById('c-name').value.trim();if(!name){alert('Bitte Namen eingeben.');return}
+  const name=document.getElementById('c-name').value.trim();
+  if(!name){showToast('Bitte Namen eingeben.',true);return;}
+  const emailVal=document.getElementById('c-email').value.trim();
+  if(emailVal && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailVal)){showToast('Bitte gültige E-Mail eingeben.',true);return;}
+  const btn=document.querySelector('#modal-contact .btp');
+  if(btn){btn.disabled=true;btn.textContent='Wird gespeichert ...';}
+  try {
   const obj={name,company:document.getElementById('c-co-val').value||document.getElementById('c-co-search').value,email:document.getElementById('c-email').value,phone:document.getElementById('c-phone').value,status:document.getElementById('c-status').value,customerform:document.getElementById('c-form').value,industry:document.getElementById('c-industry').value,note:document.getElementById('c-note').value,tags:selTags};
   if(editCIdx!==null){
     const {error}=await db.from('contacts').update(obj).eq('id',contacts[editCIdx].id);
@@ -1231,8 +1241,8 @@ async function saveContact(){
     contacts.unshift(data);
   }
   closeM('modal-contact');renderContacts();updateDashboard();showToast('Kontakt gespeichert');
+  } catch(err){showToast('Fehler: '+err.message,true);} finally{if(btn){btn.disabled=false;btn.textContent='Speichern';}}
 }
-
 function renderTagSel(){
   document.getElementById('c-tags-sel').innerHTML=selTags.map(t=>`<span class="tpill badge ${(customTags.find(x=>x.name===t)||{col:'bgy'}).col}">${t}<span class="rm" onclick="removeTag('${t}',event)">&#10005;</span></span>`).join('');
   document.getElementById('c-tag-opts').innerHTML=customTags.map(t=>`<span class="tpill badge ${t.col}" style="cursor:pointer;opacity:${selTags.includes(t.name)?'1':'0.4'}" onclick="toggleTag('${t.name}')">${t.name}</span>`).join('');
@@ -1325,7 +1335,11 @@ function linkContactAsAp(name){
   document.getElementById('co-ap-link-search').value='';document.getElementById('co-ap-link-drop').style.display='none';renderCoApList();
 }
 async function saveCompany(){
-  const name=document.getElementById('co-name').value.trim();if(!name){alert('Bitte Unternehmensname eingeben.');return}
+  const name=document.getElementById('co-name').value.trim();
+  if(!name){showToast('Bitte Unternehmensname eingeben.',true);return;}
+  const btn=document.querySelector('#modal-company .btp');
+  if(btn){btn.disabled=true;btn.textContent='Wird gespeichert ...';}
+  try {
   const obj={name,street:document.getElementById('co-street').value,zip:document.getElementById('co-zip').value,city:document.getElementById('co-city').value,country:document.getElementById('co-country').value,phone:document.getElementById('co-phone').value,email:document.getElementById('co-email').value,web:document.getElementById('co-web').value,industry:document.getElementById('co-industry').value,note:document.getElementById('co-note').value,ansprechpartner:coApList};
   if(editCoIdx!==null){
     const{error}=await db.from('companies').update(obj).eq('id',companies[editCoIdx].id);
@@ -1337,6 +1351,7 @@ async function saveCompany(){
     companies.unshift(data);
   }
   closeM('modal-company');renderCompanies();renderContacts();updateDashboard();showToast('Unternehmen gespeichert');
+  } catch(err){showToast('Fehler: '+err.message,true);} finally{if(btn){btn.disabled=false;btn.textContent='Speichern';}}
 }
 
 // ==========================================
@@ -1354,7 +1369,8 @@ function selContact(pfx,name){document.getElementById(pfx+'-c-search').value=nam
 function showContactInline(pfx){document.getElementById(pfx+'-c-drop').style.display='none';document.getElementById(pfx+'-c-inline').style.display='block';document.getElementById(pfx==='a'?'ac-name':'ec-name').value=document.getElementById(pfx+'-c-search').value;}
 async function saveInlineContact(pfx){
   const nameId=pfx+'c-name',compId=pfx+'c-company',emailId=pfx+'c-email',phoneId=pfx+'c-phone';
-  const name=document.getElementById(nameId).value.trim();if(!name)return;
+  const name=document.getElementById(nameId).value.trim();
+  if(!name){showToast('Bitte Namen eingeben.',true);return;}
   const obj={name,company:document.getElementById(compId).value,email:document.getElementById(emailId).value,phone:document.getElementById(phoneId).value,status:statusOptions[0]?.name||'Aktiv',customerform:'',industry:'',note:'',tags:[]};
   const{data,error}=await db.from('contacts').insert(obj).select().single();
   if(error){showToast('Fehler: '+error.message,true);return}
@@ -1386,7 +1402,11 @@ function openApptModal(idx){
 }
 function editAppointment(i){openApptModal(i)}
 async function saveAppt(){
-  const title=document.getElementById('a-title').value.trim();if(!title){alert('Bitte Titel eingeben.');return}
+  const title=document.getElementById('a-title').value.trim();
+  if(!title){showToast('Bitte Titel eingeben.',true);return;}
+  const btn=document.querySelector('#modal-appointment .btp');
+  if(btn){btn.disabled=true;btn.textContent='Wird gespeichert ...';}
+  try {
   const obj={title,contact:document.getElementById('a-c-val').value||document.getElementById('a-c-search').value,date:document.getElementById('a-date').value,status:document.getElementById('a-status').value,time_start:document.getElementById('a-start').value,time_end:document.getElementById('a-end').value,revenue:Number(document.getElementById('a-rev').value)||0,desc:document.getElementById('a-desc').value};
   if(editApIdx!==null){
     const{error}=await db.from('appointments').update(obj).eq('id',appointments[editApIdx].id);
@@ -1398,6 +1418,7 @@ async function saveAppt(){
     appointments.push(data);
   }
   closeM('modal-appointment');renderAppointments();updateDashboard();showToast('Termin gespeichert');
+  } catch(err){showToast('Fehler: '+err.message,true);} finally{if(btn){btn.disabled=false;btn.textContent='Speichern';}}
 }
 
 function renderAppointments(){
@@ -1428,7 +1449,11 @@ function openEinsatzModal(idx){
   document.getElementById('modal-einsatz').classList.add('open');
 }
 async function saveEinsatz(){
-  const title=document.getElementById('e-title').value.trim();if(!title){alert('Bitte Titel eingeben.');return}
+  const title=document.getElementById('e-title').value.trim();
+  if(!title){showToast('Bitte Titel eingeben.',true);return;}
+  const btn=document.querySelector('#modal-einsatz .btp');
+  if(btn){btn.disabled=true;btn.textContent='Wird gespeichert ...';}
+  try {
   const obj={title,contact:document.getElementById('e-c-val').value||document.getElementById('e-c-search').value,date:document.getElementById('e-date').value,status:document.getElementById('e-status').value,time_start:document.getElementById('e-start').value,time_end:document.getElementById('e-end').value,revenue:Number(document.getElementById('e-rev').value)||0,desc:document.getElementById('e-desc').value};
   if(editEIdx!==null){
     const{error}=await db.from('einsaetze').update(obj).eq('id',einsaetze[editEIdx].id);
@@ -1440,6 +1465,7 @@ async function saveEinsatz(){
     einsaetze.push(data);
   }
   closeM('modal-einsatz');renderEinsaetze();updateDashboard();showToast('Einsatz gespeichert');
+  } catch(err){showToast('Fehler: '+err.message,true);} finally{if(btn){btn.disabled=false;btn.textContent='Speichern';}}
 }
 
 function renderEinsaetze(){
@@ -1460,12 +1486,17 @@ function renderNotes(){
 }
 function openNoteModal(){populateSel('n-contact');['title','content'].forEach(f=>document.getElementById('n-'+f).value='');document.getElementById('modal-note').classList.add('open')}
 async function saveNote(){
-  const title=document.getElementById('n-title').value.trim(),content=document.getElementById('n-content').value.trim();
-  if(!title||!content){alert('Bitte Titel und Inhalt eingeben.');return}
-  const obj={title,contact:document.getElementById('n-contact').value,content};
-  const{data,error}=await db.from('notes').insert(obj).select().single();
-  if(error){showToast('Fehler: '+error.message,true);return}
-  notes.unshift(data);closeM('modal-note');renderNotes();showToast('Notiz gespeichert');
+  const title=document.getElementById('n-title').value.trim(),noteContent=document.getElementById('n-content').value.trim();
+  if(!title||!noteContent){showToast('Bitte Titel und Inhalt eingeben.',true);return;}
+  const btn=document.querySelector('#modal-note .btp');
+  if(btn){btn.disabled=true;btn.textContent='Wird gespeichert ...';}
+  try {
+    const obj={title,contact:document.getElementById('n-contact').value,content:noteContent};
+    const{data,error}=await db.from('notes').insert(obj).select().single();
+    if(error){showToast('Fehler: '+error.message,true);return;}
+    notes.unshift(data);closeM('modal-note');renderNotes();showToast('Notiz gespeichert');
+  } catch(err){showToast('Fehler: '+err.message,true);}
+  finally{if(btn){btn.disabled=false;btn.textContent='Speichern';}}
 }
 
 // ==========================================
@@ -1482,8 +1513,11 @@ function askDel(type,id){
 async function confirmDelete(){
   const tableMap={contact:'contacts',company:'companies',appointment:'appointments',einsatz:'einsaetze',note:'notes'};
   const table=tableMap[delType];
+  const btn=document.querySelector('#modal-delete .btd');
+  if(btn){btn.disabled=true;btn.textContent='Wird gelöscht ...';}
   const{error}=await db.from(table).delete().eq('id',delTarget);
-  if(error){showToast('Fehler: '+error.message,true);closeM('modal-delete');return}
+  if(btn){btn.disabled=false;btn.textContent='Endgültig löschen';}
+  if(error){showToast('Fehler beim Löschen: '+error.message,true);closeM('modal-delete');return;}
   if(delType==='contact')contacts=contacts.filter(x=>x.id!==delTarget),renderContacts();
   else if(delType==='company')companies=companies.filter(x=>x.id!==delTarget),renderCompanies();
   else if(delType==='appointment')appointments=appointments.filter(x=>x.id!==delTarget),renderAppointments();
