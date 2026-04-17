@@ -354,6 +354,27 @@ tr:hover td { background: var(--bg); }
   </div>
 </div>
 
+<!-- PASSWORT SETZEN SCREEN (Einladung + Recovery) -->
+<div class="auth-screen" id="setpassword-screen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">Willkommen bei Cumart CRM</div>
+    <div class="auth-sub">Bitte setze dein Passwort um fortzufahren</div>
+    <div class="auth-error" id="setpw-error"></div>
+    <div class="auth-field">
+      <label>Neues Passwort *</label>
+      <input type="password" id="setpw-1" placeholder="Mindestens 6 Zeichen">
+    </div>
+    <div class="auth-field">
+      <label>Passwort wiederholen *</label>
+      <input type="password" id="setpw-2" placeholder="Passwort wiederholen"
+             onkeydown="if(event.key==='Enter') doSetPassword()">
+    </div>
+    <button class="auth-btn" id="setpw-btn" onclick="doSetPassword()">
+      Passwort speichern & einloggen
+    </button>
+  </div>
+</div>
+
 <!-- RESET SCREEN -->
 <div class="auth-screen" id="reset-screen" style="display:none">
   <div class="auth-card">
@@ -488,6 +509,16 @@ function ini(name) {
   return (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
+function statusLabel(s) {
+  return { eingeladen: 'Eingeladen', aktiv: 'Aktiv', inaktiv: 'Inaktiv' }[s] || 'Unbekannt';
+}
+function statusBg(s) {
+  return { eingeladen: '#fffbeb', aktiv: '#f0fdf4', inaktiv: '#fef2f2' }[s] || '#f3f4f6';
+}
+function statusColor(s) {
+  return { eingeladen: '#d97706', aktiv: '#16a34a', inaktiv: '#dc2626' }[s] || '#6b7280';
+}
+
 function showToast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -506,24 +537,85 @@ function showPage(name, el) {
 function showLoginScreen() {
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('reset-screen').style.display = 'none';
+  document.getElementById('setpassword-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
 }
 
 function showResetScreen() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('reset-screen').style.display = 'flex';
+  document.getElementById('setpassword-screen').style.display = 'none';
+}
+
+function showSetPasswordScreen() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('reset-screen').style.display = 'none';
+  document.getElementById('setpassword-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  setTimeout(() => document.getElementById('setpw-1').focus(), 100);
+}
+
+async function doSetPassword() {
+  const pw1   = document.getElementById('setpw-1').value;
+  const pw2   = document.getElementById('setpw-2').value;
+  const errEl = document.getElementById('setpw-error');
+  const btn   = document.getElementById('setpw-btn');
+
+  errEl.classList.remove('show');
+
+  if (pw1.length < 6) {
+    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
+    errEl.classList.add('show');
+    return;
+  }
+  if (pw1 !== pw2) {
+    errEl.textContent = 'Passwörter stimmen nicht überein.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Wird gespeichert ...';
+
+  try {
+    const { error } = await db.auth.updateUser({ password: pw1 });
+    if (error) throw new Error(error.message);
+
+    // URL Hash entfernen
+    window.history.replaceState(null, '', window.location.pathname);
+
+    // Session laden und einloggen
+    const { data: { session } } = await db.auth.getSession();
+    if (session) {
+      await onLogin(session.user);
+    } else {
+      showToast('Passwort gesetzt! Bitte einloggen.');
+      showLoginScreen();
+    }
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Passwort speichern & einloggen';
+  }
 }
 
 async function initAuth() {
-  // Passwort-Recovery aus URL erkennen
-  if (window.location.hash.includes('type=recovery')) {
-    const newPw = prompt('Bitte neues Passwort eingeben (mind. 6 Zeichen):');
-    if (newPw && newPw.length >= 6) {
-      const { error } = await db.auth.updateUser({ password: newPw });
-      if (error) { alert('Fehler: ' + error.message); return; }
-      showToast('Passwort geändert! Bitte neu einloggen.');
-      window.location.hash = '';
-    }
+  const hash = window.location.hash;
+
+  // Einladungslink: type=invite
+  if (hash.includes('type=invite') || hash.includes('type=recovery')) {
+    // Supabase hat den Token bereits verarbeitet - Session existiert
+    // Wir zeigen den Passwort-Setzen Screen
+    showSetPasswordScreen();
+
+    db.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
+        // Nichts tun - User setzt gerade Passwort
+      }
+      if (event === 'SIGNED_OUT') showLoginScreen();
+    });
     return;
   }
 
@@ -540,6 +632,7 @@ async function initAuth() {
 
   db.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_OUT') showLoginScreen();
+    if (event === 'SIGNED_IN' && session) await onLogin(session.user);
   });
 }
 
@@ -689,8 +782,8 @@ async function loadUsers() {
           </span>
         </td>
         <td>
-          <span class="badge" style="background:${u.ist_aktiv ? '#f0fdf4' : '#fef2f2'};color:${u.ist_aktiv ? '#16a34a' : '#dc2626'}">
-            ${u.ist_aktiv ? 'Aktiv' : 'Inaktiv'}
+          <span class="badge" style="background:${statusBg(u.status)};color:${statusColor(u.status)}">
+            ${statusLabel(u.status)}
           </span>
         </td>
         <td style="text-align:right">
