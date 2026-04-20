@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.3.1 (strukturell: CSS und JS ausgelagert, Funktionalität unverändert) -->
+<!-- VERSION: 1.4.0 (Services-Katalog + Lookup-Verwaltung) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -36,7 +36,7 @@
   </div>
 </div>
 
-<!-- PASSWORT-ÄNDERN-PFLICHT-SCREEN (nach Admin-Reset oder Erstanmeldung) -->
+<!-- PASSWORT-ÄNDERN-PFLICHT-SCREEN -->
 <div class="auth-screen" id="mustchange-screen" style="display:none">
   <div class="auth-card">
     <div class="auth-logo">Passwort ändern</div>
@@ -63,7 +63,7 @@
   </div>
 </div>
 
-<!-- PASSWORT-RECOVERY-SCREEN (nach "Passwort vergessen"-Mail) -->
+<!-- PASSWORT-RECOVERY-SCREEN -->
 <div class="auth-screen" id="recovery-screen" style="display:none">
   <div class="auth-card">
     <div class="auth-logo">Neues Passwort setzen</div>
@@ -84,7 +84,7 @@
   </div>
 </div>
 
-<!-- RESET SCREEN (Passwort-vergessen: Mail anfordern) -->
+<!-- RESET SCREEN -->
 <div class="auth-screen" id="reset-screen" style="display:none">
   <div class="auth-card">
     <div style="font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:16px"
@@ -114,10 +114,27 @@
     </div>
     <div class="sidebar-user" id="sidebar-user"></div>
     <nav class="nav">
-      <button class="nav-item active" id="nav-users" onclick="showPage('users', this)">
+
+      <!-- Benutzer: Admin-only -->
+      <button class="nav-item active" id="nav-users" onclick="showPage('users', this)"
+              data-admin-only="true" style="display:none">
         <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M1 17c0-3.314 2.686-5 6-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="11" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M11 17c0-2.21 1.343-3.5 3-3.5s3 1.29 3 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Benutzer
       </button>
+
+      <!-- Leistungen: alle Rollen sehen die Liste, nur Admin darf bearbeiten -->
+      <button class="nav-item" id="nav-services" onclick="showPage('services', this)">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Leistungen
+      </button>
+
+      <!-- Stammdaten: Admin-only (Lookup-Verwaltung) -->
+      <button class="nav-item" id="nav-lookups" onclick="showPage('lookups', this)"
+              data-admin-only="true" style="display:none">
+        <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 8h14" stroke="currentColor" stroke-width="1.5"/></svg>
+        Stammdaten
+      </button>
+
     </nav>
     <div class="nav-bottom">
       <button class="nav-item" onclick="doLogout()">
@@ -131,7 +148,7 @@
   <main class="main">
 
     <!-- SEITE: BENUTZER -->
-    <div class="page active" id="page-users">
+    <div class="page" id="page-users">
       <div class="page-header">
         <h1 class="page-title">Benutzerverwaltung</h1>
         <button class="btn btn-primary" id="btn-new-user"
@@ -139,7 +156,6 @@
           + Neuer Benutzer
         </button>
       </div>
-
       <div class="card">
         <div class="card-title">Aktive Benutzer</div>
         <div class="table-wrap">
@@ -155,6 +171,76 @@
             </thead>
             <tbody id="users-table-body">
               <tr><td colspan="5"><div class="empty">Lade Benutzer ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: LEISTUNGEN -->
+    <div class="page" id="page-services">
+      <div class="page-header">
+        <h1 class="page-title">Leistungen</h1>
+        <button class="btn btn-primary" id="btn-new-service"
+                onclick="openServiceModal('new')" style="display:none">
+          + Neue Leistung
+        </button>
+      </div>
+      <div class="card">
+        <div class="card-title">Leistungskatalog</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Kategorie</th>
+                <th>Einheit</th>
+                <th>Standardpreis</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="services-table-body">
+              <tr><td colspan="6"><div class="empty">Lade Leistungen ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: STAMMDATEN / LOOKUP-WERTE -->
+    <div class="page" id="page-lookups">
+      <div class="page-header">
+        <h1 class="page-title">Stammdaten</h1>
+        <button class="btn btn-primary" onclick="openLookupModal('new')">
+          + Neuer Wert
+        </button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        Hier pflegst du die zentralen Auswahlwerte, die in der App in Dropdowns
+        erscheinen (z.&nbsp;B. Leistungskategorien, Unternehmenstypen, Termintypen).
+      </p>
+      <div class="card">
+        <div class="card-title">Werte nach Kategorie</div>
+        <div class="form-group" style="max-width:320px;margin-bottom:20px">
+          <label>Kategorie anzeigen</label>
+          <select id="lookup-filter-kategorie" onchange="loadLookups()">
+            <!-- wird aus JS befüllt -->
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Wert</th>
+                <th>Farbe</th>
+                <th>Reihenfolge</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="lookups-table-body">
+              <tr><td colspan="5"><div class="empty">Lade Werte ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -197,7 +283,7 @@
   </div>
 </div>
 
-<!-- MODAL: ZUGANGSDATEN ANZEIGEN (nach Anlegen oder Reset) -->
+<!-- MODAL: ZUGANGSDATEN ANZEIGEN -->
 <div class="modal-overlay" id="modal-credentials">
   <div class="modal">
     <div class="modal-title" id="modal-credentials-title">Zugangsdaten für neuen Benutzer</div>
@@ -205,28 +291,120 @@
       Bitte gib diese Zugangsdaten an den Benutzer weiter.
       Das Passwort wird nur jetzt einmal angezeigt.
     </p>
-
     <div class="credentials-box">
       <div class="credentials-label">E-Mail</div>
       <div class="credentials-value">
         <span id="cred-email"></span>
         <button class="btn btn-sm" onclick="copyCredential('cred-email')">Kopieren</button>
       </div>
-
       <div class="credentials-label">Passwort</div>
       <div class="credentials-value">
         <span id="cred-password"></span>
         <button class="btn btn-sm" onclick="copyCredential('cred-password')">Kopieren</button>
       </div>
-
       <div class="credentials-hint">
         Der Benutzer wird beim ersten Login aufgefordert, ein eigenes Passwort zu wählen.
       </div>
     </div>
-
     <div class="modal-footer">
       <button class="btn btn-sm" onclick="copyBothCredentials()">Beides kopieren</button>
       <button class="btn btn-primary" onclick="closeCredentialsModal()">Fertig</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: LEISTUNG ANLEGEN / BEARBEITEN -->
+<div class="modal-overlay" id="modal-service">
+  <div class="modal">
+    <div class="modal-title" id="modal-service-title">Neue Leistung</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Name *</label>
+        <input type="text" id="s-name" placeholder="z. B. Heidenhain Klartext Grundlagen">
+      </div>
+      <div class="form-group">
+        <label>Kategorie *</label>
+        <select id="s-kategorie"></select>
+      </div>
+      <div class="form-group">
+        <label>Einheit *</label>
+        <select id="s-einheit">
+          <option value="Tag">Tag</option>
+          <option value="Stunde">Stunde</option>
+          <option value="Pauschale">Pauschale</option>
+          <option value="Stück">Stück</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Standardpreis (€)</label>
+        <input type="number" id="s-preis" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="s-aktiv">
+          <option value="true">Aktiv</option>
+          <option value="false">Archiviert</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Beschreibung</label>
+        <input type="text" id="s-beschreibung" placeholder="Optional: kurze Beschreibung">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="s-delete-btn"
+              onclick="deleteService()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeServiceModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="s-save-btn" onclick="saveService()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: LOOKUP-WERT ANLEGEN / BEARBEITEN -->
+<div class="modal-overlay" id="modal-lookup">
+  <div class="modal">
+    <div class="modal-title" id="modal-lookup-title">Neuer Wert</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Kategorie *</label>
+        <select id="l-kategorie"></select>
+        <span style="font-size:11px;color:var(--muted)">
+          Neue Kategorie? Im Dropdown unten „Neue Kategorie..." wählen.
+        </span>
+      </div>
+      <div class="form-group full" id="l-new-kategorie-group" style="display:none">
+        <label>Neue Kategorie-Schlüssel (technischer Name) *</label>
+        <input type="text" id="l-new-kategorie" placeholder="z. B. projekt_status (ohne Leerzeichen, kleingeschrieben)">
+      </div>
+      <div class="form-group">
+        <label>Wert (Anzeigename) *</label>
+        <input type="text" id="l-wert" placeholder="z. B. Kunde">
+      </div>
+      <div class="form-group">
+        <label>Farbe</label>
+        <input type="color" id="l-farbe" value="#6b7280">
+      </div>
+      <div class="form-group">
+        <label>Reihenfolge</label>
+        <input type="number" id="l-reihenfolge" min="0" step="1" value="0">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="l-aktiv">
+          <option value="true">Aktiv</option>
+          <option value="false">Archiviert</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="l-delete-btn"
+              onclick="deleteLookup()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeLookupModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="l-save-btn" onclick="saveLookup()">Anlegen</button>
     </div>
   </div>
 </div>
