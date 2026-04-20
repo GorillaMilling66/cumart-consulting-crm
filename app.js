@@ -1,9 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Extrahiert aus index.html v1.3.0
-   Einzige Änderung: initAuth() wird erst nach DOMContentLoaded
-   aufgerufen, damit das externe Script unabhängig von seiner
-   Position im HTML funktioniert.
+   Version 1.4.0 (Services-Katalog + Lookup-Verwaltung)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -21,7 +18,9 @@ let currentUser       = null;
 let currentProfile    = null;
 let allRoles          = [];
 let editingUserId     = null;
-let inPasswordRecovery = false; // TRUE während Recovery-Link-Flow
+let editingServiceId  = null;
+let editingLookupId   = null;
+let inPasswordRecovery = false;
 
 // ── HILFSFUNKTIONEN ──────────────────────────────────────────
 function ini(name) {
@@ -42,6 +41,24 @@ function isAdmin() {
   return currentProfile?.roles?.name === 'Admin';
 }
 
+// Preis formatieren: 1200 -> "1.200,00 €"
+function formatPreis(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = Number(value);
+  if (Number.isNaN(num)) return '—';
+  return num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+// HTML-Escape für sicheres Einfügen von User-Eingaben
+function esc(s) {
+  return (s ?? '').toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function showToast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -54,6 +71,11 @@ function showPage(name, el) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
   el?.classList.add('active');
+
+  // Seiten-spezifisches Laden anstoßen (idempotent)
+  if (name === 'users') loadUsers();
+  if (name === 'services') loadServices();
+  if (name === 'lookups') loadLookupsPage();
 }
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
@@ -96,11 +118,9 @@ function showApp() {
 async function initAuth() {
   const hash = window.location.hash;
 
-  // Passwort-Recovery-Flow aus E-Mail-Link (Supabase Reset-Mail)
   if (hash.includes('type=recovery') || hash.includes('type=invite')) {
     inPasswordRecovery = true;
     showRecoveryScreen();
-    // Warten auf PASSWORD_RECOVERY/SIGNED_IN-Event, dann bleibt der User im Screen
     db.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         inPasswordRecovery = false;
@@ -122,7 +142,6 @@ async function initAuth() {
   }
 
   db.auth.onAuthStateChange(async (event, session) => {
-    // Während Recovery-Flow keine Auto-Logins
     if (inPasswordRecovery) return;
 
     if (event === 'SIGNED_OUT') {
@@ -146,7 +165,6 @@ async function onLogin(user) {
     .eq('id', user.id)
     .single();
 
-  // Profil muss existieren
   if (profileError || !profile) {
     await db.auth.signOut();
     currentUser = null;
@@ -155,7 +173,6 @@ async function onLogin(user) {
     return;
   }
 
-  // Inaktive User blocken
   if (profile.status === 'inaktiv') {
     await db.auth.signOut();
     currentUser = null;
@@ -166,28 +183,43 @@ async function onLogin(user) {
 
   currentProfile = profile;
 
-  // Muss der User sein Passwort ändern? -> Screen sperrt App
   if (profile.muss_passwort_aendern === true) {
     showMustChangeScreen();
     return;
   }
 
-  // Normal in die App
   renderSidebar();
-  document.getElementById('btn-new-user').style.display = isAdmin() ? 'inline-block' : 'none';
+  applyAdminOnlyUI();
   showApp();
 
+  // Startseite: Admin sieht Benutzer, Nicht-Admin sieht Leistungen
+  if (isAdmin()) {
+    showPage('users', document.getElementById('nav-users'));
+  } else {
+    showPage('services', document.getElementById('nav-services'));
+  }
+
   await loadRoles();
-  await loadUsers();
+}
+
+// Blendet alle mit data-admin-only markierten Elemente je nach Rolle ein/aus
+function applyAdminOnlyUI() {
+  const admin = isAdmin();
+  document.querySelectorAll('[data-admin-only="true"]').forEach(el => {
+    el.style.display = admin ? '' : 'none';
+  });
+  // Zusätzlich: „+ Neuer Benutzer"- und „+ Neue Leistung"-Buttons
+  document.getElementById('btn-new-user').style.display = admin ? 'inline-block' : 'none';
+  document.getElementById('btn-new-service').style.display = admin ? 'inline-block' : 'none';
 }
 
 function renderSidebar() {
   const bar = document.getElementById('sidebar-user');
   bar.innerHTML = `
-    <div class="sidebar-user-avatar">${ini(currentProfile?.name || currentUser.email)}</div>
+    <div class="sidebar-user-avatar">${esc(ini(currentProfile?.name || currentUser.email))}</div>
     <div class="sidebar-user-info">
-      <div class="sidebar-user-name">${currentProfile?.name || currentUser.email}</div>
-      <div class="sidebar-user-role">${currentProfile?.roles?.name || '—'}</div>
+      <div class="sidebar-user-name">${esc(currentProfile?.name || currentUser.email)}</div>
+      <div class="sidebar-user-role">${esc(currentProfile?.roles?.name || '—')}</div>
     </div>`;
 }
 
@@ -257,7 +289,7 @@ async function doReset() {
   else { sucEl.style.display = 'block'; }
 }
 
-// ── PASSWORT-ÄNDERN-PFLICHT (Admin-Reset-Flow) ───────────────
+// ── PASSWORT-ÄNDERN-PFLICHT ──────────────────────────────────
 async function doMustChangePassword() {
   const pw1 = document.getElementById('mustchange-1').value;
   const pw2 = document.getElementById('mustchange-2').value;
@@ -281,11 +313,9 @@ async function doMustChangePassword() {
   btn.textContent = 'Wird gespeichert ...';
 
   try {
-    // 1. Passwort im Auth-System ändern
     const { error: pwError } = await db.auth.updateUser({ password: pw1 });
     if (pwError) throw new Error(pwError.message);
 
-    // 2. Flag in user_profiles zurücksetzen
     const { error: flagError } = await db
       .from('user_profiles')
       .update({ muss_passwort_aendern: false })
@@ -293,7 +323,6 @@ async function doMustChangePassword() {
 
     if (flagError) throw new Error(flagError.message);
 
-    // 3. Profil neu laden und in die App
     const { data: profile, error: profileError } = await db
       .from('user_profiles')
       .select('*, roles(id, name, rechte)')
@@ -305,12 +334,16 @@ async function doMustChangePassword() {
     currentProfile = profile;
 
     renderSidebar();
-    document.getElementById('btn-new-user').style.display = isAdmin() ? 'inline-block' : 'none';
+    applyAdminOnlyUI();
     showApp();
 
-    await loadRoles();
-    await loadUsers();
+    if (isAdmin()) {
+      showPage('users', document.getElementById('nav-users'));
+    } else {
+      showPage('services', document.getElementById('nav-services'));
+    }
 
+    await loadRoles();
     showToast('Passwort erfolgreich geändert.');
   } catch (e) {
     errEl.textContent = e.message;
@@ -321,7 +354,7 @@ async function doMustChangePassword() {
   }
 }
 
-// ── PASSWORT-RECOVERY (Passwort vergessen per Mail) ──────────
+// ── PASSWORT-RECOVERY ────────────────────────────────────────
 async function doRecoveryPassword() {
   const pw1 = document.getElementById('recovery-1').value;
   const pw2 = document.getElementById('recovery-2').value;
@@ -348,10 +381,7 @@ async function doRecoveryPassword() {
     const { error } = await db.auth.updateUser({ password: pw1 });
     if (error) throw new Error(error.message);
 
-    // URL-Hash entfernen
     window.history.replaceState(null, '', window.location.pathname);
-
-    // Recovery-Modus beenden und Session als normaler Login behandeln
     inPasswordRecovery = false;
 
     const { data: { session } } = await db.auth.getSession();
@@ -372,7 +402,10 @@ async function doRecoveryPassword() {
   }
 }
 
-// ── ROLLEN ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+//  BENUTZER-VERWALTUNG
+// ═══════════════════════════════════════════════════════════
+
 async function loadRoles() {
   const { data, error } = await db
     .from('roles')
@@ -384,7 +417,6 @@ async function loadRoles() {
   allRoles = data || [];
 }
 
-// ── BENUTZER LADEN ───────────────────────────────────────────
 async function loadUsers() {
   const tbody = document.getElementById('users-table-body');
   tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade ...</div></td></tr>';
@@ -395,7 +427,7 @@ async function loadUsers() {
     .order('name');
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${error.message}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     return;
   }
 
@@ -411,13 +443,11 @@ async function loadUsers() {
     const roleColor = u.roles?.name === 'Admin' ? '#1d4ed8' : '#374151';
     const roleBg    = u.roles?.name === 'Admin' ? '#eff6ff' : '#f3f4f6';
 
-    // Action-Buttons nur für Admins
     let actions = '';
     if (canAdminister) {
       actions += `<button class="btn btn-sm" onclick="openUserModal('edit', '${u.id}')">Bearbeiten</button>`;
-      // Reset nur für andere User, nicht für sich selbst (Admin kann sein eigenes Passwort im Profil ändern)
       if (!isMe) {
-        actions += `<button class="btn btn-sm" onclick="resetUserPassword('${u.id}', '${(u.name||'').replace(/'/g, '&#39;')}')">Passwort zurücksetzen</button>`;
+        actions += `<button class="btn btn-sm" onclick="resetUserPassword('${u.id}', '${esc(u.name || '')}')">Passwort zurücksetzen</button>`;
       }
     }
 
@@ -425,22 +455,22 @@ async function loadUsers() {
       <tr>
         <td>
           <div style="display:flex;align-items:center;gap:10px">
-            <div class="avatar">${ini(u.name)}</div>
+            <div class="avatar">${esc(ini(u.name))}</div>
             <div>
-              <div style="font-weight:500">${u.name}</div>
+              <div style="font-weight:500">${esc(u.name)}</div>
               ${isMe ? '<div style="font-size:11px;color:var(--muted)">Das bist du</div>' : ''}
             </div>
           </div>
         </td>
-        <td style="color:var(--muted)">${u.email}</td>
+        <td style="color:var(--muted)">${esc(u.email)}</td>
         <td>
           <span class="badge" style="background:${roleBg};color:${roleColor}">
-            ${u.roles?.name || '—'}
+            ${esc(u.roles?.name || '—')}
           </span>
         </td>
         <td>
           <span class="badge" style="background:${statusBg(u.status)};color:${statusColor(u.status)}">
-            ${statusLabel(u.status)}
+            ${esc(statusLabel(u.status))}
           </span>
         </td>
         <td style="text-align:right">
@@ -450,7 +480,6 @@ async function loadUsers() {
   }).join('');
 }
 
-// ── BENUTZER MODAL ───────────────────────────────────────────
 async function openUserModal(mode, userId = null) {
   if (!isAdmin()) {
     showToast('Du hast keine Berechtigung für diese Aktion.', true);
@@ -461,11 +490,10 @@ async function openUserModal(mode, userId = null) {
 
   const roleSelect = document.getElementById('u-role');
   roleSelect.innerHTML = allRoles.map(r =>
-    `<option value="${r.id}">${r.name}</option>`
+    `<option value="${esc(r.id)}">${esc(r.name)}</option>`
   ).join('');
   roleSelect.disabled = false;
 
-  // Felder zentral leeren (Zombie-Werte vermeiden)
   document.getElementById('u-name').value = '';
   document.getElementById('u-email').value = '';
   document.getElementById('u-password').value = '';
@@ -477,7 +505,6 @@ async function openUserModal(mode, userId = null) {
     document.getElementById('u-save-btn').textContent = 'Anlegen';
     document.getElementById('u-delete-btn').style.display = 'none';
     document.getElementById('u-email').disabled = false;
-    // Passwort-Feld sichtbar & aktiv beim Anlegen
     document.getElementById('u-password-group').style.display = '';
   } else {
     const isEditingSelf = userId === currentUser?.id;
@@ -559,7 +586,6 @@ async function saveUser() {
     if (editingUserId) {
       showToast('Benutzer aktualisiert.');
     } else {
-      // Neuer User: Zugangsdaten anzeigen
       showCredentials({
         title: 'Zugangsdaten für ' + name,
         email: result.email,
@@ -618,7 +644,6 @@ async function deleteUser() {
   }
 }
 
-// ── PASSWORT-RESET DURCH ADMIN ───────────────────────────────
 async function resetUserPassword(userId, userName) {
   if (!isAdmin()) {
     showToast('Du hast keine Berechtigung für diese Aktion.', true);
@@ -657,7 +682,6 @@ async function resetUserPassword(userId, userName) {
   }
 }
 
-// ── ZUGANGSDATEN-MODAL ──────────────────────────────────────
 function showCredentials({ title, email, password }) {
   document.getElementById('modal-credentials-title').textContent = title;
   document.getElementById('cred-email').textContent = email;
@@ -667,7 +691,6 @@ function showCredentials({ title, email, password }) {
 
 function closeCredentialsModal() {
   document.getElementById('modal-credentials').classList.remove('open');
-  // Aus Sicherheitsgründen Werte entfernen
   document.getElementById('cred-email').textContent = '';
   document.getElementById('cred-password').textContent = '';
 }
@@ -694,8 +717,468 @@ async function copyBothCredentials() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  LEISTUNGEN (SERVICES)
+// ═══════════════════════════════════════════════════════════
+
+// Lädt aktive Leistungskategorien für das Dropdown im Service-Modal
+async function loadLeistungsKategorien() {
+  const { data, error } = await db
+    .from('lookup_values')
+    .select('id, wert, farbe')
+    .eq('kategorie', 'leistungs_kategorie')
+    .eq('ist_aktiv', true)
+    .order('reihenfolge');
+
+  if (error) {
+    showToast('Fehler beim Laden der Kategorien: ' + error.message, true);
+    return [];
+  }
+  return data || [];
+}
+
+async function loadServices() {
+  const tbody = document.getElementById('services-table-body');
+  tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade ...</div></td></tr>';
+
+  const { data, error } = await db
+    .from('services')
+    .select('*, kategorie:lookup_values!services_kategorie_id_fkey(id, wert, farbe)')
+    .order('name');
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    const hint = isAdmin()
+      ? 'Noch keine Leistungen angelegt. Klicke oben auf „+ Neue Leistung".'
+      : 'Noch keine Leistungen verfügbar.';
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">${hint}</div></td></tr>`;
+    return;
+  }
+
+  const canEdit = isAdmin();
+
+  tbody.innerHTML = data.map(s => {
+    const katFarbe = s.kategorie?.farbe || '#6b7280';
+    const katWert  = s.kategorie?.wert || '—';
+    const aktivBg  = s.ist_aktiv ? '#f0fdf4' : '#f3f4f6';
+    const aktivCol = s.ist_aktiv ? '#16a34a' : '#6b7280';
+    const aktivTxt = s.ist_aktiv ? 'Aktiv' : 'Archiviert';
+
+    const editBtn = canEdit
+      ? `<button class="btn btn-sm" onclick="openServiceModal('edit', '${s.id}')">Bearbeiten</button>`
+      : '';
+
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:500">${esc(s.name)}</div>
+          ${s.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.beschreibung)}</div>` : ''}
+        </td>
+        <td>
+          <span class="badge" style="background:${esc(katFarbe)}22;color:${esc(katFarbe)}">
+            ${esc(katWert)}
+          </span>
+        </td>
+        <td style="color:var(--muted)">${esc(s.einheit || '—')}</td>
+        <td>${esc(formatPreis(s.standardpreis))}</td>
+        <td>
+          <span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span>
+        </td>
+        <td style="text-align:right">${editBtn}</td>
+      </tr>`;
+  }).join('');
+}
+
+async function openServiceModal(mode, serviceId = null) {
+  if (!isAdmin()) {
+    showToast('Du hast keine Berechtigung für diese Aktion.', true);
+    return;
+  }
+
+  editingServiceId = serviceId;
+
+  // Kategorie-Dropdown befüllen
+  const kategorien = await loadLeistungsKategorien();
+  const kategorieSelect = document.getElementById('s-kategorie');
+  if (kategorien.length === 0) {
+    kategorieSelect.innerHTML = '<option value="">Keine Kategorien – bitte erst unter „Stammdaten" anlegen</option>';
+  } else {
+    kategorieSelect.innerHTML = kategorien.map(k =>
+      `<option value="${esc(k.id)}">${esc(k.wert)}</option>`
+    ).join('');
+  }
+
+  // Felder leeren
+  document.getElementById('s-name').value = '';
+  document.getElementById('s-beschreibung').value = '';
+  document.getElementById('s-einheit').value = 'Tag';
+  document.getElementById('s-preis').value = '';
+  document.getElementById('s-aktiv').value = 'true';
+
+  if (mode === 'new') {
+    document.getElementById('modal-service-title').textContent = 'Neue Leistung';
+    document.getElementById('s-save-btn').textContent = 'Anlegen';
+    document.getElementById('s-delete-btn').style.display = 'none';
+  } else {
+    document.getElementById('modal-service-title').textContent = 'Leistung bearbeiten';
+    document.getElementById('s-save-btn').textContent = 'Speichern';
+    document.getElementById('s-delete-btn').style.display = 'block';
+
+    const { data, error } = await db
+      .from('services')
+      .select('*')
+      .eq('id', serviceId)
+      .single();
+
+    if (error || !data) {
+      showToast('Leistung konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingServiceId = null;
+      return;
+    }
+
+    document.getElementById('s-name').value = data.name || '';
+    document.getElementById('s-beschreibung').value = data.beschreibung || '';
+    document.getElementById('s-einheit').value = data.einheit || 'Tag';
+    document.getElementById('s-preis').value = data.standardpreis ?? '';
+    document.getElementById('s-aktiv').value = data.ist_aktiv ? 'true' : 'false';
+    if (data.kategorie_id) kategorieSelect.value = data.kategorie_id;
+  }
+
+  document.getElementById('modal-service').classList.add('open');
+  setTimeout(() => document.getElementById('s-name').focus(), 100);
+}
+
+function closeServiceModal() {
+  document.getElementById('modal-service').classList.remove('open');
+  editingServiceId = null;
+}
+
+async function saveService() {
+  const name          = document.getElementById('s-name').value.trim();
+  const beschreibung  = document.getElementById('s-beschreibung').value.trim();
+  const kategorie_id  = document.getElementById('s-kategorie').value;
+  const einheit       = document.getElementById('s-einheit').value;
+  const preisRaw      = document.getElementById('s-preis').value;
+  const ist_aktiv     = document.getElementById('s-aktiv').value === 'true';
+  const btn           = document.getElementById('s-save-btn');
+
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+  if (!kategorie_id) { showToast('Bitte Kategorie auswählen.', true); return; }
+  if (!einheit) { showToast('Bitte Einheit auswählen.', true); return; }
+
+  const standardpreis = preisRaw === '' ? 0 : Number(preisRaw);
+  if (Number.isNaN(standardpreis) || standardpreis < 0) {
+    showToast('Preis muss eine Zahl ≥ 0 sein.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = editingServiceId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      name,
+      beschreibung: beschreibung || null,
+      kategorie_id,
+      einheit,
+      standardpreis,
+      ist_aktiv
+    };
+
+    let error;
+    if (editingServiceId) {
+      ({ error } = await db.from('services').update(payload).eq('id', editingServiceId));
+    } else {
+      ({ error } = await db.from('services').insert(payload));
+    }
+
+    if (error) throw new Error(error.message);
+
+    closeServiceModal();
+    showToast(editingServiceId ? 'Leistung aktualisiert.' : 'Leistung angelegt.');
+    await loadServices();
+
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingServiceId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteService() {
+  if (!editingServiceId) return;
+  if (!confirm('Leistung wirklich löschen?\n\nHinweis: Wenn sie bereits in Einsätzen oder Terminen verwendet wird, solltest du sie stattdessen archivieren.')) return;
+
+  const btn = document.getElementById('s-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const { error } = await db.from('services').delete().eq('id', editingServiceId);
+    if (error) {
+      // Foreign-Key-Verletzung (Leistung wird noch verwendet) → freundliche Nachricht
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Diese Leistung wird noch in Einsätzen oder Terminen verwendet. Archiviere sie stattdessen.');
+      }
+      throw new Error(error.message);
+    }
+
+    closeServiceModal();
+    showToast('Leistung gelöscht.');
+    await loadServices();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STAMMDATEN / LOOKUP-WERTE
+// ═══════════════════════════════════════════════════════════
+
+// Holt alle unterschiedlichen Lookup-Kategorien (Werte der kategorie-Spalte)
+async function loadLookupKategorien() {
+  const { data, error } = await db
+    .from('lookup_values')
+    .select('kategorie')
+    .order('kategorie');
+
+  if (error) {
+    showToast('Fehler beim Laden der Kategorien: ' + error.message, true);
+    return [];
+  }
+  const unique = [...new Set((data || []).map(r => r.kategorie))];
+  return unique;
+}
+
+// Aufruf wenn die Stammdaten-Seite geöffnet wird
+async function loadLookupsPage() {
+  const kategorien = await loadLookupKategorien();
+  const select = document.getElementById('lookup-filter-kategorie');
+
+  if (kategorien.length === 0) {
+    select.innerHTML = '<option value="">— Keine Kategorien vorhanden —</option>';
+  } else {
+    // Vorherige Auswahl merken, falls möglich
+    const previous = select.value;
+    select.innerHTML = kategorien.map(k =>
+      `<option value="${esc(k)}">${esc(k)}</option>`
+    ).join('');
+    if (kategorien.includes(previous)) select.value = previous;
+  }
+
+  await loadLookups();
+}
+
+async function loadLookups() {
+  const tbody = document.getElementById('lookups-table-body');
+  const kategorie = document.getElementById('lookup-filter-kategorie').value;
+
+  tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade ...</div></td></tr>';
+
+  if (!kategorie) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Keine Kategorie ausgewählt.</div></td></tr>';
+    return;
+  }
+
+  const { data, error } = await db
+    .from('lookup_values')
+    .select('*')
+    .eq('kategorie', kategorie)
+    .order('reihenfolge')
+    .order('wert');
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Einträge in dieser Kategorie.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map(lv => {
+    const aktivBg  = lv.ist_aktiv ? '#f0fdf4' : '#f3f4f6';
+    const aktivCol = lv.ist_aktiv ? '#16a34a' : '#6b7280';
+    const aktivTxt = lv.ist_aktiv ? 'Aktiv' : 'Archiviert';
+    return `
+      <tr>
+        <td style="font-weight:500">${esc(lv.wert)}</td>
+        <td>
+          <span class="color-dot" style="background:${esc(lv.farbe || '#6b7280')}"></span>
+          <span style="font-family:'SF Mono',Menlo,monospace;font-size:12px;color:var(--muted)">${esc(lv.farbe || '#6b7280')}</span>
+        </td>
+        <td style="color:var(--muted)">${esc(String(lv.reihenfolge ?? 0))}</td>
+        <td>
+          <span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span>
+        </td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="openLookupModal('edit', '${esc(lv.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function openLookupModal(mode, lookupId = null) {
+  if (!isAdmin()) {
+    showToast('Du hast keine Berechtigung für diese Aktion.', true);
+    return;
+  }
+
+  editingLookupId = lookupId;
+
+  // Kategorie-Dropdown mit bestehenden + "Neue Kategorie..."-Option befüllen
+  const kategorien = await loadLookupKategorien();
+  const kSelect = document.getElementById('l-kategorie');
+  let options = kategorien.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  options += '<option value="__new__">+ Neue Kategorie anlegen …</option>';
+  kSelect.innerHTML = options;
+
+  // Eingabefeld für neue Kategorie zunächst ausblenden
+  document.getElementById('l-new-kategorie-group').style.display = 'none';
+  document.getElementById('l-new-kategorie').value = '';
+
+  // "Neue Kategorie"-Auswahl via Change-Handler
+  kSelect.onchange = () => {
+    const isNew = kSelect.value === '__new__';
+    document.getElementById('l-new-kategorie-group').style.display = isNew ? '' : 'none';
+  };
+
+  // Felder zurücksetzen
+  document.getElementById('l-wert').value = '';
+  document.getElementById('l-farbe').value = '#6b7280';
+  document.getElementById('l-reihenfolge').value = '0';
+  document.getElementById('l-aktiv').value = 'true';
+
+  if (mode === 'new') {
+    document.getElementById('modal-lookup-title').textContent = 'Neuer Wert';
+    document.getElementById('l-save-btn').textContent = 'Anlegen';
+    document.getElementById('l-delete-btn').style.display = 'none';
+
+    // Filter-Kategorie als Default übernehmen, falls gesetzt
+    const filterKat = document.getElementById('lookup-filter-kategorie').value;
+    if (filterKat && kategorien.includes(filterKat)) {
+      kSelect.value = filterKat;
+    }
+  } else {
+    document.getElementById('modal-lookup-title').textContent = 'Wert bearbeiten';
+    document.getElementById('l-save-btn').textContent = 'Speichern';
+    document.getElementById('l-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('lookup_values').select('*').eq('id', lookupId).single();
+    if (error || !data) {
+      showToast('Wert konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingLookupId = null;
+      return;
+    }
+
+    kSelect.value = data.kategorie;
+    document.getElementById('l-wert').value = data.wert || '';
+    document.getElementById('l-farbe').value = data.farbe || '#6b7280';
+    document.getElementById('l-reihenfolge').value = data.reihenfolge ?? 0;
+    document.getElementById('l-aktiv').value = data.ist_aktiv ? 'true' : 'false';
+  }
+
+  document.getElementById('modal-lookup').classList.add('open');
+  setTimeout(() => document.getElementById('l-wert').focus(), 100);
+}
+
+function closeLookupModal() {
+  document.getElementById('modal-lookup').classList.remove('open');
+  editingLookupId = null;
+}
+
+async function saveLookup() {
+  const kSelect     = document.getElementById('l-kategorie');
+  const isNew       = kSelect.value === '__new__';
+  const kategorie   = isNew
+    ? document.getElementById('l-new-kategorie').value.trim()
+    : kSelect.value;
+  const wert        = document.getElementById('l-wert').value.trim();
+  const farbe       = document.getElementById('l-farbe').value;
+  const reihenRaw   = document.getElementById('l-reihenfolge').value;
+  const ist_aktiv   = document.getElementById('l-aktiv').value === 'true';
+  const btn         = document.getElementById('l-save-btn');
+
+  if (!kategorie) { showToast('Bitte Kategorie auswählen oder neue eingeben.', true); return; }
+  if (isNew && !/^[a-z0-9_]+$/.test(kategorie)) {
+    showToast('Kategorie-Schlüssel: nur Kleinbuchstaben, Zahlen und Unterstriche.', true);
+    return;
+  }
+  if (!wert) { showToast('Bitte Wert eingeben.', true); return; }
+
+  const reihenfolge = reihenRaw === '' ? 0 : parseInt(reihenRaw, 10);
+  if (Number.isNaN(reihenfolge)) { showToast('Reihenfolge muss eine Zahl sein.', true); return; }
+
+  btn.disabled = true;
+  btn.textContent = editingLookupId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = { kategorie, wert, farbe, reihenfolge, ist_aktiv };
+
+    let error;
+    if (editingLookupId) {
+      ({ error } = await db.from('lookup_values').update(payload).eq('id', editingLookupId));
+    } else {
+      ({ error } = await db.from('lookup_values').insert(payload));
+    }
+    if (error) throw new Error(error.message);
+
+    closeLookupModal();
+    showToast(editingLookupId ? 'Wert aktualisiert.' : 'Wert angelegt.');
+
+    // Filter-Dropdown aktualisieren und auf die gerade benutzte Kategorie setzen
+    await loadLookupsPage();
+    const filterSelect = document.getElementById('lookup-filter-kategorie');
+    if ([...filterSelect.options].some(o => o.value === kategorie)) {
+      filterSelect.value = kategorie;
+      await loadLookups();
+    }
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingLookupId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteLookup() {
+  if (!editingLookupId) return;
+  if (!confirm('Wert wirklich löschen?\n\nFalls dieser Wert bereits an anderen Stellen referenziert wird (z. B. als Leistungskategorie), wird das Löschen vom System verhindert. In dem Fall bitte stattdessen archivieren.')) return;
+
+  const btn = document.getElementById('l-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const { error } = await db.from('lookup_values').delete().eq('id', editingLookupId);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Dieser Wert wird noch an anderer Stelle verwendet. Archiviere ihn stattdessen.');
+      }
+      throw new Error(error.message);
+    }
+
+    closeLookupModal();
+    showToast('Wert gelöscht.');
+    await loadLookupsPage();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
 // ── START ────────────────────────────────────────────────────
-// Warten bis DOM geladen ist, damit alle getElementById-Zugriffe sicher sind.
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initAuth);
 } else {
