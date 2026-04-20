@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.4.1 (Einstellungen als ausklappbares Untermenü)
+   Version 1.5.0 (Phase 2b – Firmen)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -14,13 +14,18 @@ const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── APP STATE ────────────────────────────────────────────────
-let currentUser       = null;
-let currentProfile    = null;
-let allRoles          = [];
-let editingUserId     = null;
-let editingServiceId  = null;
-let editingLookupId   = null;
+let currentUser        = null;
+let currentProfile     = null;
+let allRoles           = [];
+let editingUserId      = null;
+let editingServiceId   = null;
+let editingLookupId    = null;
+let editingCompanyId   = null;
 let inPasswordRecovery = false;
+
+// Cache für Firmen-Seite: wird bei loadCompanies() gefüllt,
+// filterCompanies() rendert ohne neuen DB-Call
+let companiesCache = [];
 
 // ── HILFSFUNKTIONEN ──────────────────────────────────────────
 function ini(name) {
@@ -66,22 +71,19 @@ function showToast(msg, isError = false) {
 
 function showPage(name, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  // nur echte Link-Items deaktivieren, nicht den Einstellungen-Toggle selbst
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
   el?.classList.add('active');
 
-  // Seiten-spezifisches Laden anstoßen (idempotent)
+  // Seiten-spezifisches Laden anstoßen
   if (name === 'users') loadUsers();
   if (name === 'services') loadServices();
   if (name === 'lookups') loadLookupsPage();
-  // 'home' braucht kein Nachladen
+  if (name === 'companies') loadCompanies();
 }
 
-// Ein-/Ausklappen des Einstellungen-Untermenüs
 function toggleSettings() {
-  const group = document.getElementById('nav-settings-group');
-  group.classList.toggle('open');
+  document.getElementById('nav-settings-group').classList.toggle('open');
 }
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
@@ -93,32 +95,11 @@ function hideAllScreens() {
   document.getElementById('app').style.display = 'none';
 }
 
-function showLoginScreen() {
-  hideAllScreens();
-  document.getElementById('auth-screen').style.display = 'flex';
-}
-
-function showResetScreen() {
-  hideAllScreens();
-  document.getElementById('reset-screen').style.display = 'flex';
-}
-
-function showRecoveryScreen() {
-  hideAllScreens();
-  document.getElementById('recovery-screen').style.display = 'flex';
-  setTimeout(() => document.getElementById('recovery-1').focus(), 100);
-}
-
-function showMustChangeScreen() {
-  hideAllScreens();
-  document.getElementById('mustchange-screen').style.display = 'flex';
-  setTimeout(() => document.getElementById('mustchange-1').focus(), 100);
-}
-
-function showApp() {
-  hideAllScreens();
-  document.getElementById('app').style.display = 'flex';
-}
+function showLoginScreen()    { hideAllScreens(); document.getElementById('auth-screen').style.display = 'flex'; }
+function showResetScreen()    { hideAllScreens(); document.getElementById('reset-screen').style.display = 'flex'; }
+function showRecoveryScreen() { hideAllScreens(); document.getElementById('recovery-screen').style.display = 'flex'; setTimeout(() => document.getElementById('recovery-1').focus(), 100); }
+function showMustChangeScreen() { hideAllScreens(); document.getElementById('mustchange-screen').style.display = 'flex'; setTimeout(() => document.getElementById('mustchange-1').focus(), 100); }
+function showApp()            { hideAllScreens(); document.getElementById('app').style.display = 'flex'; }
 
 // ── AUTH INIT ────────────────────────────────────────────────
 async function initAuth() {
@@ -149,7 +130,6 @@ async function initAuth() {
 
   db.auth.onAuthStateChange(async (event, session) => {
     if (inPasswordRecovery) return;
-
     if (event === 'SIGNED_OUT') {
       currentUser = null;
       currentProfile = null;
@@ -203,21 +183,18 @@ async function onLogin(user) {
 }
 
 /**
- * Öffnet die passende Startseite nach dem Login:
- * - Admin → Einstellungen-Menü aufgeklappt, Seite "Benutzer"
- * - Nicht-Admin → "Willkommen"-Platzhalter
+ * Nach dem Login passende Startseite öffnen.
+ * Ab v1.5.0: ALLE Nutzer starten auf „Firmen" (erste Arbeitsseite).
  */
 function showDefaultPage() {
+  showPage('companies', document.getElementById('nav-companies'));
+
+  // Für Admin: Einstellungen-Untermenü standardmäßig ausklappen
   if (isAdmin()) {
-    // Einstellungen-Untermenü aufklappen, damit die 3 Admin-Seiten gleich sichtbar sind
     document.getElementById('nav-settings-group').classList.add('open');
-    showPage('users', document.getElementById('nav-users'));
-  } else {
-    showPage('home', null);
   }
 }
 
-// Blendet alle mit data-admin-only markierten Elemente je nach Rolle ein/aus
 function applyAdminOnlyUI() {
   const admin = isAdmin();
   document.querySelectorAll('[data-admin-only="true"]').forEach(el => {
@@ -312,16 +289,8 @@ async function doMustChangePassword() {
 
   errEl.classList.remove('show');
 
-  if (pw1.length < 6) {
-    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
-    errEl.classList.add('show');
-    return;
-  }
-  if (pw1 !== pw2) {
-    errEl.textContent = 'Passwörter stimmen nicht überein.';
-    errEl.classList.add('show');
-    return;
-  }
+  if (pw1.length < 6) { errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.'; errEl.classList.add('show'); return; }
+  if (pw1 !== pw2) { errEl.textContent = 'Passwörter stimmen nicht überein.'; errEl.classList.add('show'); return; }
 
   btn.disabled = true;
   btn.textContent = 'Wird gespeichert ...';
@@ -334,7 +303,6 @@ async function doMustChangePassword() {
       .from('user_profiles')
       .update({ muss_passwort_aendern: false })
       .eq('id', currentUser.id);
-
     if (flagError) throw new Error(flagError.message);
 
     const { data: profile, error: profileError } = await db
@@ -342,11 +310,9 @@ async function doMustChangePassword() {
       .select('*, roles(id, name, rechte)')
       .eq('id', currentUser.id)
       .single();
-
     if (profileError || !profile) throw new Error('Profil konnte nicht geladen werden.');
 
     currentProfile = profile;
-
     renderSidebar();
     applyAdminOnlyUI();
     showApp();
@@ -372,16 +338,8 @@ async function doRecoveryPassword() {
 
   errEl.classList.remove('show');
 
-  if (pw1.length < 6) {
-    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
-    errEl.classList.add('show');
-    return;
-  }
-  if (pw1 !== pw2) {
-    errEl.textContent = 'Passwörter stimmen nicht überein.';
-    errEl.classList.add('show');
-    return;
-  }
+  if (pw1.length < 6) { errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.'; errEl.classList.add('show'); return; }
+  if (pw1 !== pw2) { errEl.textContent = 'Passwörter stimmen nicht überein.'; errEl.classList.add('show'); return; }
 
   btn.disabled = true;
   btn.textContent = 'Wird gespeichert ...';
@@ -394,11 +352,7 @@ async function doRecoveryPassword() {
     inPasswordRecovery = false;
 
     const { data: { session } } = await db.auth.getSession();
-    if (!session) {
-      showToast('Passwort gesetzt. Bitte neu anmelden.');
-      showLoginScreen();
-      return;
-    }
+    if (!session) { showToast('Passwort gesetzt. Bitte neu anmelden.'); showLoginScreen(); return; }
 
     await onLogin(session.user);
     showToast('Passwort erfolgreich geändert.');
@@ -421,7 +375,6 @@ async function loadRoles() {
     .select('*')
     .eq('ist_aktiv', true)
     .order('name');
-
   if (error) { showToast('Fehler beim Laden der Rollen: ' + error.message, true); return; }
   allRoles = data || [];
 }
@@ -439,7 +392,6 @@ async function loadUsers() {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     return;
   }
-
   if (!users || users.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Benutzer.</div></td></tr>';
     return;
@@ -472,35 +424,19 @@ async function loadUsers() {
           </div>
         </td>
         <td style="color:var(--muted)">${esc(u.email)}</td>
-        <td>
-          <span class="badge" style="background:${roleBg};color:${roleColor}">
-            ${esc(u.roles?.name || '—')}
-          </span>
-        </td>
-        <td>
-          <span class="badge" style="background:${statusBg(u.status)};color:${statusColor(u.status)}">
-            ${esc(statusLabel(u.status))}
-          </span>
-        </td>
-        <td style="text-align:right">
-          <div class="btn-row" style="justify-content:flex-end">${actions}</div>
-        </td>
+        <td><span class="badge" style="background:${roleBg};color:${roleColor}">${esc(u.roles?.name || '—')}</span></td>
+        <td><span class="badge" style="background:${statusBg(u.status)};color:${statusColor(u.status)}">${esc(statusLabel(u.status))}</span></td>
+        <td style="text-align:right"><div class="btn-row" style="justify-content:flex-end">${actions}</div></td>
       </tr>`;
   }).join('');
 }
 
 async function openUserModal(mode, userId = null) {
-  if (!isAdmin()) {
-    showToast('Du hast keine Berechtigung für diese Aktion.', true);
-    return;
-  }
-
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Aktion.', true); return; }
   editingUserId = userId;
 
   const roleSelect = document.getElementById('u-role');
-  roleSelect.innerHTML = allRoles.map(r =>
-    `<option value="${esc(r.id)}">${esc(r.name)}</option>`
-  ).join('');
+  roleSelect.innerHTML = allRoles.map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   roleSelect.disabled = false;
 
   document.getElementById('u-name').value = '';
@@ -517,9 +453,7 @@ async function openUserModal(mode, userId = null) {
     document.getElementById('u-password-group').style.display = '';
   } else {
     const isEditingSelf = userId === currentUser?.id;
-
-    document.getElementById('modal-user-title').textContent =
-      isEditingSelf ? 'Mein Profil' : 'Benutzer bearbeiten';
+    document.getElementById('modal-user-title').textContent = isEditingSelf ? 'Mein Profil' : 'Benutzer bearbeiten';
     document.getElementById('u-password-hint').textContent = '(leer = unverändert)';
     document.getElementById('u-password').placeholder = 'Leer lassen für unverändertes Passwort';
     document.getElementById('u-save-btn').textContent = 'Speichern';
@@ -533,13 +467,11 @@ async function openUserModal(mode, userId = null) {
       .select('*, roles(id, name)')
       .eq('id', userId)
       .single();
-
     if (error || !data) {
       showToast('Benutzer konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
       editingUserId = null;
       return;
     }
-
     document.getElementById('u-name').value = data.name || '';
     document.getElementById('u-email').value = data.email || '';
     if (data.role_id) roleSelect.value = data.role_id;
@@ -586,24 +518,16 @@ async function saveUser() {
       },
       body: JSON.stringify(body)
     });
-
     const result = await resp.json();
     if (!resp.ok) throw new Error(result.error || 'Unbekannter Fehler');
 
     closeUserModal();
-
     if (editingUserId) {
       showToast('Benutzer aktualisiert.');
     } else {
-      showCredentials({
-        title: 'Zugangsdaten für ' + name,
-        email: result.email,
-        password: result.password
-      });
+      showCredentials({ title: 'Zugangsdaten für ' + name, email: result.email, password: result.password });
     }
-
     await loadUsers();
-
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -614,10 +538,7 @@ async function saveUser() {
 
 async function deleteUser() {
   if (!editingUserId) return;
-  if (editingUserId === currentUser?.id) {
-    showToast('Du kannst dich nicht selbst löschen.', true);
-    return;
-  }
+  if (editingUserId === currentUser?.id) { showToast('Du kannst dich nicht selbst löschen.', true); return; }
   if (!confirm('Benutzer wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
 
   const btn = document.getElementById('u-delete-btn');
@@ -637,14 +558,12 @@ async function deleteUser() {
       },
       body: JSON.stringify({ action: 'delete', user_id: editingUserId })
     });
-
     const result = await resp.json();
     if (!resp.ok) throw new Error(result.error || 'Unbekannter Fehler');
 
     closeUserModal();
     showToast('Benutzer gelöscht.');
     await loadUsers();
-
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -654,13 +573,8 @@ async function deleteUser() {
 }
 
 async function resetUserPassword(userId, userName) {
-  if (!isAdmin()) {
-    showToast('Du hast keine Berechtigung für diese Aktion.', true);
-    return;
-  }
-  if (!confirm(`Für "${userName}" ein neues Passwort generieren?\n\nDas alte Passwort wird sofort ungültig. Der Benutzer muss sich beim nächsten Login ein eigenes Passwort setzen.`)) {
-    return;
-  }
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Aktion.', true); return; }
+  if (!confirm(`Für "${userName}" ein neues Passwort generieren?\n\nDas alte Passwort wird sofort ungültig. Der Benutzer muss sich beim nächsten Login ein eigenes Passwort setzen.`)) return;
 
   try {
     const { data: { session } } = await db.auth.getSession();
@@ -675,16 +589,10 @@ async function resetUserPassword(userId, userName) {
       },
       body: JSON.stringify({ action: 'reset_password', user_id: userId })
     });
-
     const result = await resp.json();
     if (!resp.ok) throw new Error(result.error || 'Unbekannter Fehler');
 
-    showCredentials({
-      title: 'Neues Passwort für ' + userName,
-      email: result.email,
-      password: result.password
-    });
-
+    showCredentials({ title: 'Neues Passwort für ' + userName, email: result.email, password: result.password });
     await loadUsers();
   } catch (e) {
     showToast(e.message, true);
@@ -706,24 +614,16 @@ function closeCredentialsModal() {
 
 async function copyCredential(elementId) {
   const text = document.getElementById(elementId).textContent;
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast('In Zwischenablage kopiert.');
-  } catch {
-    showToast('Kopieren nicht möglich. Bitte manuell markieren.', true);
-  }
+  try { await navigator.clipboard.writeText(text); showToast('In Zwischenablage kopiert.'); }
+  catch { showToast('Kopieren nicht möglich. Bitte manuell markieren.', true); }
 }
 
 async function copyBothCredentials() {
   const email = document.getElementById('cred-email').textContent;
   const password = document.getElementById('cred-password').textContent;
   const text = `E-Mail: ${email}\nPasswort: ${password}`;
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast('Zugangsdaten in Zwischenablage kopiert.');
-  } catch {
-    showToast('Kopieren nicht möglich.', true);
-  }
+  try { await navigator.clipboard.writeText(text); showToast('Zugangsdaten in Zwischenablage kopiert.'); }
+  catch { showToast('Kopieren nicht möglich.', true); }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -737,11 +637,7 @@ async function loadLeistungsKategorien() {
     .eq('kategorie', 'leistungs_kategorie')
     .eq('ist_aktiv', true)
     .order('reihenfolge');
-
-  if (error) {
-    showToast('Fehler beim Laden der Kategorien: ' + error.message, true);
-    return [];
-  }
+  if (error) { showToast('Fehler beim Laden der Kategorien: ' + error.message, true); return []; }
   return data || [];
 }
 
@@ -758,7 +654,6 @@ async function loadServices() {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     return;
   }
-
   if (!data || data.length === 0) {
     const hint = isAdmin()
       ? 'Noch keine Leistungen angelegt. Klicke oben auf „+ Neue Leistung".'
@@ -775,10 +670,7 @@ async function loadServices() {
     const aktivBg  = s.ist_aktiv ? '#f0fdf4' : '#f3f4f6';
     const aktivCol = s.ist_aktiv ? '#16a34a' : '#6b7280';
     const aktivTxt = s.ist_aktiv ? 'Aktiv' : 'Archiviert';
-
-    const editBtn = canEdit
-      ? `<button class="btn btn-sm" onclick="openServiceModal('edit', '${s.id}')">Bearbeiten</button>`
-      : '';
+    const editBtn = canEdit ? `<button class="btn btn-sm" onclick="openServiceModal('edit', '${s.id}')">Bearbeiten</button>` : '';
 
     return `
       <tr>
@@ -786,27 +678,17 @@ async function loadServices() {
           <div style="font-weight:500">${esc(s.name)}</div>
           ${s.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.beschreibung)}</div>` : ''}
         </td>
-        <td>
-          <span class="badge" style="background:${esc(katFarbe)}22;color:${esc(katFarbe)}">
-            ${esc(katWert)}
-          </span>
-        </td>
+        <td><span class="badge" style="background:${esc(katFarbe)}22;color:${esc(katFarbe)}">${esc(katWert)}</span></td>
         <td style="color:var(--muted)">${esc(s.einheit || '—')}</td>
         <td>${esc(formatPreis(s.standardpreis))}</td>
-        <td>
-          <span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span>
-        </td>
+        <td><span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span></td>
         <td style="text-align:right">${editBtn}</td>
       </tr>`;
   }).join('');
 }
 
 async function openServiceModal(mode, serviceId = null) {
-  if (!isAdmin()) {
-    showToast('Du hast keine Berechtigung für diese Aktion.', true);
-    return;
-  }
-
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Aktion.', true); return; }
   editingServiceId = serviceId;
 
   const kategorien = await loadLeistungsKategorien();
@@ -814,9 +696,7 @@ async function openServiceModal(mode, serviceId = null) {
   if (kategorien.length === 0) {
     kategorieSelect.innerHTML = '<option value="">Keine Kategorien – bitte erst unter „Stammdaten" anlegen</option>';
   } else {
-    kategorieSelect.innerHTML = kategorien.map(k =>
-      `<option value="${esc(k.id)}">${esc(k.wert)}</option>`
-    ).join('');
+    kategorieSelect.innerHTML = kategorien.map(k => `<option value="${esc(k.id)}">${esc(k.wert)}</option>`).join('');
   }
 
   document.getElementById('s-name').value = '';
@@ -834,18 +714,12 @@ async function openServiceModal(mode, serviceId = null) {
     document.getElementById('s-save-btn').textContent = 'Speichern';
     document.getElementById('s-delete-btn').style.display = 'block';
 
-    const { data, error } = await db
-      .from('services')
-      .select('*')
-      .eq('id', serviceId)
-      .single();
-
+    const { data, error } = await db.from('services').select('*').eq('id', serviceId).single();
     if (error || !data) {
       showToast('Leistung konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
       editingServiceId = null;
       return;
     }
-
     document.getElementById('s-name').value = data.name || '';
     document.getElementById('s-beschreibung').value = data.beschreibung || '';
     document.getElementById('s-einheit').value = data.einheit || 'Tag';
@@ -877,37 +751,21 @@ async function saveService() {
   if (!einheit) { showToast('Bitte Einheit auswählen.', true); return; }
 
   const standardpreis = preisRaw === '' ? 0 : Number(preisRaw);
-  if (Number.isNaN(standardpreis) || standardpreis < 0) {
-    showToast('Preis muss eine Zahl ≥ 0 sein.', true);
-    return;
-  }
+  if (Number.isNaN(standardpreis) || standardpreis < 0) { showToast('Preis muss eine Zahl ≥ 0 sein.', true); return; }
 
   btn.disabled = true;
   btn.textContent = editingServiceId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
-    const payload = {
-      name,
-      beschreibung: beschreibung || null,
-      kategorie_id,
-      einheit,
-      standardpreis,
-      ist_aktiv
-    };
-
+    const payload = { name, beschreibung: beschreibung || null, kategorie_id, einheit, standardpreis, ist_aktiv };
     let error;
-    if (editingServiceId) {
-      ({ error } = await db.from('services').update(payload).eq('id', editingServiceId));
-    } else {
-      ({ error } = await db.from('services').insert(payload));
-    }
-
+    if (editingServiceId) { ({ error } = await db.from('services').update(payload).eq('id', editingServiceId)); }
+    else { ({ error } = await db.from('services').insert(payload)); }
     if (error) throw new Error(error.message);
 
     closeServiceModal();
     showToast(editingServiceId ? 'Leistung aktualisiert.' : 'Leistung angelegt.');
     await loadServices();
-
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -932,7 +790,6 @@ async function deleteService() {
       }
       throw new Error(error.message);
     }
-
     closeServiceModal();
     showToast('Leistung gelöscht.');
     await loadServices();
@@ -953,13 +810,8 @@ async function loadLookupKategorien() {
     .from('lookup_values')
     .select('kategorie')
     .order('kategorie');
-
-  if (error) {
-    showToast('Fehler beim Laden der Kategorien: ' + error.message, true);
-    return [];
-  }
-  const unique = [...new Set((data || []).map(r => r.kategorie))];
-  return unique;
+  if (error) { showToast('Fehler beim Laden der Kategorien: ' + error.message, true); return []; }
+  return [...new Set((data || []).map(r => r.kategorie))];
 }
 
 async function loadLookupsPage() {
@@ -970,12 +822,9 @@ async function loadLookupsPage() {
     select.innerHTML = '<option value="">— Keine Kategorien vorhanden —</option>';
   } else {
     const previous = select.value;
-    select.innerHTML = kategorien.map(k =>
-      `<option value="${esc(k)}">${esc(k)}</option>`
-    ).join('');
+    select.innerHTML = kategorien.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
     if (kategorien.includes(previous)) select.value = previous;
   }
-
   await loadLookups();
 }
 
@@ -985,10 +834,7 @@ async function loadLookups() {
 
   tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade ...</div></td></tr>';
 
-  if (!kategorie) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Keine Kategorie ausgewählt.</div></td></tr>';
-    return;
-  }
+  if (!kategorie) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Keine Kategorie ausgewählt.</div></td></tr>'; return; }
 
   const { data, error } = await db
     .from('lookup_values')
@@ -997,15 +843,8 @@ async function loadLookups() {
     .order('reihenfolge')
     .order('wert');
 
-  if (error) {
-    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
-    return;
-  }
-
-  if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Einträge in dieser Kategorie.</div></td></tr>';
-    return;
-  }
+  if (error) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Einträge in dieser Kategorie.</div></td></tr>'; return; }
 
   tbody.innerHTML = data.map(lv => {
     const aktivBg  = lv.ist_aktiv ? '#f0fdf4' : '#f3f4f6';
@@ -1019,22 +858,14 @@ async function loadLookups() {
           <span style="font-family:'SF Mono',Menlo,monospace;font-size:12px;color:var(--muted)">${esc(lv.farbe || '#6b7280')}</span>
         </td>
         <td style="color:var(--muted)">${esc(String(lv.reihenfolge ?? 0))}</td>
-        <td>
-          <span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span>
-        </td>
-        <td style="text-align:right">
-          <button class="btn btn-sm" onclick="openLookupModal('edit', '${esc(lv.id)}')">Bearbeiten</button>
-        </td>
+        <td><span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span></td>
+        <td style="text-align:right"><button class="btn btn-sm" onclick="openLookupModal('edit', '${esc(lv.id)}')">Bearbeiten</button></td>
       </tr>`;
   }).join('');
 }
 
 async function openLookupModal(mode, lookupId = null) {
-  if (!isAdmin()) {
-    showToast('Du hast keine Berechtigung für diese Aktion.', true);
-    return;
-  }
-
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Aktion.', true); return; }
   editingLookupId = lookupId;
 
   const kategorien = await loadLookupKategorien();
@@ -1060,22 +891,15 @@ async function openLookupModal(mode, lookupId = null) {
     document.getElementById('modal-lookup-title').textContent = 'Neuer Wert';
     document.getElementById('l-save-btn').textContent = 'Anlegen';
     document.getElementById('l-delete-btn').style.display = 'none';
-
     const filterKat = document.getElementById('lookup-filter-kategorie').value;
-    if (filterKat && kategorien.includes(filterKat)) {
-      kSelect.value = filterKat;
-    }
+    if (filterKat && kategorien.includes(filterKat)) kSelect.value = filterKat;
   } else {
     document.getElementById('modal-lookup-title').textContent = 'Wert bearbeiten';
     document.getElementById('l-save-btn').textContent = 'Speichern';
     document.getElementById('l-delete-btn').style.display = 'block';
 
     const { data, error } = await db.from('lookup_values').select('*').eq('id', lookupId).single();
-    if (error || !data) {
-      showToast('Wert konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
-      editingLookupId = null;
-      return;
-    }
+    if (error || !data) { showToast('Wert konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingLookupId = null; return; }
 
     kSelect.value = data.kategorie;
     document.getElementById('l-wert').value = data.wert || '';
@@ -1096,9 +920,7 @@ function closeLookupModal() {
 async function saveLookup() {
   const kSelect     = document.getElementById('l-kategorie');
   const isNew       = kSelect.value === '__new__';
-  const kategorie   = isNew
-    ? document.getElementById('l-new-kategorie').value.trim()
-    : kSelect.value;
+  const kategorie   = isNew ? document.getElementById('l-new-kategorie').value.trim() : kSelect.value;
   const wert        = document.getElementById('l-wert').value.trim();
   const farbe       = document.getElementById('l-farbe').value;
   const reihenRaw   = document.getElementById('l-reihenfolge').value;
@@ -1106,10 +928,7 @@ async function saveLookup() {
   const btn         = document.getElementById('l-save-btn');
 
   if (!kategorie) { showToast('Bitte Kategorie auswählen oder neue eingeben.', true); return; }
-  if (isNew && !/^[a-z0-9_]+$/.test(kategorie)) {
-    showToast('Kategorie-Schlüssel: nur Kleinbuchstaben, Zahlen und Unterstriche.', true);
-    return;
-  }
+  if (isNew && !/^[a-z0-9_]+$/.test(kategorie)) { showToast('Kategorie-Schlüssel: nur Kleinbuchstaben, Zahlen und Unterstriche.', true); return; }
   if (!wert) { showToast('Bitte Wert eingeben.', true); return; }
 
   const reihenfolge = reihenRaw === '' ? 0 : parseInt(reihenRaw, 10);
@@ -1120,24 +939,16 @@ async function saveLookup() {
 
   try {
     const payload = { kategorie, wert, farbe, reihenfolge, ist_aktiv };
-
     let error;
-    if (editingLookupId) {
-      ({ error } = await db.from('lookup_values').update(payload).eq('id', editingLookupId));
-    } else {
-      ({ error } = await db.from('lookup_values').insert(payload));
-    }
+    if (editingLookupId) { ({ error } = await db.from('lookup_values').update(payload).eq('id', editingLookupId)); }
+    else { ({ error } = await db.from('lookup_values').insert(payload)); }
     if (error) throw new Error(error.message);
 
     closeLookupModal();
     showToast(editingLookupId ? 'Wert aktualisiert.' : 'Wert angelegt.');
-
     await loadLookupsPage();
     const filterSelect = document.getElementById('lookup-filter-kategorie');
-    if ([...filterSelect.options].some(o => o.value === kategorie)) {
-      filterSelect.value = kategorie;
-      await loadLookups();
-    }
+    if ([...filterSelect.options].some(o => o.value === kategorie)) { filterSelect.value = kategorie; await loadLookups(); }
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -1148,7 +959,7 @@ async function saveLookup() {
 
 async function deleteLookup() {
   if (!editingLookupId) return;
-  if (!confirm('Wert wirklich löschen?\n\nFalls dieser Wert bereits an anderen Stellen referenziert wird (z. B. als Leistungskategorie), wird das Löschen vom System verhindert. In dem Fall bitte stattdessen archivieren.')) return;
+  if (!confirm('Wert wirklich löschen?\n\nFalls dieser Wert bereits an anderen Stellen referenziert wird, wird das Löschen vom System verhindert. In dem Fall bitte stattdessen archivieren.')) return;
 
   const btn = document.getElementById('l-delete-btn');
   btn.disabled = true;
@@ -1162,10 +973,280 @@ async function deleteLookup() {
       }
       throw new Error(error.message);
     }
-
     closeLookupModal();
     showToast('Wert gelöscht.');
     await loadLookupsPage();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIRMEN (COMPANIES)  — Phase 2b
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Aktive Unternehmenstypen laden (für Dropdowns + Filter).
+ */
+async function loadUnternehmensTypen() {
+  const { data, error } = await db
+    .from('lookup_values')
+    .select('id, wert, farbe')
+    .eq('kategorie', 'unternehmens_typ')
+    .eq('ist_aktiv', true)
+    .order('reihenfolge');
+  if (error) { showToast('Fehler beim Laden der Firmentypen: ' + error.message, true); return []; }
+  return data || [];
+}
+
+/**
+ * Firmen aus DB laden, cachen und filtern/rendern.
+ * Cache, damit Suche/Filter clientseitig ohne weitere DB-Calls laufen.
+ */
+async function loadCompanies() {
+  const tbody = document.getElementById('companies-table-body');
+  tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Lade Firmen ...</div></td></tr>';
+
+  // Typen-Filter befüllen (einmal, wenn noch leer)
+  const typSelect = document.getElementById('companies-typ-filter');
+  if (typSelect.options.length <= 1) {
+    const typen = await loadUnternehmensTypen();
+    typSelect.innerHTML = '<option value="">Alle Typen</option>'
+      + typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
+  }
+
+  const { data, error } = await db
+    .from('companies')
+    .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
+    .order('name');
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+
+  companiesCache = data || [];
+  filterCompanies();
+}
+
+/**
+ * Filter anwenden (Suche + Typ) und Tabelle neu rendern.
+ * Arbeitet komplett auf companiesCache.
+ */
+function filterCompanies() {
+  const searchTerm = document.getElementById('companies-search').value.trim().toLowerCase();
+  const typFilter  = document.getElementById('companies-typ-filter').value;
+
+  let filtered = companiesCache;
+
+  if (typFilter) {
+    filtered = filtered.filter(c => c.typ_id === typFilter);
+  }
+
+  if (searchTerm) {
+    filtered = filtered.filter(c => {
+      const haystack = [
+        c.name, c.stadt, c.plz, c.email, c.telefon, c.branche, c.strasse, c.website
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }
+
+  renderCompaniesTable(filtered);
+}
+
+function renderCompaniesTable(companies) {
+  const tbody = document.getElementById('companies-table-body');
+  const countEl = document.getElementById('companies-count');
+
+  const total = companiesCache.length;
+  const shown = companies.length;
+  countEl.textContent = (shown === total)
+    ? `${total} Firma${total === 1 ? '' : 'n'}`
+    : `${shown} von ${total} Firmen`;
+
+  if (shown === 0) {
+    const msg = total === 0
+      ? 'Noch keine Firmen angelegt. Klicke oben auf „+ Neue Firma".'
+      : 'Keine Firmen entsprechen den Filterkriterien.';
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = companies.map(c => {
+    const typFarbe = c.typ?.farbe || '#6b7280';
+    const typWert  = c.typ?.wert || '—';
+
+    const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
+
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:500">${esc(c.name)}</div>
+          ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
+        </td>
+        <td>
+          <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">
+            ${esc(typWert)}
+          </span>
+        </td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(ort || '—')}</td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(c.telefon || '—')}</td>
+        <td class="col-desktop" style="color:var(--muted)">${esc(c.email || '—')}</td>
+        <td class="col-desktop" style="color:var(--muted)">${esc(c.branche || '—')}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="openCompanyModal('edit', '${esc(c.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function openCompanyModal(mode, companyId = null) {
+  editingCompanyId = companyId;
+
+  // Typen-Dropdown befüllen
+  const typSelect = document.getElementById('c-typ');
+  const typen = await loadUnternehmensTypen();
+  if (typen.length === 0) {
+    typSelect.innerHTML = '<option value="">Keine Typen – bitte erst unter „Stammdaten" anlegen</option>';
+  } else {
+    typSelect.innerHTML = typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
+  }
+
+  // Felder zurücksetzen
+  document.getElementById('c-name').value = '';
+  document.getElementById('c-branche').value = '';
+  document.getElementById('c-strasse').value = '';
+  document.getElementById('c-plz').value = '';
+  document.getElementById('c-stadt').value = '';
+  document.getElementById('c-land').value = 'Deutschland';
+  document.getElementById('c-telefon').value = '';
+  document.getElementById('c-email').value = '';
+  document.getElementById('c-website').value = '';
+  document.getElementById('c-notizen').value = '';
+
+  if (mode === 'new') {
+    document.getElementById('modal-company-title').textContent = 'Neue Firma';
+    document.getElementById('c-save-btn').textContent = 'Anlegen';
+    document.getElementById('c-delete-btn').style.display = 'none';
+  } else {
+    document.getElementById('modal-company-title').textContent = 'Firma bearbeiten';
+    document.getElementById('c-save-btn').textContent = 'Speichern';
+    document.getElementById('c-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('companies').select('*').eq('id', companyId).single();
+    if (error || !data) {
+      showToast('Firma konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingCompanyId = null;
+      return;
+    }
+
+    document.getElementById('c-name').value = data.name || '';
+    document.getElementById('c-branche').value = data.branche || '';
+    document.getElementById('c-strasse').value = data.strasse || '';
+    document.getElementById('c-plz').value = data.plz || '';
+    document.getElementById('c-stadt').value = data.stadt || '';
+    document.getElementById('c-land').value = data.land || 'Deutschland';
+    document.getElementById('c-telefon').value = data.telefon || '';
+    document.getElementById('c-email').value = data.email || '';
+    document.getElementById('c-website').value = data.website || '';
+    document.getElementById('c-notizen').value = data.notizen || '';
+    if (data.typ_id) typSelect.value = data.typ_id;
+  }
+
+  document.getElementById('modal-company').classList.add('open');
+  setTimeout(() => document.getElementById('c-name').focus(), 100);
+}
+
+function closeCompanyModal() {
+  document.getElementById('modal-company').classList.remove('open');
+  editingCompanyId = null;
+}
+
+async function saveCompany() {
+  const name     = document.getElementById('c-name').value.trim();
+  const typ_id   = document.getElementById('c-typ').value;
+  const branche  = document.getElementById('c-branche').value.trim();
+  const strasse  = document.getElementById('c-strasse').value.trim();
+  const plz      = document.getElementById('c-plz').value.trim();
+  const stadt    = document.getElementById('c-stadt').value.trim();
+  const land     = document.getElementById('c-land').value.trim();
+  const telefon  = document.getElementById('c-telefon').value.trim();
+  const email    = document.getElementById('c-email').value.trim();
+  const website  = document.getElementById('c-website').value.trim();
+  const notizen  = document.getElementById('c-notizen').value.trim();
+  const btn      = document.getElementById('c-save-btn');
+
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+  if (!typ_id) { showToast('Bitte Typ auswählen.', true); return; }
+
+  // Einfache E-Mail-Validierung (nur wenn ausgefüllt)
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showToast('E-Mail-Adresse sieht nicht korrekt aus.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = editingCompanyId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      name,
+      typ_id,
+      branche:  branche  || null,
+      strasse:  strasse  || null,
+      plz:      plz      || null,
+      stadt:    stadt    || null,
+      land:     land     || 'Deutschland',
+      telefon:  telefon  || null,
+      email:    email    || null,
+      website:  website  || null,
+      notizen:  notizen  || null
+    };
+
+    // Beim Anlegen erstellt_von setzen, beim Update NICHT überschreiben
+    if (!editingCompanyId) {
+      payload.erstellt_von = currentUser?.id || null;
+    }
+
+    let error;
+    if (editingCompanyId) { ({ error } = await db.from('companies').update(payload).eq('id', editingCompanyId)); }
+    else { ({ error } = await db.from('companies').insert(payload)); }
+    if (error) throw new Error(error.message);
+
+    closeCompanyModal();
+    showToast(editingCompanyId ? 'Firma aktualisiert.' : 'Firma angelegt.');
+    await loadCompanies();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingCompanyId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteCompany() {
+  if (!editingCompanyId) return;
+  if (!confirm('Firma wirklich löschen?\n\nHinweis: Wenn bereits Kontakte, Projekte oder Einsätze mit dieser Firma verknüpft sind, wird das Löschen vom System verhindert.')) return;
+
+  const btn = document.getElementById('c-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const { error } = await db.from('companies').delete().eq('id', editingCompanyId);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Diese Firma hat noch verknüpfte Kontakte, Projekte oder Einsätze. Diese müssen zuerst entfernt werden.');
+      }
+      throw new Error(error.message);
+    }
+    closeCompanyModal();
+    showToast('Firma gelöscht.');
+    await loadCompanies();
   } catch (e) {
     showToast(e.message, true);
   } finally {
