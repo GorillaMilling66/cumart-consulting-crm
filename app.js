@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.4.0 (Services-Katalog + Lookup-Verwaltung)
+   Version 1.4.1 (Einstellungen als ausklappbares Untermenü)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -41,7 +41,6 @@ function isAdmin() {
   return currentProfile?.roles?.name === 'Admin';
 }
 
-// Preis formatieren: 1200 -> "1.200,00 €"
 function formatPreis(value) {
   if (value === null || value === undefined || value === '') return '—';
   const num = Number(value);
@@ -49,7 +48,6 @@ function formatPreis(value) {
   return num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 }
 
-// HTML-Escape für sicheres Einfügen von User-Eingaben
 function esc(s) {
   return (s ?? '').toString()
     .replace(/&/g, '&amp;')
@@ -68,7 +66,8 @@ function showToast(msg, isError = false) {
 
 function showPage(name, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  // nur echte Link-Items deaktivieren, nicht den Einstellungen-Toggle selbst
+  document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
   el?.classList.add('active');
 
@@ -76,6 +75,13 @@ function showPage(name, el) {
   if (name === 'users') loadUsers();
   if (name === 'services') loadServices();
   if (name === 'lookups') loadLookupsPage();
+  // 'home' braucht kein Nachladen
+}
+
+// Ein-/Ausklappen des Einstellungen-Untermenüs
+function toggleSettings() {
+  const group = document.getElementById('nav-settings-group');
+  group.classList.toggle('open');
 }
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
@@ -191,15 +197,24 @@ async function onLogin(user) {
   renderSidebar();
   applyAdminOnlyUI();
   showApp();
-
-  // Startseite: Admin sieht Benutzer, Nicht-Admin sieht Leistungen
-  if (isAdmin()) {
-    showPage('users', document.getElementById('nav-users'));
-  } else {
-    showPage('services', document.getElementById('nav-services'));
-  }
+  showDefaultPage();
 
   await loadRoles();
+}
+
+/**
+ * Öffnet die passende Startseite nach dem Login:
+ * - Admin → Einstellungen-Menü aufgeklappt, Seite "Benutzer"
+ * - Nicht-Admin → "Willkommen"-Platzhalter
+ */
+function showDefaultPage() {
+  if (isAdmin()) {
+    // Einstellungen-Untermenü aufklappen, damit die 3 Admin-Seiten gleich sichtbar sind
+    document.getElementById('nav-settings-group').classList.add('open');
+    showPage('users', document.getElementById('nav-users'));
+  } else {
+    showPage('home', null);
+  }
 }
 
 // Blendet alle mit data-admin-only markierten Elemente je nach Rolle ein/aus
@@ -208,7 +223,6 @@ function applyAdminOnlyUI() {
   document.querySelectorAll('[data-admin-only="true"]').forEach(el => {
     el.style.display = admin ? '' : 'none';
   });
-  // Zusätzlich: „+ Neuer Benutzer"- und „+ Neue Leistung"-Buttons
   document.getElementById('btn-new-user').style.display = admin ? 'inline-block' : 'none';
   document.getElementById('btn-new-service').style.display = admin ? 'inline-block' : 'none';
 }
@@ -336,12 +350,7 @@ async function doMustChangePassword() {
     renderSidebar();
     applyAdminOnlyUI();
     showApp();
-
-    if (isAdmin()) {
-      showPage('users', document.getElementById('nav-users'));
-    } else {
-      showPage('services', document.getElementById('nav-services'));
-    }
+    showDefaultPage();
 
     await loadRoles();
     showToast('Passwort erfolgreich geändert.');
@@ -721,7 +730,6 @@ async function copyBothCredentials() {
 //  LEISTUNGEN (SERVICES)
 // ═══════════════════════════════════════════════════════════
 
-// Lädt aktive Leistungskategorien für das Dropdown im Service-Modal
 async function loadLeistungsKategorien() {
   const { data, error } = await db
     .from('lookup_values')
@@ -801,7 +809,6 @@ async function openServiceModal(mode, serviceId = null) {
 
   editingServiceId = serviceId;
 
-  // Kategorie-Dropdown befüllen
   const kategorien = await loadLeistungsKategorien();
   const kategorieSelect = document.getElementById('s-kategorie');
   if (kategorien.length === 0) {
@@ -812,7 +819,6 @@ async function openServiceModal(mode, serviceId = null) {
     ).join('');
   }
 
-  // Felder leeren
   document.getElementById('s-name').value = '';
   document.getElementById('s-beschreibung').value = '';
   document.getElementById('s-einheit').value = 'Tag';
@@ -921,7 +927,6 @@ async function deleteService() {
   try {
     const { error } = await db.from('services').delete().eq('id', editingServiceId);
     if (error) {
-      // Foreign-Key-Verletzung (Leistung wird noch verwendet) → freundliche Nachricht
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
         throw new Error('Diese Leistung wird noch in Einsätzen oder Terminen verwendet. Archiviere sie stattdessen.');
       }
@@ -943,7 +948,6 @@ async function deleteService() {
 //  STAMMDATEN / LOOKUP-WERTE
 // ═══════════════════════════════════════════════════════════
 
-// Holt alle unterschiedlichen Lookup-Kategorien (Werte der kategorie-Spalte)
 async function loadLookupKategorien() {
   const { data, error } = await db
     .from('lookup_values')
@@ -958,7 +962,6 @@ async function loadLookupKategorien() {
   return unique;
 }
 
-// Aufruf wenn die Stammdaten-Seite geöffnet wird
 async function loadLookupsPage() {
   const kategorien = await loadLookupKategorien();
   const select = document.getElementById('lookup-filter-kategorie');
@@ -966,7 +969,6 @@ async function loadLookupsPage() {
   if (kategorien.length === 0) {
     select.innerHTML = '<option value="">— Keine Kategorien vorhanden —</option>';
   } else {
-    // Vorherige Auswahl merken, falls möglich
     const previous = select.value;
     select.innerHTML = kategorien.map(k =>
       `<option value="${esc(k)}">${esc(k)}</option>`
@@ -1035,24 +1037,20 @@ async function openLookupModal(mode, lookupId = null) {
 
   editingLookupId = lookupId;
 
-  // Kategorie-Dropdown mit bestehenden + "Neue Kategorie..."-Option befüllen
   const kategorien = await loadLookupKategorien();
   const kSelect = document.getElementById('l-kategorie');
   let options = kategorien.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
   options += '<option value="__new__">+ Neue Kategorie anlegen …</option>';
   kSelect.innerHTML = options;
 
-  // Eingabefeld für neue Kategorie zunächst ausblenden
   document.getElementById('l-new-kategorie-group').style.display = 'none';
   document.getElementById('l-new-kategorie').value = '';
 
-  // "Neue Kategorie"-Auswahl via Change-Handler
   kSelect.onchange = () => {
     const isNew = kSelect.value === '__new__';
     document.getElementById('l-new-kategorie-group').style.display = isNew ? '' : 'none';
   };
 
-  // Felder zurücksetzen
   document.getElementById('l-wert').value = '';
   document.getElementById('l-farbe').value = '#6b7280';
   document.getElementById('l-reihenfolge').value = '0';
@@ -1063,7 +1061,6 @@ async function openLookupModal(mode, lookupId = null) {
     document.getElementById('l-save-btn').textContent = 'Anlegen';
     document.getElementById('l-delete-btn').style.display = 'none';
 
-    // Filter-Kategorie als Default übernehmen, falls gesetzt
     const filterKat = document.getElementById('lookup-filter-kategorie').value;
     if (filterKat && kategorien.includes(filterKat)) {
       kSelect.value = filterKat;
@@ -1135,7 +1132,6 @@ async function saveLookup() {
     closeLookupModal();
     showToast(editingLookupId ? 'Wert aktualisiert.' : 'Wert angelegt.');
 
-    // Filter-Dropdown aktualisieren und auf die gerade benutzte Kategorie setzen
     await loadLookupsPage();
     const filterSelect = document.getElementById('lookup-filter-kategorie');
     if ([...filterSelect.options].some(o => o.value === kategorie)) {
