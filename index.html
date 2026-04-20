@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.1.0 -->
+<!-- VERSION: 1.2.0 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── RESET & BASIS ── */
@@ -649,11 +649,29 @@ async function onLogin(user) {
   currentUser = user;
 
   // Profil laden
-  const { data: profile } = await db
+  const { data: profile, error: profileError } = await db
     .from('user_profiles')
     .select('*, roles(id, name, rechte)')
     .eq('id', user.id)
     .single();
+
+  // ─── LOGIN-BLOCKER: Profil muss existieren und Status 'aktiv' sein ───
+  if (profileError || !profile) {
+    await db.auth.signOut();
+    showLoginScreen();
+    showToast('Benutzerprofil nicht gefunden. Bitte wende dich an einen Administrator.', true);
+    return;
+  }
+
+  if (profile.status === 'inaktiv') {
+    await db.auth.signOut();
+    showLoginScreen();
+    showToast('Dein Konto ist deaktiviert. Bitte wende dich an einen Administrator.', true);
+    return;
+  }
+
+  // 'eingeladen' ist erlaubt - der DB-Trigger setzt es beim ersten Login auf 'aktiv'
+  // Falls der Trigger noch nicht gelaufen ist (Race Condition), akzeptieren wir ihn trotzdem
 
   currentProfile = profile;
 
@@ -848,6 +866,8 @@ function openUserModal(mode, userId = null) {
     document.getElementById('u-delete-btn').style.display = isEditingSelf ? 'none' : 'block';
     document.getElementById('u-email').disabled = true;
     document.getElementById('u-password').value = '';
+    // Rolle darf der Admin bei sich selbst nicht ändern (Anti-Self-Demotion)
+    roleSelect.disabled = isEditingSelf;
 
     // Daten aus der Tabelle holen
     db.from('user_profiles')
