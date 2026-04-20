@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.2.0 -->
+<!-- VERSION: 1.2.1 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── RESET & BASIS ── */
@@ -830,7 +830,7 @@ async function loadUsers() {
 }
 
 // ── BENUTZER MODAL ───────────────────────────────────────────
-function openUserModal(mode, userId = null) {
+async function openUserModal(mode, userId = null) {
   // Sicherheitsriegel: Nur Admins dürfen das Modal öffnen
   if (!isAdmin()) {
     showToast('Du hast keine Berechtigung für diese Aktion.', true);
@@ -846,11 +846,13 @@ function openUserModal(mode, userId = null) {
   ).join('');
   roleSelect.disabled = false;
 
+  // Felder zentral leeren, um Zombie-Werte aus vorherigen Modal-Öffnungen zu vermeiden
+  document.getElementById('u-name').value = '';
+  document.getElementById('u-email').value = '';
+  document.getElementById('u-password').value = '';
+
   if (mode === 'new') {
     document.getElementById('modal-user-title').textContent = 'Neuer Benutzer';
-    document.getElementById('u-name').value = '';
-    document.getElementById('u-email').value = '';
-    document.getElementById('u-password').value = '';
     document.getElementById('u-password-hint').textContent = '(leer = Einladungsmail)';
     document.getElementById('u-save-btn').textContent = 'Anlegen';
     document.getElementById('u-delete-btn').style.display = 'none';
@@ -865,21 +867,26 @@ function openUserModal(mode, userId = null) {
     // Löschen NIE bei sich selbst erlaubt
     document.getElementById('u-delete-btn').style.display = isEditingSelf ? 'none' : 'block';
     document.getElementById('u-email').disabled = true;
-    document.getElementById('u-password').value = '';
     // Rolle darf der Admin bei sich selbst nicht ändern (Anti-Self-Demotion)
     roleSelect.disabled = isEditingSelf;
 
-    // Daten aus der Tabelle holen
-    db.from('user_profiles')
+    // Benutzerdaten ZUERST laden, DANN Modal öffnen - so stehen die Werte
+    // garantiert in den Feldern, bevor der Nutzer sie sieht.
+    const { data, error } = await db
+      .from('user_profiles')
       .select('*, roles(id, name)')
       .eq('id', userId)
-      .single()
-      .then(({ data }) => {
-        if (!data) return;
-        document.getElementById('u-name').value = data.name || '';
-        document.getElementById('u-email').value = data.email || '';
-        if (data.role_id) roleSelect.value = data.role_id;
-      });
+      .single();
+
+    if (error || !data) {
+      showToast('Benutzer konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingUserId = null;
+      return;
+    }
+
+    document.getElementById('u-name').value = data.name || '';
+    document.getElementById('u-email').value = data.email || '';
+    if (data.role_id) roleSelect.value = data.role_id;
   }
 
   document.getElementById('modal-user').classList.add('open');
