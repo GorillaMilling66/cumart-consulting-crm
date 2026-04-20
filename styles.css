@@ -1,7 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Extrahiert aus index.html v1.3.0
-   Keine inhaltlichen Änderungen, nur Auslagerung.
+   Version 1.4.0 (Services-Katalog + Lookup-Verwaltung)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -184,6 +183,7 @@ body {
 .form-group select:focus { outline: none; border-color: var(--text); }
 .form-group input:disabled,
 .form-group select:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
+.form-group input[type="color"] { padding: 2px; height: 38px; cursor: pointer; }
 
 /* ── TABELLE ── */
 .table-wrap { overflow-x: auto; }
@@ -216,6 +216,17 @@ tr:hover td { background: var(--bg); }
   font-weight: 500;
 }
 
+/* ── COLOR-DOT (für Lookup-Farben) ── */
+.color-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
 /* ── MODAL ── */
 .modal-overlay {
   position: fixed; inset: 0;
@@ -245,7 +256,7 @@ tr:hover td { background: var(--bg); }
   border-top: 1px solid var(--border);
 }
 
-/* ── CREDENTIALS BOX (Passwort-Anzeige nach Anlegen/Reset) ── */
+/* ── CREDENTIALS BOX ── */
 .credentials-box {
   background: #fffbeb;
   border: 1px solid #fde68a;
