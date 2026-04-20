@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.4.0 (Services-Katalog + Lookup-Verwaltung)
+   Version 1.4.1 (Einstellungen als ausklappbares Untermenü)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -100,6 +100,38 @@ body {
 .nav-bottom {
   padding: 8px 0;
   border-top: 1px solid var(--border);
+}
+
+/* ── EINSTELLUNGEN-UNTERMENÜ ── */
+.nav-group { display: block; }
+
+/* Chevron rechts am Einstellungen-Button */
+.nav-item-group .nav-chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform .15s ease;
+  opacity: .6;
+}
+/* Wenn das Untermenü offen ist, dreht sich das Chevron */
+.nav-group.open .nav-item-group .nav-chevron {
+  transform: rotate(180deg);
+}
+
+/* Untermenü: per Default eingeklappt (max-height 0) */
+.nav-submenu {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .2s ease;
+}
+.nav-group.open .nav-submenu {
+  /* 3 Einträge × 36px Höhe + etwas Puffer; reicht auch für 4-5 Einträge */
+  max-height: 240px;
+}
+
+/* Untermenü-Einträge: eingerückt, etwas kleiner, ohne Icon */
+.nav-item-sub {
+  padding-left: 44px;
+  font-size: 12.5px;
 }
 
 /* ── MAIN CONTENT ── */
@@ -216,7 +248,7 @@ tr:hover td { background: var(--bg); }
   font-weight: 500;
 }
 
-/* ── COLOR-DOT (für Lookup-Farben) ── */
+/* ── COLOR-DOT ── */
 .color-dot {
   display: inline-block;
   width: 14px;
