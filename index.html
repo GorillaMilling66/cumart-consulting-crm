@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.2.1 -->
+<!-- VERSION: 1.3.0 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── RESET & BASIS ── */
@@ -18,6 +18,7 @@
   --primary:  #111827;
   --danger:   #dc2626;
   --success:  #16a34a;
+  --warning:  #d97706;
   --radius:   8px;
   --shadow:   0 1px 3px rgba(0,0,0,.08);
 }
@@ -164,6 +165,7 @@ body {
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-danger:hover { background: #fef2f2; }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-row { display: inline-flex; gap: 6px; }
 
 /* ── FORM ── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -246,6 +248,42 @@ tr:hover td { background: var(--bg); }
   border-top: 1px solid var(--border);
 }
 
+/* ── CREDENTIALS BOX (Passwort-Anzeige nach Anlegen/Reset) ── */
+.credentials-box {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.credentials-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+.credentials-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.credentials-value:last-child { margin-bottom: 0; }
+.credentials-value span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.credentials-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--warning);
+}
+
 /* ── AUTH ── */
 .auth-screen {
   position: fixed; inset: 0;
@@ -285,6 +323,14 @@ tr:hover td { background: var(--bg); }
 }
 .auth-btn:hover { opacity: .85; }
 .auth-btn:disabled { opacity: .5; cursor: not-allowed; }
+.auth-btn-secondary {
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px;
+  margin-top: 8px;
+}
+.auth-btn-secondary:hover { color: var(--text); }
 .auth-error {
   font-size: 13px; color: var(--danger);
   background: #fef2f2;
@@ -356,28 +402,55 @@ tr:hover td { background: var(--bg); }
   </div>
 </div>
 
-<!-- PASSWORT SETZEN SCREEN (Einladung + Recovery) -->
-<div class="auth-screen" id="setpassword-screen" style="display:none">
+<!-- PASSWORT-ÄNDERN-PFLICHT-SCREEN (nach Admin-Reset oder Erstanmeldung) -->
+<div class="auth-screen" id="mustchange-screen" style="display:none">
   <div class="auth-card">
-    <div class="auth-logo">Willkommen bei Cumart CRM</div>
-    <div class="auth-sub">Bitte setze dein Passwort um fortzufahren</div>
-    <div class="auth-error" id="setpw-error"></div>
+    <div class="auth-logo">Passwort ändern</div>
+    <div class="auth-sub">
+      Dein Passwort wurde von einem Administrator gesetzt.
+      Bitte wähle jetzt ein eigenes Passwort.
+    </div>
+    <div class="auth-error" id="mustchange-error"></div>
     <div class="auth-field">
       <label>Neues Passwort *</label>
-      <input type="password" id="setpw-1" placeholder="Mindestens 6 Zeichen">
+      <input type="password" id="mustchange-1" placeholder="Mindestens 6 Zeichen">
     </div>
     <div class="auth-field">
       <label>Passwort wiederholen *</label>
-      <input type="password" id="setpw-2" placeholder="Passwort wiederholen"
-             onkeydown="if(event.key==='Enter') doSetPassword()">
+      <input type="password" id="mustchange-2" placeholder="Passwort wiederholen"
+             onkeydown="if(event.key==='Enter') doMustChangePassword()">
     </div>
-    <button class="auth-btn" id="setpw-btn" onclick="doSetPassword()">
+    <button class="auth-btn" id="mustchange-btn" onclick="doMustChangePassword()">
+      Passwort speichern
+    </button>
+    <button class="auth-btn auth-btn-secondary" onclick="doLogout(true)">
+      Abmelden und später erneut anmelden
+    </button>
+  </div>
+</div>
+
+<!-- PASSWORT-RECOVERY-SCREEN (nach "Passwort vergessen"-Mail) -->
+<div class="auth-screen" id="recovery-screen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">Neues Passwort setzen</div>
+    <div class="auth-sub">Bitte wähle ein neues Passwort für dein Konto.</div>
+    <div class="auth-error" id="recovery-error"></div>
+    <div class="auth-field">
+      <label>Neues Passwort *</label>
+      <input type="password" id="recovery-1" placeholder="Mindestens 6 Zeichen">
+    </div>
+    <div class="auth-field">
+      <label>Passwort wiederholen *</label>
+      <input type="password" id="recovery-2" placeholder="Passwort wiederholen"
+             onkeydown="if(event.key==='Enter') doRecoveryPassword()">
+    </div>
+    <button class="auth-btn" id="recovery-btn" onclick="doRecoveryPassword()">
       Passwort speichern & einloggen
     </button>
   </div>
 </div>
 
-<!-- RESET SCREEN -->
+<!-- RESET SCREEN (Passwort-vergessen: Mail anfordern) -->
 <div class="auth-screen" id="reset-screen" style="display:none">
   <div class="auth-card">
     <div style="font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:16px"
@@ -427,7 +500,6 @@ tr:hover td { background: var(--bg); }
     <div class="page active" id="page-users">
       <div class="page-header">
         <h1 class="page-title">Benutzerverwaltung</h1>
-        <!-- Admin-only: wird in onLogin() eingeblendet -->
         <button class="btn btn-primary" id="btn-new-user"
                 onclick="openUserModal('new')" style="display:none">
           + Neuer Benutzer
@@ -476,8 +548,8 @@ tr:hover td { background: var(--bg); }
         <select id="u-role"></select>
       </div>
       <div class="form-group full" id="u-password-group">
-        <label>Passwort <span id="u-password-hint" style="font-weight:400">(leer = Einladungsmail)</span></label>
-        <input type="password" id="u-password" placeholder="Nur bei Bearbeitung nötig">
+        <label>Passwort <span id="u-password-hint" style="font-weight:400">(leer = automatisch generieren)</span></label>
+        <input type="password" id="u-password" placeholder="Leer lassen für automatisches Passwort">
       </div>
     </div>
     <div class="modal-footer">
@@ -487,6 +559,40 @@ tr:hover td { background: var(--bg); }
       </button>
       <button class="btn" onclick="closeUserModal()">Abbrechen</button>
       <button class="btn btn-primary" id="u-save-btn" onclick="saveUser()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ZUGANGSDATEN ANZEIGEN (nach Anlegen oder Reset) -->
+<div class="modal-overlay" id="modal-credentials">
+  <div class="modal">
+    <div class="modal-title" id="modal-credentials-title">Zugangsdaten für neuen Benutzer</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+      Bitte gib diese Zugangsdaten an den Benutzer weiter.
+      Das Passwort wird nur jetzt einmal angezeigt.
+    </p>
+
+    <div class="credentials-box">
+      <div class="credentials-label">E-Mail</div>
+      <div class="credentials-value">
+        <span id="cred-email"></span>
+        <button class="btn btn-sm" onclick="copyCredential('cred-email')">Kopieren</button>
+      </div>
+
+      <div class="credentials-label">Passwort</div>
+      <div class="credentials-value">
+        <span id="cred-password"></span>
+        <button class="btn btn-sm" onclick="copyCredential('cred-password')">Kopieren</button>
+      </div>
+
+      <div class="credentials-hint">
+        Der Benutzer wird beim ersten Login aufgefordert, ein eigenes Passwort zu wählen.
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="copyBothCredentials()">Beides kopieren</button>
+      <button class="btn btn-primary" onclick="closeCredentialsModal()">Fertig</button>
     </div>
   </div>
 </div>
@@ -503,10 +609,11 @@ const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── APP STATE ────────────────────────────────────────────────
-let currentUser    = null;
-let currentProfile = null;
-let allRoles       = [];
-let editingUserId  = null;
+let currentUser       = null;
+let currentProfile    = null;
+let allRoles          = [];
+let editingUserId     = null;
+let inPasswordRecovery = false; // TRUE während Recovery-Link-Flow
 
 // ── HILFSFUNKTIONEN ──────────────────────────────────────────
 function ini(name) {
@@ -523,7 +630,6 @@ function statusColor(s) {
   return { eingeladen: '#d97706', aktiv: '#16a34a', inaktiv: '#dc2626' }[s] || '#6b7280';
 }
 
-// ── RECHTE-HELFER ────────────────────────────────────────────
 function isAdmin() {
   return currentProfile?.roles?.name === 'Admin';
 }
@@ -542,88 +648,56 @@ function showPage(name, el) {
   el?.classList.add('active');
 }
 
-// ── AUTH ─────────────────────────────────────────────────────
-function showLoginScreen() {
-  document.getElementById('auth-screen').style.display = 'flex';
+// ── SCREEN-WECHSEL ───────────────────────────────────────────
+function hideAllScreens() {
+  document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('reset-screen').style.display = 'none';
-  document.getElementById('setpassword-screen').style.display = 'none';
+  document.getElementById('recovery-screen').style.display = 'none';
+  document.getElementById('mustchange-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
+}
+
+function showLoginScreen() {
+  hideAllScreens();
+  document.getElementById('auth-screen').style.display = 'flex';
 }
 
 function showResetScreen() {
-  document.getElementById('auth-screen').style.display = 'none';
+  hideAllScreens();
   document.getElementById('reset-screen').style.display = 'flex';
-  document.getElementById('setpassword-screen').style.display = 'none';
 }
 
-function showSetPasswordScreen() {
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('reset-screen').style.display = 'none';
-  document.getElementById('setpassword-screen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
-  setTimeout(() => document.getElementById('setpw-1').focus(), 100);
+function showRecoveryScreen() {
+  hideAllScreens();
+  document.getElementById('recovery-screen').style.display = 'flex';
+  setTimeout(() => document.getElementById('recovery-1').focus(), 100);
 }
 
-async function doSetPassword() {
-  const pw1   = document.getElementById('setpw-1').value;
-  const pw2   = document.getElementById('setpw-2').value;
-  const errEl = document.getElementById('setpw-error');
-  const btn   = document.getElementById('setpw-btn');
-
-  errEl.classList.remove('show');
-
-  if (pw1.length < 6) {
-    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
-    errEl.classList.add('show');
-    return;
-  }
-  if (pw1 !== pw2) {
-    errEl.textContent = 'Passwörter stimmen nicht überein.';
-    errEl.classList.add('show');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Wird gespeichert ...';
-
-  try {
-    const { error } = await db.auth.updateUser({ password: pw1 });
-    if (error) throw new Error(error.message);
-
-    // URL Hash entfernen
-    window.history.replaceState(null, '', window.location.pathname);
-
-    // Session laden und einloggen
-    const { data: { session } } = await db.auth.getSession();
-    if (session) {
-      await onLogin(session.user);
-    } else {
-      showToast('Passwort gesetzt! Bitte einloggen.');
-      showLoginScreen();
-    }
-  } catch (e) {
-    errEl.textContent = e.message;
-    errEl.classList.add('show');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Passwort speichern & einloggen';
-  }
+function showMustChangeScreen() {
+  hideAllScreens();
+  document.getElementById('mustchange-screen').style.display = 'flex';
+  setTimeout(() => document.getElementById('mustchange-1').focus(), 100);
 }
 
+function showApp() {
+  hideAllScreens();
+  document.getElementById('app').style.display = 'flex';
+}
+
+// ── AUTH INIT ────────────────────────────────────────────────
 async function initAuth() {
   const hash = window.location.hash;
 
-  // Einladungslink: type=invite
-  if (hash.includes('type=invite') || hash.includes('type=recovery')) {
-    // Supabase hat den Token bereits verarbeitet - Session existiert
-    // Wir zeigen den Passwort-Setzen Screen
-    showSetPasswordScreen();
-
-    db.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-        // Nichts tun - User setzt gerade Passwort
+  // Passwort-Recovery-Flow aus E-Mail-Link (Supabase Reset-Mail)
+  if (hash.includes('type=recovery') || hash.includes('type=invite')) {
+    inPasswordRecovery = true;
+    showRecoveryScreen();
+    // Warten auf PASSWORD_RECOVERY/SIGNED_IN-Event, dann bleibt der User im Screen
+    db.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        inPasswordRecovery = false;
+        showLoginScreen();
       }
-      if (event === 'SIGNED_OUT') showLoginScreen();
     });
     return;
   }
@@ -640,60 +714,73 @@ async function initAuth() {
   }
 
   db.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_OUT') showLoginScreen();
-    if (event === 'SIGNED_IN' && session) await onLogin(session.user);
+    // Während Recovery-Flow keine Auto-Logins
+    if (inPasswordRecovery) return;
+
+    if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      currentProfile = null;
+      showLoginScreen();
+    }
+    if (event === 'SIGNED_IN' && session && !currentUser) {
+      await onLogin(session.user);
+    }
   });
 }
 
+// ── LOGIN-FLOW ───────────────────────────────────────────────
 async function onLogin(user) {
   currentUser = user;
 
-  // Profil laden
   const { data: profile, error: profileError } = await db
     .from('user_profiles')
     .select('*, roles(id, name, rechte)')
     .eq('id', user.id)
     .single();
 
-  // ─── LOGIN-BLOCKER: Profil muss existieren und Status 'aktiv' sein ───
+  // Profil muss existieren
   if (profileError || !profile) {
     await db.auth.signOut();
+    currentUser = null;
     showLoginScreen();
     showToast('Benutzerprofil nicht gefunden. Bitte wende dich an einen Administrator.', true);
     return;
   }
 
+  // Inaktive User blocken
   if (profile.status === 'inaktiv') {
     await db.auth.signOut();
+    currentUser = null;
     showLoginScreen();
     showToast('Dein Konto ist deaktiviert. Bitte wende dich an einen Administrator.', true);
     return;
   }
 
-  // 'eingeladen' ist erlaubt - der DB-Trigger setzt es beim ersten Login auf 'aktiv'
-  // Falls der Trigger noch nicht gelaufen ist (Race Condition), akzeptieren wir ihn trotzdem
-
   currentProfile = profile;
 
-  // Sidebar Benutzer-Info
-  const bar = document.getElementById('sidebar-user');
-  bar.innerHTML = `
-    <div class="sidebar-user-avatar">${ini(profile?.name || user.email)}</div>
-    <div class="sidebar-user-info">
-      <div class="sidebar-user-name">${profile?.name || user.email}</div>
-      <div class="sidebar-user-role">${profile?.roles?.name || '—'}</div>
-    </div>`;
+  // Muss der User sein Passwort ändern? -> Screen sperrt App
+  if (profile.muss_passwort_aendern === true) {
+    showMustChangeScreen();
+    return;
+  }
 
-  // Admin-only UI-Elemente einblenden
+  // Normal in die App
+  renderSidebar();
   document.getElementById('btn-new-user').style.display = isAdmin() ? 'inline-block' : 'none';
+  showApp();
 
-  // App zeigen
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-
-  // Daten laden
   await loadRoles();
   await loadUsers();
+}
+
+function renderSidebar() {
+  const bar = document.getElementById('sidebar-user');
+  bar.innerHTML = `
+    <div class="sidebar-user-avatar">${ini(currentProfile?.name || currentUser.email)}</div>
+    <div class="sidebar-user-info">
+      <div class="sidebar-user-name">${currentProfile?.name || currentUser.email}</div>
+      <div class="sidebar-user-role">${currentProfile?.roles?.name || '—'}</div>
+    </div>`;
 }
 
 async function doLogin() {
@@ -729,16 +816,20 @@ async function doLogin() {
   }
 }
 
-async function doLogout() {
-  if (!confirm('Wirklich abmelden?')) return;
+async function doLogout(skipConfirm = false) {
+  if (!skipConfirm && !confirm('Wirklich abmelden?')) return;
   await db.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  inPasswordRecovery = false;
+  showLoginScreen();
 }
 
 async function doReset() {
-  const email  = document.getElementById('reset-email').value.trim();
-  const errEl  = document.getElementById('reset-error');
-  const btn    = document.getElementById('reset-btn');
-  const sucEl  = document.getElementById('reset-success');
+  const email = document.getElementById('reset-email').value.trim();
+  const errEl = document.getElementById('reset-error');
+  const btn   = document.getElementById('reset-btn');
+  const sucEl = document.getElementById('reset-success');
 
   errEl.classList.remove('show');
   sucEl.style.display = 'none';
@@ -756,6 +847,121 @@ async function doReset() {
 
   if (error) { errEl.textContent = error.message; errEl.classList.add('show'); }
   else { sucEl.style.display = 'block'; }
+}
+
+// ── PASSWORT-ÄNDERN-PFLICHT (Admin-Reset-Flow) ───────────────
+async function doMustChangePassword() {
+  const pw1 = document.getElementById('mustchange-1').value;
+  const pw2 = document.getElementById('mustchange-2').value;
+  const errEl = document.getElementById('mustchange-error');
+  const btn = document.getElementById('mustchange-btn');
+
+  errEl.classList.remove('show');
+
+  if (pw1.length < 6) {
+    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
+    errEl.classList.add('show');
+    return;
+  }
+  if (pw1 !== pw2) {
+    errEl.textContent = 'Passwörter stimmen nicht überein.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Wird gespeichert ...';
+
+  try {
+    // 1. Passwort im Auth-System ändern
+    const { error: pwError } = await db.auth.updateUser({ password: pw1 });
+    if (pwError) throw new Error(pwError.message);
+
+    // 2. Flag in user_profiles zurücksetzen
+    const { error: flagError } = await db
+      .from('user_profiles')
+      .update({ muss_passwort_aendern: false })
+      .eq('id', currentUser.id);
+
+    if (flagError) throw new Error(flagError.message);
+
+    // 3. Profil neu laden und in die App
+    const { data: profile, error: profileError } = await db
+      .from('user_profiles')
+      .select('*, roles(id, name, rechte)')
+      .eq('id', currentUser.id)
+      .single();
+
+    if (profileError || !profile) throw new Error('Profil konnte nicht geladen werden.');
+
+    currentProfile = profile;
+
+    renderSidebar();
+    document.getElementById('btn-new-user').style.display = isAdmin() ? 'inline-block' : 'none';
+    showApp();
+
+    await loadRoles();
+    await loadUsers();
+
+    showToast('Passwort erfolgreich geändert.');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Passwort speichern';
+  }
+}
+
+// ── PASSWORT-RECOVERY (Passwort vergessen per Mail) ──────────
+async function doRecoveryPassword() {
+  const pw1 = document.getElementById('recovery-1').value;
+  const pw2 = document.getElementById('recovery-2').value;
+  const errEl = document.getElementById('recovery-error');
+  const btn = document.getElementById('recovery-btn');
+
+  errEl.classList.remove('show');
+
+  if (pw1.length < 6) {
+    errEl.textContent = 'Passwort muss mindestens 6 Zeichen haben.';
+    errEl.classList.add('show');
+    return;
+  }
+  if (pw1 !== pw2) {
+    errEl.textContent = 'Passwörter stimmen nicht überein.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Wird gespeichert ...';
+
+  try {
+    const { error } = await db.auth.updateUser({ password: pw1 });
+    if (error) throw new Error(error.message);
+
+    // URL-Hash entfernen
+    window.history.replaceState(null, '', window.location.pathname);
+
+    // Recovery-Modus beenden und Session als normaler Login behandeln
+    inPasswordRecovery = false;
+
+    const { data: { session } } = await db.auth.getSession();
+    if (!session) {
+      showToast('Passwort gesetzt. Bitte neu anmelden.');
+      showLoginScreen();
+      return;
+    }
+
+    await onLogin(session.user);
+    showToast('Passwort erfolgreich geändert.');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Passwort speichern & einloggen';
+  }
 }
 
 // ── ROLLEN ───────────────────────────────────────────────────
@@ -797,8 +1003,15 @@ async function loadUsers() {
     const roleColor = u.roles?.name === 'Admin' ? '#1d4ed8' : '#374151';
     const roleBg    = u.roles?.name === 'Admin' ? '#eff6ff' : '#f3f4f6';
 
-    // Nur Admins sehen den Bearbeiten-Button
-    const showEditBtn = canAdminister;
+    // Action-Buttons nur für Admins
+    let actions = '';
+    if (canAdminister) {
+      actions += `<button class="btn btn-sm" onclick="openUserModal('edit', '${u.id}')">Bearbeiten</button>`;
+      // Reset nur für andere User, nicht für sich selbst (Admin kann sein eigenes Passwort im Profil ändern)
+      if (!isMe) {
+        actions += `<button class="btn btn-sm" onclick="resetUserPassword('${u.id}', '${(u.name||'').replace(/'/g, '&#39;')}')">Passwort zurücksetzen</button>`;
+      }
+    }
 
     return `
       <tr>
@@ -823,7 +1036,7 @@ async function loadUsers() {
           </span>
         </td>
         <td style="text-align:right">
-          ${showEditBtn ? `<button class="btn btn-sm" onclick="openUserModal('edit', '${u.id}')">Bearbeiten</button>` : ''}
+          <div class="btn-row" style="justify-content:flex-end">${actions}</div>
         </td>
       </tr>`;
   }).join('');
@@ -831,7 +1044,6 @@ async function loadUsers() {
 
 // ── BENUTZER MODAL ───────────────────────────────────────────
 async function openUserModal(mode, userId = null) {
-  // Sicherheitsriegel: Nur Admins dürfen das Modal öffnen
   if (!isAdmin()) {
     showToast('Du hast keine Berechtigung für diese Aktion.', true);
     return;
@@ -839,39 +1051,39 @@ async function openUserModal(mode, userId = null) {
 
   editingUserId = userId;
 
-  // Rollen-Dropdown befüllen
   const roleSelect = document.getElementById('u-role');
   roleSelect.innerHTML = allRoles.map(r =>
     `<option value="${r.id}">${r.name}</option>`
   ).join('');
   roleSelect.disabled = false;
 
-  // Felder zentral leeren, um Zombie-Werte aus vorherigen Modal-Öffnungen zu vermeiden
+  // Felder zentral leeren (Zombie-Werte vermeiden)
   document.getElementById('u-name').value = '';
   document.getElementById('u-email').value = '';
   document.getElementById('u-password').value = '';
 
   if (mode === 'new') {
     document.getElementById('modal-user-title').textContent = 'Neuer Benutzer';
-    document.getElementById('u-password-hint').textContent = '(leer = Einladungsmail)';
+    document.getElementById('u-password-hint').textContent = '(leer = automatisch generieren)';
+    document.getElementById('u-password').placeholder = 'Leer lassen für automatisches Passwort';
     document.getElementById('u-save-btn').textContent = 'Anlegen';
     document.getElementById('u-delete-btn').style.display = 'none';
     document.getElementById('u-email').disabled = false;
+    // Passwort-Feld sichtbar & aktiv beim Anlegen
+    document.getElementById('u-password-group').style.display = '';
   } else {
     const isEditingSelf = userId === currentUser?.id;
 
     document.getElementById('modal-user-title').textContent =
       isEditingSelf ? 'Mein Profil' : 'Benutzer bearbeiten';
     document.getElementById('u-password-hint').textContent = '(leer = unverändert)';
+    document.getElementById('u-password').placeholder = 'Leer lassen für unverändertes Passwort';
     document.getElementById('u-save-btn').textContent = 'Speichern';
-    // Löschen NIE bei sich selbst erlaubt
     document.getElementById('u-delete-btn').style.display = isEditingSelf ? 'none' : 'block';
     document.getElementById('u-email').disabled = true;
-    // Rolle darf der Admin bei sich selbst nicht ändern (Anti-Self-Demotion)
     roleSelect.disabled = isEditingSelf;
+    document.getElementById('u-password-group').style.display = '';
 
-    // Benutzerdaten ZUERST laden, DANN Modal öffnen - so stehen die Werte
-    // garantiert in den Feldern, bevor der Nutzer sie sieht.
     const { data, error } = await db
       .from('user_profiles')
       .select('*, roles(id, name)')
@@ -905,7 +1117,6 @@ async function saveUser() {
   const password = document.getElementById('u-password').value;
   const btn      = document.getElementById('u-save-btn');
 
-  // Validierung
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
   if (!editingUserId && !email) { showToast('Bitte E-Mail eingeben.', true); return; }
   if (!role_id) { showToast('Bitte Rolle auswählen.', true); return; }
@@ -920,7 +1131,7 @@ async function saveUser() {
 
     const body = editingUserId
       ? { action: 'update', user_id: editingUserId, name, role_id, password: password || undefined }
-      : { action: 'invite', email, name, role_id };
+      : { action: 'invite', email, name, role_id, password: password || undefined };
 
     const resp = await fetch(`${FUNCTIONS_URL}/manage-users`, {
       method: 'POST',
@@ -936,7 +1147,18 @@ async function saveUser() {
     if (!resp.ok) throw new Error(result.error || 'Unbekannter Fehler');
 
     closeUserModal();
-    showToast(editingUserId ? 'Benutzer aktualisiert.' : 'Einladung an ' + email + ' gesendet!');
+
+    if (editingUserId) {
+      showToast('Benutzer aktualisiert.');
+    } else {
+      // Neuer User: Zugangsdaten anzeigen
+      showCredentials({
+        title: 'Zugangsdaten für ' + name,
+        email: result.email,
+        password: result.password
+      });
+    }
+
     await loadUsers();
 
   } catch (e) {
@@ -949,7 +1171,6 @@ async function saveUser() {
 
 async function deleteUser() {
   if (!editingUserId) return;
-  // Zusätzlicher Schutz: niemals sich selbst
   if (editingUserId === currentUser?.id) {
     showToast('Du kannst dich nicht selbst löschen.', true);
     return;
@@ -986,6 +1207,82 @@ async function deleteUser() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Löschen';
+  }
+}
+
+// ── PASSWORT-RESET DURCH ADMIN ───────────────────────────────
+async function resetUserPassword(userId, userName) {
+  if (!isAdmin()) {
+    showToast('Du hast keine Berechtigung für diese Aktion.', true);
+    return;
+  }
+  if (!confirm(`Für "${userName}" ein neues Passwort generieren?\n\nDas alte Passwort wird sofort ungültig. Der Benutzer muss sich beim nächsten Login ein eigenes Passwort setzen.`)) {
+    return;
+  }
+
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (!session?.access_token) throw new Error('Nicht eingeloggt.');
+
+    const resp = await fetch(`${FUNCTIONS_URL}/manage-users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({ action: 'reset_password', user_id: userId })
+    });
+
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || 'Unbekannter Fehler');
+
+    showCredentials({
+      title: 'Neues Passwort für ' + userName,
+      email: result.email,
+      password: result.password
+    });
+
+    await loadUsers();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ── ZUGANGSDATEN-MODAL ──────────────────────────────────────
+function showCredentials({ title, email, password }) {
+  document.getElementById('modal-credentials-title').textContent = title;
+  document.getElementById('cred-email').textContent = email;
+  document.getElementById('cred-password').textContent = password;
+  document.getElementById('modal-credentials').classList.add('open');
+}
+
+function closeCredentialsModal() {
+  document.getElementById('modal-credentials').classList.remove('open');
+  // Aus Sicherheitsgründen Werte entfernen
+  document.getElementById('cred-email').textContent = '';
+  document.getElementById('cred-password').textContent = '';
+}
+
+async function copyCredential(elementId) {
+  const text = document.getElementById(elementId).textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('In Zwischenablage kopiert.');
+  } catch {
+    showToast('Kopieren nicht möglich. Bitte manuell markieren.', true);
+  }
+}
+
+async function copyBothCredentials() {
+  const email = document.getElementById('cred-email').textContent;
+  const password = document.getElementById('cred-password').textContent;
+  const text = `E-Mail: ${email}\nPasswort: ${password}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Zugangsdaten in Zwischenablage kopiert.');
+  } catch {
+    showToast('Kopieren nicht möglich.', true);
   }
 }
 
