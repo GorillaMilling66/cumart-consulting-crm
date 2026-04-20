@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.0.0 -->
+<!-- VERSION: 1.1.0 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── RESET & BASIS ── */
@@ -183,6 +183,8 @@ body {
 }
 .form-group input:focus,
 .form-group select:focus { outline: none; border-color: var(--text); }
+.form-group input:disabled,
+.form-group select:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
 
 /* ── TABELLE ── */
 .table-wrap { overflow-x: auto; }
@@ -425,7 +427,9 @@ tr:hover td { background: var(--bg); }
     <div class="page active" id="page-users">
       <div class="page-header">
         <h1 class="page-title">Benutzerverwaltung</h1>
-        <button class="btn btn-primary" onclick="openUserModal('new')">
+        <!-- Admin-only: wird in onLogin() eingeblendet -->
+        <button class="btn btn-primary" id="btn-new-user"
+                onclick="openUserModal('new')" style="display:none">
           + Neuer Benutzer
         </button>
       </div>
@@ -517,6 +521,11 @@ function statusBg(s) {
 }
 function statusColor(s) {
   return { eingeladen: '#d97706', aktiv: '#16a34a', inaktiv: '#dc2626' }[s] || '#6b7280';
+}
+
+// ── RECHTE-HELFER ────────────────────────────────────────────
+function isAdmin() {
+  return currentProfile?.roles?.name === 'Admin';
 }
 
 function showToast(msg, isError = false) {
@@ -657,6 +666,9 @@ async function onLogin(user) {
       <div class="sidebar-user-role">${profile?.roles?.name || '—'}</div>
     </div>`;
 
+  // Admin-only UI-Elemente einblenden
+  document.getElementById('btn-new-user').style.display = isAdmin() ? 'inline-block' : 'none';
+
   // App zeigen
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
@@ -760,10 +772,16 @@ async function loadUsers() {
     return;
   }
 
+  const canAdminister = isAdmin();
+
   tbody.innerHTML = users.map(u => {
     const isMe = u.id === currentUser?.id;
     const roleColor = u.roles?.name === 'Admin' ? '#1d4ed8' : '#374151';
     const roleBg    = u.roles?.name === 'Admin' ? '#eff6ff' : '#f3f4f6';
+
+    // Nur Admins sehen den Bearbeiten-Button
+    const showEditBtn = canAdminister;
+
     return `
       <tr>
         <td>
@@ -787,7 +805,7 @@ async function loadUsers() {
           </span>
         </td>
         <td style="text-align:right">
-          ${!isMe ? `<button class="btn btn-sm" onclick="openUserModal('edit', '${u.id}')">Bearbeiten</button>` : ''}
+          ${showEditBtn ? `<button class="btn btn-sm" onclick="openUserModal('edit', '${u.id}')">Bearbeiten</button>` : ''}
         </td>
       </tr>`;
   }).join('');
@@ -795,6 +813,12 @@ async function loadUsers() {
 
 // ── BENUTZER MODAL ───────────────────────────────────────────
 function openUserModal(mode, userId = null) {
+  // Sicherheitsriegel: Nur Admins dürfen das Modal öffnen
+  if (!isAdmin()) {
+    showToast('Du hast keine Berechtigung für diese Aktion.', true);
+    return;
+  }
+
   editingUserId = userId;
 
   // Rollen-Dropdown befüllen
@@ -802,6 +826,7 @@ function openUserModal(mode, userId = null) {
   roleSelect.innerHTML = allRoles.map(r =>
     `<option value="${r.id}">${r.name}</option>`
   ).join('');
+  roleSelect.disabled = false;
 
   if (mode === 'new') {
     document.getElementById('modal-user-title').textContent = 'Neuer Benutzer';
@@ -813,12 +838,14 @@ function openUserModal(mode, userId = null) {
     document.getElementById('u-delete-btn').style.display = 'none';
     document.getElementById('u-email').disabled = false;
   } else {
-    // Bestehenden User laden und Felder befüllen
-    const user = null; // Wird unten geladen
-    document.getElementById('modal-user-title').textContent = 'Benutzer bearbeiten';
+    const isEditingSelf = userId === currentUser?.id;
+
+    document.getElementById('modal-user-title').textContent =
+      isEditingSelf ? 'Mein Profil' : 'Benutzer bearbeiten';
     document.getElementById('u-password-hint').textContent = '(leer = unverändert)';
     document.getElementById('u-save-btn').textContent = 'Speichern';
-    document.getElementById('u-delete-btn').style.display = 'block';
+    // Löschen NIE bei sich selbst erlaubt
+    document.getElementById('u-delete-btn').style.display = isEditingSelf ? 'none' : 'block';
     document.getElementById('u-email').disabled = true;
     document.getElementById('u-password').value = '';
 
@@ -895,6 +922,11 @@ async function saveUser() {
 
 async function deleteUser() {
   if (!editingUserId) return;
+  // Zusätzlicher Schutz: niemals sich selbst
+  if (editingUserId === currentUser?.id) {
+    showToast('Du kannst dich nicht selbst löschen.', true);
+    return;
+  }
   if (!confirm('Benutzer wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
 
   const btn = document.getElementById('u-delete-btn');
