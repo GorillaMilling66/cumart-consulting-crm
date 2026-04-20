@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.5.0 (Phase 2b – Firmen)
+   Version 1.5.1 (Phase 2b komplett – Firmen + Kontakte)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -21,26 +21,21 @@ let editingUserId      = null;
 let editingServiceId   = null;
 let editingLookupId    = null;
 let editingCompanyId   = null;
+let editingContactId   = null;
 let inPasswordRecovery = false;
 
-// Cache für Firmen-Seite: wird bei loadCompanies() gefüllt,
-// filterCompanies() rendert ohne neuen DB-Call
+// Cache für Listen (Filter/Suche ohne zusätzliche DB-Calls)
 let companiesCache = [];
+let contactsCache  = [];
 
 // ── HILFSFUNKTIONEN ──────────────────────────────────────────
 function ini(name) {
   return (name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function statusLabel(s) {
-  return { eingeladen: 'Eingeladen', aktiv: 'Aktiv', inaktiv: 'Inaktiv' }[s] || 'Unbekannt';
-}
-function statusBg(s) {
-  return { eingeladen: '#fffbeb', aktiv: '#f0fdf4', inaktiv: '#fef2f2' }[s] || '#f3f4f6';
-}
-function statusColor(s) {
-  return { eingeladen: '#d97706', aktiv: '#16a34a', inaktiv: '#dc2626' }[s] || '#6b7280';
-}
+function statusLabel(s) { return { eingeladen: 'Eingeladen', aktiv: 'Aktiv', inaktiv: 'Inaktiv' }[s] || 'Unbekannt'; }
+function statusBg(s) { return { eingeladen: '#fffbeb', aktiv: '#f0fdf4', inaktiv: '#fef2f2' }[s] || '#f3f4f6'; }
+function statusColor(s) { return { eingeladen: '#d97706', aktiv: '#16a34a', inaktiv: '#dc2626' }[s] || '#6b7280'; }
 
 function isAdmin() {
   return currentProfile?.roles?.name === 'Admin';
@@ -75,11 +70,11 @@ function showPage(name, el) {
   document.getElementById('page-' + name)?.classList.add('active');
   el?.classList.add('active');
 
-  // Seiten-spezifisches Laden anstoßen
   if (name === 'users') loadUsers();
   if (name === 'services') loadServices();
   if (name === 'lookups') loadLookupsPage();
   if (name === 'companies') loadCompanies();
+  if (name === 'contacts') loadContacts();
 }
 
 function toggleSettings() {
@@ -182,14 +177,8 @@ async function onLogin(user) {
   await loadRoles();
 }
 
-/**
- * Nach dem Login passende Startseite öffnen.
- * Ab v1.5.0: ALLE Nutzer starten auf „Firmen" (erste Arbeitsseite).
- */
 function showDefaultPage() {
   showPage('companies', document.getElementById('nav-companies'));
-
-  // Für Admin: Einstellungen-Untermenü standardmäßig ausklappen
   if (isAdmin()) {
     document.getElementById('nav-settings-group').classList.add('open');
   }
@@ -233,9 +222,7 @@ async function doLogin() {
   try {
     const { data, error } = await db.auth.signInWithPassword({ email, password });
     if (error) throw new Error(
-      error.message === 'Invalid login credentials'
-        ? 'E-Mail oder Passwort falsch.'
-        : error.message
+      error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : error.message
     );
     await onLogin(data.user);
   } catch (e) {
@@ -269,9 +256,7 @@ async function doReset() {
   btn.disabled = true;
   btn.textContent = 'Wird gesendet ...';
 
-  const { error } = await db.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin
-  });
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
 
   btn.disabled = false;
   btn.textContent = 'Link senden';
@@ -370,11 +355,7 @@ async function doRecoveryPassword() {
 // ═══════════════════════════════════════════════════════════
 
 async function loadRoles() {
-  const { data, error } = await db
-    .from('roles')
-    .select('*')
-    .eq('ist_aktiv', true)
-    .order('name');
+  const { data, error } = await db.from('roles').select('*').eq('ist_aktiv', true).order('name');
   if (error) { showToast('Fehler beim Laden der Rollen: ' + error.message, true); return; }
   allRoles = data || [];
 }
@@ -383,10 +364,7 @@ async function loadUsers() {
   const tbody = document.getElementById('users-table-body');
   tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade ...</div></td></tr>';
 
-  const { data: users, error } = await db
-    .from('user_profiles')
-    .select('*, roles(name)')
-    .order('name');
+  const { data: users, error } = await db.from('user_profiles').select('*, roles(name)').order('name');
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -462,16 +440,8 @@ async function openUserModal(mode, userId = null) {
     roleSelect.disabled = isEditingSelf;
     document.getElementById('u-password-group').style.display = '';
 
-    const { data, error } = await db
-      .from('user_profiles')
-      .select('*, roles(id, name)')
-      .eq('id', userId)
-      .single();
-    if (error || !data) {
-      showToast('Benutzer konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
-      editingUserId = null;
-      return;
-    }
+    const { data, error } = await db.from('user_profiles').select('*, roles(id, name)').eq('id', userId).single();
+    if (error || !data) { showToast('Benutzer konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingUserId = null; return; }
     document.getElementById('u-name').value = data.name || '';
     document.getElementById('u-email').value = data.email || '';
     if (data.role_id) roleSelect.value = data.role_id;
@@ -481,10 +451,7 @@ async function openUserModal(mode, userId = null) {
   setTimeout(() => document.getElementById('u-name').focus(), 100);
 }
 
-function closeUserModal() {
-  document.getElementById('modal-user').classList.remove('open');
-  editingUserId = null;
-}
+function closeUserModal() { document.getElementById('modal-user').classList.remove('open'); editingUserId = null; }
 
 async function saveUser() {
   const name     = document.getElementById('u-name').value.trim();
@@ -511,11 +478,7 @@ async function saveUser() {
 
     const resp = await fetch(`${FUNCTIONS_URL}/manage-users`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + session.access_token,
-        'apikey': SUPABASE_ANON_KEY
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token, 'apikey': SUPABASE_ANON_KEY },
       body: JSON.stringify(body)
     });
     const result = await resp.json();
@@ -551,11 +514,7 @@ async function deleteUser() {
 
     const resp = await fetch(`${FUNCTIONS_URL}/manage-users`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + session.access_token,
-        'apikey': SUPABASE_ANON_KEY
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token, 'apikey': SUPABASE_ANON_KEY },
       body: JSON.stringify({ action: 'delete', user_id: editingUserId })
     });
     const result = await resp.json();
@@ -582,11 +541,7 @@ async function resetUserPassword(userId, userName) {
 
     const resp = await fetch(`${FUNCTIONS_URL}/manage-users`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + session.access_token,
-        'apikey': SUPABASE_ANON_KEY
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token, 'apikey': SUPABASE_ANON_KEY },
       body: JSON.stringify({ action: 'reset_password', user_id: userId })
     });
     const result = await resp.json();
@@ -650,14 +605,9 @@ async function loadServices() {
     .select('*, kategorie:lookup_values!services_kategorie_id_fkey(id, wert, farbe)')
     .order('name');
 
-  if (error) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
-    return;
-  }
+  if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
   if (!data || data.length === 0) {
-    const hint = isAdmin()
-      ? 'Noch keine Leistungen angelegt. Klicke oben auf „+ Neue Leistung".'
-      : 'Noch keine Leistungen verfügbar.';
+    const hint = isAdmin() ? 'Noch keine Leistungen angelegt. Klicke oben auf „+ Neue Leistung".' : 'Noch keine Leistungen verfügbar.';
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">${hint}</div></td></tr>`;
     return;
   }
@@ -715,11 +665,7 @@ async function openServiceModal(mode, serviceId = null) {
     document.getElementById('s-delete-btn').style.display = 'block';
 
     const { data, error } = await db.from('services').select('*').eq('id', serviceId).single();
-    if (error || !data) {
-      showToast('Leistung konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
-      editingServiceId = null;
-      return;
-    }
+    if (error || !data) { showToast('Leistung konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingServiceId = null; return; }
     document.getElementById('s-name').value = data.name || '';
     document.getElementById('s-beschreibung').value = data.beschreibung || '';
     document.getElementById('s-einheit').value = data.einheit || 'Tag';
@@ -732,10 +678,7 @@ async function openServiceModal(mode, serviceId = null) {
   setTimeout(() => document.getElementById('s-name').focus(), 100);
 }
 
-function closeServiceModal() {
-  document.getElementById('modal-service').classList.remove('open');
-  editingServiceId = null;
-}
+function closeServiceModal() { document.getElementById('modal-service').classList.remove('open'); editingServiceId = null; }
 
 async function saveService() {
   const name          = document.getElementById('s-name').value.trim();
@@ -806,10 +749,7 @@ async function deleteService() {
 // ═══════════════════════════════════════════════════════════
 
 async function loadLookupKategorien() {
-  const { data, error } = await db
-    .from('lookup_values')
-    .select('kategorie')
-    .order('kategorie');
+  const { data, error } = await db.from('lookup_values').select('kategorie').order('kategorie');
   if (error) { showToast('Fehler beim Laden der Kategorien: ' + error.message, true); return []; }
   return [...new Set((data || []).map(r => r.kategorie))];
 }
@@ -833,15 +773,9 @@ async function loadLookups() {
   const kategorie = document.getElementById('lookup-filter-kategorie').value;
 
   tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade ...</div></td></tr>';
-
   if (!kategorie) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Keine Kategorie ausgewählt.</div></td></tr>'; return; }
 
-  const { data, error } = await db
-    .from('lookup_values')
-    .select('*')
-    .eq('kategorie', kategorie)
-    .order('reihenfolge')
-    .order('wert');
+  const { data, error } = await db.from('lookup_values').select('*').eq('kategorie', kategorie).order('reihenfolge').order('wert');
 
   if (error) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
   if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Einträge in dieser Kategorie.</div></td></tr>'; return; }
@@ -912,10 +846,7 @@ async function openLookupModal(mode, lookupId = null) {
   setTimeout(() => document.getElementById('l-wert').focus(), 100);
 }
 
-function closeLookupModal() {
-  document.getElementById('modal-lookup').classList.remove('open');
-  editingLookupId = null;
-}
+function closeLookupModal() { document.getElementById('modal-lookup').classList.remove('open'); editingLookupId = null; }
 
 async function saveLookup() {
   const kSelect     = document.getElementById('l-kategorie');
@@ -988,9 +919,6 @@ async function deleteLookup() {
 //  FIRMEN (COMPANIES)  — Phase 2b
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Aktive Unternehmenstypen laden (für Dropdowns + Filter).
- */
 async function loadUnternehmensTypen() {
   const { data, error } = await db
     .from('lookup_values')
@@ -1002,15 +930,10 @@ async function loadUnternehmensTypen() {
   return data || [];
 }
 
-/**
- * Firmen aus DB laden, cachen und filtern/rendern.
- * Cache, damit Suche/Filter clientseitig ohne weitere DB-Calls laufen.
- */
 async function loadCompanies() {
   const tbody = document.getElementById('companies-table-body');
   tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Lade Firmen ...</div></td></tr>';
 
-  // Typen-Filter befüllen (einmal, wenn noch leer)
   const typSelect = document.getElementById('companies-typ-filter');
   if (typSelect.options.length <= 1) {
     const typen = await loadUnternehmensTypen();
@@ -1023,38 +946,25 @@ async function loadCompanies() {
     .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
     .order('name');
 
-  if (error) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
-    return;
-  }
+  if (error) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
   companiesCache = data || [];
   filterCompanies();
 }
 
-/**
- * Filter anwenden (Suche + Typ) und Tabelle neu rendern.
- * Arbeitet komplett auf companiesCache.
- */
 function filterCompanies() {
   const searchTerm = document.getElementById('companies-search').value.trim().toLowerCase();
   const typFilter  = document.getElementById('companies-typ-filter').value;
 
   let filtered = companiesCache;
-
-  if (typFilter) {
-    filtered = filtered.filter(c => c.typ_id === typFilter);
-  }
-
+  if (typFilter) filtered = filtered.filter(c => c.typ_id === typFilter);
   if (searchTerm) {
     filtered = filtered.filter(c => {
-      const haystack = [
-        c.name, c.stadt, c.plz, c.email, c.telefon, c.branche, c.strasse, c.website
-      ].filter(Boolean).join(' ').toLowerCase();
+      const haystack = [c.name, c.stadt, c.plz, c.email, c.telefon, c.branche, c.strasse, c.website]
+        .filter(Boolean).join(' ').toLowerCase();
       return haystack.includes(searchTerm);
     });
   }
-
   renderCompaniesTable(filtered);
 }
 
@@ -1079,7 +989,6 @@ function renderCompaniesTable(companies) {
   tbody.innerHTML = companies.map(c => {
     const typFarbe = c.typ?.farbe || '#6b7280';
     const typWert  = c.typ?.wert || '—';
-
     const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
 
     return `
@@ -1089,9 +998,7 @@ function renderCompaniesTable(companies) {
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
         </td>
         <td>
-          <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">
-            ${esc(typWert)}
-          </span>
+          <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(ort || '—')}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(c.telefon || '—')}</td>
@@ -1107,7 +1014,6 @@ function renderCompaniesTable(companies) {
 async function openCompanyModal(mode, companyId = null) {
   editingCompanyId = companyId;
 
-  // Typen-Dropdown befüllen
   const typSelect = document.getElementById('c-typ');
   const typen = await loadUnternehmensTypen();
   if (typen.length === 0) {
@@ -1116,7 +1022,6 @@ async function openCompanyModal(mode, companyId = null) {
     typSelect.innerHTML = typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
 
-  // Felder zurücksetzen
   document.getElementById('c-name').value = '';
   document.getElementById('c-branche').value = '';
   document.getElementById('c-strasse').value = '';
@@ -1138,11 +1043,7 @@ async function openCompanyModal(mode, companyId = null) {
     document.getElementById('c-delete-btn').style.display = 'block';
 
     const { data, error } = await db.from('companies').select('*').eq('id', companyId).single();
-    if (error || !data) {
-      showToast('Firma konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
-      editingCompanyId = null;
-      return;
-    }
+    if (error || !data) { showToast('Firma konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingCompanyId = null; return; }
 
     document.getElementById('c-name').value = data.name || '';
     document.getElementById('c-branche').value = data.branche || '';
@@ -1161,10 +1062,7 @@ async function openCompanyModal(mode, companyId = null) {
   setTimeout(() => document.getElementById('c-name').focus(), 100);
 }
 
-function closeCompanyModal() {
-  document.getElementById('modal-company').classList.remove('open');
-  editingCompanyId = null;
-}
+function closeCompanyModal() { document.getElementById('modal-company').classList.remove('open'); editingCompanyId = null; }
 
 async function saveCompany() {
   const name     = document.getElementById('c-name').value.trim();
@@ -1183,7 +1081,6 @@ async function saveCompany() {
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
   if (!typ_id) { showToast('Bitte Typ auswählen.', true); return; }
 
-  // Einfache E-Mail-Validierung (nur wenn ausgefüllt)
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     showToast('E-Mail-Adresse sieht nicht korrekt aus.', true);
     return;
@@ -1194,8 +1091,7 @@ async function saveCompany() {
 
   try {
     const payload = {
-      name,
-      typ_id,
+      name, typ_id,
       branche:  branche  || null,
       strasse:  strasse  || null,
       plz:      plz      || null,
@@ -1206,11 +1102,7 @@ async function saveCompany() {
       website:  website  || null,
       notizen:  notizen  || null
     };
-
-    // Beim Anlegen erstellt_von setzen, beim Update NICHT überschreiben
-    if (!editingCompanyId) {
-      payload.erstellt_von = currentUser?.id || null;
-    }
+    if (!editingCompanyId) payload.erstellt_von = currentUser?.id || null;
 
     let error;
     if (editingCompanyId) { ({ error } = await db.from('companies').update(payload).eq('id', editingCompanyId)); }
@@ -1247,6 +1139,238 @@ async function deleteCompany() {
     closeCompanyModal();
     showToast('Firma gelöscht.');
     await loadCompanies();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  KONTAKTE (CONTACTS)  — Phase 2b komplett
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Holt alle Firmen (id + name) für Dropdowns.
+ * Nutzt Cache falls vorhanden, lädt sonst nach.
+ */
+async function getCompaniesForDropdown() {
+  if (companiesCache.length > 0) return companiesCache;
+  const { data } = await db.from('companies').select('id, name').order('name');
+  return data || [];
+}
+
+async function loadContacts() {
+  const tbody = document.getElementById('contacts-table-body');
+  tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>';
+
+  // Firmen-Filter-Dropdown befüllen (einmalig beim ersten Laden)
+  const companyFilter = document.getElementById('contacts-company-filter');
+  if (companyFilter.options.length <= 2) {
+    const companies = await getCompaniesForDropdown();
+    const baseOpts = '<option value="">Alle Firmen</option><option value="__none__">Ohne Firmenzuordnung</option>';
+    companyFilter.innerHTML = baseOpts
+      + companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  }
+
+  const { data, error } = await db
+    .from('contacts')
+    .select('*, company:companies(id, name)')
+    .order('nachname');
+
+  if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
+
+  contactsCache = data || [];
+  filterContacts();
+}
+
+function filterContacts() {
+  const searchTerm    = document.getElementById('contacts-search').value.trim().toLowerCase();
+  const companyFilter = document.getElementById('contacts-company-filter').value;
+
+  let filtered = contactsCache;
+
+  if (companyFilter === '__none__') {
+    filtered = filtered.filter(k => !k.company_id);
+  } else if (companyFilter) {
+    filtered = filtered.filter(k => k.company_id === companyFilter);
+  }
+
+  if (searchTerm) {
+    filtered = filtered.filter(k => {
+      const haystack = [
+        k.vorname, k.nachname, k.email, k.telefon, k.position, k.company?.name
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }
+
+  renderContactsTable(filtered);
+}
+
+function renderContactsTable(contacts) {
+  const tbody = document.getElementById('contacts-table-body');
+  const countEl = document.getElementById('contacts-count');
+
+  const total = contactsCache.length;
+  const shown = contacts.length;
+  countEl.textContent = (shown === total)
+    ? `${total} Kontakt${total === 1 ? '' : 'e'}`
+    : `${shown} von ${total} Kontakten`;
+
+  if (shown === 0) {
+    const msg = total === 0
+      ? 'Noch keine Kontakte angelegt. Klicke oben auf „+ Neuer Kontakt".'
+      : 'Keine Kontakte entsprechen den Filterkriterien.';
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = contacts.map(k => {
+    const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
+    const firmaCell = k.company?.name
+      ? `<span style="color:var(--text)">${esc(k.company.name)}</span>`
+      : `<span style="color:var(--muted);font-style:italic">ohne Firma</span>`;
+
+    return `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="avatar">${esc(ini(fullName))}</div>
+            <div style="font-weight:500">${esc(fullName)}</div>
+          </div>
+        </td>
+        <td>${firmaCell}</td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
+        <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function openContactModal(mode, contactId = null) {
+  editingContactId = contactId;
+
+  // Firmen-Dropdown befüllen (mit "keine Firma"-Option)
+  const companySelect = document.getElementById('k-company');
+  const companies = await getCompaniesForDropdown();
+  companySelect.innerHTML = '<option value="">— Keine Firma —</option>'
+    + companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  // Felder zurücksetzen
+  document.getElementById('k-vorname').value = '';
+  document.getElementById('k-nachname').value = '';
+  document.getElementById('k-position').value = '';
+  document.getElementById('k-telefon').value = '';
+  document.getElementById('k-email').value = '';
+  document.getElementById('k-notizen').value = '';
+  companySelect.value = '';
+
+  if (mode === 'new') {
+    document.getElementById('modal-contact-title').textContent = 'Neuer Kontakt';
+    document.getElementById('k-save-btn').textContent = 'Anlegen';
+    document.getElementById('k-delete-btn').style.display = 'none';
+
+    // Falls aktuell ein Firmen-Filter gesetzt ist → als Default übernehmen
+    const preselectedCompany = document.getElementById('contacts-company-filter').value;
+    if (preselectedCompany && preselectedCompany !== '__none__') {
+      companySelect.value = preselectedCompany;
+    }
+  } else {
+    document.getElementById('modal-contact-title').textContent = 'Kontakt bearbeiten';
+    document.getElementById('k-save-btn').textContent = 'Speichern';
+    document.getElementById('k-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('contacts').select('*').eq('id', contactId).single();
+    if (error || !data) { showToast('Kontakt konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingContactId = null; return; }
+
+    document.getElementById('k-vorname').value = data.vorname || '';
+    document.getElementById('k-nachname').value = data.nachname || '';
+    document.getElementById('k-position').value = data.position || '';
+    document.getElementById('k-telefon').value = data.telefon || '';
+    document.getElementById('k-email').value = data.email || '';
+    document.getElementById('k-notizen').value = data.notizen || '';
+    if (data.company_id) companySelect.value = data.company_id;
+  }
+
+  document.getElementById('modal-contact').classList.add('open');
+  setTimeout(() => document.getElementById('k-vorname').focus(), 100);
+}
+
+function closeContactModal() { document.getElementById('modal-contact').classList.remove('open'); editingContactId = null; }
+
+async function saveContact() {
+  const vorname    = document.getElementById('k-vorname').value.trim();
+  const nachname   = document.getElementById('k-nachname').value.trim();
+  const position   = document.getElementById('k-position').value.trim();
+  const company_id = document.getElementById('k-company').value;
+  const telefon    = document.getElementById('k-telefon').value.trim();
+  const email      = document.getElementById('k-email').value.trim();
+  const notizen    = document.getElementById('k-notizen').value.trim();
+  const btn        = document.getElementById('k-save-btn');
+
+  if (!vorname) { showToast('Bitte Vorname eingeben.', true); return; }
+  if (!nachname) { showToast('Bitte Nachname eingeben.', true); return; }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showToast('E-Mail-Adresse sieht nicht korrekt aus.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = editingContactId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      vorname,
+      nachname,
+      position:   position   || null,
+      company_id: company_id || null,
+      telefon:    telefon    || null,
+      email:      email      || null,
+      notizen:    notizen    || null
+    };
+    if (!editingContactId) payload.erstellt_von = currentUser?.id || null;
+
+    let error;
+    if (editingContactId) { ({ error } = await db.from('contacts').update(payload).eq('id', editingContactId)); }
+    else { ({ error } = await db.from('contacts').insert(payload)); }
+    if (error) throw new Error(error.message);
+
+    closeContactModal();
+    showToast(editingContactId ? 'Kontakt aktualisiert.' : 'Kontakt angelegt.');
+    await loadContacts();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingContactId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteContact() {
+  if (!editingContactId) return;
+  if (!confirm('Kontakt wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.')) return;
+
+  const btn = document.getElementById('k-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const { error } = await db.from('contacts').delete().eq('id', editingContactId);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Dieser Kontakt ist noch an anderer Stelle verknüpft (z. B. als Hauptkontakt eines Projekts). Die Verknüpfung muss zuerst entfernt werden.');
+      }
+      throw new Error(error.message);
+    }
+    closeContactModal();
+    showToast('Kontakt gelöscht.');
+    await loadContacts();
   } catch (e) {
     showToast(e.message, true);
   } finally {
