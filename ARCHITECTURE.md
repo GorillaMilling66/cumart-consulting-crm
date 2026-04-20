@@ -1,7 +1,7 @@
 # Cumart CRM – Architektur & Projektübersicht
 
 > Lebendes Dokument. Wird bei jeder größeren Änderung aktualisiert.
-> Zuletzt aktualisiert: 2026-04-20
+> Zuletzt aktualisiert: 2026-04-20 (v1.4.2)
 
 ---
 
@@ -54,13 +54,18 @@ Admin-gepflegt in der App. Admins definieren selbst, welche Leistungen mit
 welchen Standardpreisen angeboten werden. Beim Anlegen eines Einsatzes oder
 Termins wird aus dem Katalog ausgewählt.
 
+### Stammdaten / Lookup-Werte
+Zentrale Dropdown-Werte werden in der Tabelle `lookup_values` verwaltet
+(Unternehmenstypen, Termintypen, Leistungskategorien, später Projekt-Status etc.).
+Admins können neue Kategorien und Werte direkt in der App pflegen – ohne SQL.
+
 ---
 
 ## 3. Bau-Plan (Feature-Roadmap)
 
 Farb-Legende: ✅ fertig · 🔨 in Arbeit · ⏳ geplant · 💭 Idee
 
-### Phase 0 – Fundament & Infrastruktur
+### Phase 0 – Fundament & Infrastruktur  ✅
 - ✅ Supabase Projekt aufgesetzt
 - ✅ 12-Tabellen-Schema angelegt
 - ✅ RLS Policies auf allen Tabellen sauber konfiguriert
@@ -82,10 +87,27 @@ Release: **v1.3.1** (2026-04-20)
 - ✅ Auto-Aktivierung bei erstem Login via DB-Trigger
 - ✅ Frontend-Gating für Admin-Funktionen
 
-### Phase 2 – Stammdaten  🔨
-- ⏳ **Services-Katalog** (Admin legt Leistungen mit Preisen an)
-- ⏳ **Firmen** (anlegen, auflisten, bearbeiten, löschen)
+### Phase 2a – Stammdaten & Leistungskatalog  ✅
+Release: **v1.4.2** (2026-04-20)
+
+- ✅ Lookup-Werte-Verwaltung (Kategorien, Werte, Farben, Reihenfolge, Status)
+- ✅ Leistungskatalog (Name, Kategorie als FK, Einheit, Preis, Status)
+- ✅ Leistungskategorien als Foreign Key auf `lookup_values`
+- ✅ Foreign-Key-Schutz beim Löschen (archivieren statt löschen)
+- ✅ Admin-only in "Einstellungen"-Untermenü gruppiert
+- ✅ Icon-Upgrade auf Lucide-Style
+
+### Phase 2b – Firmen & Kontakte  🔨
+- 🔨 **Firmen** (anlegen, auflisten, bearbeiten, löschen)
+  - Name, Typ (Lookup: Kunde/Interessent/Lieferant/Partner), Branche
+  - Adresse (Straße, PLZ, Stadt, Land)
+  - Kontakt (Telefon, E-Mail, Website)
+  - Notizen
 - ⏳ **Kontakte** (Ansprechpartner pro Firma)
+  - Vorname, Nachname, Position
+  - Telefon, E-Mail
+  - Zuordnung zu einer Firma
+  - Mehrere Kontakte pro Firma möglich
 
 ### Phase 3 – Aktivitäten  ⏳
 - ⏳ **Projekte** als Klammer (Status, Festpreis, Zeitraum, Hauptkontakt)
@@ -119,40 +141,40 @@ Release: **v1.3.1** (2026-04-20)
 
 ### Tech-Stack
 - **Frontend:** Vanilla HTML / CSS / JavaScript (kein Framework)
-  - Grund: Einfachheit, schnelles Laden, kein Build-Prozess nötig
 - **Backend:** Supabase (Postgres + Auth + Edge Functions)
-- **Hosting Frontend:** Vercel (automatisches Deploy von GitHub main-Branch)
+- **Hosting Frontend:** Vercel (auto-deploy von GitHub main-Branch)
 - **Hosting Backend:** Supabase Cloud
 - **Versionskontrolle:** GitHub (`GorillaMilling66/cumart-consulting-crm`)
+- **Icon-Set:** Lucide (inline SVG, keine Runtime-Library)
 
-### Code-Struktur (aktueller Stand v1.3.1)
+### Code-Struktur (aktueller Stand v1.4.2)
 ```
 /
-├── index.html          ← HTML-Gerüst (Auth-Screens, App-Layout, Modals)
-├── styles.css          ← Alle Styles
-├── app.js              ← Gesamte App-Logik (wird später modularisiert)
-├── supabase/
-│   └── functions/
-│       └── manage-users/
-│           └── index.ts   ← Edge Function für Benutzer-CRUD
-└── ARCHITECTURE.md     ← Dieses Dokument
+├── index.html                     ← HTML-Gerüst
+├── styles.css                     ← Alle Styles
+├── app.js                         ← Gesamte App-Logik
+├── ARCHITECTURE.md                ← Dieses Dokument
+└── supabase/
+    └── functions/
+        └── manage-users/
+            └── index.ts           ← Edge Function für Benutzer-CRUD
 ```
 
-**Refactoring-Strategie:** Aktuell ist `app.js` noch eine Datei. Sobald das
-Projekt wächst (Schätzung: ab 5+ Features), wird `app.js` in Module aufgeteilt
-(`api.js`, `ui.js`, eigene Module pro Feature-Bereich). Kein Premature-Modularize.
+**Refactoring-Strategie:** Aktuell ist `app.js` noch eine Datei (ca. 1200 Zeilen).
+Modularisierung startet sobald `app.js > 1500 Zeilen` oder ein Muster 3-fach
+auftaucht. Kein Premature-Modularize.
 
 ### Datenmodell (12 Tabellen)
 
 **Benutzer & Rollen**
 - `user_profiles` – Cumart-Mitarbeiter (verknüpft mit `auth.users`)
-- `roles` – Admin / Vertrieb / Techniker (inkl. `rechte`-JSON für spätere Fine-Grained-Permissions)
+- `roles` – Admin / Vertrieb / Techniker (inkl. `rechte`-JSON für spätere Permissions)
 
 **Stammdaten**
 - `companies` – Firmen (Kunden, Interessenten, Lieferanten, Partner)
 - `contacts` – Ansprechpartner, gehören zu einer Firma
-- `services` – Leistungskatalog (Name, Kategorie, Einheit, Standardpreis)
-- `lookup_values` – zentrale Dropdown-Werte (Unternehmenstyp, Termintyp, …)
+- `services` – Leistungskatalog (Name, Kategorie-FK, Einheit, Standardpreis)
+- `lookup_values` – zentrale Dropdown-Werte (admin-gepflegt)
 
 **Aktivitäten**
 - `projects` – Aufträge (Festpreis, Status, Zeitraum)
@@ -166,99 +188,96 @@ Projekt wächst (Schätzung: ab 5+ Features), wird `app.js` in Module aufgeteilt
 
 | Rolle | Kann | Kann nicht |
 |---|---|---|
-| **Admin** | Alles, inkl. Benutzerverwaltung, Services-Katalog, Rollen-Änderungen | Sich selbst degradieren / löschen / letzter Admin |
-| **Vertrieb** | Firmen, Kontakte, Projekte, Termine, eigene Notizen | Benutzerverwaltung, Services-Katalog |
-| **Techniker** | Eigene Einsätze einsehen, Notizen zu Einsätzen | Preise ändern, Benutzerverwaltung |
+| **Admin** | Alles, inkl. Benutzerverwaltung, Stammdaten, Leistungen, Rollen-Änderungen | Sich selbst degradieren / löschen / letzter Admin |
+| **Vertrieb** | Firmen, Kontakte, Projekte, Termine, eigene Notizen | Einstellungen (keine eigene Sicht auf Leistungen/Benutzer/Stammdaten) |
+| **Techniker** | Eigene Einsätze einsehen, Notizen zu Einsätzen | Einstellungen, Preise ändern |
 
-Die genauen Rechte werden stufenweise verfeinert. Aktuell ist die Haupt-Gate
-auf „Admin / Nicht-Admin". Feingranulare Rechte über `roles.rechte` (JSON-Array)
-kommen in Phase 5.
+Haupt-Gate aktuell: „Admin / Nicht-Admin".
+Feingranulare Rechte via `roles.rechte` (JSON-Array) kommen in Phase 5.
 
 ### Sicherheit (Kernprinzipien)
 
-1. **Row-Level Security (RLS)** auf allen Tabellen – Angreifer, die über die
-   JS-Library direkt auf Supabase zugreifen, werden auf DB-Ebene gestoppt.
-2. **Edge Functions** für sensible Operationen (User anlegen, löschen,
-   Passwort-Reset). Diese laufen mit `service_role` und prüfen selbst die Admin-Rolle.
-3. **Kein Klartext-Passwort via E-Mail** – Initial- und Reset-Passwörter
-   werden im Admin-UI angezeigt und per Kopier-Button weitergegeben.
-4. **Frontend-Gating** rein kosmetisch – echter Schutz liegt in DB + Edge Functions.
+1. **Row-Level Security (RLS)** auf allen Tabellen
+2. **Edge Functions** für sensible Operationen (User anlegen, löschen, Passwort-Reset)
+3. **Kein Klartext-Passwort via E-Mail** – Anzeige im Admin-UI mit Kopier-Button
+4. **Frontend-Gating** kosmetisch – echter Schutz in DB + Edge Functions
 
 ---
 
 ## 5. Design-Konventionen
 
 ### Sprache
-- **UI:** Deutsch (Zielgruppe: deutschsprachige Mitarbeiter)
-- **Code (Variablen, Funktionen, Kommentare):** Deutsch mischt sich mit Englisch
-  - Datenfelder wie `name`, `email`, `status` bleiben englisch (Postgres-Konvention)
-  - Domain-spezifische Felder dürfen deutsch sein (`einzelpreis`, `menge`, `datum_von`)
+- **UI:** Deutsch
+- **Code (Variablen, Funktionen, Kommentare):** Deutsch mischt mit Englisch
+  - Datenfelder bleiben englisch (`name`, `email`, `status`)
+  - Domain-spezifische Felder dürfen deutsch sein (`einzelpreis`, `menge`)
   - Funktionsnamen im JS sind englisch (`loadUsers`, `saveCompany`)
-  - Kommentare dürfen deutsch sein
 
 ### Benennung
 - Tabellen: snake_case, Plural (`user_profiles`, `companies`)
 - Spalten: snake_case (`role_id`, `created_at`)
 - JS-Funktionen: camelCase (`loadUsers`, `isAdmin`)
-- CSS-Klassen: kebab-case mit Block-Präfix (`btn-primary`, `sidebar-user-avatar`)
-- HTML-IDs: kebab-case, möglichst Prefix je Bereich (`u-name` für User-Modal,
-  `cred-email` für Credentials-Modal)
+- CSS-Klassen: kebab-case mit Block-Präfix (`btn-primary`, `nav-item-sub`)
+- HTML-IDs: kebab-case, Prefix je Bereich (`u-name`, `s-kategorie`, `l-wert`)
 
 ### UI-Prinzipien
 - Schlichtes, funktionales Design (wenig Farben, klare Hierarchie)
-- Keine Icon-Bibliotheken – Inline-SVG wo nötig
+- Lucide-Icon-Set, inline SVG, 18px in Hauptnav / 15px im Untermenü
 - Modals für alle Bearbeitungen (nicht Inline-Editing)
 - Toast-Meldungen für Feedback (3 Sekunden)
-- Keine destruktiven Aktionen ohne Bestätigung (`confirm(...)`)
+- Keine destruktiven Aktionen ohne `confirm(...)`
+- Foreign-Key-Löschfehler werden abgefangen → freundliche Meldung „Archivieren statt löschen"
 
-### Dateigrößen & Refactoring
-- Faustregel: `app.js` wird modularisiert, wenn sie >1500 Zeilen überschreitet
-  oder sich Muster 3-fach wiederholen (API-Calls, Modal-Handling, List-Rendering).
+### Sidebar-Struktur (ab v1.4.1)
+- **Oben:** User-Info (Name + Rolle)
+- **Mitte:** `#nav-main` – Arbeits-Menüpunkte (Phase 3: Firmen, Kontakte, …)
+- **Unten:**
+  - `#nav-settings-group` – ausklappbares „Einstellungen"-Untermenü
+    (Benutzer / Leistungen / Stammdaten), admin-only via `data-admin-only="true"`
+  - Abmelden
+
+### Admin-Gating
+Jedes UI-Element mit `data-admin-only="true"` wird in `applyAdminOnlyUI()` je
+nach Rolle ein-/ausgeblendet. Neue Admin-Bereiche einfach mit diesem Attribut
+markieren – keine separate Logik nötig.
 
 ---
 
 ## 6. Deployment & Backups
 
 ### Deployment-Fluss
-1. Lokale/Remote Änderung in GitHub-Repo `main`-Branch
-2. Vercel deployed automatisch (~60 Sekunden)
+1. Änderung in GitHub-Repo `main`-Branch
+2. Vercel deployed automatisch (~60 s)
 3. Edge Functions: Änderungen direkt im Supabase Dashboard; Code parallel
    ins Repo nachführen (`supabase/functions/manage-users/index.ts`)
-4. DB-Migrationen: SQL via Supabase SQL Editor; Skripte im Repo unter
+4. DB-Migrationen: SQL via Supabase SQL Editor; Skripte später in
    `supabase/migrations/` ablegen (Ordner noch anzulegen)
 
 ### Backup-Strategie
-- **Code:** GitHub-Releases als Meilenstein-Tags (`v1.3.0`, `v1.3.1`, …)
+- **Code:** GitHub-Releases als Meilenstein-Tags (`v1.3.0`, `v1.3.1`, `v1.4.2`, …)
 - **Daten:** manueller SQL-Dump (CSV-Export via SQL Editor) bei jedem Meilenstein
-- **Automatische Supabase-Backups:** täglich (Free Plan), aber nicht selbst wiederherstellbar → deshalb manuelle Dumps
-- **Upgrade-Plan:** Sobald produktiv mit echten Kundendaten → Supabase Pro für Point-in-Time-Recovery
+- **Automatische Supabase-Backups:** täglich (Free Plan), nicht selbst wiederherstellbar → deshalb manuelle Dumps
+- **Upgrade-Plan:** Sobald echte Kundendaten produktiv → Supabase Pro für Point-in-Time-Recovery
 
 ---
 
-## 7. Offene Fragen / Design-Entscheidungen, die noch kommen
+## 7. Offene Fragen
 
-Stichpunkte, die wir später klären müssen:
-
-- **Services-Katalog:** Kategorien-Schema? (Training / Einsatz / Online / Projekt?)
-  Abrechnungseinheiten? (Tag / Stunde / Pauschale)
-- **Projekte:** Muss jeder Einsatz zu einem Projekt gehören, oder gibt es auch
-  Einzeleinsätze „ohne Projekt"?
+- **Projekte:** Muss jeder Einsatz zu einem Projekt gehören, oder gibt es auch Einzeleinsätze?
 - **Einsatz-Zuteilung:** Ein oder mehrere Techniker pro Einsatz? (Schema erlaubt mehrere)
-- **Kalender-Ansicht:** Eigenständiger Kalender oder reicht eine Listenansicht?
-- **Feiertage / Urlaubsplanung:** Im Scope des CRMs oder separat?
+- **Kalender-Ansicht:** Eigenständiger Kalender oder reicht Listenansicht?
+- **Feiertage / Urlaubsplanung:** Im Scope oder separat?
 - **Datenimport:** Später aus altem CRM? Aus Excel?
+- **Firmen-Soft-Delete:** Komplett löschen oder nur archivieren, wenn bereits Projekte dranhängen?
 
 ---
 
 ## 8. Arbeitsprozess mit Claude
 
-Wenn du (Selcuk) eine neue Session mit Claude startest:
-
-1. **Erwähne „ARCHITECTURE.md"** in der ersten Nachricht, damit Claude weiß, dass es existiert.
+1. **Erwähne „ARCHITECTURE.md"** in der ersten Nachricht einer neuen Session.
 2. **Kontext knapp:** „Wir bauen gerade Phase 2b (Firmen)" reicht.
-3. **Bei Unklarheiten** prüft Claude zuerst dieses Dokument, bevor er rät.
+3. **Bei Unklarheiten** prüft Claude zuerst dieses Dokument.
 4. **Nach größeren Änderungen:** Claude aktualisiert diese Datei gemeinsam mit dir.
 
-Die Datei wird **nicht automatisch** aktualisiert. Wir müssen daran denken.
-Daumenregel: Wenn ein Feature fertig wird, ändern wir mindestens die
-Roadmap (Phase X von 🔨 auf ✅) und den "Zuletzt aktualisiert"-Timestamp oben.
+Die Datei wird **nicht automatisch** aktualisiert – wir müssen daran denken.
+Daumenregel: Feature fertig → Roadmap-Status ändern + „Zuletzt aktualisiert"-Timestamp oben.
