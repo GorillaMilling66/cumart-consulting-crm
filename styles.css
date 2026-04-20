@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.4.2 (Icon-Upgrade)
+   Version 1.5.0 (Phase 2b – Firmen)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -83,10 +83,9 @@ body {
 }
 .nav { flex: 1; padding: 8px 0; }
 
-/* ── NAV-ITEMS ── */
 .nav-item {
-  display: flex; align-items: center; gap: 12px;     /* gap etwas größer für mehr Luft neben den größeren Icons */
-  padding: 10px 16px;                                 /* vertikal etwas mehr Platz */
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
   cursor: pointer;
   color: var(--muted);
   font-size: 13px;
@@ -98,8 +97,6 @@ body {
 }
 .nav-item:hover { background: var(--bg); color: var(--text); }
 .nav-item.active { background: var(--bg); color: var(--text); }
-
-/* Standardgröße für Nav-Icons: 18px (Hauptmenü) */
 .nav-item svg {
   width: 18px;
   height: 18px;
@@ -113,8 +110,6 @@ body {
 
 /* ── EINSTELLUNGEN-UNTERMENÜ ── */
 .nav-group { display: block; }
-
-/* Chevron rechts am Einstellungen-Button — kleiner als das Haupt-Icon */
 .nav-item-group .nav-chevron {
   width: 16px;
   height: 16px;
@@ -124,25 +119,21 @@ body {
 .nav-group.open .nav-item-group .nav-chevron {
   transform: rotate(180deg);
 }
-
-/* Untermenü: per Default eingeklappt */
 .nav-submenu {
   max-height: 0;
   overflow: hidden;
   transition: max-height .2s ease;
 }
 .nav-group.open .nav-submenu {
-  max-height: 260px;                                 /* 3 Einträge + Puffer */
+  max-height: 260px;
 }
-
-/* Untermenü-Einträge: eingerückt, etwas kleineres Icon */
 .nav-item-sub {
-  padding-left: 28px;                                /* weniger tief, dafür mit Icon */
+  padding-left: 28px;
   font-size: 12.5px;
   gap: 10px;
 }
 .nav-item-sub svg {
-  width: 15px;                                       /* Sub-Icons etwas kleiner */
+  width: 15px;
   height: 15px;
   opacity: .85;
 }
@@ -214,7 +205,8 @@ body {
 .form-group.full { grid-column: 1 / -1; }
 .form-group label { font-size: 12px; font-weight: 500; color: var(--muted); }
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -224,11 +216,27 @@ body {
   color: var(--text);
   width: 100%;
 }
+.form-group textarea { resize: vertical; min-height: 70px; line-height: 1.45; }
 .form-group input:focus,
-.form-group select:focus { outline: none; border-color: var(--text); }
+.form-group select:focus,
+.form-group textarea:focus { outline: none; border-color: var(--text); }
 .form-group input:disabled,
-.form-group select:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
+.form-group select:disabled,
+.form-group textarea:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
 .form-group input[type="color"] { padding: 2px; height: 38px; cursor: pointer; }
+
+/* Modal-interne Gruppen-Überschriften */
+.modal-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-group-title:first-of-type { margin-top: 0; }
 
 /* ── TABELLE ── */
 .table-wrap { overflow-x: auto; }
@@ -251,6 +259,17 @@ td {
 }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--bg); }
+
+/* Responsive Auto-Hide für Tabellen-Spalten */
+.col-tablet { display: none; }
+.col-desktop { display: none; }
+
+@media (min-width: 768px) {
+  .col-tablet { display: table-cell; }
+}
+@media (min-width: 1024px) {
+  .col-desktop { display: table-cell; }
+}
 
 /* ── BADGE ── */
 .badge {
@@ -280,7 +299,8 @@ tr:hover td { background: var(--bg); }
   display: none;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 80px;
+  padding-top: 60px;
+  padding-bottom: 60px;
   overflow-y: auto;
 }
 .modal-overlay.open { display: flex; }
