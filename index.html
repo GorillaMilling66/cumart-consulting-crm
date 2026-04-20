@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.4.2 (Icon-Upgrade: Lucide-Style, groesser und praegnanter) -->
+<!-- VERSION: 1.5.0 (Phase 2b - Firmen) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -116,24 +116,39 @@
 
     <!-- HAUPT-NAV -->
     <nav class="nav" id="nav-main">
-      <!-- Phase 3: Firmen / Kontakte / Projekte / … -->
+
+      <!-- Firmen -->
+      <button class="nav-item" id="nav-companies"
+              onclick="showPage('companies', this)">
+        <!-- Icon: Building2 (Lucide) -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+          <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+          <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+          <path d="M10 6h4"/>
+          <path d="M10 10h4"/>
+          <path d="M10 14h4"/>
+          <path d="M10 18h4"/>
+        </svg>
+        Firmen
+      </button>
+
+      <!-- Phase 2b-Rest: Kontakte, Phase 3: Projekte, Einsätze, Termine -->
     </nav>
 
-    <!-- UNTEN: EINSTELLUNGEN (ausklappbar, admin-only) + ABMELDEN -->
+    <!-- UNTEN: EINSTELLUNGEN + ABMELDEN -->
     <div class="nav-bottom">
 
-      <!-- Einstellungen-Gruppe -->
       <div class="nav-group" id="nav-settings-group" data-admin-only="true" style="display:none">
         <button class="nav-item nav-item-group" id="nav-settings-toggle"
                 onclick="toggleSettings()">
-          <!-- Icon: Settings (Zahnrad) – Lucide -->
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
             <circle cx="12" cy="12" r="3"/>
           </svg>
           <span style="flex:1">Einstellungen</span>
-          <!-- Chevron rechts -->
           <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
                aria-hidden="true">
@@ -141,11 +156,9 @@
           </svg>
         </button>
 
-        <!-- Untermenü -->
         <div class="nav-submenu" id="nav-settings-submenu">
           <button class="nav-item nav-item-sub" id="nav-users"
                   onclick="showPage('users', this)">
-            <!-- Icon: Users – Lucide -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
@@ -158,7 +171,6 @@
 
           <button class="nav-item nav-item-sub" id="nav-services"
                   onclick="showPage('services', this)">
-            <!-- Icon: Package/Box – Lucide (für "Leistungskatalog") -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M16.5 9.4 7.55 4.24"/>
@@ -171,7 +183,6 @@
 
           <button class="nav-item nav-item-sub" id="nav-lookups"
                   onclick="showPage('lookups', this)">
-            <!-- Icon: Database/List – Lucide (für "Stammdaten") -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <ellipse cx="12" cy="5" rx="9" ry="3"/>
@@ -183,9 +194,7 @@
         </div>
       </div>
 
-      <!-- Abmelden -->
       <button class="nav-item" onclick="doLogout()">
-        <!-- Icon: LogOut – Lucide -->
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -207,9 +216,60 @@
       </div>
       <div class="card">
         <p style="color:var(--muted);font-size:14px">
-          In Kürze findest du hier deine Arbeitsbereiche (Firmen, Kontakte,
+          In Kürze findest du hier deine Arbeitsbereiche (Kontakte,
           Projekte, Termine, Einsätze).
         </p>
+      </div>
+    </div>
+
+    <!-- SEITE: FIRMEN -->
+    <div class="page" id="page-companies">
+      <div class="page-header">
+        <h1 class="page-title">Firmen</h1>
+        <button class="btn btn-primary" onclick="openCompanyModal('new')">
+          + Neue Firma
+        </button>
+      </div>
+
+      <!-- Filter-/Such-Leiste -->
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="companies-search"
+                   placeholder="Suche nach Name, Ort, E-Mail ..."
+                   oninput="filterCompanies()">
+          </div>
+          <div class="form-group" style="min-width:160px;margin:0">
+            <select id="companies-typ-filter" onchange="filterCompanies()">
+              <option value="">Alle Typen</option>
+              <!-- wird aus JS befüllt -->
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="companies-count">Firmen</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Typ</th>
+                <th class="col-tablet">Ort</th>
+                <th class="col-tablet">Telefon</th>
+                <th class="col-desktop">E-Mail</th>
+                <th class="col-desktop">Branche</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="companies-table-body">
+              <tr><td colspan="7"><div class="empty">Lade Firmen ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -316,7 +376,86 @@
   </main>
 </div>
 
-<!-- MODAL: BENUTZER ANLEGEN / BEARBEITEN -->
+<!-- MODAL: FIRMA ANLEGEN / BEARBEITEN -->
+<div class="modal-overlay" id="modal-company">
+  <div class="modal" style="width:620px">
+    <div class="modal-title" id="modal-company-title">Neue Firma</div>
+
+    <!-- Gruppe 1: Stammdaten -->
+    <div class="modal-group-title">Stammdaten</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Name *</label>
+        <input type="text" id="c-name" placeholder="z. B. Müller Maschinenbau GmbH">
+      </div>
+      <div class="form-group">
+        <label>Typ *</label>
+        <select id="c-typ"></select>
+      </div>
+      <div class="form-group">
+        <label>Branche</label>
+        <input type="text" id="c-branche" placeholder="z. B. Automotive">
+      </div>
+    </div>
+
+    <!-- Gruppe 2: Adresse -->
+    <div class="modal-group-title">Adresse</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Straße &amp; Hausnummer</label>
+        <input type="text" id="c-strasse" placeholder="Hauptstraße 42">
+      </div>
+      <div class="form-group">
+        <label>PLZ</label>
+        <input type="text" id="c-plz" placeholder="71034">
+      </div>
+      <div class="form-group">
+        <label>Stadt</label>
+        <input type="text" id="c-stadt" placeholder="Böblingen">
+      </div>
+      <div class="form-group full">
+        <label>Land</label>
+        <input type="text" id="c-land" placeholder="Deutschland" value="Deutschland">
+      </div>
+    </div>
+
+    <!-- Gruppe 3: Kontakt -->
+    <div class="modal-group-title">Kontakt</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Telefon</label>
+        <input type="tel" id="c-telefon" placeholder="+49 7031 12345">
+      </div>
+      <div class="form-group">
+        <label>E-Mail</label>
+        <input type="email" id="c-email" placeholder="info@firma.de">
+      </div>
+      <div class="form-group full">
+        <label>Website</label>
+        <input type="text" id="c-website" placeholder="www.firma.de">
+      </div>
+    </div>
+
+    <!-- Gruppe 4: Notizen -->
+    <div class="modal-group-title">Notizen</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <textarea id="c-notizen" rows="3" placeholder="Freitext-Notizen zur Firma ..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="c-delete-btn"
+              onclick="deleteCompany()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeCompanyModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="c-save-btn" onclick="saveCompany()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BENUTZER -->
 <div class="modal-overlay" id="modal-user">
   <div class="modal">
     <div class="modal-title" id="modal-user-title">Neuer Benutzer</div>
