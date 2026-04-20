@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.5.0 (Phase 2b - Firmen) -->
+<!-- VERSION: 1.5.1 (Phase 2b komplett - Firmen + Kontakte) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -120,7 +120,6 @@
       <!-- Firmen -->
       <button class="nav-item" id="nav-companies"
               onclick="showPage('companies', this)">
-        <!-- Icon: Building2 (Lucide) -->
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
@@ -134,7 +133,22 @@
         Firmen
       </button>
 
-      <!-- Phase 2b-Rest: Kontakte, Phase 3: Projekte, Einsätze, Termine -->
+      <!-- Kontakte -->
+      <button class="nav-item" id="nav-contacts"
+              onclick="showPage('contacts', this)">
+        <!-- Icon: Contact (Lucide) -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 2v2"/>
+          <path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
+          <path d="M8 2v2"/>
+          <circle cx="12" cy="11" r="3"/>
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+        </svg>
+        Kontakte
+      </button>
+
+      <!-- Phase 3: Projekte, Einsätze, Termine -->
     </nav>
 
     <!-- UNTEN: EINSTELLUNGEN + ABMELDEN -->
@@ -216,8 +230,7 @@
       </div>
       <div class="card">
         <p style="color:var(--muted);font-size:14px">
-          In Kürze findest du hier deine Arbeitsbereiche (Kontakte,
-          Projekte, Termine, Einsätze).
+          In Kürze findest du hier deine Arbeitsbereiche (Projekte, Termine, Einsätze).
         </p>
       </div>
     </div>
@@ -231,7 +244,6 @@
         </button>
       </div>
 
-      <!-- Filter-/Such-Leiste -->
       <div class="card" style="padding:14px 20px">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="form-group" style="flex:1;min-width:200px;margin:0">
@@ -242,7 +254,6 @@
           <div class="form-group" style="min-width:160px;margin:0">
             <select id="companies-typ-filter" onchange="filterCompanies()">
               <option value="">Alle Typen</option>
-              <!-- wird aus JS befüllt -->
             </select>
           </div>
         </div>
@@ -267,6 +278,56 @@
             </thead>
             <tbody id="companies-table-body">
               <tr><td colspan="7"><div class="empty">Lade Firmen ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: KONTAKTE -->
+    <div class="page" id="page-contacts">
+      <div class="page-header">
+        <h1 class="page-title">Kontakte</h1>
+        <button class="btn btn-primary" onclick="openContactModal('new')">
+          + Neuer Kontakt
+        </button>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="contacts-search"
+                   placeholder="Suche nach Name, Position, E-Mail ..."
+                   oninput="filterContacts()">
+          </div>
+          <div class="form-group" style="min-width:200px;margin:0">
+            <select id="contacts-company-filter" onchange="filterContacts()">
+              <option value="">Alle Firmen</option>
+              <option value="__none__">Ohne Firmenzuordnung</option>
+              <!-- wird aus JS befüllt -->
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="contacts-count">Kontakte</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Firma</th>
+                <th class="col-tablet">Position</th>
+                <th class="col-tablet">Telefon</th>
+                <th class="col-desktop">E-Mail</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="contacts-table-body">
+              <tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -351,7 +412,6 @@
         <div class="form-group" style="max-width:320px;margin-bottom:20px">
           <label>Kategorie anzeigen</label>
           <select id="lookup-filter-kategorie" onchange="loadLookups()">
-            <!-- wird aus JS befüllt -->
           </select>
         </div>
         <div class="table-wrap">
@@ -376,12 +436,11 @@
   </main>
 </div>
 
-<!-- MODAL: FIRMA ANLEGEN / BEARBEITEN -->
+<!-- MODAL: FIRMA -->
 <div class="modal-overlay" id="modal-company">
   <div class="modal" style="width:620px">
     <div class="modal-title" id="modal-company-title">Neue Firma</div>
 
-    <!-- Gruppe 1: Stammdaten -->
     <div class="modal-group-title">Stammdaten</div>
     <div class="form-grid">
       <div class="form-group full">
@@ -398,7 +457,6 @@
       </div>
     </div>
 
-    <!-- Gruppe 2: Adresse -->
     <div class="modal-group-title">Adresse</div>
     <div class="form-grid">
       <div class="form-group full">
@@ -419,7 +477,6 @@
       </div>
     </div>
 
-    <!-- Gruppe 3: Kontakt -->
     <div class="modal-group-title">Kontakt</div>
     <div class="form-grid">
       <div class="form-group">
@@ -436,7 +493,6 @@
       </div>
     </div>
 
-    <!-- Gruppe 4: Notizen -->
     <div class="modal-group-title">Notizen</div>
     <div class="form-grid">
       <div class="form-group full">
@@ -451,6 +507,61 @@
       </button>
       <button class="btn" onclick="closeCompanyModal()">Abbrechen</button>
       <button class="btn btn-primary" id="c-save-btn" onclick="saveCompany()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: KONTAKT -->
+<div class="modal-overlay" id="modal-contact">
+  <div class="modal" style="width:620px">
+    <div class="modal-title" id="modal-contact-title">Neuer Kontakt</div>
+
+    <div class="modal-group-title">Stammdaten</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Vorname *</label>
+        <input type="text" id="k-vorname" placeholder="Thomas">
+      </div>
+      <div class="form-group">
+        <label>Nachname *</label>
+        <input type="text" id="k-nachname" placeholder="Müller">
+      </div>
+      <div class="form-group">
+        <label>Position</label>
+        <input type="text" id="k-position" placeholder="z. B. Fertigungsleiter">
+      </div>
+      <div class="form-group">
+        <label>Firma</label>
+        <select id="k-company"></select>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Kontakt</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Telefon</label>
+        <input type="tel" id="k-telefon" placeholder="+49 7031 12345">
+      </div>
+      <div class="form-group">
+        <label>E-Mail</label>
+        <input type="email" id="k-email" placeholder="t.mueller@firma.de">
+      </div>
+    </div>
+
+    <div class="modal-group-title">Notizen</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <textarea id="k-notizen" rows="3" placeholder="Freitext-Notizen zum Kontakt ..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="k-delete-btn"
+              onclick="deleteContact()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeContactModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="k-save-btn" onclick="saveContact()">Anlegen</button>
     </div>
   </div>
 </div>
@@ -581,7 +692,7 @@
       </div>
       <div class="form-group full" id="l-new-kategorie-group" style="display:none">
         <label>Neue Kategorie-Schlüssel (technischer Name) *</label>
-        <input type="text" id="l-new-kategorie" placeholder="z. B. projekt_status (ohne Leerzeichen, kleingeschrieben)">
+        <input type="text" id="l-new-kategorie" placeholder="z. B. projekt_status">
       </div>
       <div class="form-group">
         <label>Wert (Anzeigename) *</label>
