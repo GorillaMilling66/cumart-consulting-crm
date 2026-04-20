@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.4.1 (Einstellungen als ausklappbares Untermenü) -->
+<!-- VERSION: 1.4.2 (Icon-Upgrade: Lucide-Style, groesser und praegnanter) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -114,41 +114,70 @@
     </div>
     <div class="sidebar-user" id="sidebar-user"></div>
 
-    <!-- HAUPT-NAV (wächst später mit Firmen / Kontakte / Projekte / …) -->
+    <!-- HAUPT-NAV -->
     <nav class="nav" id="nav-main">
-      <!-- Hier kommen in Phase 3 die Arbeits-Menüpunkte rein -->
+      <!-- Phase 3: Firmen / Kontakte / Projekte / … -->
     </nav>
 
     <!-- UNTEN: EINSTELLUNGEN (ausklappbar, admin-only) + ABMELDEN -->
     <div class="nav-bottom">
 
-      <!-- Einstellungen-Gruppe: nur für Admins sichtbar -->
+      <!-- Einstellungen-Gruppe -->
       <div class="nav-group" id="nav-settings-group" data-admin-only="true" style="display:none">
         <button class="nav-item nav-item-group" id="nav-settings-toggle"
                 onclick="toggleSettings()">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="M10 13a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M16.2 12.1l1.3.75-1.5 2.6-1.5-.4a6 6 0 01-1.5.9l-.4 1.55H9.4l-.4-1.55a6 6 0 01-1.5-.9l-1.5.4-1.5-2.6 1.3-.75a6 6 0 010-1.7L3.5 9.35l1.5-2.6 1.5.4a6 6 0 011.5-.9l.4-1.55h3.2l.4 1.55a6 6 0 011.5.9l1.5-.4 1.5 2.6-1.3.75a6 6 0 010 1.7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          <!-- Icon: Settings (Zahnrad) – Lucide -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
           </svg>
           <span style="flex:1">Einstellungen</span>
-          <svg class="nav-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="M7 8l3 3 3-3" stroke="currentColor" stroke-width="1.5"
-                  stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Chevron rechts -->
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+               aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/>
           </svg>
         </button>
 
-        <!-- Untermenü (wird per .open ein/ausgeblendet) -->
+        <!-- Untermenü -->
         <div class="nav-submenu" id="nav-settings-submenu">
           <button class="nav-item nav-item-sub" id="nav-users"
                   onclick="showPage('users', this)">
+            <!-- Icon: Users – Lucide -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
             Benutzer
           </button>
+
           <button class="nav-item nav-item-sub" id="nav-services"
                   onclick="showPage('services', this)">
+            <!-- Icon: Package/Box – Lucide (für "Leistungskatalog") -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M16.5 9.4 7.55 4.24"/>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <path d="m3.3 7 8.7 5 8.7-5"/>
+              <path d="M12 22V12"/>
+            </svg>
             Leistungen
           </button>
+
           <button class="nav-item nav-item-sub" id="nav-lookups"
                   onclick="showPage('lookups', this)">
+            <!-- Icon: Database/List – Lucide (für "Stammdaten") -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/>
+              <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+              <path d="M3 12a9 3 0 0 0 18 0"/>
+            </svg>
             Stammdaten
           </button>
         </div>
@@ -156,7 +185,13 @@
 
       <!-- Abmelden -->
       <button class="nav-item" onclick="doLogout()">
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M13 10H3M13 10l-3-3M13 10l-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 6V5a2 2 0 012-2h5a2 2 0 012 2v10a2 2 0 01-2 2H9a2 2 0 01-2-2v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <!-- Icon: LogOut – Lucide -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
         Abmelden
       </button>
     </div>
@@ -165,7 +200,7 @@
   <!-- MAIN -->
   <main class="main">
 
-    <!-- PLATZHALTER: Startseite für Nicht-Admins ohne Arbeits-Menüpunkte -->
+    <!-- PLATZHALTER -->
     <div class="page" id="page-home">
       <div class="page-header">
         <h1 class="page-title">Willkommen</h1>
@@ -239,7 +274,7 @@
       </div>
     </div>
 
-    <!-- SEITE: STAMMDATEN / LOOKUP-WERTE -->
+    <!-- SEITE: STAMMDATEN -->
     <div class="page" id="page-lookups">
       <div class="page-header">
         <h1 class="page-title">Stammdaten</h1>
@@ -314,7 +349,7 @@
   </div>
 </div>
 
-<!-- MODAL: ZUGANGSDATEN ANZEIGEN -->
+<!-- MODAL: ZUGANGSDATEN -->
 <div class="modal-overlay" id="modal-credentials">
   <div class="modal">
     <div class="modal-title" id="modal-credentials-title">Zugangsdaten für neuen Benutzer</div>
@@ -344,7 +379,7 @@
   </div>
 </div>
 
-<!-- MODAL: LEISTUNG ANLEGEN / BEARBEITEN -->
+<!-- MODAL: LEISTUNG -->
 <div class="modal-overlay" id="modal-service">
   <div class="modal">
     <div class="modal-title" id="modal-service-title">Neue Leistung</div>
@@ -393,7 +428,7 @@
   </div>
 </div>
 
-<!-- MODAL: LOOKUP-WERT ANLEGEN / BEARBEITEN -->
+<!-- MODAL: LOOKUP-WERT -->
 <div class="modal-overlay" id="modal-lookup">
   <div class="modal">
     <div class="modal-title" id="modal-lookup-title">Neuer Wert</div>
