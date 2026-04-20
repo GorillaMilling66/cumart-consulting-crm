@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.4.1 (Einstellungen als ausklappbares Untermenü)
+   Version 1.4.2 (Icon-Upgrade)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -82,9 +82,11 @@ body {
   font-size: 11px; color: var(--muted);
 }
 .nav { flex: 1; padding: 8px 0; }
+
+/* ── NAV-ITEMS ── */
 .nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 16px;
+  display: flex; align-items: center; gap: 12px;     /* gap etwas größer für mehr Luft neben den größeren Icons */
+  padding: 10px 16px;                                 /* vertikal etwas mehr Platz */
   cursor: pointer;
   color: var(--muted);
   font-size: 13px;
@@ -96,7 +98,14 @@ body {
 }
 .nav-item:hover { background: var(--bg); color: var(--text); }
 .nav-item.active { background: var(--bg); color: var(--text); }
-.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Standardgröße für Nav-Icons: 18px (Hauptmenü) */
+.nav-item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
 .nav-bottom {
   padding: 8px 0;
   border-top: 1px solid var(--border);
@@ -105,33 +114,37 @@ body {
 /* ── EINSTELLUNGEN-UNTERMENÜ ── */
 .nav-group { display: block; }
 
-/* Chevron rechts am Einstellungen-Button */
+/* Chevron rechts am Einstellungen-Button — kleiner als das Haupt-Icon */
 .nav-item-group .nav-chevron {
-  width: 14px;
-  height: 14px;
-  transition: transform .15s ease;
-  opacity: .6;
+  width: 16px;
+  height: 16px;
+  transition: transform .18s ease;
+  opacity: .7;
 }
-/* Wenn das Untermenü offen ist, dreht sich das Chevron */
 .nav-group.open .nav-item-group .nav-chevron {
   transform: rotate(180deg);
 }
 
-/* Untermenü: per Default eingeklappt (max-height 0) */
+/* Untermenü: per Default eingeklappt */
 .nav-submenu {
   max-height: 0;
   overflow: hidden;
   transition: max-height .2s ease;
 }
 .nav-group.open .nav-submenu {
-  /* 3 Einträge × 36px Höhe + etwas Puffer; reicht auch für 4-5 Einträge */
-  max-height: 240px;
+  max-height: 260px;                                 /* 3 Einträge + Puffer */
 }
 
-/* Untermenü-Einträge: eingerückt, etwas kleiner, ohne Icon */
+/* Untermenü-Einträge: eingerückt, etwas kleineres Icon */
 .nav-item-sub {
-  padding-left: 44px;
+  padding-left: 28px;                                /* weniger tief, dafür mit Icon */
   font-size: 12.5px;
+  gap: 10px;
+}
+.nav-item-sub svg {
+  width: 15px;                                       /* Sub-Icons etwas kleiner */
+  height: 15px;
+  opacity: .85;
 }
 
 /* ── MAIN CONTENT ── */
