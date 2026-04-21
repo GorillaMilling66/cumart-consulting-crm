@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.13.0 (Mitgliedschaften auf Firmen + Entitlements automatisch aus Programm-Benefits) -->
+<!-- VERSION: 1.14.0 (Einsatz → Entitlement-Einlösung: Bonis werden beim Einsatz verbucht) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1609,6 +1609,29 @@
         <span style="font-size:11px;color:var(--muted);padding-left:24px">
           Legt parallel einen Termin mit gleichen Daten an. Beim Deaktivieren wird der verknüpfte Termin gelöscht.
         </span>
+      </div>
+
+      <!-- Einlöse-Sektion (v1.14.0) -->
+      <div class="form-group full" id="d-redeem-wrap" style="display:none">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+          <input type="checkbox" id="d-redeem-check" style="width:auto;margin:0" onchange="onRedeemCheckToggle()">
+          <span>Als Bonus-Einlösung verbuchen</span>
+        </label>
+        <span style="font-size:11px;color:var(--muted);padding-left:24px" id="d-redeem-hint">
+          Wähle einen offenen Bonus aus den Mitgliedschaften/Projekten dieser Firma.
+        </span>
+
+        <div id="d-redeem-details" style="display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px">
+          <div class="form-group full" style="margin-bottom:10px">
+            <label>Bonus auswählen *</label>
+            <select id="d-redeem-entitlement" onchange="onRedeemEntitlementChange()"></select>
+          </div>
+          <div class="form-group full" style="margin-bottom:0">
+            <label>Einlöse-Menge</label>
+            <input type="number" id="d-redeem-menge" min="0.01" step="0.01" value="1">
+            <span style="font-size:11px;color:var(--muted)" id="d-redeem-menge-hint"></span>
+          </div>
+        </div>
       </div>
     </div>
 

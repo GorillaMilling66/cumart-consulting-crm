@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.13.0 (Mitgliedschaften + Entitlements)
+   Version 1.14.0 (Einlösungs-Integration im Einsatz-Modal)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -5001,6 +5001,10 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-notizen').value = '';
   document.getElementById('d-externe-techniker').value = '';
   document.getElementById('d-create-appointment').checked = false;
+  // Redeem-State zurücksetzen (v1.14.0)
+  document.getElementById('d-redeem-check').checked = false;
+  document.getElementById('d-redeem-details').style.display = 'none';
+  document.getElementById('d-redeem-wrap').style.display = 'none';
   const datumHintWrap = document.getElementById('d-datum-hint-wrap');
   if (datumHintWrap) datumHintWrap.style.display = '';
 
@@ -5078,8 +5082,23 @@ async function openDeploymentModal(mode, deploymentId = null) {
       .select('id').eq('deployment_id', deploymentId).limit(1);
     document.getElementById('d-create-appointment').checked = (linkedAppt || []).length > 0;
 
+    // Bestehende Redemption laden (v1.14.0)
+    const { data: linkedRedemption } = await db.from('entitlement_redemptions')
+      .select('entitlement_id, menge_eingeloest')
+      .eq('deployment_id', deploymentId).limit(1);
+    if (linkedRedemption && linkedRedemption.length > 0) {
+      // Merken - wird nach refreshRedeemSection angewandt
+      window._pendingRedemptionEntitlementId = linkedRedemption[0].entitlement_id;
+      window._pendingRedemptionMenge = linkedRedemption[0].menge_eingeloest;
+    } else {
+      window._pendingRedemptionEntitlementId = null;
+      window._pendingRedemptionMenge = null;
+    }
+
     updateDeploymentPriceHint();
   }
+
+  await refreshRedeemSection();  // v1.14.0 - lädt offene Entitlements der Firma
 
   document.getElementById('modal-deployment').classList.add('open');
   setTimeout(() => document.getElementById('d-titel').focus(), 100);
@@ -5110,6 +5129,7 @@ function setupDeploymentModalListeners() {
     }
 
     updateDeploymentPriceHint();
+    await refreshRedeemSection();  // v1.14.0
   };
 
   document.getElementById('d-project').onchange = () => {
@@ -5345,6 +5365,14 @@ async function saveDeployment() {
     // ──────── Termin-Kopplung ────────
     await syncDeploymentAppointment(saved, createAppointment);
 
+    // ──────── Entitlement-Einlösung (v1.14.0) ────────
+    try {
+      await syncDeploymentRedemption(saved.id);
+    } catch (redeemErr) {
+      // Einsatz ist bereits gespeichert - Redemption-Fehler als Warnung zeigen, nicht abbrechen
+      showToast('Einsatz gespeichert, aber: ' + redeemErr.message, true);
+    }
+
     closeDeploymentModal();
     showToast(editingDeploymentId ? 'Einsatz aktualisiert.' : 'Einsatz angelegt.');
 
@@ -5358,6 +5386,8 @@ async function saveDeployment() {
       await loadProjectDetail(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyDeployments(currentCompanyDetailId);
+      // Memberships-Section neu rendern, damit Fortschritt aktualisiert wird
+      await renderCompanyMemberships(currentCompanyDetailId);
     } else {
       await loadDeployments();
     }
@@ -5432,6 +5462,198 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  ENTITLEMENT-EINLÖSUNG IM EINSATZ-MODAL (v1.14.0)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Lädt offene Entitlements der gewählten Firma und befüllt das Dropdown.
+ * Wird bei Firmenwechsel und beim Modal-Open aufgerufen.
+ */
+async function refreshRedeemSection() {
+  const companyId = document.getElementById('d-company').value;
+  const wrap = document.getElementById('d-redeem-wrap');
+  const select = document.getElementById('d-redeem-entitlement');
+  const check = document.getElementById('d-redeem-check');
+  const hint = document.getElementById('d-redeem-hint');
+
+  // Ohne Firma: Section verstecken
+  if (!companyId) {
+    wrap.style.display = 'none';
+    check.checked = false;
+    document.getElementById('d-redeem-details').style.display = 'none';
+    return;
+  }
+
+  // Offene Entitlements der Firma laden (inkl. bereits-eingeloester Mengen)
+  const { data: entitlements, error } = await db.from('entitlements')
+    .select(`
+      *,
+      memberships(mitgliedsnummer, membership_programs(name)),
+      projects(name)
+    `)
+    .eq('company_id', companyId)
+    .order('verfall_datum', { ascending: true, nullsFirst: false });
+
+  if (error) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  // Für jedes Entitlement: wie viel ist bereits eingelöst?
+  const entIds = (entitlements || []).map(e => e.id);
+  let redemptionsByEnt = {};
+  if (entIds.length > 0) {
+    const { data: redemptions } = await db.from('entitlement_redemptions')
+      .select('entitlement_id, menge_eingeloest, deployment_id')
+      .in('entitlement_id', entIds);
+    (redemptions || []).forEach(r => {
+      // Bei Edit: die eigene bestehende Redemption bei der Rest-Berechnung NICHT abziehen
+      // (damit man sie in einem Schritt anpassen kann)
+      if (editingDeploymentId && r.deployment_id === editingDeploymentId) return;
+      redemptionsByEnt[r.entitlement_id] = (redemptionsByEnt[r.entitlement_id] || 0) + Number(r.menge_eingeloest || 0);
+    });
+  }
+
+  // Nur Entitlements mit offener Menge > 0 ODER bereits verknüpfte bestehende Redemption anzeigen
+  const offen = (entitlements || []).filter(e => {
+    const rest = Number(e.gesamt_menge) - (redemptionsByEnt[e.id] || 0);
+    const istAktuelleRedemption = window._pendingRedemptionEntitlementId === e.id;
+    return rest > 0 || istAktuelleRedemption;
+  });
+
+  if (offen.length === 0) {
+    wrap.style.display = 'block';
+    check.checked = false;
+    check.disabled = true;
+    document.getElementById('d-redeem-details').style.display = 'none';
+    hint.textContent = 'Diese Firma hat aktuell keine offenen Bonis.';
+    return;
+  }
+
+  hint.textContent = 'Wähle einen offenen Bonus aus den Mitgliedschaften/Projekten dieser Firma.';
+  check.disabled = false;
+  wrap.style.display = 'block';
+
+  // Dropdown befüllen
+  select.innerHTML = offen.map(e => {
+    const rest = Number(e.gesamt_menge) - (redemptionsByEnt[e.id] || 0);
+    const quelle = e.memberships
+      ? `Mitgliedschaft: ${e.memberships.membership_programs?.name || '?'}`
+      : e.projects
+        ? `Projekt: ${e.projects.name}`
+        : 'Manuell';
+    const verfallInfo = e.verfall_datum ? ` · bis ${formatDateDE(e.verfall_datum)}` : '';
+    return `<option value="${esc(e.id)}" data-rest="${rest}" data-gesamt="${e.gesamt_menge}">
+      ${esc(e.titel)} (${rest} offen${verfallInfo}) — ${esc(quelle)}
+    </option>`;
+  }).join('');
+
+  // Bei Edit-Mode: bestehende Redemption wieder anwenden
+  if (window._pendingRedemptionEntitlementId) {
+    check.checked = true;
+    select.value = window._pendingRedemptionEntitlementId;
+    document.getElementById('d-redeem-menge').value = window._pendingRedemptionMenge || 1;
+    document.getElementById('d-redeem-details').style.display = 'block';
+    onRedeemEntitlementChange();
+    // Nach Anwendung löschen, damit nicht erneut angewandt wird
+    window._pendingRedemptionEntitlementId = null;
+    window._pendingRedemptionMenge = null;
+  } else if (check.checked) {
+    onRedeemEntitlementChange();
+  }
+}
+
+/** Togglet den Details-Bereich beim Klick auf die Haupt-Checkbox. */
+function onRedeemCheckToggle() {
+  const check = document.getElementById('d-redeem-check');
+  const details = document.getElementById('d-redeem-details');
+  if (check.checked) {
+    details.style.display = 'block';
+    onRedeemEntitlementChange();
+  } else {
+    details.style.display = 'none';
+  }
+}
+
+/** Aktualisiert den Mengen-Hinweis bei Entitlement-Auswahl. */
+function onRedeemEntitlementChange() {
+  const select = document.getElementById('d-redeem-entitlement');
+  const mengeInput = document.getElementById('d-redeem-menge');
+  const mengeHint = document.getElementById('d-redeem-menge-hint');
+  const opt = select.options[select.selectedIndex];
+  if (!opt) { mengeHint.textContent = ''; return; }
+
+  const rest = Number(opt.getAttribute('data-rest') || 0);
+  const gesamt = Number(opt.getAttribute('data-gesamt') || 0);
+  mengeInput.max = rest;
+  mengeHint.textContent = `Maximal ${rest} von ${gesamt} verbleibend.`;
+
+  // Bei Einzel-Bonis (gesamt=1) Menge auf 1 fixieren
+  if (gesamt === 1) {
+    mengeInput.value = 1;
+    mengeInput.readOnly = true;
+    mengeHint.textContent = 'Einzel-Bonus: wird vollständig eingelöst.';
+  } else {
+    mengeInput.readOnly = false;
+    if (Number(mengeInput.value) > rest) mengeInput.value = rest;
+  }
+}
+
+/**
+ * Schreibt oder aktualisiert die Redemption für einen Einsatz.
+ * Wird aus saveDeployment aufgerufen nach erfolgreichem Speichern.
+ */
+async function syncDeploymentRedemption(deploymentId) {
+  const wantRedeem = document.getElementById('d-redeem-check').checked;
+  const entitlementId = document.getElementById('d-redeem-entitlement').value;
+  const mengeRaw = document.getElementById('d-redeem-menge').value;
+  const menge = Number(mengeRaw);
+
+  // Bestehende Redemption für diesen Einsatz holen
+  const { data: existing } = await db.from('entitlement_redemptions')
+    .select('id, entitlement_id')
+    .eq('deployment_id', deploymentId).limit(1);
+  const existingRedemption = existing && existing.length > 0 ? existing[0] : null;
+
+  // Fall A: Soll gelöscht werden (Checkbox aus, aber Redemption existiert)
+  if (!wantRedeem) {
+    if (existingRedemption) {
+      await db.from('entitlement_redemptions').delete().eq('id', existingRedemption.id);
+    }
+    return;
+  }
+
+  // Validierung
+  if (!entitlementId) throw new Error('Bitte einen Bonus auswählen oder die Einlöse-Checkbox deaktivieren.');
+  if (!menge || menge <= 0) throw new Error('Einlöse-Menge muss > 0 sein.');
+
+  const payload = {
+    entitlement_id: entitlementId,
+    deployment_id: deploymentId,
+    menge_eingeloest: menge,
+    einloesung_datum: new Date().toISOString().slice(0, 10),
+    erstellt_von: currentProfile?.id || null
+  };
+
+  if (existingRedemption) {
+    // Update (bei Entitlement-Wechsel: erst löschen, dann neu)
+    if (existingRedemption.entitlement_id !== entitlementId) {
+      await db.from('entitlement_redemptions').delete().eq('id', existingRedemption.id);
+      const { error } = await db.from('entitlement_redemptions').insert(payload);
+      if (error) throw new Error('Einlösung konnte nicht gespeichert werden: ' + error.message);
+    } else {
+      const { error } = await db.from('entitlement_redemptions')
+        .update({ menge_eingeloest: menge })
+        .eq('id', existingRedemption.id);
+      if (error) throw new Error('Einlösung konnte nicht aktualisiert werden: ' + error.message);
+    }
+  } else {
+    const { error } = await db.from('entitlement_redemptions').insert(payload);
+    if (error) throw new Error('Einlösung konnte nicht gespeichert werden: ' + error.message);
+  }
+}
+
 async function deleteDeployment() {
   if (!editingDeploymentId) return;
   if (!confirm('Einsatz wirklich löschen?\n\nHinweis: Zugeordnete Techniker-Zuordnungen und ein verknüpfter Termin im Kalender werden ebenfalls entfernt.')) return;
@@ -5441,14 +5663,19 @@ async function deleteDeployment() {
   btn.textContent = 'Wird gelöscht ...';
 
   try {
-    // project_id vorher merken für Status-Check nach Löschung
+    // project_id + company_id vorher merken für Status-Check nach Löschung
     const { data: depInfo } = await db.from('deployments')
-      .select('project_id').eq('id', editingDeploymentId).single();
+      .select('project_id, company_id').eq('id', editingDeploymentId).single();
     const deletedProjectId = depInfo?.project_id || null;
+    const deletedCompanyId = depInfo?.company_id || null;
 
     // Gekoppelten Termin erst löschen (FK auf deployments ist ON DELETE SET NULL,
     // würde sonst als Waise zurückbleiben)
     await db.from('appointments').delete().eq('deployment_id', editingDeploymentId);
+
+    // Zugehörige Redemptions löschen (v1.14.0) - FK ist ON DELETE SET NULL,
+    // aber logisch gehört eine Redemption zum Einsatz
+    await db.from('entitlement_redemptions').delete().eq('deployment_id', editingDeploymentId);
 
     const { error } = await db.from('deployments').delete().eq('id', editingDeploymentId);
     if (error) throw new Error(error.message);
@@ -5465,6 +5692,7 @@ async function deleteDeployment() {
       await loadProjectDetail(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyDeployments(currentCompanyDetailId);
+      if (deletedCompanyId) await renderCompanyMemberships(deletedCompanyId);
     } else {
       await loadDeployments();
     }
