@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.5.1 (Phase 2b komplett – Firmen + Kontakte)
+   Version 1.5.2 (Mobile Bottom-Navigation)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -24,7 +24,6 @@ let editingCompanyId   = null;
 let editingContactId   = null;
 let inPasswordRecovery = false;
 
-// Cache für Listen (Filter/Suche ohne zusätzliche DB-Calls)
 let companiesCache = [];
 let contactsCache  = [];
 
@@ -70,6 +69,9 @@ function showPage(name, el) {
   document.getElementById('page-' + name)?.classList.add('active');
   el?.classList.add('active');
 
+  // Mobile Bottom-Nav auch aktivieren (unabhängig davon, ob el ein Sidebar-Button war)
+  setMobileNav(name);
+
   if (name === 'users') loadUsers();
   if (name === 'services') loadServices();
   if (name === 'lookups') loadLookupsPage();
@@ -77,8 +79,35 @@ function showPage(name, el) {
   if (name === 'contacts') loadContacts();
 }
 
+/**
+ * Markiert den korrekten Bottom-Nav-Eintrag als aktiv.
+ * "mehr"-Ziele (users/services/lookups) aktivieren den Mehr-Button.
+ */
+function setMobileNav(pageName) {
+  document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
+
+  if (pageName === 'companies') {
+    document.getElementById('m-nav-companies')?.classList.add('active');
+  } else if (pageName === 'contacts') {
+    document.getElementById('m-nav-contacts')?.classList.add('active');
+  } else {
+    // Alles andere (users / services / lookups / home) ist unter "Mehr" erreichbar
+    document.getElementById('m-nav-more')?.classList.add('active');
+  }
+}
+
 function toggleSettings() {
   document.getElementById('nav-settings-group').classList.toggle('open');
+}
+
+// Mehr-Overlay (nur Mobile)
+function openMoreMenu() {
+  document.getElementById('more-overlay').classList.add('open');
+}
+function closeMoreMenu(event) {
+  // Nur schließen, wenn man außerhalb des Panels klickt, oder beim X-Button (ohne event)
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('more-overlay').classList.remove('open');
 }
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
@@ -170,6 +199,7 @@ async function onLogin(user) {
   }
 
   renderSidebar();
+  renderMobileHeaderUser();
   applyAdminOnlyUI();
   showApp();
   showDefaultPage();
@@ -201,6 +231,15 @@ function renderSidebar() {
       <div class="sidebar-user-name">${esc(currentProfile?.name || currentUser.email)}</div>
       <div class="sidebar-user-role">${esc(currentProfile?.roles?.name || '—')}</div>
     </div>`;
+}
+
+function renderMobileHeaderUser() {
+  const el = document.getElementById('mobile-header-user');
+  if (!el) return;
+  el.innerHTML = `
+    <span class="mobile-header-user-name">${esc(currentProfile?.name || currentUser.email)}</span>
+    <div class="sidebar-user-avatar" style="width:30px;height:30px">${esc(ini(currentProfile?.name || currentUser.email))}</div>
+  `;
 }
 
 async function doLogin() {
@@ -236,6 +275,8 @@ async function doLogin() {
 
 async function doLogout(skipConfirm = false) {
   if (!skipConfirm && !confirm('Wirklich abmelden?')) return;
+  // Mehr-Overlay ggf. schließen, damit's beim nächsten Login nicht offen ist
+  document.getElementById('more-overlay')?.classList.remove('open');
   await db.auth.signOut();
   currentUser = null;
   currentProfile = null;
@@ -299,6 +340,7 @@ async function doMustChangePassword() {
 
     currentProfile = profile;
     renderSidebar();
+    renderMobileHeaderUser();
     applyAdminOnlyUI();
     showApp();
     showDefaultPage();
@@ -916,7 +958,7 @@ async function deleteLookup() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  FIRMEN (COMPANIES)  — Phase 2b
+//  FIRMEN (COMPANIES)
 // ═══════════════════════════════════════════════════════════
 
 async function loadUnternehmensTypen() {
@@ -1148,13 +1190,9 @@ async function deleteCompany() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  KONTAKTE (CONTACTS)  — Phase 2b komplett
+//  KONTAKTE (CONTACTS)
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Holt alle Firmen (id + name) für Dropdowns.
- * Nutzt Cache falls vorhanden, lädt sonst nach.
- */
 async function getCompaniesForDropdown() {
   if (companiesCache.length > 0) return companiesCache;
   const { data } = await db.from('companies').select('id, name').order('name');
@@ -1165,7 +1203,6 @@ async function loadContacts() {
   const tbody = document.getElementById('contacts-table-body');
   tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>';
 
-  // Firmen-Filter-Dropdown befüllen (einmalig beim ersten Laden)
   const companyFilter = document.getElementById('contacts-company-filter');
   if (companyFilter.options.length <= 2) {
     const companies = await getCompaniesForDropdown();
@@ -1255,13 +1292,11 @@ function renderContactsTable(contacts) {
 async function openContactModal(mode, contactId = null) {
   editingContactId = contactId;
 
-  // Firmen-Dropdown befüllen (mit "keine Firma"-Option)
   const companySelect = document.getElementById('k-company');
   const companies = await getCompaniesForDropdown();
   companySelect.innerHTML = '<option value="">— Keine Firma —</option>'
     + companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
 
-  // Felder zurücksetzen
   document.getElementById('k-vorname').value = '';
   document.getElementById('k-nachname').value = '';
   document.getElementById('k-position').value = '';
@@ -1275,7 +1310,6 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-save-btn').textContent = 'Anlegen';
     document.getElementById('k-delete-btn').style.display = 'none';
 
-    // Falls aktuell ein Firmen-Filter gesetzt ist → als Default übernehmen
     const preselectedCompany = document.getElementById('contacts-company-filter').value;
     if (preselectedCompany && preselectedCompany !== '__none__') {
       companySelect.value = preselectedCompany;
