@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.10.0 (Auto-Fill im Einsatz-Modal)
+   Version 1.11.0 (Icon-Action-Buttons in Listen + Duplizieren)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -139,6 +139,366 @@ function showToast(msg, isError = false) {
   setTimeout(() => t.className = 'toast', 3000);
 }
 
+// ═══════════════════════════════════════════════════════════
+//  ICON-ACTION-BUTTONS (v1.11.0)
+// ═══════════════════════════════════════════════════════════
+
+/** SVG-Icons (Heroicons-Style, inline damit keine Library nötig) */
+const ICON_EDIT = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
+const ICON_COPY = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>';
+const ICON_DUPLICATE = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>';
+const ICON_DELETE = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>';
+
+/**
+ * Rendert die 4 Standard-Action-Icons (Bearbeiten, Kopieren, Duplizieren, Löschen) für Listen-Zeilen.
+ * entityType: 'company' | 'contact' | 'appointment' | 'project' | 'deployment'
+ * id: UUID des Eintrags
+ * Jede Aktion ruft die entsprechende Handler-Funktion mit der ID auf.
+ */
+function renderActionIcons(entityType, id) {
+  const editHandler = {
+    company: `onclick="openCompanyModal('edit', '${esc(id)}')"`,
+    contact: `onclick="openContactModal('edit', '${esc(id)}')"`,
+    appointment: `onclick="openAppointmentModal('edit', '${esc(id)}')"`,
+    project: `onclick="location.hash='#/projekt/${esc(id)}'"`,
+    deployment: `onclick="openDeploymentModal('edit', '${esc(id)}')"`
+  }[entityType];
+
+  const copyHandler = {
+    company: `onclick="copyCompanyById('${esc(id)}', event)"`,
+    contact: `onclick="copyContactById('${esc(id)}', event)"`,
+    appointment: `onclick="copyAppointmentById('${esc(id)}', event)"`,
+    project: `onclick="copyProjectById('${esc(id)}', event)"`,
+    deployment: `onclick="copyDeploymentById('${esc(id)}', event)"`
+  }[entityType];
+
+  const dupHandler = `onclick="duplicateEntity('${entityType}', '${esc(id)}', event)"`;
+  const delHandler = `onclick="deleteEntityById('${entityType}', '${esc(id)}', event)"`;
+
+  return `
+    <div class="action-icons">
+      <button class="icon-btn" ${editHandler} title="Bearbeiten">${ICON_EDIT}</button>
+      <button class="icon-btn" ${copyHandler} title="Kopieren">${ICON_COPY}</button>
+      <button class="icon-btn" ${dupHandler} title="Duplizieren">${ICON_DUPLICATE}</button>
+      <button class="icon-btn icon-danger" ${delHandler} title="Löschen">${ICON_DELETE}</button>
+    </div>`;
+}
+
+/* ───────────────────────────────────────────────
+   DISPATCHER: LÖSCHEN & DUPLIZIEREN
+   ─────────────────────────────────────────────── */
+
+/** Zentraler Delete-Dispatcher aus den Listen-Icons. Verhindert Event-Bubble. */
+async function deleteEntityById(entityType, id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+
+  const labels = {
+    company: 'Firma', contact: 'Kontakt', appointment: 'Termin',
+    project: 'Projekt', deployment: 'Einsatz'
+  };
+  const table = {
+    company: 'companies', contact: 'contacts', appointment: 'appointments',
+    project: 'projects', deployment: 'deployments'
+  }[entityType];
+  const label = labels[entityType];
+  if (!table || !label) return;
+
+  if (!confirm(`${label} wirklich löschen?`)) return;
+
+  try {
+    const { error } = await db.from(table).delete().eq('id', id);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error(`Dieser Eintrag wird noch an anderer Stelle verwendet und kann nicht gelöscht werden.`);
+      }
+      throw new Error(error.message);
+    }
+
+    // Bei Einsatz: gekoppelten Termin auch löschen (v1.9.4-Semantik)
+    if (entityType === 'deployment') {
+      await db.from('appointments').delete().eq('deployment_id', id);
+    }
+
+    showToast(`${label} gelöscht.`);
+    await refreshAfterEntityChange(entityType);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** Zentraler Duplicate-Dispatcher aus den Listen-Icons. */
+async function duplicateEntity(entityType, id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+
+  try {
+    switch (entityType) {
+      case 'company':     await duplicateCompany(id); break;
+      case 'contact':     await duplicateContact(id); break;
+      case 'appointment': await duplicateAppointment(id); break;
+      case 'project':     await duplicateProject(id); break;
+      case 'deployment':  await duplicateDeployment(id); break;
+      default: throw new Error('Unbekannter Typ: ' + entityType);
+    }
+  } catch (e) {
+    showToast('Duplizieren fehlgeschlagen: ' + e.message, true);
+  }
+}
+
+/** Refresht die relevante Liste nach Delete/Duplicate. */
+async function refreshAfterEntityChange(entityType) {
+  const hash = location.hash || '';
+  // Je nach aktiver Seite neu laden
+  if (entityType === 'company') {
+    if (hash.startsWith('#/firmen')) await loadCompanies();
+    else if (hash.startsWith('#/firma/')) location.hash = '#/firmen';
+  } else if (entityType === 'contact') {
+    if (hash.startsWith('#/kontakte')) await loadContacts();
+    else if (hash.startsWith('#/kontakt/')) location.hash = '#/kontakte';
+    else if (hash.startsWith('#/firma/') && currentCompanyDetailId) await loadCompanyDetail(currentCompanyDetailId);
+  } else if (entityType === 'appointment') {
+    if (hash.startsWith('#/termine')) await loadAppointments();
+    else if (hash.startsWith('#/firma/') && currentCompanyDetailId) await loadCompanyDetail(currentCompanyDetailId);
+    else if (hash.startsWith('#/kontakt/') && currentContactDetailId) await loadContactDetail(currentContactDetailId);
+    else if (hash.startsWith('#/projekt/') && currentProjectDetailId) await loadProjectDetail(currentProjectDetailId);
+  } else if (entityType === 'project') {
+    if (hash.startsWith('#/projekte')) await loadProjects();
+    else if (hash.startsWith('#/projekt/')) location.hash = '#/projekte';
+    else if (hash.startsWith('#/firma/') && currentCompanyDetailId) await loadCompanyDetail(currentCompanyDetailId);
+  } else if (entityType === 'deployment') {
+    if (hash.startsWith('#/einsaetze')) await loadDeployments();
+    else if (hash.startsWith('#/firma/') && currentCompanyDetailId) await loadCompanyDetail(currentCompanyDetailId);
+    else if (hash.startsWith('#/projekt/') && currentProjectDetailId) await loadProjectDetail(currentProjectDetailId);
+  }
+}
+
+/* ───────────────────────────────────────────────
+   DUPLICATE-HANDLER pro Entität
+   ─────────────────────────────────────────────── */
+
+/** Firma duplizieren: gleiche Stammdaten + Name "X (Kopie)", keine Kontakte/Termine/Projekte. */
+async function duplicateCompany(sourceId) {
+  const { data: src, error } = await db.from('companies').select('*').eq('id', sourceId).single();
+  if (error || !src) throw new Error(error?.message || 'Firma nicht gefunden');
+
+  const payload = {
+    name: (src.name || 'Firma') + ' (Kopie)',
+    typ_id: src.typ_id,
+    branche: src.branche,
+    strasse: src.strasse,
+    plz: src.plz,
+    stadt: src.stadt,
+    land: src.land,
+    telefon: src.telefon,
+    email: src.email,
+    website: src.website,
+    notizen: src.notizen,
+    erstellt_von: currentProfile?.id || null
+  };
+  const { error: insErr } = await db.from('companies').insert(payload);
+  if (insErr) throw new Error(insErr.message);
+
+  showToast('Firma dupliziert: ' + payload.name);
+  await refreshAfterEntityChange('company');
+}
+
+/** Kontakt duplizieren: gleiche Firma, Nachname mit "(Kopie)". */
+async function duplicateContact(sourceId) {
+  const { data: src, error } = await db.from('contacts').select('*').eq('id', sourceId).single();
+  if (error || !src) throw new Error(error?.message || 'Kontakt nicht gefunden');
+
+  const payload = {
+    vorname: src.vorname,
+    nachname: (src.nachname || 'Kontakt') + ' (Kopie)',
+    position: src.position,
+    company_id: src.company_id,
+    telefon: src.telefon,
+    email: src.email,
+    notizen: src.notizen,
+    erstellt_von: currentProfile?.id || null
+  };
+  const { error: insErr } = await db.from('contacts').insert(payload);
+  if (insErr) throw new Error(insErr.message);
+
+  showToast('Kontakt dupliziert.');
+  await refreshAfterEntityChange('contact');
+}
+
+/** Termin duplizieren: gleiche Daten inkl. Datum + "(Kopie)" im Titel, OHNE deployment_id-Kopplung. */
+async function duplicateAppointment(sourceId) {
+  const { data: src, error } = await db.from('appointments').select('*').eq('id', sourceId).single();
+  if (error || !src) throw new Error(error?.message || 'Termin nicht gefunden');
+
+  const payload = {
+    titel: (src.titel || 'Termin') + ' (Kopie)',
+    datum: src.datum,
+    uhrzeit_von: src.uhrzeit_von,
+    uhrzeit_bis: src.uhrzeit_bis,
+    status: 'geplant',  // Kopie startet immer neu
+    typ_id: src.typ_id,
+    company_id: src.company_id,
+    contact_id: src.contact_id,
+    project_id: src.project_id,
+    deployment_id: null, // Kopplung NICHT übernehmen
+    ort: src.ort,
+    notizen: src.notizen,
+    erstellt_von: currentProfile?.id || null
+  };
+  const { error: insErr } = await db.from('appointments').insert(payload);
+  if (insErr) throw new Error(insErr.message);
+
+  showToast('Termin dupliziert.');
+  await refreshAfterEntityChange('appointment');
+}
+
+/** Projekt duplizieren: gleiche Header-Daten + "(Kopie)", OHNE Einsätze/Termine. */
+async function duplicateProject(sourceId) {
+  const { data: src, error } = await db.from('projects').select('*').eq('id', sourceId).single();
+  if (error || !src) throw new Error(error?.message || 'Projekt nicht gefunden');
+
+  const payload = {
+    name: (src.name || 'Projekt') + ' (Kopie)',
+    status: 'Angebot',  // Kopie startet immer frisch
+    company_id: src.company_id,
+    hauptkontakt_id: src.hauptkontakt_id,
+    verantwortlicher_id: src.verantwortlicher_id,
+    startdatum: src.startdatum,
+    enddatum: src.enddatum,
+    geschaetzter_umsatz: src.geschaetzter_umsatz || 0,
+    beschreibung: src.beschreibung,
+    notizen: src.notizen,
+    erstellt_von: currentProfile?.id || null
+  };
+  const { error: insErr } = await db.from('projects').insert(payload);
+  if (insErr) throw new Error(insErr.message);
+
+  showToast('Projekt dupliziert.');
+  await refreshAfterEntityChange('project');
+}
+
+/** Einsatz duplizieren: gleiche Daten + "(Kopie)", OHNE Techniker/Termin-Kopplung. */
+async function duplicateDeployment(sourceId) {
+  const { data: src, error } = await db.from('deployments').select('*').eq('id', sourceId).single();
+  if (error || !src) throw new Error(error?.message || 'Einsatz nicht gefunden');
+
+  const payload = {
+    titel: (src.titel || 'Einsatz') + ' (Kopie)',
+    datum_von: src.datum_von,
+    datum_bis: src.datum_bis,
+    uhrzeit_von: src.uhrzeit_von,
+    uhrzeit_bis: src.uhrzeit_bis,
+    status: 'Geplant',  // Kopie startet frisch
+    company_id: src.company_id,
+    project_id: src.project_id,
+    service_id: src.service_id,
+    menge: src.menge || 1,
+    einzelpreis: src.einzelpreis || 0,
+    ort: src.ort,
+    externe_techniker: src.externe_techniker,
+    beschreibung: src.beschreibung,
+    notizen: src.notizen,
+    erstellt_von: currentProfile?.id || null
+  };
+  const { error: insErr } = await db.from('deployments').insert(payload);
+  if (insErr) throw new Error(insErr.message);
+
+  showToast('Einsatz dupliziert.');
+  await refreshAfterEntityChange('deployment');
+}
+
+/* ───────────────────────────────────────────────
+   COPY-TO-CLIPBOARD-HANDLER (für alle Entitäten)
+   ─────────────────────────────────────────────── */
+
+/** Termin-Daten formatiert in Zwischenablage. */
+async function copyAppointmentById(id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  try {
+    const { data: a, error } = await db.from('appointments')
+      .select('*, companies(name), contacts(vorname, nachname)')
+      .eq('id', id).single();
+    if (error || !a) throw new Error(error?.message || 'Termin nicht gefunden');
+
+    const lines = [];
+    lines.push(a.titel || '(ohne Titel)');
+    if (a.datum) {
+      let zeit = formatDateDE(a.datum);
+      if (a.uhrzeit_von && a.uhrzeit_bis) zeit += `, ${a.uhrzeit_von.substring(0,5)}–${a.uhrzeit_bis.substring(0,5)} Uhr`;
+      else if (a.uhrzeit_von) zeit += `, ab ${a.uhrzeit_von.substring(0,5)} Uhr`;
+      lines.push(zeit);
+    }
+    if (a.companies?.name) lines.push('Firma: ' + a.companies.name);
+    if (a.contacts) {
+      const name = [a.contacts.vorname, a.contacts.nachname].filter(Boolean).join(' ');
+      if (name) lines.push('Kontakt: ' + name);
+    }
+    if (a.ort) lines.push('Ort: ' + a.ort);
+    if (a.notizen) lines.push('Notizen: ' + a.notizen);
+
+    copyTextSync(lines.join('\n'), 'Termin-Daten kopiert.');
+  } catch (e) {
+    showToast('Kopieren fehlgeschlagen: ' + e.message, true);
+  }
+}
+
+/** Projekt-Daten formatiert in Zwischenablage. */
+async function copyProjectById(id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  try {
+    const { data: p, error } = await db.from('projects')
+      .select('*, companies(name), contacts:hauptkontakt_id(vorname, nachname)')
+      .eq('id', id).single();
+    if (error || !p) throw new Error(error?.message || 'Projekt nicht gefunden');
+
+    const lines = [];
+    lines.push(p.name);
+    lines.push('Status: ' + (p.status || '—'));
+    if (p.companies?.name) lines.push('Firma: ' + p.companies.name);
+    if (p.contacts) {
+      const name = [p.contacts.vorname, p.contacts.nachname].filter(Boolean).join(' ');
+      if (name) lines.push('Hauptkontakt: ' + name);
+    }
+    if (p.startdatum) lines.push('Start: ' + formatDateDE(p.startdatum));
+    if (p.enddatum)   lines.push('Ende: '  + formatDateDE(p.enddatum));
+    if (p.geschaetzter_umsatz) lines.push('Geschätzter Umsatz: ' + formatPreis(p.geschaetzter_umsatz));
+    if (p.beschreibung) lines.push('', p.beschreibung);
+
+    copyTextSync(lines.join('\n'), 'Projekt-Daten kopiert.');
+  } catch (e) {
+    showToast('Kopieren fehlgeschlagen: ' + e.message, true);
+  }
+}
+
+/** Einsatz-Daten formatiert in Zwischenablage. */
+async function copyDeploymentById(id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  try {
+    const { data: d, error } = await db.from('deployments')
+      .select('*, companies(name), projects(name), services(name, einheit)')
+      .eq('id', id).single();
+    if (error || !d) throw new Error(error?.message || 'Einsatz nicht gefunden');
+
+    const lines = [];
+    lines.push(d.titel || '(ohne Titel)');
+    lines.push('Status: ' + (d.status || '—'));
+    if (d.companies?.name) lines.push('Firma: ' + d.companies.name);
+    if (d.projects?.name) lines.push('Projekt: ' + d.projects.name);
+    if (d.services?.name) lines.push('Leistung: ' + d.services.name);
+    if (d.datum_von && d.datum_bis) {
+      if (d.datum_von === d.datum_bis) lines.push('Datum: ' + formatDateDE(d.datum_von));
+      else lines.push('Zeitraum: ' + formatDateDE(d.datum_von) + ' – ' + formatDateDE(d.datum_bis));
+    } else {
+      lines.push('Ungeplant');
+    }
+    if (d.uhrzeit_von && d.uhrzeit_bis) lines.push('Uhrzeit: ' + d.uhrzeit_von.substring(0,5) + '–' + d.uhrzeit_bis.substring(0,5));
+    if (d.ort) lines.push('Ort: ' + d.ort);
+    if (d.beschreibung) lines.push('', d.beschreibung);
+
+    copyTextSync(lines.join('\n'), 'Einsatz-Daten kopiert.');
+  } catch (e) {
+    showToast('Kopieren fehlgeschlagen: ' + e.message, true);
+  }
+}
+
 async function copyToClipboard(text, toastMsg = 'In Zwischenablage kopiert.') {
   // Diese Version wird für Kontext ohne User-Gesture-Druck verwendet (z.B. Credentials-Modal)
   try {
@@ -233,7 +593,8 @@ function formatContactBlock(contact) {
  * SYNCHRON - darf keine async-Calls vor dem Copy haben (iOS-Bedingung).
  * Greift auf Caches zu: companiesCache, companyContactsMap.
  */
-function copyCompanyById(companyId) {
+function copyCompanyById(companyId, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   const company = companiesCache.find(c => c.id === companyId);
   if (!company) {
     showToast('Firma noch nicht geladen. Bitte kurz warten und erneut versuchen.', true);
@@ -247,7 +608,8 @@ function copyCompanyById(companyId) {
 /**
  * SYNCHRON - sucht Kontakt in contactsCache oder companyContactsMap.
  */
-function copyContactById(contactId) {
+function copyContactById(contactId, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   let contact = null;
 
   // Erst contactsCache (hat meist .company dabei)
@@ -1490,14 +1852,7 @@ function renderCompaniesTable(companies) {
         <td class="col-tablet" style="color:var(--muted)">${esc(c.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(c.branche || '—')}</td>
         <td class="col-desktop">${renderNextAppointmentCell(c.id)}</td>
-        <td class="col-action" style="text-align:right">
-          <div class="btn-row" style="justify-content:flex-end">
-            <button class="btn-copy" onclick="copyCompanyById('${esc(c.id)}')" title="Firmendaten kopieren" aria-label="Firmendaten kopieren">
-              ${COPY_ICON_SVG}
-            </button>
-            <button class="btn btn-sm" onclick="navigateTo('firma', '${esc(c.id)}')">Details</button>
-          </div>
-        </td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('company', c.id)}</td>
       </tr>`;
   }).join('');
 }
@@ -2006,12 +2361,7 @@ function renderContactsTable(contacts) {
         <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
-        <td class="col-action" style="text-align:right">
-          <div class="btn-row" style="justify-content:flex-end">
-            <button class="btn-copy" onclick="copyContactById('${esc(k.id)}')" title="Kontakt kopieren" aria-label="Kontakt kopieren">${COPY_ICON_SVG}</button>
-            <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
-          </div>
-        </td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('contact', k.id)}</td>
       </tr>`;
   }).join('');
 }
@@ -2326,9 +2676,7 @@ function renderAppointmentsTable(appointments) {
         <td>
           <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
         </td>
-        <td class="col-action" style="text-align:right">
-          <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
-        </td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('appointment', a.id)}</td>
       </tr>`;
   }).join('');
 }
@@ -2819,9 +3167,7 @@ function renderProjectsTable(projects) {
         <td class="col-desktop" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
         <td class="col-desktop" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
         <td class="col-tablet">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
-        <td class="col-action" style="text-align:right">
-          <button class="btn btn-sm" onclick="navigateTo('projekt', '${esc(p.id)}')">Details</button>
-        </td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('project', p.id)}</td>
       </tr>`;
   }).join('');
 }
@@ -3805,9 +4151,7 @@ function renderDeploymentsTable(deployments) {
         <td class="col-desktop" style="color:var(--muted)">${leistungHtml}</td>
         <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
         <td class="col-tablet">${esc(formatPreis(gesamt))}</td>
-        <td class="col-action" style="text-align:right">
-          <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
-        </td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('deployment', d.id)}</td>
       </tr>`;
   }).join('');
 }

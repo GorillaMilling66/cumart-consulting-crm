@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.10.0 (Auto-Fill im Einsatz-Modal)
+   Version 1.11.0 (Icon-Action-Buttons in Listen)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -550,6 +550,47 @@ tr:hover td { background: var(--bg); }
 @media (max-width: 767px) {
   .col-action { display: none; }
 }
+
+/* ── ACTION-ICON-BUTTONS (v1.11.0) ── */
+.action-icons {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  position: relative;
+}
+.icon-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
+}
+.icon-btn:active { transform: scale(0.95); }
+.icon-btn svg { width: 16px; height: 16px; display: block; }
+.icon-btn.icon-danger:hover {
+  color: var(--danger);
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.icon-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* Tooltip via title-Attribut (native Browser-Tooltip) */
 
 /* ── BADGE ── */
 .badge {
