@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.8.0 (Kontakt-Detailseite)
+   Version 1.9.0 (Einsätze / Phase 3c)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -42,18 +42,27 @@ let appointmentModalPrefillProjectId = null;
 let appointmentModalPrefillContactId = null;
 let projectModalPrefillCompanyId = null;
 let projectModalPrefillHauptkontaktId = null;
+let deploymentModalPrefillCompanyId = null;
+let deploymentModalPrefillProjectId = null;
 let editingProjectId = null;
+let editingDeploymentId = null;
 
 let companiesCache   = [];
 let contactsCache    = [];
 let appointmentsCache = [];
 let projectsCache    = [];
+let deploymentsCache = [];
 let terminTypenCache = [];
 let projektStatusCache = [];
+let einsatzStatusCache = [];
+let servicesCache    = [];
 let userProfilesCache = [];
 
 // Map: companyId → contacts[] (für synchronen Copy-Zugriff)
 let companyContactsMap = {};
+
+// Selected Techniker IDs im Einsatz-Modal (temporär)
+let selectedTechnikerIds = new Set();
 
 // Map: companyId → { next: {datum, titel, id} | null, last: {datum, titel, id} | null }
 let companyAppointmentMap = {};
@@ -337,6 +346,7 @@ function showPage(name) {
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
   if (name === 'projects') loadProjects();
+  if (name === 'deployments') loadDeployments();
 }
 
 function setMobileNav(pageName) {
@@ -346,10 +356,10 @@ function setMobileNav(pageName) {
     document.getElementById('m-nav-companies')?.classList.add('active');
   } else if (pageName === 'appointments') {
     document.getElementById('m-nav-appointments')?.classList.add('active');
-  } else if (pageName === 'projects' || pageName === 'project-detail') {
-    document.getElementById('m-nav-projects')?.classList.add('active');
+  } else if (pageName === 'deployments') {
+    document.getElementById('m-nav-deployments')?.classList.add('active');
   } else {
-    // contacts, contact-detail, users, services, lookups etc. → Mehr-Tab aktiv
+    // contacts, contact-detail, projects, project-detail, users, services, lookups → Mehr-Tab
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
@@ -388,6 +398,8 @@ function navigateTo(page, param) {
     hash = '#/termine';
   } else if (page === 'projects') {
     hash = '#/projekte';
+  } else if (page === 'deployments') {
+    hash = '#/einsaetze';
   } else if (page === 'users') {
     hash = '#/benutzer';
   } else if (page === 'services') {
@@ -446,6 +458,7 @@ function handleHashChange() {
   if (hash === '#/firmen' || hash === '' || hash === '#') { showPage('companies'); return; }
   if (hash === '#/kontakte')   { showPage('contacts'); return; }
   if (hash === '#/projekte')   { showPage('projects'); return; }
+  if (hash === '#/einsaetze')  { showPage('deployments'); return; }
   if (hash === '#/benutzer')   { showPage('users'); return; }
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
@@ -1649,6 +1662,7 @@ async function loadCompanyDetail(companyId) {
   await loadCompanyContacts(companyId);
   await loadCompanyAppointments(companyId);
   await loadCompanyProjects(companyId);
+  await loadCompanyDeployments(companyId);
 }
 
 function renderCompanyDetail(c) {
@@ -1682,6 +1696,11 @@ function renderCompanyDetail(c) {
   document.getElementById('company-detail-add-project-btn').onclick = () => {
     projectModalPrefillCompanyId = c.id;
     openProjectModal('new');
+  };
+
+  document.getElementById('company-detail-add-deployment-btn').onclick = () => {
+    deploymentModalPrefillCompanyId = c.id;
+    openDeploymentModal('new');
   };
 
   const info = document.getElementById('company-detail-info');
@@ -3069,6 +3088,12 @@ function renderProjectDetail(p) {
     openAppointmentModal('new');
   };
 
+  document.getElementById('project-detail-add-deployment-btn').onclick = () => {
+    deploymentModalPrefillProjectId = p.id;
+    deploymentModalPrefillCompanyId = p.company?.id || null;
+    openDeploymentModal('new');
+  };
+
   const hauptkontaktName = p.hauptkontakt
     ? [p.hauptkontakt.vorname, p.hauptkontakt.nachname].filter(Boolean).join(' ')
     : null;
@@ -3519,6 +3544,759 @@ async function loadContactProjects(contactId) {
         </td>
       </tr>`;
   }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EINSÄTZE (DEPLOYMENTS)
+// ═══════════════════════════════════════════════════════════
+
+async function loadEinsatzStatus() {
+  if (einsatzStatusCache.length > 0) return einsatzStatusCache;
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe, reihenfolge').eq('kategorie', 'einsatz_status').eq('ist_aktiv', true).order('reihenfolge');
+  if (error) { return []; }
+  einsatzStatusCache = data || [];
+  return einsatzStatusCache;
+}
+
+function einsatzStatusFarbe(wert) {
+  const s = einsatzStatusCache.find(x => x.wert === wert);
+  return s?.farbe || '#6b7280';
+}
+
+async function loadServicesCache() {
+  if (servicesCache.length > 0) return servicesCache;
+  const { data, error } = await db.from('services')
+    .select('id, name, einheit, standardpreis, ist_aktiv').eq('ist_aktiv', true).order('name');
+  if (error) { return []; }
+  servicesCache = data || [];
+  return servicesCache;
+}
+
+// Kompaktes Datum-Range-Format: "21.04.2026" oder "21.04.–23.04.2026"
+function formatDeploymentDateRange(von, bis) {
+  if (!von) return '—';
+  if (!bis || von === bis) return formatDateDE(von);
+  // Beide Daten im selben Jahr?
+  const vonD = parseLocalDate(von);
+  const bisD = parseLocalDate(bis);
+  if (vonD.getFullYear() === bisD.getFullYear()) {
+    const vonStr = `${String(vonD.getDate()).padStart(2,'0')}.${String(vonD.getMonth()+1).padStart(2,'0')}.`;
+    return `${vonStr}–${formatDateDE(bis).replace(/^[A-Za-z]{2}, /, '')}`;
+  }
+  return `${formatDateDE(von)} – ${formatDateDE(bis)}`;
+}
+
+function calcDeploymentGesamt(menge, einzelpreis) {
+  const m = Number(menge) || 0;
+  const e = Number(einzelpreis) || 0;
+  return m * e;
+}
+
+async function loadDeployments() {
+  const tbody = document.getElementById('deployments-table-body');
+  tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Lade Einsätze ...</div></td></tr>';
+
+  await loadEinsatzStatus();
+  await loadServicesCache();
+
+  // Firmen und Projekte für Filter
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    companiesCache = cs || [];
+  }
+  if (projectsCache.length === 0) {
+    const { data: ps } = await db.from('projects').select('id, name, company_id').order('name');
+    projectsCache = ps || [];
+  }
+
+  const companyFilter = document.getElementById('deployments-company-filter');
+  const existingCompany = companyFilter.value;
+  companyFilter.innerHTML = '<option value="">Alle Firmen</option>'
+    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  if (existingCompany) companyFilter.value = existingCompany;
+
+  const projectFilter = document.getElementById('deployments-project-filter');
+  const existingProject = projectFilter.value;
+  projectFilter.innerHTML = '<option value="">Alle Projekte</option><option value="__none__">Ohne Projekt (Einzelbuchung)</option>'
+    + projectsCache.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  if (existingProject) projectFilter.value = existingProject;
+
+  const { data, error } = await db.from('deployments')
+    .select('*, company:companies(id, name), project:projects(id, name), service:services(id, name, einheit)')
+    .order('datum_von', { ascending: false });
+
+  if (error) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
+
+  deploymentsCache = data || [];
+  filterDeployments();
+}
+
+function filterDeployments() {
+  const searchTerm  = document.getElementById('deployments-search').value.trim().toLowerCase();
+  const rangeFilter = document.getElementById('deployments-range-filter').value;
+  const statusFilter = document.getElementById('deployments-status-filter').value;
+  const companyFilterVal = document.getElementById('deployments-company-filter').value;
+  const projectFilterVal = document.getElementById('deployments-project-filter').value;
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayISO = toISODate(today);
+
+  let filtered = deploymentsCache;
+
+  // Zeitraum
+  if (rangeFilter === 'upcoming') {
+    filtered = filtered.filter(d => d.datum_bis >= todayISO);
+  } else if (rangeFilter === 'past') {
+    filtered = filtered.filter(d => d.datum_bis < todayISO);
+  } else if (rangeFilter === 'month') {
+    const mStart = toISODate(new Date(today.getFullYear(), today.getMonth(), 1));
+    const mEnd   = toISODate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    filtered = filtered.filter(d => d.datum_von <= mEnd && d.datum_bis >= mStart);
+  } else if (rangeFilter === 'quarter') {
+    const q = Math.floor(today.getMonth() / 3);
+    const qStart = toISODate(new Date(today.getFullYear(), q * 3, 1));
+    const qEnd   = toISODate(new Date(today.getFullYear(), q * 3 + 3, 0));
+    filtered = filtered.filter(d => d.datum_von <= qEnd && d.datum_bis >= qStart);
+  } else if (rangeFilter === 'year') {
+    const yStart = toISODate(new Date(today.getFullYear(), 0, 1));
+    const yEnd   = toISODate(new Date(today.getFullYear(), 11, 31));
+    filtered = filtered.filter(d => d.datum_von <= yEnd && d.datum_bis >= yStart);
+  }
+
+  if (statusFilter) filtered = filtered.filter(d => d.status === statusFilter);
+  if (companyFilterVal) filtered = filtered.filter(d => d.company_id === companyFilterVal);
+  if (projectFilterVal === '__none__') {
+    filtered = filtered.filter(d => !d.project_id);
+  } else if (projectFilterVal) {
+    filtered = filtered.filter(d => d.project_id === projectFilterVal);
+  }
+
+  if (searchTerm) {
+    filtered = filtered.filter(d => {
+      const haystack = [d.titel, d.beschreibung, d.notizen, d.ort, d.externe_techniker,
+                        d.company?.name, d.project?.name, d.service?.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }
+
+  renderDeploymentsTable(filtered);
+}
+
+function renderDeploymentsTable(deployments) {
+  const tbody = document.getElementById('deployments-table-body');
+  const countEl = document.getElementById('deployments-count');
+
+  const total = deploymentsCache.length;
+  const shown = deployments.length;
+  countEl.textContent = (shown === total)
+    ? `${total} Einsatz${total === 1 ? '' : '̈e'}`.replace('tz̈e', 'tze')
+    : `${shown} von ${total} Einsätzen`;
+  // Hinweis zum Umsatz aktiver Einsätze
+  const umsatzAktiv = deployments
+    .filter(d => ['Durchgeführt', 'Abgerechnet'].includes(d.status) && !d.project_id)
+    .reduce((sum, d) => sum + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+  if (umsatzAktiv > 0) {
+    countEl.textContent += ` · ${formatPreis(umsatzAktiv)} direkt abrechenbar`;
+  }
+
+  if (shown === 0) {
+    const msg = total === 0
+      ? 'Noch keine Einsätze angelegt. Klicke oben auf „+ Neuer Einsatz".'
+      : 'Keine Einsätze entsprechen den Filterkriterien.';
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = deployments.map(d => {
+    const statusColor = einsatzStatusFarbe(d.status);
+    const firmaHtml = d.company
+      ? `<div class="cell-link" onclick="navigateTo('firma', '${esc(d.company.id)}')">${esc(d.company.name)}</div>`
+      : '<span style="color:var(--muted);font-style:italic">—</span>';
+    const projektHtml = d.project
+      ? `<div class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</div>`
+      : '<span style="color:var(--muted);font-style:italic">Einzelbuchung</span>';
+    const leistungHtml = d.service
+      ? esc(d.service.name)
+      : '<span style="color:var(--muted);font-style:italic">—</span>';
+    const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+
+    return `
+      <tr>
+        <td><div class="date-cell">${esc(formatDeploymentDateRange(d.datum_von, d.datum_bis))}</div></td>
+        <td>
+          <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
+        </td>
+        <td class="col-tablet">${firmaHtml}</td>
+        <td class="col-desktop">${projektHtml}</td>
+        <td class="col-desktop" style="color:var(--muted)">${leistungHtml}</td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td class="col-tablet">${esc(formatPreis(gesamt))}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EINSATZ-MODAL
+// ═══════════════════════════════════════════════════════════
+
+async function openDeploymentModal(mode, deploymentId = null) {
+  editingDeploymentId = deploymentId;
+  selectedTechnikerIds = new Set();
+
+  // Caches sicherstellen
+  await Promise.all([loadEinsatzStatus(), loadServicesCache(), loadUserProfilesCache()]);
+
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').order('name');
+    companiesCache = cs || [];
+  } else {
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').order('name');
+    companiesCache = cs || companiesCache;
+  }
+
+  const companySelect = document.getElementById('d-company');
+  companySelect.innerHTML = '<option value="">— Firma wählen —</option>'
+    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  // Service-Dropdown
+  const serviceSelect = document.getElementById('d-service');
+  serviceSelect.innerHTML = '<option value="">— Keine Leistung —</option>'
+    + servicesCache.map(s => `<option value="${esc(s.id)}" data-preis="${s.standardpreis || 0}" data-einheit="${esc(s.einheit || '')}">${esc(s.name)} (${esc(s.einheit || '—')})</option>`).join('');
+
+  // Status-Select
+  document.getElementById('d-status').value = 'Geplant';
+
+  // Felder zurücksetzen
+  document.getElementById('d-titel').value = '';
+  const todayISO = toISODate(new Date());
+  document.getElementById('d-datum-von').value = todayISO;
+  document.getElementById('d-datum-bis').value = todayISO;
+  document.getElementById('d-uhrzeit-von').value = '';
+  document.getElementById('d-uhrzeit-bis').value = '';
+  document.getElementById('d-ort').value = '';
+  document.getElementById('d-ort-hint').style.display = 'none';
+  document.getElementById('d-menge').value = '1';
+  document.getElementById('d-einzelpreis').value = '';
+  document.getElementById('d-beschreibung').value = '';
+  document.getElementById('d-notizen').value = '';
+  document.getElementById('d-externe-techniker').value = '';
+  document.getElementById('d-create-appointment').checked = false;
+
+  renderTechnikerChipsForDeployment();
+  await rebuildProjectDropdownForDeployment('');
+  updateDeploymentPriceHint();
+
+  setupDeploymentModalListeners();
+
+  if (mode === 'new') {
+    document.getElementById('modal-deployment-title').textContent = 'Neuer Einsatz';
+    document.getElementById('d-save-btn').textContent = 'Anlegen';
+    document.getElementById('d-delete-btn').style.display = 'none';
+
+    // Prefill aus Firmen-Detail / Projekt-Detail
+    if (deploymentModalPrefillCompanyId) {
+      companySelect.value = deploymentModalPrefillCompanyId;
+      await rebuildProjectDropdownForDeployment(deploymentModalPrefillCompanyId);
+      updateDeploymentOrtHint();
+      deploymentModalPrefillCompanyId = null;
+    }
+    if (deploymentModalPrefillProjectId) {
+      // Projekt laden + dessen Firma setzen, falls noch nicht
+      const { data: proj } = await db.from('projects')
+        .select('id, name, company_id').eq('id', deploymentModalPrefillProjectId).single();
+      if (proj) {
+        if (proj.company_id) {
+          companySelect.value = proj.company_id;
+          await rebuildProjectDropdownForDeployment(proj.company_id);
+          updateDeploymentOrtHint();
+        }
+        document.getElementById('d-project').value = proj.id;
+      }
+      deploymentModalPrefillProjectId = null;
+    }
+    updateDeploymentPriceHint();
+  } else {
+    document.getElementById('modal-deployment-title').textContent = 'Einsatz bearbeiten';
+    document.getElementById('d-save-btn').textContent = 'Speichern';
+    document.getElementById('d-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('deployments').select('*').eq('id', deploymentId).single();
+    if (error || !data) { showToast('Einsatz konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingDeploymentId = null; return; }
+
+    document.getElementById('d-titel').value = data.titel || '';
+    document.getElementById('d-datum-von').value = data.datum_von || '';
+    document.getElementById('d-datum-bis').value = data.datum_bis || '';
+    document.getElementById('d-uhrzeit-von').value = data.uhrzeit_von ? data.uhrzeit_von.substring(0, 5) : '';
+    document.getElementById('d-uhrzeit-bis').value = data.uhrzeit_bis ? data.uhrzeit_bis.substring(0, 5) : '';
+    document.getElementById('d-status').value = data.status || 'Geplant';
+    document.getElementById('d-ort').value = data.ort || '';
+    document.getElementById('d-menge').value = data.menge ?? 1;
+    document.getElementById('d-einzelpreis').value = data.einzelpreis ?? '';
+    document.getElementById('d-beschreibung').value = data.beschreibung || '';
+    document.getElementById('d-notizen').value = data.notizen || '';
+    document.getElementById('d-externe-techniker').value = data.externe_techniker || '';
+
+    if (data.company_id) {
+      companySelect.value = data.company_id;
+      await rebuildProjectDropdownForDeployment(data.company_id);
+      if (data.project_id) document.getElementById('d-project').value = data.project_id;
+      updateDeploymentOrtHint();
+    }
+
+    if (data.service_id) serviceSelect.value = data.service_id;
+
+    // Techniker laden
+    const { data: techRows } = await db.from('deployment_technicians')
+      .select('user_id').eq('deployment_id', deploymentId);
+    selectedTechnikerIds = new Set((techRows || []).map(t => t.user_id));
+    renderTechnikerChipsForDeployment();
+
+    // Verknüpften Termin prüfen
+    const { data: linkedAppt } = await db.from('appointments')
+      .select('id').eq('deployment_id', deploymentId).limit(1);
+    document.getElementById('d-create-appointment').checked = (linkedAppt || []).length > 0;
+
+    updateDeploymentPriceHint();
+  }
+
+  document.getElementById('modal-deployment').classList.add('open');
+  setTimeout(() => document.getElementById('d-titel').focus(), 100);
+}
+
+function setupDeploymentModalListeners() {
+  const companySelect = document.getElementById('d-company');
+  const serviceSelect = document.getElementById('d-service');
+  const datumVon = document.getElementById('d-datum-von');
+  const datumBis = document.getElementById('d-datum-bis');
+  const menge = document.getElementById('d-menge');
+  const einzelpreis = document.getElementById('d-einzelpreis');
+
+  companySelect.onchange = async () => {
+    await rebuildProjectDropdownForDeployment(companySelect.value);
+    updateDeploymentOrtHint();
+    updateDeploymentPriceHint();
+  };
+
+  document.getElementById('d-project').onchange = () => {
+    updateDeploymentPriceHint();
+  };
+
+  serviceSelect.onchange = () => {
+    // Auto-fill Einzelpreis aus Service-Standardpreis, wenn noch leer
+    const opt = serviceSelect.options[serviceSelect.selectedIndex];
+    const preis = opt?.getAttribute('data-preis');
+    const currentPreis = document.getElementById('d-einzelpreis').value;
+    if (preis && (currentPreis === '' || Number(currentPreis) === 0)) {
+      document.getElementById('d-einzelpreis').value = preis;
+    }
+    updateDeploymentPriceHint();
+  };
+
+  datumVon.onchange = () => {
+    // datum_bis mit-anpassen wenn vorher = datum_von oder leer
+    if (!datumBis.value || datumBis.value < datumVon.value) {
+      datumBis.value = datumVon.value;
+    }
+  };
+
+  [menge, einzelpreis].forEach(el => {
+    el.oninput = updateDeploymentPriceHint;
+  });
+}
+
+function updateDeploymentOrtHint() {
+  const companyId = document.getElementById('d-company').value;
+  const hint = document.getElementById('d-ort-hint');
+  if (!companyId) { hint.style.display = 'none'; return; }
+  const company = companiesCache.find(c => c.id === companyId);
+  if (!company) { hint.style.display = 'none'; return; }
+  const parts = [company.strasse, [company.plz, company.stadt].filter(Boolean).join(' ')].filter(Boolean);
+  if (parts.length === 0) { hint.style.display = 'none'; return; }
+  hint.innerHTML = `Firmenadresse: ${esc(parts.join(', '))} <span style="text-decoration:underline">· übernehmen</span>`;
+  hint.style.display = '';
+}
+
+function useCompanyAddressForDeploymentOrt() {
+  const companyId = document.getElementById('d-company').value;
+  if (!companyId) return;
+  const company = companiesCache.find(c => c.id === companyId);
+  if (!company) return;
+  const parts = [company.strasse, [company.plz, company.stadt].filter(Boolean).join(' ')].filter(Boolean);
+  if (parts.length === 0) return;
+  document.getElementById('d-ort').value = parts.join(', ');
+}
+
+function updateDeploymentPriceHint() {
+  const hintEl = document.getElementById('d-preis-hint');
+  const menge = Number(document.getElementById('d-menge').value) || 0;
+  const einzel = Number(document.getElementById('d-einzelpreis').value) || 0;
+  const gesamt = menge * einzel;
+  const projectId = document.getElementById('d-project').value;
+
+  if (projectId) {
+    hintEl.innerHTML = `Gesamt: <strong>${esc(formatPreis(gesamt))}</strong> · Interner Aufwand. Kundenumsatz läuft über den Projekt-Paketpreis.`;
+  } else {
+    hintEl.innerHTML = `Gesamt: <strong>${esc(formatPreis(gesamt))}</strong> · Wird direkt dem Kunden berechnet.`;
+  }
+}
+
+async function rebuildProjectDropdownForDeployment(companyId) {
+  const select = document.getElementById('d-project');
+  if (!select) return;
+  if (!companyId) {
+    select.innerHTML = '<option value="">— Kein Projekt (Einzelbuchung) —</option>';
+    return;
+  }
+  const { data, error } = await db.from('projects')
+    .select('id, name, status').eq('company_id', companyId)
+    .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abgeschlossen'])
+    .order('name');
+  if (error) { select.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
+  const projects = data || [];
+  select.innerHTML = '<option value="">— Kein Projekt (Einzelbuchung) —</option>'
+    + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.status)}</option>`).join('');
+}
+
+function renderTechnikerChipsForDeployment() {
+  const wrap = document.getElementById('d-techniker-list');
+  if (userProfilesCache.length === 0) {
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">Keine internen Techniker verfügbar.</span>';
+    return;
+  }
+  wrap.innerHTML = userProfilesCache.map(u => {
+    const selected = selectedTechnikerIds.has(u.id);
+    return `
+      <div class="techniker-chip${selected ? ' selected' : ''}" data-user-id="${esc(u.id)}"
+           onclick="toggleTechnikerChip('${esc(u.id)}')">
+        <span class="techniker-chip-avatar">${esc(ini(u.name))}</span>
+        <span>${esc(u.name)}</span>
+      </div>`;
+  }).join('');
+}
+
+function toggleTechnikerChip(userId) {
+  if (selectedTechnikerIds.has(userId)) selectedTechnikerIds.delete(userId);
+  else selectedTechnikerIds.add(userId);
+  renderTechnikerChipsForDeployment();
+}
+
+function closeDeploymentModal() {
+  document.getElementById('modal-deployment').classList.remove('open');
+  editingDeploymentId = null;
+  deploymentModalPrefillCompanyId = null;
+  deploymentModalPrefillProjectId = null;
+  selectedTechnikerIds = new Set();
+}
+
+async function saveDeployment() {
+  const titel         = document.getElementById('d-titel').value.trim();
+  const datum_von     = document.getElementById('d-datum-von').value;
+  const datum_bis     = document.getElementById('d-datum-bis').value;
+  const uhrzeit_von   = document.getElementById('d-uhrzeit-von').value;
+  const uhrzeit_bis   = document.getElementById('d-uhrzeit-bis').value;
+  const status        = document.getElementById('d-status').value;
+  const company_id    = document.getElementById('d-company').value || null;
+  const project_id    = document.getElementById('d-project').value || null;
+  const service_id    = document.getElementById('d-service').value || null;
+  const mengeRaw      = document.getElementById('d-menge').value;
+  const einzelRaw     = document.getElementById('d-einzelpreis').value;
+  const ort           = document.getElementById('d-ort').value.trim();
+  const beschreibung  = document.getElementById('d-beschreibung').value.trim();
+  const notizen       = document.getElementById('d-notizen').value.trim();
+  const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
+  const createAppointment = document.getElementById('d-create-appointment').checked;
+  const btn           = document.getElementById('d-save-btn');
+
+  if (!titel)     { showToast('Bitte Titel eingeben.', true); return; }
+  if (!datum_von) { showToast('Bitte Datum von wählen.', true); return; }
+  if (!datum_bis) { showToast('Bitte Datum bis wählen.', true); return; }
+  if (datum_bis < datum_von) { showToast('Datum bis muss nach Datum von liegen.', true); return; }
+  if (!company_id) { showToast('Bitte Firma auswählen.', true); return; }
+  if (!['Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert'].includes(status)) {
+    showToast('Status ungültig.', true); return;
+  }
+  if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
+    showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true); return;
+  }
+
+  const menge = mengeRaw === '' ? 1 : Number(mengeRaw);
+  if (Number.isNaN(menge) || menge < 0) { showToast('Menge muss eine Zahl ≥ 0 sein.', true); return; }
+  const einzelpreis = einzelRaw === '' ? 0 : Number(einzelRaw);
+  if (Number.isNaN(einzelpreis) || einzelpreis < 0) { showToast('Einzelpreis muss eine Zahl ≥ 0 sein.', true); return; }
+
+  btn.disabled = true;
+  btn.textContent = editingDeploymentId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      titel, datum_von, datum_bis,
+      uhrzeit_von: uhrzeit_von || null,
+      uhrzeit_bis: uhrzeit_bis || null,
+      status,
+      company_id, project_id, service_id,
+      menge, einzelpreis,
+      ort: ort || null,
+      beschreibung: beschreibung || null,
+      notizen: notizen || null,
+      externe_techniker: externe_techniker || null
+    };
+    if (!editingDeploymentId) payload.erstellt_von = currentUser?.id || null;
+
+    let saved;
+    if (editingDeploymentId) {
+      const { data, error } = await db.from('deployments').update(payload).eq('id', editingDeploymentId).select().single();
+      if (error) throw new Error(error.message);
+      saved = data;
+    } else {
+      const { data, error } = await db.from('deployments').insert(payload).select().single();
+      if (error) throw new Error(error.message);
+      saved = data;
+    }
+
+    // ──────── Techniker-Relations synchronisieren ────────
+    // Zuerst alle existierenden löschen, dann neu anlegen (simpler als Diff)
+    await db.from('deployment_technicians').delete().eq('deployment_id', saved.id);
+    if (selectedTechnikerIds.size > 0) {
+      const techRows = [...selectedTechnikerIds].map(uid => ({ deployment_id: saved.id, user_id: uid }));
+      const { error: techErr } = await db.from('deployment_technicians').insert(techRows);
+      if (techErr) {
+        console.warn('Techniker konnten nicht gespeichert werden:', techErr.message);
+        showToast('Einsatz gespeichert, Techniker-Zuordnung fehlgeschlagen.', true);
+      }
+    }
+
+    // ──────── Termin-Kopplung ────────
+    await syncDeploymentAppointment(saved, createAppointment);
+
+    closeDeploymentModal();
+    showToast(editingDeploymentId ? 'Einsatz aktualisiert.' : 'Einsatz angelegt.');
+
+    // Kontext-sensibles Refresh
+    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+      await loadProjectDeployments(currentProjectDetailId);
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+      await loadCompanyDeployments(currentCompanyDetailId);
+    } else {
+      await loadDeployments();
+    }
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingDeploymentId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+/**
+ * Synchronisiert einen Termin zum Einsatz basierend auf Checkbox-Status.
+ * - Checkbox an + kein verknüpfter Termin → neuen Termin anlegen
+ * - Checkbox an + existiert → updaten
+ * - Checkbox aus + existiert → entkoppeln (deployment_id=null), Termin bleibt
+ * - Checkbox aus + nicht existiert → nichts
+ */
+async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
+  const { data: existing } = await db.from('appointments')
+    .select('id').eq('deployment_id', deployment.id).limit(1);
+  const existingId = existing?.[0]?.id;
+
+  if (!shouldHaveAppointment) {
+    if (existingId) {
+      // Entkoppeln, nicht löschen
+      await db.from('appointments').update({ deployment_id: null }).eq('id', existingId);
+    }
+    return;
+  }
+
+  // Default-Termintyp: "Vor Ort" suchen, sonst erster aktiver
+  await loadTerminTypen();
+  const typVorOrt = terminTypenCache.find(t => /vor[- ]?ort/i.test(t.wert)) || terminTypenCache[0];
+  const typ_id = typVorOrt?.id || null;
+
+  // Terminstatus: Geplant → 'geplant', sonst 'durchgefuehrt'
+  const terminStatus = deployment.status === 'Geplant' ? 'geplant' : 'durchgefuehrt';
+
+  const payload = {
+    titel: deployment.titel,
+    datum: deployment.datum_von,
+    uhrzeit_von: deployment.uhrzeit_von,
+    uhrzeit_bis: deployment.uhrzeit_bis,
+    status: terminStatus,
+    company_id: deployment.company_id,
+    project_id: deployment.project_id,
+    ort: deployment.ort,
+    notizen: deployment.notizen ? `[Einsatz-Termin]\n${deployment.notizen}` : '[Einsatz-Termin]',
+    typ_id,
+    deployment_id: deployment.id
+  };
+
+  if (existingId) {
+    await db.from('appointments').update(payload).eq('id', existingId);
+  } else {
+    payload.erstellt_von = currentUser?.id || null;
+    await db.from('appointments').insert(payload);
+  }
+}
+
+async function deleteDeployment() {
+  if (!editingDeploymentId) return;
+  if (!confirm('Einsatz wirklich löschen?\n\nHinweis: Zugeordnete Techniker-Zuordnungen werden automatisch entfernt. Ein verknüpfter Termin bleibt erhalten (wird nur entkoppelt).')) return;
+
+  const btn = document.getElementById('d-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const { error } = await db.from('deployments').delete().eq('id', editingDeploymentId);
+    if (error) throw new Error(error.message);
+
+    closeDeploymentModal();
+    showToast('Einsatz gelöscht.');
+
+    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+      await loadProjectDeployments(currentProjectDetailId);
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+      await loadCompanyDeployments(currentCompanyDetailId);
+    } else {
+      await loadDeployments();
+    }
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EINSÄTZE AUF FIRMA-DETAIL
+// ═══════════════════════════════════════════════════════════
+
+async function loadCompanyDeployments(companyId) {
+  const tbody = document.getElementById('company-deployments-body');
+  const countEl = document.getElementById('company-deployments-count');
+
+  await loadEinsatzStatus();
+
+  const { data, error } = await db.from('deployments')
+    .select('*, project:projects(id, name), service:services(id, name)')
+    .eq('company_id', companyId)
+    .order('datum_von', { ascending: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Einsätze';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Einsätze';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Einsätze für diese Firma. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
+    return;
+  }
+
+  const umsatz = all
+    .filter(d => !d.project_id && ['Durchgeführt', 'Abgerechnet'].includes(d.status))
+    .reduce((sum, d) => sum + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+
+  countEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'}`
+    + (umsatz > 0 ? ` · ${formatPreis(umsatz)} direkt abrechenbar` : '');
+
+  tbody.innerHTML = all.map(d => {
+    const statusColor = einsatzStatusFarbe(d.status);
+    const projektHtml = d.project
+      ? `<div class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</div>`
+      : '<span style="color:var(--muted);font-style:italic">Einzelbuchung</span>';
+    const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+
+    return `
+      <tr>
+        <td><div class="date-cell">${esc(formatDeploymentDateRange(d.datum_von, d.datum_bis))}</div></td>
+        <td>
+          <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
+        </td>
+        <td class="col-tablet">${projektHtml}</td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EINSÄTZE AUF PROJEKT-DETAIL
+// ═══════════════════════════════════════════════════════════
+
+async function loadProjectDeployments(projectId) {
+  const tbody = document.getElementById('project-deployments-body');
+  const countEl = document.getElementById('project-deployments-count');
+  const summaryEl = document.getElementById('project-deployments-summary');
+
+  await loadEinsatzStatus();
+
+  const { data, error } = await db.from('deployments')
+    .select('*, service:services(id, name)')
+    .eq('project_id', projectId)
+    .order('datum_von');
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Einsätze';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Einsätze';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Einsätze für dieses Projekt. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  const anzGeplant      = all.filter(d => d.status === 'Geplant').length;
+  const anzDurchgefuehrt = all.filter(d => d.status === 'Durchgeführt').length;
+  const anzAbgerechnet  = all.filter(d => d.status === 'Abgerechnet').length;
+  const summeAufwand    = all.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+
+  countEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
+
+  tbody.innerHTML = all.map(d => {
+    const statusColor = einsatzStatusFarbe(d.status);
+    const leistungHtml = d.service
+      ? esc(d.service.name)
+      : '<span style="color:var(--muted);font-style:italic">—</span>';
+    const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+
+    return `
+      <tr>
+        <td><div class="date-cell">${esc(formatDeploymentDateRange(d.datum_von, d.datum_bis))}</div></td>
+        <td>
+          <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
+        </td>
+        <td class="col-tablet" style="color:var(--muted)">${leistungHtml}</td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  // Summary mit Aufwands-Info
+  summaryEl.style.display = '';
+  summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>. Kundenumsatz läuft über den Projekt-Paketpreis.`;
 }
 
 // ═══════════════════════════════════════════════════════════

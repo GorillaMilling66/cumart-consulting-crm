@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.8.0 (Kontakt-Detailseite) -->
+<!-- VERSION: 1.9.0 (Einsätze / Phase 3c) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -161,6 +161,17 @@
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
         Projekte
+      </button>
+
+      <button class="nav-item" id="nav-deployments"
+              onclick="navigateTo('deployments')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2 2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        Einsätze
       </button>
     </nav>
 
@@ -425,6 +436,35 @@
             </thead>
             <tbody id="company-projects-body">
               <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- EINSÄTZE-SEKTION (NEU in v1.9.0) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="company-deployments-count">Einsätze</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="company-detail-add-deployment-btn">
+            + Einsatz hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th>Titel</th>
+                <th class="col-tablet">Projekt</th>
+                <th style="width:120px">Status</th>
+                <th class="col-desktop" style="width:110px">Preis</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="company-deployments-body">
+              <tr><td colspan="6"><div class="empty">Lade Einsätze ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -785,6 +825,111 @@
           <a class="cell-link" id="project-appointments-show-all-link">Alle Termine dieses Projekts anzeigen →</a>
         </div>
       </div>
+
+      <!-- EINSÄTZE DES PROJEKTS (NEU v1.9.0) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="project-deployments-count">Einsätze</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="project-detail-add-deployment-btn">
+            + Einsatz hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th>Titel</th>
+                <th class="col-tablet">Leistung</th>
+                <th style="width:120px">Status</th>
+                <th class="col-desktop" style="width:110px">Preis</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="project-deployments-body">
+              <tr><td colspan="6"><div class="empty">Lade Einsätze ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="project-deployments-summary" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <!-- SEITE: EINSÄTZE (LISTE) -->
+    <div class="page" id="page-deployments">
+      <div class="page-header">
+        <h1 class="page-title">Einsätze</h1>
+        <button class="btn btn-primary" onclick="openDeploymentModal('new')">
+          + Neuer Einsatz
+        </button>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="deployments-search"
+                   placeholder="Suche nach Titel, Firma, Ort, Notiz ..."
+                   oninput="filterDeployments()">
+          </div>
+          <div class="form-group" style="min-width:150px;margin:0">
+            <select id="deployments-range-filter" onchange="filterDeployments()">
+              <option value="all">Alle Zeiträume</option>
+              <option value="upcoming">Kommende</option>
+              <option value="month">Diesen Monat</option>
+              <option value="quarter">Dieses Quartal</option>
+              <option value="year">Dieses Jahr</option>
+              <option value="past">Vergangene</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:150px;margin:0">
+            <select id="deployments-status-filter" onchange="filterDeployments()">
+              <option value="">Alle Status</option>
+              <option value="Geplant">Geplant</option>
+              <option value="Durchgeführt">Durchgeführt</option>
+              <option value="Abgerechnet">Abgerechnet</option>
+              <option value="Storniert">Storniert</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:180px;margin:0">
+            <select id="deployments-company-filter" onchange="filterDeployments()">
+              <option value="">Alle Firmen</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:180px;margin:0">
+            <select id="deployments-project-filter" onchange="filterDeployments()">
+              <option value="">Alle Projekte</option>
+              <option value="__none__">Ohne Projekt (Einzelbuchung)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="deployments-count">Einsätze</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th>Titel</th>
+                <th class="col-tablet">Firma</th>
+                <th class="col-desktop">Projekt</th>
+                <th class="col-desktop">Leistung</th>
+                <th style="width:120px">Status</th>
+                <th class="col-tablet" style="width:110px">Preis</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="deployments-table-body">
+              <tr><td colspan="8"><div class="empty">Lade Einsätze ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- SEITE: BENUTZER -->
@@ -899,13 +1044,15 @@
       </svg>
       <span>Termine</span>
     </button>
-    <button class="mobile-nav-item" id="m-nav-projects"
-            onclick="navigateTo('projects')">
+    <button class="mobile-nav-item" id="m-nav-deployments"
+            onclick="navigateTo('deployments')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <path d="M12 2 2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
       </svg>
-      <span>Projekte</span>
+      <span>Einsätze</span>
     </button>
     <button class="mobile-nav-item" id="m-nav-more" onclick="openMoreMenu()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -940,6 +1087,12 @@
             <rect x="3" y="4" width="18" height="18" rx="2"/>
           </svg>
           Kontakte
+        </button>
+        <button class="more-item" id="m-more-projects" onclick="navigateTo('projects'); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          Projekte
         </button>
       </div>
 
@@ -1278,6 +1431,127 @@
       </button>
       <button class="btn" onclick="closeProjectModal()">Abbrechen</button>
       <button class="btn btn-primary" id="p-save-btn" onclick="saveProject()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EINSATZ -->
+<div class="modal-overlay" id="modal-deployment">
+  <div class="modal" style="width:720px">
+    <div class="modal-title" id="modal-deployment-title">Neuer Einsatz</div>
+
+    <div class="modal-group-title">Einsatzdaten</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Titel *</label>
+        <input type="text" id="d-titel" placeholder="z. B. Heidenhain Grundlagen – Tag 1">
+      </div>
+      <div class="form-group">
+        <label>Datum von *</label>
+        <input type="date" id="d-datum-von">
+      </div>
+      <div class="form-group">
+        <label>Datum bis *</label>
+        <input type="date" id="d-datum-bis">
+      </div>
+      <div class="form-group">
+        <label>Uhrzeit von</label>
+        <input type="time" id="d-uhrzeit-von">
+      </div>
+      <div class="form-group">
+        <label>Uhrzeit bis</label>
+        <input type="time" id="d-uhrzeit-bis">
+      </div>
+      <div class="form-group">
+        <label>Status *</label>
+        <select id="d-status">
+          <option value="Geplant">Geplant</option>
+          <option value="Durchgeführt">Durchgeführt</option>
+          <option value="Abgerechnet">Abgerechnet</option>
+          <option value="Storniert">Storniert</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Ort</label>
+        <input type="text" id="d-ort" placeholder="z. B. Vor Ort, Zoom-Link, Raum">
+        <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+             onclick="useCompanyAddressForDeploymentOrt()"
+             title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Zuordnung</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Firma *</label>
+        <select id="d-company"></select>
+      </div>
+      <div class="form-group">
+        <label>Projekt</label>
+        <select id="d-project"></select>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Leistung &amp; Preis</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Leistung</label>
+        <select id="d-service"></select>
+      </div>
+      <div class="form-group">
+        <label>Menge</label>
+        <input type="number" id="d-menge" min="0" step="0.5" value="1">
+      </div>
+      <div class="form-group">
+        <label>Einzelpreis (€)</label>
+        <input type="number" id="d-einzelpreis" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group full">
+        <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:4px 0"></div>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Techniker</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Interne Techniker</label>
+        <div id="d-techniker-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
+      </div>
+      <div class="form-group full">
+        <label>Externe Techniker (Freitext)</label>
+        <input type="text" id="d-externe-techniker" placeholder="z. B. Max Mustermann (extern)">
+      </div>
+    </div>
+
+    <div class="modal-group-title">Details</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Beschreibung</label>
+        <textarea id="d-beschreibung" rows="2" placeholder="Worum geht es bei diesem Einsatz?"></textarea>
+      </div>
+      <div class="form-group full">
+        <label>Notizen</label>
+        <textarea id="d-notizen" rows="2" placeholder="Freitext-Notizen ..."></textarea>
+      </div>
+      <div class="form-group full" id="d-appointment-sync-wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+          <input type="checkbox" id="d-create-appointment" style="width:auto;margin:0">
+          <span>Auch als Termin im Kalender eintragen</span>
+        </label>
+        <span style="font-size:11px;color:var(--muted);padding-left:24px">
+          Legt parallel einen Termin mit gleichen Daten an und verknüpft beide.
+        </span>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="d-delete-btn"
+              onclick="deleteDeployment()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeDeploymentModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="d-save-btn" onclick="saveDeployment()">Anlegen</button>
     </div>
   </div>
 </div>
