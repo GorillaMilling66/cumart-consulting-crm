@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.7.1 (iOS-Clipboard-Fix, Input-Validierung, Mobile-Layout-Fix) -->
+<!-- VERSION: 1.8.0 (Kontakt-Detailseite) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -474,6 +474,108 @@
             </thead>
             <tbody id="contacts-table-body">
               <tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: KONTAKT-DETAIL -->
+    <div class="page" id="page-contact-detail">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="navigateTo('contacts')" aria-label="Zurück">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <a class="breadcrumb-link" onclick="navigateTo('contacts')">Kontakte</a>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current" id="contact-detail-name">…</span>
+      </div>
+
+      <div class="card detail-card">
+        <div class="detail-header">
+          <div style="display:flex;align-items:center;gap:14px">
+            <div class="avatar" id="contact-detail-avatar" style="width:44px;height:44px;font-size:14px">…</div>
+            <div>
+              <h1 class="page-title" id="contact-detail-title">…</h1>
+              <div class="detail-subline" id="contact-detail-subline"></div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-copy" id="contact-detail-copy-btn" aria-label="Kontakt kopieren" title="Kopieren">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+            <button class="btn" id="contact-detail-edit-btn">Bearbeiten</button>
+          </div>
+        </div>
+
+        <div class="detail-grid" id="contact-detail-info"></div>
+
+        <div id="contact-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="detail-label">Notizen</div>
+          <div id="contact-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+        </div>
+      </div>
+
+      <!-- TERMINE DES KONTAKTS -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="contact-appointments-count">Termine</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="contact-detail-add-appointment-btn">
+            + Termin hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th style="width:90px" class="col-tablet">Uhrzeit</th>
+                <th>Titel</th>
+                <th class="col-tablet">Typ</th>
+                <th style="width:110px">Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="contact-appointments-body">
+              <tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PROJEKTE DES KONTAKTS (Hauptkontakt) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="contact-projects-count">Projekte als Hauptkontakt</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="contact-detail-add-project-btn">
+            + Projekt hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:120px">Status</th>
+                <th class="col-tablet" style="width:110px">Start</th>
+                <th class="col-tablet" style="width:110px">Ende</th>
+                <th class="col-desktop">Umsatz</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="contact-projects-body">
+              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
             </tbody>
           </table>
         </div>

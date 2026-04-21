@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.7.1 (iOS-Clipboard-Fix, Input-Validierung, Mobile-Layout-Fix)
+   Version 1.8.0 (Kontakt-Detailseite)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -35,10 +35,13 @@ let inPasswordRecovery = false;
 
 let currentCompanyDetailId = null;
 let currentProjectDetailId = null;
+let currentContactDetailId = null;
 let contactModalPrefillCompanyId = null;
 let appointmentModalPrefillCompanyId = null;
 let appointmentModalPrefillProjectId = null;
+let appointmentModalPrefillContactId = null;
 let projectModalPrefillCompanyId = null;
+let projectModalPrefillHauptkontaktId = null;
 let editingProjectId = null;
 
 let companiesCache   = [];
@@ -346,6 +349,7 @@ function setMobileNav(pageName) {
   } else if (pageName === 'projects' || pageName === 'project-detail') {
     document.getElementById('m-nav-projects')?.classList.add('active');
   } else {
+    // contacts, contact-detail, users, services, lookups etc. → Mehr-Tab aktiv
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
@@ -370,6 +374,8 @@ function navigateTo(page, param) {
     hash = `#/firma/${param}`;
   } else if (page === 'projekt' && param) {
     hash = `#/projekt/${param}`;
+  } else if (page === 'kontakt' && param) {
+    hash = `#/kontakt/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
     hash = `#/termine?firma=${param.firma}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
@@ -422,6 +428,11 @@ function handleHashChange() {
   if (hash.startsWith('#/projekt/')) {
     const id = hash.slice('#/projekt/'.length);
     if (id) { loadProjectDetail(id); return; }
+  }
+
+  if (hash.startsWith('#/kontakt/')) {
+    const id = hash.slice('#/kontakt/'.length);
+    if (id) { loadContactDetail(id); return; }
   }
 
   if (hash.startsWith('#/termine')) {
@@ -1758,7 +1769,7 @@ async function loadCompanyContacts(companyId) {
     const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
     return `
       <tr>
-        <td><div class="cell-link" onclick="openContactModal('edit', '${esc(k.id)}')">${esc(fullName)}</div></td>
+        <td><div class="cell-link" onclick="navigateTo('kontakt', '${esc(k.id)}')">${esc(fullName)}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
@@ -1947,7 +1958,7 @@ function renderContactsTable(contacts) {
         <td>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="avatar">${esc(ini(fullName))}</div>
-            <div class="cell-link" onclick="openContactModal('edit', '${esc(k.id)}')">${esc(fullName)}</div>
+            <div class="cell-link" onclick="navigateTo('kontakt', '${esc(k.id)}')">${esc(fullName)}</div>
           </div>
         </td>
         <td>${firmaHtml}</td>
@@ -2053,7 +2064,10 @@ async function saveContact() {
     closeContactModal();
     showToast(editingContactId ? 'Kontakt aktualisiert.' : 'Kontakt angelegt.');
 
-    if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    const savedId = editingContactId;
+    if (savedId && currentContactDetailId === savedId && document.getElementById('page-contact-detail').classList.contains('active')) {
+      await loadContactDetail(savedId);
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyContacts(currentCompanyDetailId);
     } else {
       await loadContacts();
@@ -2075,13 +2089,17 @@ async function deleteContact() {
   btn.textContent = 'Wird gelöscht ...';
 
   try {
-    const { error } = await db.from('contacts').delete().eq('id', editingContactId);
+    const deletedId = editingContactId;
+    const { error } = await db.from('contacts').delete().eq('id', deletedId);
     if (error) throw new Error(error.message);
 
     closeContactModal();
     showToast('Kontakt gelöscht.');
 
-    if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    if (currentContactDetailId === deletedId) {
+      currentContactDetailId = null;
+      navigateTo('contacts');
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyContacts(currentCompanyDetailId);
     } else {
       await loadContacts();
@@ -2346,6 +2364,22 @@ async function openAppointmentModal(mode, appointmentId = null) {
       }
       appointmentModalPrefillProjectId = null;
     }
+
+    // Prefill-Contact aus Kontakt-Detailseite
+    if (appointmentModalPrefillContactId) {
+      const { data: k } = await db.from('contacts')
+        .select('id, vorname, nachname, company_id').eq('id', appointmentModalPrefillContactId).single();
+      if (k) {
+        if (k.company_id) {
+          companySelect.value = k.company_id;
+          await rebuildContactDropdownForAppointment(k.company_id);
+          await rebuildProjectDropdownForAppointment(k.company_id);
+          updateOrtHint();
+        }
+        document.getElementById('t-contact').value = k.id;
+      }
+      appointmentModalPrefillContactId = null;
+    }
   } else {
     document.getElementById('modal-appointment-title').textContent = 'Termin bearbeiten';
     document.getElementById('t-save-btn').textContent = 'Speichern';
@@ -2388,6 +2422,7 @@ function closeAppointmentModal() {
   editingAppointmentId = null;
   appointmentModalPrefillCompanyId = null;
   appointmentModalPrefillProjectId = null;
+  appointmentModalPrefillContactId = null;
   lastAutoFilledOrt = '';
 }
 
@@ -2522,7 +2557,9 @@ async function saveAppointment() {
     showToast(editingAppointmentId ? 'Termin aktualisiert.' : 'Termin angelegt.');
 
     // Kontext-sensibles Refresh
-    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+    if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
+      await loadContactAppointments(currentContactDetailId);
+    } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
       await loadProjectAppointments(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await Promise.all([
@@ -2555,7 +2592,9 @@ async function deleteAppointment() {
     closeAppointmentModal();
     showToast('Termin gelöscht.');
 
-    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+    if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
+      await loadContactAppointments(currentContactDetailId);
+    } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
       await loadProjectAppointments(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await Promise.all([
@@ -2792,6 +2831,20 @@ async function openProjectModal(mode, projectId = null) {
       await rebuildHauptkontaktDropdown(projectModalPrefillCompanyId);
       projectModalPrefillCompanyId = null;
     }
+
+    // Prefill-Hauptkontakt aus Kontakt-Detailseite (setzt auch Firma vor)
+    if (projectModalPrefillHauptkontaktId) {
+      const { data: k } = await db.from('contacts')
+        .select('id, company_id').eq('id', projectModalPrefillHauptkontaktId).single();
+      if (k) {
+        if (k.company_id) {
+          companySelect.value = k.company_id;
+          await rebuildHauptkontaktDropdown(k.company_id);
+        }
+        hauptkontaktSelect.value = k.id;
+      }
+      projectModalPrefillHauptkontaktId = null;
+    }
   } else {
     document.getElementById('modal-project-title').textContent = 'Projekt bearbeiten';
     document.getElementById('p-save-btn').textContent = 'Speichern';
@@ -2843,6 +2896,7 @@ function closeProjectModal() {
   document.getElementById('modal-project').classList.remove('open');
   editingProjectId = null;
   projectModalPrefillCompanyId = null;
+  projectModalPrefillHauptkontaktId = null;
 }
 
 async function saveProject() {
@@ -2902,6 +2956,8 @@ async function saveProject() {
     // Kontext-sensibles Refresh
     if (savedId && currentProjectDetailId === savedId) {
       await loadProjectDetail(savedId);
+    } else if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
+      await loadContactProjects(currentContactDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyProjects(currentCompanyDetailId);
     } else {
@@ -2938,6 +2994,8 @@ async function deleteProject() {
     if (currentProjectDetailId === deletedId) {
       currentProjectDetailId = null;
       navigateTo('projects');
+    } else if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
+      await loadContactProjects(currentContactDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyProjects(currentCompanyDetailId);
     } else {
@@ -3217,6 +3275,250 @@ async function rebuildProjectDropdownForAppointment(companyId) {
     projectSelect.innerHTML = '<option value="">— Kein Projekt —</option>'
       + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  KONTAKT-DETAILSEITE
+// ═══════════════════════════════════════════════════════════
+
+async function loadContactDetail(contactId) {
+  currentContactDetailId = contactId;
+
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-contact-detail').classList.add('active');
+  document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
+  setMobileNav('contact-detail');
+
+  document.getElementById('contact-detail-name').textContent = '…';
+  document.getElementById('contact-detail-title').textContent = '…';
+  document.getElementById('contact-detail-avatar').textContent = '…';
+  document.getElementById('contact-detail-subline').innerHTML = '';
+  document.getElementById('contact-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Kontakt ...</div>';
+  document.getElementById('contact-detail-notizen-wrap').style.display = 'none';
+  document.getElementById('contact-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
+  document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
+
+  const { data, error } = await db.from('contacts')
+    .select('*, company:companies(id, name, strasse, plz, stadt)')
+    .eq('id', contactId).single();
+
+  if (error || !data) {
+    document.getElementById('contact-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">Kontakt nicht gefunden oder Fehler: ${esc(error?.message || 'Unbekannt')}</div>`;
+    document.getElementById('contact-detail-title').textContent = 'Fehler';
+    document.getElementById('contact-detail-name').textContent = 'Fehler';
+    return;
+  }
+
+  // Cache aktualisieren, damit synchroner Copy direkt klappt
+  if (data.company_id) {
+    if (!companyContactsMap[data.company_id]) companyContactsMap[data.company_id] = [];
+    const existing = companyContactsMap[data.company_id].findIndex(k => k.id === data.id);
+    if (existing >= 0) companyContactsMap[data.company_id][existing] = data;
+    else companyContactsMap[data.company_id].push(data);
+  }
+
+  renderContactDetail(data);
+  await Promise.all([
+    loadContactAppointments(contactId),
+    loadContactProjects(contactId),
+    loadProjektStatus()
+  ]);
+  // Projekte nochmal rendern, falls sie vor projektStatus fertig waren
+  await loadContactProjects(contactId);
+}
+
+function renderContactDetail(k) {
+  const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ').trim() || '(Ohne Namen)';
+  document.getElementById('contact-detail-name').textContent = fullName;
+  document.getElementById('contact-detail-title').textContent = fullName;
+  document.getElementById('contact-detail-avatar').textContent = ini(fullName);
+
+  // Subline: Badge + Firma-Link oder "Ohne Firma"
+  const subline = document.getElementById('contact-detail-subline');
+  const sublineParts = ['<span class="badge" style="background:#eff6ff;color:#1d4ed8">Kontakt</span>'];
+  if (k.position) sublineParts.push(`<span>· ${esc(k.position)}</span>`);
+  if (k.company) {
+    sublineParts.push(`<span>· <span class="cell-link" onclick="navigateTo('firma', '${esc(k.company.id)}')">${esc(k.company.name)}</span></span>`);
+  } else {
+    sublineParts.push('<span>· Ohne Firma</span>');
+  }
+  subline.innerHTML = sublineParts.join('');
+
+  // Buttons verdrahten
+  document.getElementById('contact-detail-edit-btn').onclick = () => openContactModal('edit', k.id);
+  document.getElementById('contact-detail-copy-btn').onclick = () => copyContactById(k.id);
+
+  document.getElementById('contact-detail-add-appointment-btn').onclick = () => {
+    appointmentModalPrefillContactId = k.id;
+    openAppointmentModal('new');
+  };
+
+  document.getElementById('contact-detail-add-project-btn').onclick = () => {
+    projectModalPrefillHauptkontaktId = k.id;
+    openProjectModal('new');
+  };
+
+  // Detail-Grid
+  const telHtml = k.telefon
+    ? `<a href="tel:${esc(k.telefon)}">${esc(k.telefon)}</a>`
+    : '<span class="detail-value-muted">—</span>';
+  const mailHtml = k.email
+    ? `<a href="mailto:${esc(k.email)}">${esc(k.email)}</a>`
+    : '<span class="detail-value-muted">—</span>';
+  const positionHtml = k.position
+    ? esc(k.position)
+    : '<span class="detail-value-muted">—</span>';
+  const firmaHtml = k.company
+    ? `<span class="cell-link" onclick="navigateTo('firma', '${esc(k.company.id)}')">${esc(k.company.name)}</span>`
+    : '<span class="detail-value-muted">Ohne Firma</span>';
+
+  document.getElementById('contact-detail-info').innerHTML = `
+    <div class="detail-field">
+      <div class="detail-label">Telefon</div>
+      <div class="detail-value">${telHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">E-Mail</div>
+      <div class="detail-value">${mailHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Position</div>
+      <div class="detail-value">${positionHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Firma</div>
+      <div class="detail-value">${firmaHtml}</div>
+    </div>
+  `;
+
+  if (k.notizen) {
+    document.getElementById('contact-detail-notizen-wrap').style.display = '';
+    document.getElementById('contact-detail-notizen').textContent = k.notizen;
+  } else {
+    document.getElementById('contact-detail-notizen-wrap').style.display = 'none';
+  }
+}
+
+async function loadContactAppointments(contactId) {
+  const tbody = document.getElementById('contact-appointments-body');
+  const countEl = document.getElementById('contact-appointments-count');
+
+  const { data, error } = await db.from('appointments')
+    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)')
+    .eq('contact_id', contactId);
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Termine';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Termine';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Termine mit diesem Kontakt. Klicke oben auf „+ Termin hinzufügen".</div></td></tr>';
+    return;
+  }
+
+  const anzGeplant       = all.filter(a => a.status === 'geplant').length;
+  const anzDurchgefuehrt = all.filter(a => a.status === 'durchgefuehrt').length;
+  countEl.textContent = `${total} Termin${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgeführt`;
+
+  // Sortierung: kommende aufsteigend, dann vergangene absteigend
+  const todayISO = toISODate(new Date());
+  const upcoming = all.filter(a => a.datum >= todayISO)
+    .sort((a, b) => a.datum === b.datum
+      ? (a.uhrzeit_von || '').localeCompare(b.uhrzeit_von || '')
+      : a.datum.localeCompare(b.datum));
+  const past = all.filter(a => a.datum < todayISO)
+    .sort((a, b) => a.datum === b.datum
+      ? (b.uhrzeit_von || '').localeCompare(a.uhrzeit_von || '')
+      : b.datum.localeCompare(a.datum));
+
+  const sorted = upcoming.concat(past);
+
+  tbody.innerHTML = sorted.map(a => {
+    const typFarbe = a.typ?.farbe || '#6b7280';
+    const typWert  = a.typ?.wert || '—';
+    const isPast = a.datum < todayISO;
+    const uhrzeit = a.uhrzeit_von
+      ? (a.uhrzeit_bis ? `${formatTime(a.uhrzeit_von)}–${formatTime(a.uhrzeit_bis)}` : formatTime(a.uhrzeit_von))
+      : '';
+
+    return `
+      <tr>
+        <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
+        <td>
+          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')">${esc(a.titel || '—')}</div>
+        </td>
+        <td class="col-tablet">
+          <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
+        </td>
+        <td>
+          <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
+        </td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function loadContactProjects(contactId) {
+  const tbody = document.getElementById('contact-projects-body');
+  const countEl = document.getElementById('contact-projects-count');
+
+  const { data, error } = await db.from('projects')
+    .select('*').eq('hauptkontakt_id', contactId)
+    .order('startdatum', { ascending: false, nullsFirst: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Projekte';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Projekte als Hauptkontakt';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Dieser Kontakt ist bisher bei keinem Projekt als Hauptkontakt hinterlegt.</div></td></tr>';
+    return;
+  }
+
+  const anzAktiv = all.filter(p => ['Lead', 'Angebot', 'In Arbeit'].includes(p.status)).length;
+  const anzAbgeschlossen = all.filter(p => p.status === 'Abgeschlossen').length;
+  countEl.textContent = `${total} Projekt${total === 1 ? '' : 'e'} · ${anzAktiv} aktiv · ${anzAbgeschlossen} abgeschlossen`;
+
+  // Sortierung wie Firmen-Detail: aktive zuerst
+  const sortPrio = { 'In Arbeit': 1, 'Angebot': 2, 'Lead': 3, 'Abgeschlossen': 4, 'Verloren': 5 };
+  const sorted = [...all].sort((a, b) => {
+    const pa = sortPrio[a.status] || 99;
+    const pb = sortPrio[b.status] || 99;
+    if (pa !== pb) return pa - pb;
+    return (b.startdatum || '').localeCompare(a.startdatum || '');
+  });
+
+  tbody.innerHTML = sorted.map(p => {
+    const statusColor = projektStatusFarbe(p.status);
+    return `
+      <tr>
+        <td>
+          <div class="cell-link" onclick="navigateTo('projekt', '${esc(p.id)}')">${esc(p.name)}</div>
+        </td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span></td>
+        <td class="col-tablet" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
+        <td class="col-tablet" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
+        <td class="col-desktop">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="navigateTo('projekt', '${esc(p.id)}')">Details</button>
+        </td>
+      </tr>`;
+  }).join('');
 }
 
 // ═══════════════════════════════════════════════════════════
