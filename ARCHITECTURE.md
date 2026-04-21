@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.9.0
+**Version:** 1.9.8
 **Stand:** 21. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -28,7 +28,10 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 | Einsatz  | Abrechenbare Leistung beim Kunden      | ja              |
 | Projekt  | Paket mehrerer Einsätze mit Festpreis  | ja (Paketpreis) |
 
-Bei Paket-Projekten zählt der **Projekt-Festpreis** als Kundenumsatz, die Einsatz-Preise sind intern (Aufwandsrechnung).
+**Umsatz-Logik:**
+- Bei **Einzel-Einsätzen** (kein Projekt): `menge × einzelpreis` = Kundenumsatz
+- Bei **Projekt-Einsätzen**: Einzel-Preise sind interner Wert (Aufwands-Tracking), Paketpreis = Kundenumsatz
+- **Leistungsumsatz** eines Projekts = Summe aller Einsatz-Werte (für Soll/Ist-Vergleich)
 
 ---
 
@@ -54,8 +57,8 @@ Das gesamte Frontend besteht aus drei Dateien im Repo-Root:
 ```
 cumart-consulting-crm/
 ├── index.html       ~1.7k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css         ~870 Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~4.3k Zeilen  (alle Module in einer Datei)
+├── styles.css         ~900 Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~4.6k Zeilen  (alle Module in einer Datei)
 └── .git/
 ```
 
@@ -131,7 +134,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | datum          | date         | NO       |                |                                    |
 | uhrzeit_von    | time         | YES      |                |                                    |
 | uhrzeit_bis    | time         | YES      |                |                                    |
-| status         | text         | NO       | 'geplant'      | CHECK: geplant, durchgefuehrt      |
+| status         | text         | NO       | 'geplant'      | Werte: 'geplant', 'durchgefuehrt' (Systemkonstanten, kein Lookup) |
 | typ_id         | uuid         | YES      |                | FK → lookup_values (termin_typ)    |
 | company_id     | uuid         | YES      |                | FK → companies                     |
 | contact_id     | uuid         | YES      |                | FK → contacts (ON DELETE SET NULL) |
@@ -150,7 +153,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 |---------------------|--------------|----------|--------------|------------------------------------|
 | id                  | uuid         | NO       | gen_random_uuid() | PK                            |
 | name                | text         | NO       |              | Paketname                          |
-| status              | text         | NO       | 'Angebot'    | CHECK: Lead, Angebot, In Arbeit, Abgeschlossen, Verloren |
+| status              | text         | NO       | 'Angebot'    | **Kein CHECK mehr** (seit v1.9.6), validiert über lookup_values (Kategorie `projekt_status`) |
 | company_id          | uuid         | YES      |              | NULL = internes Projekt            |
 | hauptkontakt_id     | uuid         | YES      |              | FK → contacts                      |
 | verantwortlicher_id | uuid         | YES      |              | FK → user_profiles                 |
@@ -164,17 +167,27 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 
 **Indizes:** status, company_id, verantwortlicher_id, startdatum
 
+**Projekt-Status-Werte (Lookup, Kategorie `projekt_status`):**
+- `Lead` — potentieller Interessent
+- `Angebot` — Paket-Angebot rausgegangen
+- `In Arbeit` — Kunde hat gebucht, Einsätze laufen
+- `Abschlussphase` — alle Einsätze durchgeführt, Termine stehen noch aus
+- `Abgeschlossen` — alle Einsätze + alle Termine durchgeführt
+- `Verloren` — Kunde hat nicht gebucht
+
+Die drei aktiven Status (`In Arbeit`, `Abschlussphase`, `Abgeschlossen`) werden automatisch gewechselt, siehe Abschnitt 8.4.
+
 ### 4.6 `deployments` (Einsätze)
 
 | Spalte            | Typ          | Nullable | Default   | Notes                              |
 |-------------------|--------------|----------|-----------|------------------------------------|
 | id                | uuid         | NO       | gen_random_uuid() | PK                         |
 | titel             | text         | NO       |           |                                    |
-| datum_von         | date         | NO       |           |                                    |
-| datum_bis         | date         | NO       |           | ≥ datum_von                        |
+| datum_von         | date         | **YES**  |           | **NULLable seit v1.9.3** (Vorausplanung ohne Datum) |
+| datum_bis         | date         | **YES**  |           | **NULLable seit v1.9.3**           |
 | uhrzeit_von       | time         | YES      |           |                                    |
 | uhrzeit_bis       | time         | YES      |           |                                    |
-| status            | text         | NO       | 'Geplant' | CHECK: Geplant, Durchgeführt, Abgerechnet, Storniert |
+| status            | text         | NO       | 'Geplant' | **Kein CHECK mehr** (seit v1.9.6), validiert über lookup_values (Kategorie `einsatz_status`) |
 | company_id        | uuid         | YES      |           | FK → companies (ON DELETE SET NULL) — pflicht im UI |
 | project_id        | uuid         | YES      |           | FK → projects (ON DELETE SET NULL) |
 | service_id        | uuid         | YES      |           | FK → services (ON DELETE SET NULL) |
@@ -187,7 +200,16 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | erstellt_von      | uuid         | YES      |           |                                    |
 | created_at        | timestamptz  | YES      | now()     |                                    |
 
+**Constraints:**
+- `deployments_datum_consistency`: Entweder beide Datumsfelder NULL (Ungeplant) oder beide gesetzt mit `datum_bis >= datum_von`
+
 **Indizes:** status, project_id, company_id, service_id, datum_von
+
+**Einsatz-Status-Werte (Lookup, Kategorie `einsatz_status`):**
+- `Geplant` — Einsatz angelegt, noch nicht durchgeführt
+- `Durchgeführt` — Einsatz hat stattgefunden
+- `Abgerechnet` — Rechnung gestellt (terminaler Status)
+- `Storniert` — Einsatz abgesagt
 
 ### 4.7 `deployment_technicians` (Junction-Tabelle)
 
@@ -224,12 +246,16 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | reihenfolge | integer     | Sortierung im Dropdown             |
 | ist_aktiv   | boolean     | Archiviert vs. aktiv               |
 
-**Kategorien:**
+**Kategorien (admin-verwaltbar über Stammdaten-UI):**
 - `unternehmens_typ` → Kunde / Interessent / Partner / Lieferant
 - `termin_typ` → Online / Vor Ort / Kickoff / Intern
-- `projekt_status` → Lead / Angebot / In Arbeit / Abgeschlossen / Verloren
+- `projekt_status` → Lead / Angebot / In Arbeit / Abschlussphase / Abgeschlossen / Verloren
 - `einsatz_status` → Geplant / Durchgeführt / Abgerechnet / Storniert
 - `leistungs_kategorie` → Training / Consulting / Online-Session / ...
+
+**Wichtige Design-Entscheidung (v1.9.6):** Die Status-Werte für Projekte und Einsätze sind **ausschließlich durch `lookup_values` definiert** — keine hardcoded DB-CHECK-Constraints mehr. Admin kann jederzeit neue Werte in den Stammdaten hinzufügen, die sofort im System verfügbar sind. Validierung läuft im Frontend gegen den Lookup-Cache.
+
+**Caveat:** Status-Werte mit Business-Logik-Bedeutung (z.B. `Abschlussphase`, `Abgeschlossen`) dürfen nicht umbenannt werden, da die Auto-Status-Logik (siehe 8.4) fest auf diese Werte referenziert. Deaktivieren via `ist_aktiv = false` ist aber OK.
 
 ### 4.10 `user_profiles` + `roles`
 
@@ -318,7 +344,6 @@ Hash-basiert in `handleHashChange()`. Hashes:
 | `#/kontakt/UUID`      | page-contact-detail    | `loadContactDetail(id)` |
 | `#/termine`           | page-appointments      | `loadAppointments()`    |
 | `#/termine?firma=ID`  | page-appointments      | mit Firma-Filter        |
-| `#/termine?projekt=ID`| page-appointments      | Reserviert (ungenutzt)  |
 | `#/projekte`          | page-projects          | `loadProjects()`        |
 | `#/projekt/UUID`      | page-project-detail    | `loadProjectDetail(id)` |
 | `#/einsaetze`         | page-deployments       | `loadDeployments()`     |
@@ -402,6 +427,22 @@ Caches werden lazy gefüllt und persistieren solange die Session läuft. Invalid
 
 Jedes Modal hat: `open<X>Modal(mode, id)`, `close<X>Modal()`, `save<X>()`, meist `delete<X>()`.
 
+### 7.7 Collapsible Modal-Gruppen (v1.9.1)
+
+Jedes Modal ist in Sektionen via `<div class="modal-group-title">` strukturiert. Klick auf einen Sektions-Titel togglet die Sichtbarkeit aller nachfolgenden Geschwister-Elemente bis zum nächsten `.modal-group-title`. Implementiert über Event-Delegation auf `document` — funktioniert automatisch in allen 9 Modals ohne zusätzliches Markup.
+
+Visuelles Feedback via CSS `::after`-Pseudoelement (Chevron dreht sich bei `.collapsed`).
+
+### 7.8 DOM-Update statt Page-Reload (v1.9.8)
+
+Für häufige Micro-Interaktionen (Checkbox-Toggle, Status-Badge-Wechsel) wird nicht die gesamte Detail-Seite neu geladen. Stattdessen:
+
+1. **Direktes DOM-Update** der betroffenen Zeile über `data-*-status`-Attribute
+2. **Count-Label-Neuberechnung** aus diesen Attributen (kein DB-Query)
+3. **Header-Status-Badge** nur aktualisiert bei tatsächlicher Status-Änderung (via `updateProjectHeaderStatusBadge`)
+
+Das ist die **Ausnahme** von der sonst simplen „Reload nach CRUD"-Strategie und kommt bei den Quick-Toggle-Funktionen in Projekt-Detail zum Einsatz (`toggleDeploymentDone`, `toggleAppointmentDone`).
+
 ---
 
 ## 8. Cross-Entity-Logik
@@ -425,13 +466,74 @@ Wenn aus einer Detailseite ein verwandtes Objekt angelegt wird, werden Felder vo
 
 `save<X>` und `delete<X>` prüfen, welche Detail-Page gerade aktiv ist, und refreshen nur die relevante Sektion — bleibt auf der Seite statt zur Liste zurückzuspringen.
 
-### 8.3 Termin-Einsatz-Kopplung
+### 8.3 Termin-Einsatz-Kopplung (v1.9.4 — Lösch-Semantik)
 
 `appointments.deployment_id` ist optional. Bei Einsatz-Anlage mit Checkbox „Auch als Termin eintragen":
-- **neu:** Termin wird angelegt mit Typ „Vor Ort", `deployment_id` gesetzt
-- **update + Checkbox an:** Bestehender gekoppelter Termin wird aktualisiert
-- **update + Checkbox aus:** Termin wird entkoppelt (`deployment_id = NULL`), nicht gelöscht
-- **Einsatz gelöscht:** Termin bleibt, `deployment_id` wird automatisch NULL (ON DELETE SET NULL)
+
+| Aktion                                  | Ergebnis                       |
+|-----------------------------------------|--------------------------------|
+| Checkbox an + kein Termin               | Termin wird angelegt           |
+| Checkbox an + Termin existiert          | Termin wird aktualisiert       |
+| Checkbox aus + Termin existiert         | Termin wird **gelöscht**       |
+| Checkbox aus + kein Termin              | nichts                         |
+| Datum wird entfernt + Termin existiert  | Termin wird **gelöscht**       |
+| Einsatz wird gelöscht                   | Gekoppelter Termin auch weg    |
+
+**Design-Entscheidung:** Ursprünglich war es „Entkoppeln statt Löschen", was zu Duplikaten führte (beim erneuten Anhaken wurde der entkoppelte Termin nicht mehr gefunden, neuer angelegt). Ab v1.9.4 ist die Semantik „Checkbox = Termin-Existenz", keine halben Sachen.
+
+### 8.4 Auto-Projekt-Status (v1.9.5)
+
+Nach jeder CRUD-Operation auf Einsätzen oder Terminen eines Projekts wird `checkAndUpdateProjectStatus(projectId)` ausgelöst:
+
+**Regeln:**
+- Projekt muss in einem „aktiven" Status sein (`In Arbeit`, `Abschlussphase`, `Abgeschlossen`) — sonst keine Automatik
+- Projekt muss mindestens 1 Einsatz haben — sonst keine Automatik
+- `Einsätze done` = alle Status in `['Durchgeführt', 'Abgerechnet']`
+- `Termine done` = alle Status in `['durchgefuehrt']`
+
+**State-Maschine:**
+
+| Einsätze done | Termine done     | Neuer Status     |
+|---------------|------------------|------------------|
+| ja            | ja               | `Abgeschlossen`  |
+| ja            | nein (oder leer) | `Abschlussphase` |
+| nein          | egal             | `In Arbeit`      |
+
+**Funktionsvarianten:**
+- `checkAndUpdateProjectStatus(projectId)` — wird nach Modal-CRUD aufgerufen, triggert anschließend Full Page-Reload via `loadProjectDetail`
+- `checkAndUpdateProjectStatusSmart(projectId)` — wird nach Quick-Toggle-Checkbox aufgerufen, updated nur das Header-Badge direkt im DOM via `updateProjectHeaderStatusBadge`
+
+### 8.5 Leistungsumsatz-Tracking (v1.9.5)
+
+Jedes Projekt hat **zwei Umsatz-Werte** im Header:
+- `Geschätzter Umsatz` — manuell gesetzt, der Paketpreis
+- `Leistungsumsatz (Einsätze)` — Summe aller Einsatz-Werte (`menge × einzelpreis`)
+
+Für Paket-Projekte (Festpreis) ist der Leistungsumsatz ein internes Tracking-Tool zur Soll-/Ist-Abschätzung: Weicht er vom geschätzten Umsatz ab, hast du mehr oder weniger Aufwand gemacht als kalkuliert.
+
+### 8.6 Einsätze ohne Datum (v1.9.3)
+
+Einsätze können ohne Datumsfelder angelegt werden — essentiell für Paket-Projekte, bei denen noch keine konkrete Terminierung feststeht (z.B. „8× 1h LifeCall" mit noch offenen Terminen).
+
+**Regeln:**
+- `datum_von` und `datum_bis` sind beide nullable
+- DB-Constraint `deployments_datum_consistency` stellt sicher: Entweder beide NULL oder beide gesetzt mit `bis ≥ von`
+- Uhrzeit ohne Datum nicht möglich (Frontend-Validierung)
+- Termin-Kopplung ohne Datum nicht möglich (Termine brauchen Datum)
+
+**Anzeige:**
+- Datum-Spalte zeigt graues „Ungeplant"-Badge statt Datum
+- Filter-Option „Nur Ungeplante" in Einsätze-Hauptliste
+- Sortierung: datierte chronologisch zuerst, Ungeplante am Ende
+
+### 8.7 Einsatz/Termin-Quick-Toggle (v1.9.5 + v1.9.7)
+
+Auf der Projekt-Detailseite hat sowohl die Einsatz- als auch die Termin-Tabelle eine Check-Spalte ganz links. Klick togglet zwischen:
+
+- **Einsatz:** `Geplant` ↔ `Durchgeführt` (Abgerechnet/Storniert sind locked)
+- **Termin:** `geplant` ↔ `durchgefuehrt`
+
+Nach jedem Toggle wird sofort die Auto-Status-Logik des Projekts ausgelöst — ohne Page-Reload (siehe 7.8).
 
 ---
 
@@ -443,6 +545,12 @@ Wenn aus einer Detailseite ein verwandtes Objekt angelegt wird, werden Felder vo
 | PLZ       | `inputmode="numeric"`, `maxlength="10"`           | `sanitizeNumericInput()`     |
 | E-Mail    | `type="email"`, `autocapitalize="none"`, `autocorrect="off"`, `spellcheck="false"` | `sanitizeEmailOnBlur()` (Trim) |
 | Preis     | `type="number"`, `min="0"`, `step="0.01"`         | Native + Custom NaN-Check    |
+
+**Status-Validierung (v1.9.6):** Dynamisch gegen den jeweiligen Lookup-Cache statt hardcoded Whitelist:
+```js
+const validStatuses = projektStatusCache.map(s => s.wert);
+if (!validStatuses.includes(status)) { ... }
+```
 
 ---
 
@@ -474,6 +582,7 @@ Wenn aus einer Detailseite ein verwandtes Objekt angelegt wird, werden Felder vo
 - **Toasts:** 3 Sekunden Anzeige, Erfolg oder Fehler (`showToast(msg, isError)`)
 - **Modals:** Werden mit `openModal` sofort angezeigt; Daten werden ggf. async nachgeladen während das Modal schon offen ist
 - **Admin-Only UI:** `data-admin-only="true"` + `applyAdminOnlyUI()`
+- **Keine Emojis** in UI-Texten (User-Präferenz)
 
 ### 11.3 Farbsystem
 
@@ -510,7 +619,15 @@ Status-Farben werden aus `lookup_values.farbe` gelesen → per JS in Badge-Style
 | v1.7.0  | Apr 2026    | Phase 3b: Projekte (Liste, Detail, Termin-Zuordnung)               |
 | v1.7.1  | Apr 2026    | iOS-Clipboard-Fix, Input-Validierung, Mobile-Layout-Fix            |
 | v1.8.0  | Apr 2026    | Kontakt-Detailseite mit Terminen und Projekten                     |
-| **v1.9.0** | **21.04.2026** | **Phase 3c: Einsätze (Modal, Techniker, Termin-Kopplung)**  |
+| v1.9.0  | Apr 2026    | Phase 3c: Einsätze (Modal, Techniker, Termin-Kopplung)             |
+| v1.9.1  | Apr 2026    | Preis-Visibility, Projekt-Einsatz-Refresh, Firmen-Plural, Collapsible Modals |
+| v1.9.2  | Apr 2026    | Einsatz-Wert sichtbar bei Projekten, Spalte 'Wert' auf Projekt-Detail |
+| v1.9.3  | Apr 2026    | Einsätze ohne Datum (Schema: datum_von/bis nullable)               |
+| v1.9.4  | Apr 2026    | Termin-Duplikat-Bug gefixt (Lösch-Semantik statt Entkopplung)      |
+| v1.9.5  | Apr 2026    | Einsatz-Abhaken-Checkbox, Auto-Projekt-Status, Leistungsumsatz     |
+| v1.9.6  | Apr 2026    | Dynamische Status-Validierung gegen Lookup (CHECK-Constraints entfernt) |
+| v1.9.7  | Apr 2026    | Termin-Abhaken-Checkbox in Projekten                               |
+| **v1.9.8** | **21.04.2026** | **Flüssiges DOM-Update bei Checkbox-Toggle (kein Page-Reload)**|
 
 ---
 
@@ -535,6 +652,7 @@ Status-Farben werden aus `lookup_values.farbe` gelesen → per JS in Badge-Style
 | Export                     | CSV/Excel für Firmen, Kontakte, Termine, Einsätze      |
 | Multi-Leistungen pro Einsatz | Sub-Positionen (statt 1:1 service_id)                |
 | Kalender-View              | Monat/Woche-Ansicht für Termine zusätzlich zur Liste   |
+| Einsätze-Check-Spalte      | Auch in Hauptliste und Firma-Detail (aktuell nur Projekt-Detail) |
 
 ### 13.3 Niedrig — Komfort
 
@@ -560,7 +678,7 @@ Status-Farben werden aus `lookup_values.farbe` gelesen → per JS in Badge-Style
 
 1. Dateien in `index.html`, `styles.css`, `app.js` editieren
 2. Via GitHub Web-UI: „Add file" → „Upload files" → Drop → „Replace existing"
-3. Commit-Message mit Version-Tag (z.B. „v1.9.0: Einsätze")
+3. Commit-Message mit Version-Tag (z.B. „v1.9.8: ...")
 4. Vercel deployed automatisch aus `main` (30–60s)
 5. Hard-Reload im Browser (Cmd+Shift+R)
 6. Bei erfolgreichem Test: GitHub-Release mit Tag erstellen
@@ -582,17 +700,33 @@ Der Anon-Key ist **bewusst hardcoded** — ist nach Design öffentlich, RLS sch�
 | Selcuk Cumart | selcuk@cumart.tech    | Admin    | aktiv        |
 | Yasin Satici  | yasin@fiveax.com      | Vertrieb | eingeladen/aktiv |
 
+### 14.4 Schema-Migrationen (kritisch)
+
+Folgende Migrationen wurden seit v1.0 ausgeführt. Bei einem hypothetischen DB-Rebuild müssen sie in dieser Reihenfolge ausgeführt werden:
+
+1. **Initial Schema** (v1.0)
+2. **RLS-Hardening** (v1.1): Open Policies entfernt
+3. **User-Status-Konsolidierung** (v1.2)
+4. **Phase 3a Termine-Tabelle** (v1.6)
+5. **Phase 3b Projekte-Tabelle** (v1.7)
+6. **Phase 3c Deployments + Junction** (v1.9.0)
+7. **v1.9.3:** `ALTER TABLE deployments ALTER COLUMN datum_von DROP NOT NULL;` + `datum_bis` dito + Konsistenz-CHECK `deployments_datum_consistency`
+8. **v1.9.6:** `ALTER TABLE projects DROP CONSTRAINT projects_status_check;` + `ALTER TABLE deployments DROP CONSTRAINT deployments_status_check;`
+9. **Lookup-Eintrag:** `Abschlussphase` in `lookup_values` (Kategorie `projekt_status`)
+
 ---
 
 ## 15. Entwicklungs-Philosophie
 
-1. **Schema-First**: Schema-Änderungen über Migration im SQL-Editor, dann Frontend nachziehen
-2. **Ein Feature pro Version**: Kleine, testbare Releases
-3. **Cache-First**: Teure Queries (Listen mit Joins) werden gecached, nur bei CRUD invalidiert
-4. **Sync-Ready auf Mobile**: Clipboard, Input-Modes und Layout iOS-getestet
-5. **Pragmatisch > elegant**: Keine Framework-Overengineering, keine Build-Pipeline
-6. **Fachliche Trennung**: Termin (Aufwand) vs. Einsatz (Umsatz) vs. Projekt (Paket) — saubere Semantik ist wichtiger als Entitäten-Sparsamkeit
+1. **Schema-First:** Schema-Änderungen über Migration im SQL-Editor, dann Frontend nachziehen
+2. **Ein Feature pro Version:** Kleine, testbare Releases
+3. **Cache-First:** Teure Queries (Listen mit Joins) werden gecached, nur bei CRUD invalidiert
+4. **Sync-Ready auf Mobile:** Clipboard, Input-Modes und Layout iOS-getestet
+5. **Pragmatisch > elegant:** Keine Framework-Overengineering, keine Build-Pipeline
+6. **Fachliche Trennung:** Termin (Aufwand) vs. Einsatz (Umsatz) vs. Projekt (Paket) — saubere Semantik ist wichtiger als Entitäten-Sparsamkeit
+7. **Stammdaten > Code:** Admin-veränderliche Werte (Status, Typen) kommen aus `lookup_values`, nicht aus CHECK-Constraints
+8. **DOM-Update > Page-Reload:** Für häufige Micro-Interaktionen gezielt Elemente aktualisieren statt ganze Seiten neu rendern
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.9.0*
+*Ende der Dokumentation · Cumart CRM v1.9.8*
