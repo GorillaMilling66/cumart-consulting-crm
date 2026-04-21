@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.5.3 (Firmen-Detailseite + Kopier-Buttons)
+   Version 1.6.0 (Termine – Phase 3a Stufe 1)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -13,7 +13,7 @@ const FUNCTIONS_URL       = SUPABASE_URL + '/functions/v1';
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Kleines SVG-Copy-Icon (als String, damit wir es mehrfach einbauen können)
+// SVG-Copy-Icon als String-Konstante
 const COPY_ICON_SVG = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -30,13 +30,20 @@ let editingServiceId   = null;
 let editingLookupId    = null;
 let editingCompanyId   = null;
 let editingContactId   = null;
+let editingAppointmentId = null;
 let inPasswordRecovery = false;
 
 let currentCompanyDetailId = null;
 let contactModalPrefillCompanyId = null;
 
-let companiesCache = [];
-let contactsCache  = [];
+let companiesCache   = [];
+let contactsCache    = [];
+let appointmentsCache = [];
+let terminTypenCache = []; // Lookup-Values für termin_typ
+
+// Für Auto-Fill-Logik: speichert die zuletzt auto-ausgefüllte Adresse,
+// damit wir erkennen, ob das Feld manuell bearbeitet wurde
+let lastAutoFilledOrt = '';
 
 // ── HILFSFUNKTIONEN ──────────────────────────────────────────
 function ini(name) {
@@ -74,11 +81,7 @@ function showToast(msg, isError = false) {
   setTimeout(() => t.className = 'toast', 3000);
 }
 
-/**
- * Hilfsfunktion: Text in die Zwischenablage kopieren.
- * Nutzt die moderne Clipboard-API mit Fallback auf textarea+execCommand für
- * ältere Browser und bestimmte iOS-Kontexte.
- */
+/** Copy-to-clipboard mit Fallback für Nicht-Secure-Contexts */
 async function copyToClipboard(text, toastMsg = 'In Zwischenablage kopiert.') {
   try {
     if (navigator.clipboard && window.isSecureContext) {
@@ -86,7 +89,6 @@ async function copyToClipboard(text, toastMsg = 'In Zwischenablage kopiert.') {
       showToast(toastMsg);
       return true;
     }
-    // Fallback
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -104,60 +106,31 @@ async function copyToClipboard(text, toastMsg = 'In Zwischenablage kopiert.') {
   }
 }
 
-/**
- * Formatiert einen Firmen-Block als Plaintext für die Zwischenablage.
- * Leerzeilen trennen Firma+Adresse von Kontakten.
- * Leere Felder werden weggelassen (keine leeren Zeilen).
- *
- * Format:
- *   Müller Maschinenbau GmbH
- *   Hauptstraße 42
- *   71034 Böblingen
- *
- *   Thomas Müller
- *   Anna Schmidt
- */
+/** Formatiert Firma als Plaintext-Block für Zwischenablage */
 function formatCompanyBlock(company, contacts = []) {
   const lines = [];
-
   if (company.name) lines.push(company.name);
   if (company.strasse) lines.push(company.strasse);
   const ort = [company.plz, company.stadt].filter(Boolean).join(' ').trim();
   if (ort) lines.push(ort);
 
-  // Kontakte (nur Vor- und Nachname), getrennt durch eine Leerzeile
   const kontaktNamen = (contacts || [])
     .map(k => [k.vorname, k.nachname].filter(Boolean).join(' ').trim())
     .filter(Boolean);
-
   if (kontaktNamen.length > 0) {
-    lines.push(''); // Leerzeile
+    lines.push('');
     lines.push(...kontaktNamen);
   }
-
   return lines.join('\n');
 }
 
-/**
- * Formatiert einen Kontakt-Block als Plaintext für die Zwischenablage.
- * Leere Felder werden weggelassen.
- *
- * Format:
- *   Thomas Müller
- *   t.mueller@firma.de
- *   +49 7031 12345
- *   Müller Maschinenbau GmbH
- *   Hauptstraße 42
- *   71034 Böblingen
- */
+/** Formatiert Kontakt als Plaintext-Block */
 function formatContactBlock(contact) {
   const lines = [];
-
   const fullName = [contact.vorname, contact.nachname].filter(Boolean).join(' ').trim();
   if (fullName) lines.push(fullName);
   if (contact.email) lines.push(contact.email);
   if (contact.telefon) lines.push(contact.telefon);
-
   const company = contact.company;
   if (company) {
     if (company.name) lines.push(company.name);
@@ -165,57 +138,80 @@ function formatContactBlock(contact) {
     const ort = [company.plz, company.stadt].filter(Boolean).join(' ').trim();
     if (ort) lines.push(ort);
   }
-
   return lines.join('\n');
 }
 
-/**
- * Kopiert eine Firma (per ID) als Block in die Zwischenablage.
- * Nutzt den companiesCache, falls vorhanden, und lädt Kontakte direkt aus der DB.
- * Die Funktion wird aus onclick-Handlern in der Liste + Detailseite aufgerufen.
- */
 async function copyCompanyById(companyId) {
   let company = companiesCache.find(c => c.id === companyId);
-
   if (!company) {
     const { data, error } = await db.from('companies').select('*').eq('id', companyId).single();
     if (error || !data) { showToast('Firma nicht gefunden.', true); return; }
     company = data;
   }
-
-  // Kontakte separat laden (Cache vom Firmen-Load hat sie nicht immer)
   const { data: contacts, error: contactsErr } = await db
-    .from('contacts')
-    .select('vorname, nachname')
-    .eq('company_id', companyId)
-    .order('nachname');
-
+    .from('contacts').select('vorname, nachname')
+    .eq('company_id', companyId).order('nachname');
   if (contactsErr) { showToast('Kontakte konnten nicht geladen werden: ' + contactsErr.message, true); return; }
-
   const text = formatCompanyBlock(company, contacts || []);
   await copyToClipboard(text, 'Firmendaten kopiert.');
 }
 
-/**
- * Kopiert einen Kontakt (per ID) als Block in die Zwischenablage.
- * Nutzt den contactsCache, falls vorhanden, sonst DB-Fallback.
- */
 async function copyContactById(contactId) {
   let contact = contactsCache.find(k => k.id === contactId);
-
   if (!contact) {
-    const { data, error } = await db
-      .from('contacts')
+    const { data, error } = await db.from('contacts')
       .select('*, company:companies(name, strasse, plz, stadt)')
-      .eq('id', contactId)
-      .single();
+      .eq('id', contactId).single();
     if (error || !data) { showToast('Kontakt nicht gefunden.', true); return; }
     contact = data;
   }
-
   const text = formatContactBlock(contact);
   await copyToClipboard(text, 'Kontakt kopiert.');
 }
+
+// ═══════════════════════════════════════════════════════════
+//  DATUM/ZEIT-HILFSFUNKTIONEN (für Termine-Filter/Anzeige)
+// ═══════════════════════════════════════════════════════════
+
+/** "2026-04-21" → Date-Objekt lokal (nicht UTC) */
+function parseLocalDate(isoDateStr) {
+  const [y, m, d] = isoDateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Date → "YYYY-MM-DD" für HTML-date-Inputs */
+function toISODate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** "2026-04-21" → "Di, 21.04.2026" */
+function formatDateDE(isoDateStr) {
+  if (!isoDateStr) return '—';
+  try {
+    const d = parseLocalDate(isoDateStr);
+    const wd = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()];
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${wd}, ${day}.${month}.${year}`;
+  } catch {
+    return isoDateStr;
+  }
+}
+
+/** "14:30:00" → "14:30" */
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  return timeStr.substring(0, 5);
+}
+
+/** Termin-Status-Badge-Farben */
+function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fdf4'; }
+function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
+function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
 
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -232,6 +228,7 @@ function showPage(name) {
   if (name === 'lookups') loadLookupsPage();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
+  if (name === 'appointments') loadAppointments();
 }
 
 function setMobileNav(pageName) {
@@ -241,6 +238,8 @@ function setMobileNav(pageName) {
     document.getElementById('m-nav-companies')?.classList.add('active');
   } else if (pageName === 'contacts') {
     document.getElementById('m-nav-contacts')?.classList.add('active');
+  } else if (pageName === 'appointments') {
+    document.getElementById('m-nav-appointments')?.classList.add('active');
   } else {
     document.getElementById('m-nav-more')?.classList.add('active');
   }
@@ -265,6 +264,7 @@ function navigateTo(page, param) {
     page === 'firma' && param ? `#/firma/${param}` :
     page === 'companies'      ? '#/firmen' :
     page === 'contacts'       ? '#/kontakte' :
+    page === 'appointments'   ? '#/termine' :
     page === 'users'          ? '#/benutzer' :
     page === 'services'       ? '#/leistungen' :
     page === 'lookups'        ? '#/stammdaten' :
@@ -285,6 +285,7 @@ function handleHashChange() {
 
   if (hash === '#/firmen' || hash === '' || hash === '#') { showPage('companies'); return; }
   if (hash === '#/kontakte')   { showPage('contacts'); return; }
+  if (hash === '#/termine')    { showPage('appointments'); return; }
   if (hash === '#/benutzer')   { showPage('users'); return; }
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
@@ -322,14 +323,9 @@ async function initAuth() {
 
   try {
     const { data: { session } } = await db.auth.getSession();
-    if (session) {
-      await onLogin(session.user);
-    } else {
-      showLoginScreen();
-    }
-  } catch (e) {
-    showLoginScreen();
-  }
+    if (session) await onLogin(session.user);
+    else showLoginScreen();
+  } catch (e) { showLoginScreen(); }
 
   db.auth.onAuthStateChange(async (event, session) => {
     if (inPasswordRecovery) return;
@@ -353,8 +349,7 @@ async function onLogin(user) {
   const { data: profile, error: profileError } = await db
     .from('user_profiles')
     .select('*, roles(id, name, rechte)')
-    .eq('id', user.id)
-    .single();
+    .eq('id', user.id).single();
 
   if (profileError || !profile) {
     await db.auth.signOut();
@@ -489,7 +484,6 @@ async function doReset() {
   else { sucEl.style.display = 'block'; }
 }
 
-// ── PASSWORT-ÄNDERN-PFLICHT ──────────────────────────────────
 async function doMustChangePassword() {
   const pw1 = document.getElementById('mustchange-1').value;
   const pw2 = document.getElementById('mustchange-2').value;
@@ -509,16 +503,13 @@ async function doMustChangePassword() {
     if (pwError) throw new Error(pwError.message);
 
     const { error: flagError } = await db
-      .from('user_profiles')
-      .update({ muss_passwort_aendern: false })
+      .from('user_profiles').update({ muss_passwort_aendern: false })
       .eq('id', currentUser.id);
     if (flagError) throw new Error(flagError.message);
 
     const { data: profile, error: profileError } = await db
-      .from('user_profiles')
-      .select('*, roles(id, name, rechte)')
-      .eq('id', currentUser.id)
-      .single();
+      .from('user_profiles').select('*, roles(id, name, rechte)')
+      .eq('id', currentUser.id).single();
     if (profileError || !profile) throw new Error('Profil konnte nicht geladen werden.');
 
     currentProfile = profile;
@@ -541,7 +532,6 @@ async function doMustChangePassword() {
   }
 }
 
-// ── PASSWORT-RECOVERY ────────────────────────────────────────
 async function doRecoveryPassword() {
   const pw1 = document.getElementById('recovery-1').value;
   const pw2 = document.getElementById('recovery-2').value;
@@ -795,15 +785,13 @@ function closeCredentialsModal() {
 }
 
 async function copyCredential(elementId) {
-  const text = document.getElementById(elementId).textContent;
-  await copyToClipboard(text);
+  await copyToClipboard(document.getElementById(elementId).textContent);
 }
 
 async function copyBothCredentials() {
   const email = document.getElementById('cred-email').textContent;
   const password = document.getElementById('cred-password').textContent;
-  const text = `E-Mail: ${email}\nPasswort: ${password}`;
-  await copyToClipboard(text, 'Zugangsdaten in Zwischenablage kopiert.');
+  await copyToClipboard(`E-Mail: ${email}\nPasswort: ${password}`, 'Zugangsdaten in Zwischenablage kopiert.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -811,12 +799,8 @@ async function copyBothCredentials() {
 // ═══════════════════════════════════════════════════════════
 
 async function loadLeistungsKategorien() {
-  const { data, error } = await db
-    .from('lookup_values')
-    .select('id, wert, farbe')
-    .eq('kategorie', 'leistungs_kategorie')
-    .eq('ist_aktiv', true)
-    .order('reihenfolge');
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe').eq('kategorie', 'leistungs_kategorie').eq('ist_aktiv', true).order('reihenfolge');
   if (error) { showToast('Fehler beim Laden der Kategorien: ' + error.message, true); return []; }
   return data || [];
 }
@@ -825,10 +809,8 @@ async function loadServices() {
   const tbody = document.getElementById('services-table-body');
   tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade ...</div></td></tr>';
 
-  const { data, error } = await db
-    .from('services')
-    .select('*, kategorie:lookup_values!services_kategorie_id_fkey(id, wert, farbe)')
-    .order('name');
+  const { data, error } = await db.from('services')
+    .select('*, kategorie:lookup_values!services_kategorie_id_fkey(id, wert, farbe)').order('name');
 
   if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
   if (!data || data.length === 0) {
@@ -1145,12 +1127,8 @@ async function deleteLookup() {
 // ═══════════════════════════════════════════════════════════
 
 async function loadUnternehmensTypen() {
-  const { data, error } = await db
-    .from('lookup_values')
-    .select('id, wert, farbe')
-    .eq('kategorie', 'unternehmens_typ')
-    .eq('ist_aktiv', true)
-    .order('reihenfolge');
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe').eq('kategorie', 'unternehmens_typ').eq('ist_aktiv', true).order('reihenfolge');
   if (error) { showToast('Fehler beim Laden der Firmentypen: ' + error.message, true); return []; }
   return data || [];
 }
@@ -1166,10 +1144,8 @@ async function loadCompanies() {
       + typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
 
-  const { data, error } = await db
-    .from('companies')
-    .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
-    .order('name');
+  const { data, error } = await db.from('companies')
+    .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').order('name');
 
   if (error) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
@@ -1310,7 +1286,6 @@ async function saveCompany() {
 
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
   if (!typ_id) { showToast('Bitte Typ auswählen.', true); return; }
-
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     showToast('E-Mail-Adresse sieht nicht korrekt aus.', true);
     return;
@@ -1322,15 +1297,10 @@ async function saveCompany() {
   try {
     const payload = {
       name, typ_id,
-      branche:  branche  || null,
-      strasse:  strasse  || null,
-      plz:      plz      || null,
-      stadt:    stadt    || null,
-      land:     land     || 'Deutschland',
-      telefon:  telefon  || null,
-      email:    email    || null,
-      website:  website  || null,
-      notizen:  notizen  || null
+      branche: branche || null, strasse: strasse || null, plz: plz || null,
+      stadt: stadt || null, land: land || 'Deutschland',
+      telefon: telefon || null, email: email || null,
+      website: website || null, notizen: notizen || null
     };
     if (!editingCompanyId) payload.erstellt_von = currentUser?.id || null;
 
@@ -1412,11 +1382,9 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-contacts-body').innerHTML =
     '<tr><td colspan="5"><div class="empty">Lade Kontakte ...</div></td></tr>';
 
-  const { data: company, error } = await db
-    .from('companies')
+  const { data: company, error } = await db.from('companies')
     .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
-    .eq('id', companyId)
-    .single();
+    .eq('id', companyId).single();
 
   if (error || !company) {
     document.getElementById('company-detail-name').textContent = 'Firma nicht gefunden';
@@ -1451,12 +1419,10 @@ function renderCompanyDetail(c) {
   if (c.branche) subline += `<span>${esc(c.branche)}</span>`;
   document.getElementById('company-detail-subline').innerHTML = subline;
 
-  // Kopier-Button auf Detailseite
   const copyBtn = document.getElementById('company-detail-copy-btn');
   copyBtn.style.display = '';
   copyBtn.onclick = () => copyCompanyById(c.id);
 
-  // Bearbeiten-Button
   document.getElementById('company-detail-edit-btn').textContent = 'Bearbeiten';
   document.getElementById('company-detail-edit-btn').onclick = () => openCompanyModal('edit', c.id);
 
@@ -1465,18 +1431,14 @@ function renderCompanyDetail(c) {
   const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
   if (ort) adresseZeilen.push(esc(ort));
   if (c.land && c.land !== 'Deutschland') adresseZeilen.push(esc(c.land));
-  const adresseHtml = adresseZeilen.length
-    ? adresseZeilen.join('<br>')
-    : '<span class="detail-value-muted">—</span>';
+  const adresseHtml = adresseZeilen.length ? adresseZeilen.join('<br>') : '<span class="detail-value-muted">—</span>';
 
   const telefonHtml = c.telefon
     ? `<a href="tel:${esc(c.telefon)}">${esc(c.telefon)}</a>`
     : '<span class="detail-value-muted">—</span>';
-
   const emailHtml = c.email
     ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`
     : '<span class="detail-value-muted">—</span>';
-
   const websiteHtml = c.website
     ? `<a href="${esc(c.website.startsWith('http') ? c.website : 'https://' + c.website)}" target="_blank" rel="noopener">${esc(c.website)}</a>`
     : '<span class="detail-value-muted">—</span>';
@@ -1529,11 +1491,7 @@ async function loadCompanyContacts(companyId) {
   const tbody = document.getElementById('company-contacts-body');
   const countEl = document.getElementById('company-contacts-count');
 
-  const { data, error } = await db
-    .from('contacts')
-    .select('*')
-    .eq('company_id', companyId)
-    .order('nachname');
+  const { data, error } = await db.from('contacts').select('*').eq('company_id', companyId).order('nachname');
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -1591,12 +1549,8 @@ async function loadContacts() {
       + companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
   }
 
-  // Wichtig: company-Join holt jetzt alle Adressfelder mit, damit das
-  // Kopieren aus der Liste komplette Infos enthält ohne zusätzlichen Request
-  const { data, error } = await db
-    .from('contacts')
-    .select('*, company:companies(id, name, strasse, plz, stadt)')
-    .order('nachname');
+  const { data, error } = await db.from('contacts')
+    .select('*, company:companies(id, name, strasse, plz, stadt)').order('nachname');
 
   if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
@@ -1609,7 +1563,6 @@ function filterContacts() {
   const companyFilter = document.getElementById('contacts-company-filter').value;
 
   let filtered = contactsCache;
-
   if (companyFilter === '__none__') {
     filtered = filtered.filter(k => !k.company_id);
   } else if (companyFilter) {
@@ -1618,9 +1571,8 @@ function filterContacts() {
 
   if (searchTerm) {
     filtered = filtered.filter(k => {
-      const haystack = [
-        k.vorname, k.nachname, k.email, k.telefon, k.position, k.company?.name
-      ].filter(Boolean).join(' ').toLowerCase();
+      const haystack = [k.vorname, k.nachname, k.email, k.telefon, k.position, k.company?.name]
+        .filter(Boolean).join(' ').toLowerCase();
       return haystack.includes(searchTerm);
     });
   }
@@ -1742,7 +1694,6 @@ async function saveContact() {
 
   if (!vorname) { showToast('Bitte Vorname eingeben.', true); return; }
   if (!nachname) { showToast('Bitte Nachname eingeben.', true); return; }
-
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     showToast('E-Mail-Adresse sieht nicht korrekt aus.', true);
     return;
@@ -1753,13 +1704,9 @@ async function saveContact() {
 
   try {
     const payload = {
-      vorname,
-      nachname,
-      position:   position   || null,
-      company_id: company_id || null,
-      telefon:    telefon    || null,
-      email:      email      || null,
-      notizen:    notizen    || null
+      vorname, nachname,
+      position: position || null, company_id: company_id || null,
+      telefon: telefon || null, email: email || null, notizen: notizen || null
     };
     if (!editingContactId) payload.erstellt_von = currentUser?.id || null;
 
@@ -1816,7 +1763,476 @@ async function deleteContact() {
   }
 }
 
-// ── START ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+//  TERMINE (APPOINTMENTS)
+// ═══════════════════════════════════════════════════════════
+
+/** Lädt die 4 Termin-Typen aus lookup_values in den Cache */
+async function loadTerminTypen() {
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe')
+    .eq('kategorie', 'termin_typ').eq('ist_aktiv', true)
+    .order('reihenfolge');
+  if (error) { showToast('Fehler beim Laden der Termintypen: ' + error.message, true); return []; }
+  terminTypenCache = data || [];
+  return terminTypenCache;
+}
+
+async function loadAppointments() {
+  const tbody = document.getElementById('appointments-table-body');
+  tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Lade Termine ...</div></td></tr>';
+
+  // Termin-Typen und Filter-Dropdown initialisieren (einmalig)
+  if (terminTypenCache.length === 0) await loadTerminTypen();
+  const typFilter = document.getElementById('appointments-typ-filter');
+  if (typFilter.options.length <= 1) {
+    typFilter.innerHTML = '<option value="">Alle Typen</option>'
+      + terminTypenCache.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
+  }
+
+  // Companies-Cache ggf. befüllen (für Firmenname in Liste)
+  if (companiesCache.length === 0) {
+    const { data: c } = await db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').order('name');
+    companiesCache = c || [];
+  }
+
+  const { data, error } = await db.from('appointments')
+    .select(`*,
+      typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe),
+      company:companies(id, name, strasse, plz, stadt),
+      contact:contacts(id, vorname, nachname, company_id)`)
+    .order('datum', { ascending: false })
+    .order('uhrzeit_von', { ascending: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+
+  appointmentsCache = data || [];
+  filterAppointments();
+}
+
+function filterAppointments() {
+  const searchTerm   = document.getElementById('appointments-search').value.trim().toLowerCase();
+  const rangeFilter  = document.getElementById('appointments-range-filter').value;
+  const statusFilter = document.getElementById('appointments-status-filter').value;
+  const typFilter    = document.getElementById('appointments-typ-filter').value;
+
+  // Zeitbezogene Filter basierend auf today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayISO = toISODate(today);
+
+  let filtered = appointmentsCache;
+
+  // Range-Filter
+  if (rangeFilter === 'upcoming') {
+    filtered = filtered.filter(a => a.datum >= todayISO);
+  } else if (rangeFilter === 'today') {
+    filtered = filtered.filter(a => a.datum === todayISO);
+  } else if (rangeFilter === 'week') {
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekEndISO = toISODate(weekEnd);
+    filtered = filtered.filter(a => a.datum >= todayISO && a.datum <= weekEndISO);
+  } else if (rangeFilter === 'month') {
+    const monthEnd = new Date(today);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+    const monthEndISO = toISODate(monthEnd);
+    filtered = filtered.filter(a => a.datum >= todayISO && a.datum <= monthEndISO);
+  } else if (rangeFilter === 'past') {
+    filtered = filtered.filter(a => a.datum < todayISO);
+  }
+  // 'all' → kein Filter
+
+  // Status-Filter
+  if (statusFilter) filtered = filtered.filter(a => a.status === statusFilter);
+
+  // Typ-Filter
+  if (typFilter) filtered = filtered.filter(a => a.typ_id === typFilter);
+
+  // Such-Filter
+  if (searchTerm) {
+    filtered = filtered.filter(a => {
+      const haystack = [
+        a.titel,
+        a.ort,
+        a.notizen,
+        a.company?.name,
+        a.contact ? [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ') : ''
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }
+
+  // Sortierung nach Range:
+  // - 'upcoming', 'today', 'week', 'month': aufsteigend (früheste zuerst)
+  // - 'past', 'all': absteigend (neueste zuerst) — bereits in loadAppointments so
+  if (['upcoming', 'today', 'week', 'month'].includes(rangeFilter)) {
+    filtered = [...filtered].sort((a, b) => {
+      if (a.datum !== b.datum) return a.datum.localeCompare(b.datum);
+      return (a.uhrzeit_von || '').localeCompare(b.uhrzeit_von || '');
+    });
+  }
+
+  renderAppointmentsTable(filtered);
+}
+
+function renderAppointmentsTable(appointments) {
+  const tbody = document.getElementById('appointments-table-body');
+  const countEl = document.getElementById('appointments-count');
+
+  const total = appointmentsCache.length;
+  const shown = appointments.length;
+  countEl.textContent = (shown === total)
+    ? `${total} Termin${total === 1 ? '' : 'e'}`
+    : `${shown} von ${total} Terminen`;
+
+  if (shown === 0) {
+    const msg = total === 0
+      ? 'Noch keine Termine angelegt. Klicke oben auf „+ Neuer Termin".'
+      : 'Keine Termine entsprechen den Filterkriterien.';
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  const todayISO = toISODate(new Date());
+
+  tbody.innerHTML = appointments.map(a => {
+    const isPast = a.datum < todayISO;
+    const typFarbe = a.typ?.farbe || '#6b7280';
+    const typWert  = a.typ?.wert || '—';
+    const uhrzeit = a.uhrzeit_von
+      ? (a.uhrzeit_bis ? `${formatTime(a.uhrzeit_von)}–${formatTime(a.uhrzeit_bis)}` : formatTime(a.uhrzeit_von))
+      : '—';
+    const firma = a.company?.name
+      ? `<span class="cell-link" onclick="navigateTo('firma', '${esc(a.company.id)}')">${esc(a.company.name)}</span>`
+      : '<span style="color:var(--muted);font-style:italic">—</span>';
+
+    return `
+      <tr>
+        <td>
+          <div class="date-cell ${isPast ? 'past' : ''}">${esc(formatDateDE(a.datum))}</div>
+        </td>
+        <td class="col-tablet" style="color:var(--muted);white-space:nowrap">${esc(uhrzeit)}</td>
+        <td>
+          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')" style="font-weight:500">${esc(a.titel)}</div>
+          ${a.notizen ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.notizen)}</div>` : ''}
+        </td>
+        <td class="col-tablet">
+          <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
+        </td>
+        <td class="col-desktop">${firma}</td>
+        <td class="col-desktop" style="color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.ort || '')}">${esc(a.ort || '—')}</td>
+        <td>
+          <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
+        </td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function openAppointmentModal(mode, appointmentId = null) {
+  editingAppointmentId = appointmentId;
+  lastAutoFilledOrt = '';
+
+  // Typen laden und Select befüllen
+  if (terminTypenCache.length === 0) await loadTerminTypen();
+  const typSelect = document.getElementById('t-typ');
+  typSelect.innerHTML = '<option value="">— Bitte wählen —</option>'
+    + terminTypenCache.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
+
+  // Companies laden
+  const companies = await getCompaniesForDropdown();
+  const companySelect = document.getElementById('t-company');
+  companySelect.innerHTML = '<option value="">— Keine —</option>'
+    + companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  // Kontakte vorerst leer (wird dynamisch gefüllt wenn Firma gewählt)
+  const contactSelect = document.getElementById('t-contact');
+  contactSelect.innerHTML = '<option value="">— Kein Kontakt —</option>';
+
+  // Felder zurücksetzen
+  document.getElementById('t-titel').value = '';
+  document.getElementById('t-datum').value = toISODate(new Date());
+  document.getElementById('t-uhrzeit-von').value = '';
+  document.getElementById('t-uhrzeit-bis').value = '';
+  document.getElementById('t-status').value = 'geplant';
+  document.getElementById('t-ort').value = '';
+  document.getElementById('t-notizen').value = '';
+  document.getElementById('t-ort-hint').style.display = 'none';
+
+  if (mode === 'new') {
+    document.getElementById('modal-appointment-title').textContent = 'Neuer Termin';
+    document.getElementById('t-save-btn').textContent = 'Anlegen';
+    document.getElementById('t-delete-btn').style.display = 'none';
+
+    // Kontakte für leere Firma rebuilden (alle Kontakte)
+    await rebuildContactDropdownForAppointment('');
+  } else {
+    document.getElementById('modal-appointment-title').textContent = 'Termin bearbeiten';
+    document.getElementById('t-save-btn').textContent = 'Speichern';
+    document.getElementById('t-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('appointments').select('*').eq('id', appointmentId).single();
+    if (error || !data) {
+      showToast('Termin konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingAppointmentId = null;
+      return;
+    }
+
+    document.getElementById('t-titel').value = data.titel || '';
+    document.getElementById('t-datum').value = data.datum || toISODate(new Date());
+    document.getElementById('t-uhrzeit-von').value = data.uhrzeit_von ? formatTime(data.uhrzeit_von) : '';
+    document.getElementById('t-uhrzeit-bis').value = data.uhrzeit_bis ? formatTime(data.uhrzeit_bis) : '';
+    document.getElementById('t-status').value = data.status || 'geplant';
+    document.getElementById('t-ort').value = data.ort || '';
+    document.getElementById('t-notizen').value = data.notizen || '';
+    if (data.typ_id) typSelect.value = data.typ_id;
+    if (data.company_id) companySelect.value = data.company_id;
+
+    // Kontakt-Dropdown für die Firma rebuilden, dann Wert setzen
+    await rebuildContactDropdownForAppointment(data.company_id || '');
+    if (data.contact_id) contactSelect.value = data.contact_id;
+
+    // Hinweis updaten
+    updateOrtHint(data.company_id || '');
+  }
+
+  // Event-Handler einmalig binden
+  setupAppointmentAutoFill();
+
+  document.getElementById('modal-appointment').classList.add('open');
+  setTimeout(() => document.getElementById('t-titel').focus(), 100);
+}
+
+function closeAppointmentModal() {
+  document.getElementById('modal-appointment').classList.remove('open');
+  editingAppointmentId = null;
+  lastAutoFilledOrt = '';
+}
+
+/** Baut das Kontakt-Dropdown neu auf, gefiltert nach Firma */
+async function rebuildContactDropdownForAppointment(companyId) {
+  const select = document.getElementById('t-contact');
+  const currentValue = select.value;
+
+  // Contacts-Cache befüllen wenn nötig
+  if (contactsCache.length === 0) {
+    const { data } = await db.from('contacts')
+      .select('*, company:companies(id, name, strasse, plz, stadt)').order('nachname');
+    contactsCache = data || [];
+  }
+
+  let contacts = contactsCache;
+  if (companyId) {
+    contacts = contactsCache.filter(k => k.company_id === companyId);
+  }
+
+  select.innerHTML = '<option value="">— Kein Kontakt —</option>'
+    + contacts.map(k => {
+        const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
+        const suffix = (!companyId && k.company?.name) ? ` (${k.company.name})` : '';
+        return `<option value="${esc(k.id)}">${esc(fullName + suffix)}</option>`;
+      }).join('');
+
+  // Alten Wert wiederherstellen, falls noch in Liste
+  if (currentValue && [...select.options].some(o => o.value === currentValue)) {
+    select.value = currentValue;
+  } else {
+    select.value = '';
+  }
+}
+
+/** Aktualisiert den Ort-Hinweis basierend auf der gewählten Firma */
+function updateOrtHint(companyId) {
+  const hint = document.getElementById('t-ort-hint');
+  if (!companyId) { hint.style.display = 'none'; return; }
+
+  const company = companiesCache.find(c => c.id === companyId);
+  if (!company) { hint.style.display = 'none'; return; }
+
+  const addressParts = [];
+  if (company.strasse) addressParts.push(company.strasse);
+  const cityPart = [company.plz, company.stadt].filter(Boolean).join(' ').trim();
+  if (cityPart) addressParts.push(cityPart);
+
+  if (addressParts.length === 0) { hint.style.display = 'none'; return; }
+
+  const address = addressParts.join(', ');
+  hint.innerHTML = `📍 <strong>${esc(company.name)}</strong> sitzt in: ${esc(address)}`;
+  hint.style.display = 'block';
+  hint.dataset.address = address;
+}
+
+/** Wird von onclick=useCompanyAddressForOrt() aufgerufen: übernimmt Firma-Adresse ins Ort-Feld */
+function useCompanyAddressForOrt() {
+  const hint = document.getElementById('t-ort-hint');
+  const addr = hint.dataset.address || '';
+  if (!addr) return;
+  document.getElementById('t-ort').value = addr;
+  lastAutoFilledOrt = addr;
+  showToast('Adresse übernommen.');
+}
+
+/** Auto-Fill Ort-Feld: wenn Typ=Vor Ort UND (Feld leer ODER enthält alten Auto-Wert) */
+function autoFillOrtIfAppropriate() {
+  const typId = document.getElementById('t-typ').value;
+  const companyId = document.getElementById('t-company').value;
+  if (!typId || !companyId) return;
+
+  // Nur bei Typ = "Vor Ort"
+  const typ = terminTypenCache.find(t => t.id === typId);
+  if (!typ || typ.wert.toLowerCase() !== 'vor ort') return;
+
+  const company = companiesCache.find(c => c.id === companyId);
+  if (!company) return;
+
+  const addressParts = [];
+  if (company.strasse) addressParts.push(company.strasse);
+  const cityPart = [company.plz, company.stadt].filter(Boolean).join(' ').trim();
+  if (cityPart) addressParts.push(cityPart);
+  if (addressParts.length === 0) return;
+
+  const address = addressParts.join(', ');
+  const ortInput = document.getElementById('t-ort');
+  const currentOrt = ortInput.value.trim();
+
+  // Auto-fillen wenn: Feld leer ODER Feld enthält exakt den letzten Auto-Wert (nicht manuell geändert)
+  if (currentOrt === '' || currentOrt === lastAutoFilledOrt) {
+    ortInput.value = address;
+    lastAutoFilledOrt = address;
+  }
+}
+
+/** Bindet alle Event-Handler für das Termin-Modal */
+function setupAppointmentAutoFill() {
+  const typSelect     = document.getElementById('t-typ');
+  const companySelect = document.getElementById('t-company');
+  const contactSelect = document.getElementById('t-contact');
+  const ortInput      = document.getElementById('t-ort');
+
+  // Event-Handler via onchange-Zuweisung (überschreibt vorherige — idempotent)
+  typSelect.onchange = () => {
+    autoFillOrtIfAppropriate();
+  };
+
+  companySelect.onchange = async () => {
+    const companyId = companySelect.value;
+    await rebuildContactDropdownForAppointment(companyId);
+    updateOrtHint(companyId);
+    autoFillOrtIfAppropriate();
+  };
+
+  contactSelect.onchange = () => {
+    // Wenn keine Firma gewählt, aber Kontakt eine Firma hat → Firma auto-setzen
+    const contactId = contactSelect.value;
+    if (!contactId) return;
+    if (companySelect.value) return; // Firma bereits gesetzt: nichts tun
+    const contact = contactsCache.find(k => k.id === contactId);
+    if (contact && contact.company_id) {
+      companySelect.value = contact.company_id;
+      updateOrtHint(contact.company_id);
+      autoFillOrtIfAppropriate();
+    }
+  };
+
+  // Manuelle Bearbeitung des Ort-Feldes: tracking zurücksetzen
+  ortInput.oninput = () => {
+    if (ortInput.value !== lastAutoFilledOrt) {
+      lastAutoFilledOrt = '';
+    }
+  };
+}
+
+async function saveAppointment() {
+  const titel       = document.getElementById('t-titel').value.trim();
+  const datum       = document.getElementById('t-datum').value;
+  const typ_id      = document.getElementById('t-typ').value;
+  const uhrzeit_von = document.getElementById('t-uhrzeit-von').value;
+  const uhrzeit_bis = document.getElementById('t-uhrzeit-bis').value;
+  const status      = document.getElementById('t-status').value;
+  const company_id  = document.getElementById('t-company').value;
+  const contact_id  = document.getElementById('t-contact').value;
+  const ort         = document.getElementById('t-ort').value.trim();
+  const notizen     = document.getElementById('t-notizen').value.trim();
+  const btn         = document.getElementById('t-save-btn');
+
+  if (!titel) { showToast('Bitte Titel eingeben.', true); return; }
+  if (!datum) { showToast('Bitte Datum eingeben.', true); return; }
+  if (!typ_id) { showToast('Bitte Typ auswählen.', true); return; }
+  if (!status) { showToast('Bitte Status auswählen.', true); return; }
+
+  if (uhrzeit_von && uhrzeit_bis && uhrzeit_bis < uhrzeit_von) {
+    showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = editingAppointmentId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      titel, datum, typ_id, status,
+      uhrzeit_von: uhrzeit_von || null,
+      uhrzeit_bis: uhrzeit_bis || null,
+      company_id: company_id || null,
+      contact_id: contact_id || null,
+      ort: ort || null,
+      notizen: notizen || null
+    };
+    if (!editingAppointmentId) payload.erstellt_von = currentUser?.id || null;
+
+    let error;
+    if (editingAppointmentId) { ({ error } = await db.from('appointments').update(payload).eq('id', editingAppointmentId)); }
+    else { ({ error } = await db.from('appointments').insert(payload)); }
+    if (error) throw new Error(error.message);
+
+    closeAppointmentModal();
+    showToast(editingAppointmentId ? 'Termin aktualisiert.' : 'Termin angelegt.');
+    await loadAppointments();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingAppointmentId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteAppointment() {
+  if (!editingAppointmentId) return;
+  if (!confirm('Termin wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.')) return;
+
+  const btn = document.getElementById('t-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const { error } = await db.from('appointments').delete().eq('id', editingAppointmentId);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Dieser Termin hat noch verknüpfte Teilnehmer oder andere Abhängigkeiten.');
+      }
+      throw new Error(error.message);
+    }
+    closeAppointmentModal();
+    showToast('Termin gelöscht.');
+    await loadAppointments();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INITIALISIERUNG
+// ═══════════════════════════════════════════════════════════
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initAuth);
 } else {
