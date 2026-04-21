@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.5.3 (Firmen-Detailseite mit Kontakten)
+   Version 1.5.3 (Firmen-Detailseite + Kopier-Buttons)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -13,6 +13,14 @@ const FUNCTIONS_URL       = SUPABASE_URL + '/functions/v1';
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Kleines SVG-Copy-Icon (als String, damit wir es mehrfach einbauen können)
+const COPY_ICON_SVG = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+  </svg>`;
+
 // ── APP STATE ────────────────────────────────────────────────
 let currentUser        = null;
 let currentProfile     = null;
@@ -24,15 +32,8 @@ let editingCompanyId   = null;
 let editingContactId   = null;
 let inPasswordRecovery = false;
 
-// Aktuelle Detail-Firma (wichtig, damit Modal-Saves/Deletes die Seite neu laden können)
 let currentCompanyDetailId = null;
-
-// Signal: öffnendes Kontakt-Modal soll Firma vorauswählen
-// (z. B. wenn "+ Kontakt hinzufügen" auf Firmen-Detailseite geklickt wird)
 let contactModalPrefillCompanyId = null;
-
-// Signal: nach Speichern/Löschen einer Firma ggf. zurück zur Liste navigieren
-// (wird vom saveCompany/deleteCompany gesetzt, wenn wir aus der Detailseite kommen)
 
 let companiesCache = [];
 let contactsCache  = [];
@@ -74,19 +75,156 @@ function showToast(msg, isError = false) {
 }
 
 /**
- * Zeigt eine Seite. Verwendet nur noch intern; die App navigiert
- * öffentlich über navigateTo() → Hash → handleHashChange() → showPage().
+ * Hilfsfunktion: Text in die Zwischenablage kopieren.
+ * Nutzt die moderne Clipboard-API mit Fallback auf textarea+execCommand für
+ * ältere Browser und bestimmte iOS-Kontexte.
  */
+async function copyToClipboard(text, toastMsg = 'In Zwischenablage kopiert.') {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      showToast(toastMsg);
+      return true;
+    }
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (!ok) throw new Error('execCommand copy failed');
+    showToast(toastMsg);
+    return true;
+  } catch (e) {
+    showToast('Kopieren nicht möglich: ' + e.message, true);
+    return false;
+  }
+}
+
+/**
+ * Formatiert einen Firmen-Block als Plaintext für die Zwischenablage.
+ * Leerzeilen trennen Firma+Adresse von Kontakten.
+ * Leere Felder werden weggelassen (keine leeren Zeilen).
+ *
+ * Format:
+ *   Müller Maschinenbau GmbH
+ *   Hauptstraße 42
+ *   71034 Böblingen
+ *
+ *   Thomas Müller
+ *   Anna Schmidt
+ */
+function formatCompanyBlock(company, contacts = []) {
+  const lines = [];
+
+  if (company.name) lines.push(company.name);
+  if (company.strasse) lines.push(company.strasse);
+  const ort = [company.plz, company.stadt].filter(Boolean).join(' ').trim();
+  if (ort) lines.push(ort);
+
+  // Kontakte (nur Vor- und Nachname), getrennt durch eine Leerzeile
+  const kontaktNamen = (contacts || [])
+    .map(k => [k.vorname, k.nachname].filter(Boolean).join(' ').trim())
+    .filter(Boolean);
+
+  if (kontaktNamen.length > 0) {
+    lines.push(''); // Leerzeile
+    lines.push(...kontaktNamen);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Formatiert einen Kontakt-Block als Plaintext für die Zwischenablage.
+ * Leere Felder werden weggelassen.
+ *
+ * Format:
+ *   Thomas Müller
+ *   t.mueller@firma.de
+ *   +49 7031 12345
+ *   Müller Maschinenbau GmbH
+ *   Hauptstraße 42
+ *   71034 Böblingen
+ */
+function formatContactBlock(contact) {
+  const lines = [];
+
+  const fullName = [contact.vorname, contact.nachname].filter(Boolean).join(' ').trim();
+  if (fullName) lines.push(fullName);
+  if (contact.email) lines.push(contact.email);
+  if (contact.telefon) lines.push(contact.telefon);
+
+  const company = contact.company;
+  if (company) {
+    if (company.name) lines.push(company.name);
+    if (company.strasse) lines.push(company.strasse);
+    const ort = [company.plz, company.stadt].filter(Boolean).join(' ').trim();
+    if (ort) lines.push(ort);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Kopiert eine Firma (per ID) als Block in die Zwischenablage.
+ * Nutzt den companiesCache, falls vorhanden, und lädt Kontakte direkt aus der DB.
+ * Die Funktion wird aus onclick-Handlern in der Liste + Detailseite aufgerufen.
+ */
+async function copyCompanyById(companyId) {
+  let company = companiesCache.find(c => c.id === companyId);
+
+  if (!company) {
+    const { data, error } = await db.from('companies').select('*').eq('id', companyId).single();
+    if (error || !data) { showToast('Firma nicht gefunden.', true); return; }
+    company = data;
+  }
+
+  // Kontakte separat laden (Cache vom Firmen-Load hat sie nicht immer)
+  const { data: contacts, error: contactsErr } = await db
+    .from('contacts')
+    .select('vorname, nachname')
+    .eq('company_id', companyId)
+    .order('nachname');
+
+  if (contactsErr) { showToast('Kontakte konnten nicht geladen werden: ' + contactsErr.message, true); return; }
+
+  const text = formatCompanyBlock(company, contacts || []);
+  await copyToClipboard(text, 'Firmendaten kopiert.');
+}
+
+/**
+ * Kopiert einen Kontakt (per ID) als Block in die Zwischenablage.
+ * Nutzt den contactsCache, falls vorhanden, sonst DB-Fallback.
+ */
+async function copyContactById(contactId) {
+  let contact = contactsCache.find(k => k.id === contactId);
+
+  if (!contact) {
+    const { data, error } = await db
+      .from('contacts')
+      .select('*, company:companies(name, strasse, plz, stadt)')
+      .eq('id', contactId)
+      .single();
+    if (error || !data) { showToast('Kontakt nicht gefunden.', true); return; }
+    contact = data;
+  }
+
+  const text = formatContactBlock(contact);
+  await copyToClipboard(text, 'Kontakt kopiert.');
+}
+
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
 
-  // Sidebar-Button aktivieren
   const navBtn = document.getElementById('nav-' + name);
   if (navBtn) navBtn.classList.add('active');
 
-  // Mobile Bottom-Nav synchronisieren
   setMobileNav(name);
 
   if (name === 'users') loadUsers();
@@ -121,16 +259,6 @@ function closeMoreMenu(event) {
 // ═══════════════════════════════════════════════════════════
 //  HASH-ROUTER
 // ═══════════════════════════════════════════════════════════
-/*
- * Unterstützte Routes:
- *   #/firmen                    → Firmenliste
- *   #/firma/<uuid>              → Firmen-Detailseite
- *   #/kontakte                  → Kontaktliste
- *   #/benutzer                  → Benutzerverwaltung
- *   #/leistungen                → Leistungen
- *   #/stammdaten                → Stammdaten
- *   (leer / unbekannt)          → Firmenliste (Default)
- */
 
 function navigateTo(page, param) {
   const hash =
@@ -145,7 +273,6 @@ function navigateTo(page, param) {
 }
 
 function handleHashChange() {
-  // Nur routen, wenn die App überhaupt angezeigt wird
   if (document.getElementById('app').style.display === 'none') return;
   if (inPasswordRecovery) return;
 
@@ -153,10 +280,7 @@ function handleHashChange() {
 
   if (hash.startsWith('#/firma/')) {
     const id = hash.slice('#/firma/'.length);
-    if (id) {
-      loadCompanyDetail(id);
-      return;
-    }
+    if (id) { loadCompanyDetail(id); return; }
   }
 
   if (hash === '#/firmen' || hash === '' || hash === '#') { showPage('companies'); return; }
@@ -165,7 +289,6 @@ function handleHashChange() {
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
 
-  // Fallback
   showPage('companies');
 }
 
@@ -188,15 +311,11 @@ function showApp()            { hideAllScreens(); document.getElementById('app')
 async function initAuth() {
   const hash = window.location.hash;
 
-  // Recovery / Invite-Links haben Supabase-Tokens im Hash (z.B. ?type=recovery)
   if (hash.includes('type=recovery') || hash.includes('type=invite')) {
     inPasswordRecovery = true;
     showRecoveryScreen();
     db.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
-        inPasswordRecovery = false;
-        showLoginScreen();
-      }
+      if (event === 'SIGNED_OUT') { inPasswordRecovery = false; showLoginScreen(); }
     });
     return;
   }
@@ -224,7 +343,6 @@ async function initAuth() {
     }
   });
 
-  // Hash-Änderungen (Browser-Zurück, manuelles Tippen) abfangen
   window.addEventListener('hashchange', handleHashChange);
 }
 
@@ -272,7 +390,6 @@ async function onLogin(user) {
 
   await loadRoles();
 
-  // Route auflösen: Hash respektieren (z.B. direkter Link zu einer Firma)
   if (window.location.hash && window.location.hash !== '#') {
     handleHashChange();
   } else {
@@ -346,7 +463,6 @@ async function doLogout(skipConfirm = false) {
   currentUser = null;
   currentProfile = null;
   inPasswordRecovery = false;
-  // Hash zurücksetzen, damit Re-Login sauber auf Firmen landet
   window.location.hash = '';
   showLoginScreen();
 }
@@ -680,16 +796,14 @@ function closeCredentialsModal() {
 
 async function copyCredential(elementId) {
   const text = document.getElementById(elementId).textContent;
-  try { await navigator.clipboard.writeText(text); showToast('In Zwischenablage kopiert.'); }
-  catch { showToast('Kopieren nicht möglich. Bitte manuell markieren.', true); }
+  await copyToClipboard(text);
 }
 
 async function copyBothCredentials() {
   const email = document.getElementById('cred-email').textContent;
   const password = document.getElementById('cred-password').textContent;
   const text = `E-Mail: ${email}\nPasswort: ${password}`;
-  try { await navigator.clipboard.writeText(text); showToast('Zugangsdaten in Zwischenablage kopiert.'); }
-  catch { showToast('Kopieren nicht möglich.', true); }
+  await copyToClipboard(text, 'Zugangsdaten in Zwischenablage kopiert.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1116,7 +1230,12 @@ function renderCompaniesTable(companies) {
         <td class="col-desktop" style="color:var(--muted)">${esc(c.email || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(c.branche || '—')}</td>
         <td style="text-align:right">
-          <button class="btn btn-sm" onclick="navigateTo('firma', '${esc(c.id)}')">Details</button>
+          <div class="btn-row" style="justify-content:flex-end">
+            <button class="btn-copy" onclick="copyCompanyById('${esc(c.id)}')" title="Firmendaten kopieren" aria-label="Firmendaten kopieren">
+              ${COPY_ICON_SVG}
+            </button>
+            <button class="btn btn-sm" onclick="navigateTo('firma', '${esc(c.id)}')">Details</button>
+          </div>
         </td>
       </tr>`;
   }).join('');
@@ -1225,7 +1344,6 @@ async function saveCompany() {
     closeCompanyModal();
     showToast(savedId ? 'Firma aktualisiert.' : 'Firma angelegt.');
 
-    // Wenn wir gerade auf der Detailseite dieser Firma sind: Detailseite neu laden
     if (savedId && currentCompanyDetailId === savedId) {
       await loadCompanyDetail(savedId);
     } else {
@@ -1259,7 +1377,6 @@ async function deleteCompany() {
     closeCompanyModal();
     showToast('Firma gelöscht.');
 
-    // Falls wir auf der Detailseite dieser Firma waren: zurück zur Liste
     if (currentCompanyDetailId === deletedId) {
       currentCompanyDetailId = null;
       navigateTo('companies');
@@ -1281,15 +1398,12 @@ async function deleteCompany() {
 async function loadCompanyDetail(companyId) {
   currentCompanyDetailId = companyId;
 
-  // Seite sichtbar machen (nicht über showPage, weil das kein Load auslöst)
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('page-company-detail').classList.add('active');
-  // Sidebar: Firmen bleibt aktiv markiert
   document.getElementById('nav-companies')?.classList.add('active');
   setMobileNav('company-detail');
 
-  // Platzhalter-State
   document.getElementById('company-detail-name').textContent = 'Wird geladen …';
   document.getElementById('company-detail-title').textContent = 'Wird geladen …';
   document.getElementById('company-detail-subline').innerHTML = '';
@@ -1298,7 +1412,6 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-contacts-body').innerHTML =
     '<tr><td colspan="5"><div class="empty">Lade Kontakte ...</div></td></tr>';
 
-  // Firma laden
   const { data: company, error } = await db
     .from('companies')
     .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
@@ -1318,6 +1431,7 @@ async function loadCompanyDetail(companyId) {
       '<tr><td colspan="5"><div class="empty">—</div></td></tr>';
     document.getElementById('company-detail-edit-btn').onclick = () => navigateTo('companies');
     document.getElementById('company-detail-edit-btn').textContent = 'Zurück';
+    document.getElementById('company-detail-copy-btn').style.display = 'none';
     document.getElementById('company-detail-add-contact-btn').style.display = 'none';
     return;
   }
@@ -1327,23 +1441,25 @@ async function loadCompanyDetail(companyId) {
 }
 
 function renderCompanyDetail(c) {
-  // Breadcrumb + Titel
   document.getElementById('company-detail-name').textContent = c.name;
   document.getElementById('company-detail-title').textContent = c.name;
   document.title = c.name + ' – Cumart CRM';
 
-  // Subline: Typ-Badge + Branche
   const typFarbe = c.typ?.farbe || '#6b7280';
   const typWert  = c.typ?.wert || '—';
   let subline = `<span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>`;
   if (c.branche) subline += `<span>${esc(c.branche)}</span>`;
   document.getElementById('company-detail-subline').innerHTML = subline;
 
+  // Kopier-Button auf Detailseite
+  const copyBtn = document.getElementById('company-detail-copy-btn');
+  copyBtn.style.display = '';
+  copyBtn.onclick = () => copyCompanyById(c.id);
+
   // Bearbeiten-Button
   document.getElementById('company-detail-edit-btn').textContent = 'Bearbeiten';
   document.getElementById('company-detail-edit-btn').onclick = () => openCompanyModal('edit', c.id);
 
-  // Info-Grid aufbauen
   const adresseZeilen = [];
   if (c.strasse) adresseZeilen.push(esc(c.strasse));
   const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
@@ -1394,7 +1510,6 @@ function renderCompanyDetail(c) {
     </div>
   `;
 
-  // Notizen-Sektion
   const notizenWrap = document.getElementById('company-detail-notizen-wrap');
   if (c.notizen && c.notizen.trim()) {
     document.getElementById('company-detail-notizen').textContent = c.notizen;
@@ -1403,7 +1518,6 @@ function renderCompanyDetail(c) {
     notizenWrap.style.display = 'none';
   }
 
-  // „Kontakt hinzufügen"-Button mit vorausgewählter Firma
   document.getElementById('company-detail-add-contact-btn').style.display = '';
   document.getElementById('company-detail-add-contact-btn').onclick = () => {
     contactModalPrefillCompanyId = c.id;
@@ -1477,9 +1591,11 @@ async function loadContacts() {
       + companies.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
   }
 
+  // Wichtig: company-Join holt jetzt alle Adressfelder mit, damit das
+  // Kopieren aus der Liste komplette Infos enthält ohne zusätzlichen Request
   const { data, error } = await db
     .from('contacts')
-    .select('*, company:companies(id, name)')
+    .select('*, company:companies(id, name, strasse, plz, stadt)')
     .order('nachname');
 
   if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
@@ -1549,7 +1665,12 @@ function renderContactsTable(contacts) {
         <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
         <td style="text-align:right">
-          <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
+          <div class="btn-row" style="justify-content:flex-end">
+            <button class="btn-copy" onclick="copyContactById('${esc(k.id)}')" title="Kontaktdaten kopieren" aria-label="Kontaktdaten kopieren">
+              ${COPY_ICON_SVG}
+            </button>
+            <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
+          </div>
         </td>
       </tr>`;
   }).join('');
@@ -1576,12 +1697,10 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-save-btn').textContent = 'Anlegen';
     document.getElementById('k-delete-btn').style.display = 'none';
 
-    // Priorität 1: explizites Prefill-Signal (z.B. von Firmen-Detailseite)
     if (contactModalPrefillCompanyId) {
       companySelect.value = contactModalPrefillCompanyId;
-      contactModalPrefillCompanyId = null; // Signal verbrauchen
+      contactModalPrefillCompanyId = null;
     } else {
-      // Priorität 2: aktueller Firmen-Filter auf der Kontakt-Listen-Seite
       const filterSel = document.getElementById('contacts-company-filter');
       const preselected = filterSel ? filterSel.value : '';
       if (preselected && preselected !== '__none__') {
@@ -1652,7 +1771,6 @@ async function saveContact() {
     closeContactModal();
     showToast(editingContactId ? 'Kontakt aktualisiert.' : 'Kontakt angelegt.');
 
-    // Wenn wir auf einer Firmen-Detailseite sind: Kontaktliste dort neu laden
     if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyContacts(currentCompanyDetailId);
     } else {
