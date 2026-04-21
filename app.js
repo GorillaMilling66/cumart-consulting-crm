@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.7 (Termin-Abhaken in Projekten)
+   Version 1.9.8 (Fluessiges DOM-Update bei Toggle)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -3214,7 +3214,7 @@ async function loadProjectAppointments(projectId) {
     const checkboxTitle = isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren';
 
     return `
-      <tr>
+      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(a.status)}">
         <td style="text-align:center">
           <input type="checkbox" class="appointment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -3230,7 +3230,7 @@ async function loadProjectAppointments(projectId) {
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
         </td>
-        <td>
+        <td class="appt-status-cell">
           <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
         </td>
         <td class="col-action" style="text-align:right">
@@ -4415,7 +4415,7 @@ async function loadProjectDeployments(projectId) {
       : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
 
     return `
-      <tr>
+      <tr data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status)}">
         <td style="text-align:center">
           <input type="checkbox" class="deployment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -4429,7 +4429,7 @@ async function loadProjectDeployments(projectId) {
           <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
         </td>
         <td class="col-tablet" style="color:var(--muted)">${leistungHtml}</td>
-        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td class="dep-status-cell"><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
         <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
         <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
@@ -4444,8 +4444,7 @@ async function loadProjectDeployments(projectId) {
 
 /**
  * Quick-Toggle für Termin-Status via Checkbox in Projekt-Detail.
- * Togglet zwischen 'geplant' und 'durchgefuehrt'.
- * Triggert anschließend Auto-Status-Check für das Projekt.
+ * Togglet zwischen 'geplant' und 'durchgefuehrt' per direktes DOM-Update (kein Page-Reload).
  */
 async function toggleAppointmentDone(appointmentId, isChecked, checkboxEl) {
   const newStatus = isChecked ? 'durchgefuehrt' : 'geplant';
@@ -4458,19 +4457,111 @@ async function toggleAppointmentDone(appointmentId, isChecked, checkboxEl) {
       .eq('id', appointmentId);
     if (error) throw new Error(error.message);
 
-    // Projekt-Status-Check
+    // DOM-Update der betroffenen Zeile (ohne Reload)
+    const tr = checkboxEl ? checkboxEl.closest('tr') : null;
+    if (tr) {
+      tr.setAttribute('data-appt-status', newStatus);
+      const statusCell = tr.querySelector('.appt-status-cell');
+      if (statusCell) {
+        statusCell.innerHTML = `<span class="badge" style="background:${appointmentStatusBg(newStatus)};color:${appointmentStatusColor(newStatus)}">${esc(appointmentStatusLabel(newStatus))}</span>`;
+      }
+    }
+
+    // Count-Label für Termine aus DOM neu berechnen
+    refreshProjectAppointmentsCountLabel();
+
+    // Projekt-Status-Check + evtl. Header-Update, ohne ganze Seite neu zu laden
     if (currentProjectDetailId) {
-      await checkAndUpdateProjectStatus(currentProjectDetailId);
-      // Kompletten Refresh der Projekt-Seite (Header-Status + Badge-Farben)
-      await loadProjectDetail(currentProjectDetailId);
+      await checkAndUpdateProjectStatusSmart(currentProjectDetailId);
     }
   } catch (e) {
     showToast('Status konnte nicht geändert werden: ' + e.message, true);
-    if (checkboxEl) {
-      checkboxEl.checked = !isChecked; // Rollback UI
-      checkboxEl.disabled = false;
+    if (checkboxEl) checkboxEl.checked = !isChecked;
+  } finally {
+    if (checkboxEl) checkboxEl.disabled = false;
+  }
+}
+
+/**
+ * Berechnet das Count-Label der Projekt-Termine aus den data-appt-status Attributen im DOM.
+ */
+function refreshProjectAppointmentsCountLabel() {
+  const countEl = document.getElementById('project-appointments-count');
+  const body = document.getElementById('project-appointments-body');
+  if (!countEl || !body) return;
+  const rows = body.querySelectorAll('tr[data-appt-status]');
+  const total = rows.length;
+  if (total === 0) return;
+
+  const arr = Array.from(rows);
+  const anzGeplant       = arr.filter(r => r.getAttribute('data-appt-status') === 'geplant').length;
+  const anzDurchgefuehrt = arr.filter(r => r.getAttribute('data-appt-status') === 'durchgefuehrt').length;
+  countEl.textContent = `${total} Termin${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgeführt`;
+}
+
+/**
+ * Wie checkAndUpdateProjectStatus, aber updated das Header-Status-Badge direkt im DOM
+ * statt die ganze Projekt-Seite neu zu laden. Für flüssige UX bei Quick-Toggle.
+ */
+async function checkAndUpdateProjectStatusSmart(projectId) {
+  const { data: project, error: pErr } = await db.from('projects')
+    .select('id, status').eq('id', projectId).single();
+  if (pErr || !project) return;
+
+  const aktiveStatus = ['In Arbeit', 'Abschlussphase', 'Abgeschlossen'];
+  if (!aktiveStatus.includes(project.status)) return;
+
+  const { data: deployments } = await db.from('deployments')
+    .select('status').eq('project_id', projectId);
+  const allDeps = deployments || [];
+
+  const { data: appointments } = await db.from('appointments')
+    .select('status').eq('project_id', projectId);
+  const allAppts = appointments || [];
+
+  const countsDone = (arr, doneValues) => {
+    if (arr.length === 0) return { hasAny: false, allDone: true };
+    const done = arr.filter(x => doneValues.includes(x.status)).length;
+    return { hasAny: true, allDone: done === arr.length };
+  };
+
+  const depStats = countsDone(allDeps, ['Durchgeführt', 'Abgerechnet']);
+  const apptStats = countsDone(allAppts, ['durchgefuehrt']);
+
+  if (!depStats.hasAny) return;
+
+  let neuerStatus = project.status;
+  if (depStats.allDone && apptStats.allDone) {
+    neuerStatus = 'Abgeschlossen';
+  } else if (depStats.allDone) {
+    neuerStatus = 'Abschlussphase';
+  } else {
+    neuerStatus = 'In Arbeit';
+  }
+
+  if (neuerStatus !== project.status) {
+    const { error: updErr } = await db.from('projects')
+      .update({ status: neuerStatus }).eq('id', projectId);
+    if (!updErr) {
+      showToast(`Projekt-Status automatisch auf „${neuerStatus}" aktualisiert.`);
+      // Header-Badge direkt im DOM updaten (kein Page-Reload)
+      updateProjectHeaderStatusBadge(neuerStatus);
     }
   }
+}
+
+/**
+ * Aktualisiert das Status-Badge in der Projekt-Detail-Subline ohne Reload.
+ */
+function updateProjectHeaderStatusBadge(newStatus) {
+  const subline = document.getElementById('project-detail-subline');
+  if (!subline) return;
+  const badge = subline.querySelector('.badge');
+  if (!badge) return;
+  const color = projektStatusFarbe(newStatus);
+  badge.style.background = color + '22';
+  badge.style.color = color;
+  badge.textContent = newStatus;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4479,8 +4570,7 @@ async function toggleAppointmentDone(appointmentId, isChecked, checkboxEl) {
 
 /**
  * Quick-Toggle für Einsatz-Status via Checkbox in Projekt-Detail.
- * Togglet zwischen 'Geplant' und 'Durchgeführt'.
- * Triggert anschließend Auto-Status-Check für das Projekt.
+ * Togglet zwischen 'Geplant' und 'Durchgeführt' per direktes DOM-Update (kein Page-Reload).
  */
 async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
   const newStatus = isChecked ? 'Durchgeführt' : 'Geplant';
@@ -4493,19 +4583,56 @@ async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
       .eq('id', deploymentId);
     if (error) throw new Error(error.message);
 
-    // Projekt-Status-Check
+    // DOM-Update der betroffenen Zeile (ohne Reload)
+    const tr = checkboxEl ? checkboxEl.closest('tr') : null;
+    if (tr) {
+      tr.setAttribute('data-dep-status', newStatus);
+      const statusCell = tr.querySelector('.dep-status-cell');
+      if (statusCell) {
+        const color = einsatzStatusFarbe(newStatus);
+        statusCell.innerHTML = `<span class="badge" style="background:${esc(color)}22;color:${esc(color)}">${esc(newStatus)}</span>`;
+      }
+    }
+
+    // Count-Label für Einsätze aus DOM neu berechnen
+    refreshProjectDeploymentsCountLabel();
+
+    // Projekt-Status-Check + evtl. Header-Update, ohne ganze Seite neu zu laden
     if (currentProjectDetailId) {
-      await checkAndUpdateProjectStatus(currentProjectDetailId);
-      // Kompletten Refresh der Projekt-Seite (Header-Status + Einsatz-Badges + Leistungsumsatz)
-      await loadProjectDetail(currentProjectDetailId);
+      await checkAndUpdateProjectStatusSmart(currentProjectDetailId);
     }
   } catch (e) {
     showToast('Status konnte nicht geändert werden: ' + e.message, true);
-    if (checkboxEl) {
-      checkboxEl.checked = !isChecked; // Rollback UI
-      checkboxEl.disabled = false;
-    }
+    if (checkboxEl) checkboxEl.checked = !isChecked;
+  } finally {
+    if (checkboxEl) checkboxEl.disabled = false;
   }
+}
+
+/**
+ * Berechnet das Count-Label der Projekt-Einsätze aus den data-dep-status Attributen
+ * im DOM (ohne DB-Query) und updated den Text.
+ */
+function refreshProjectDeploymentsCountLabel() {
+  const countEl = document.getElementById('project-deployments-count');
+  const body = document.getElementById('project-deployments-body');
+  if (!countEl || !body) return;
+  const rows = body.querySelectorAll('tr[data-dep-status]');
+  const total = rows.length;
+  if (total === 0) return;
+
+  const arr = Array.from(rows);
+  const anzGeplant       = arr.filter(r => r.getAttribute('data-dep-status') === 'Geplant').length;
+  const anzDurchgefuehrt = arr.filter(r => r.getAttribute('data-dep-status') === 'Durchgeführt').length;
+  const anzAbgerechnet   = arr.filter(r => r.getAttribute('data-dep-status') === 'Abgerechnet').length;
+  // "ohne Datum" bleibt vom Initial-Load korrekt - Status-Toggle ändert das Datum nicht
+
+  let text = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
+  // Vorhandenes "ohne Datum"-Suffix aus bisherigem Label übernehmen (falls da)
+  const prevText = countEl.textContent;
+  const match = prevText.match(/· \d+ ohne Datum$/);
+  if (match) text += ` ${match[0].replace('· ', '· ')}`;
+  countEl.textContent = text;
 }
 
 /**
