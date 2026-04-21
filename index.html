@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.6.1 (Termine auf Firmen-Detailseite, Letzter Termin in Firmen-Liste, Firma-Filter in Terminliste) -->
+<!-- VERSION: 1.7.0 (Projekte-Modul, Projekte auf Firmen-Detailseite, Projekt-Zuordnung für Termine) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -148,6 +148,15 @@
           <line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
         Termine
+      </button>
+
+      <button class="nav-item" id="nav-projects"
+              onclick="navigateTo('projects')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        Projekte
       </button>
     </nav>
 
@@ -387,6 +396,35 @@
           <a class="cell-link" id="company-appointments-show-all-link">Alle Termine dieser Firma anzeigen →</a>
         </div>
       </div>
+
+      <!-- PROJEKTE-SEKTION (NEU in v1.7.0) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="company-projects-count">Projekte</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="company-detail-add-project-btn">
+            + Projekt hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:120px">Status</th>
+                <th class="col-tablet" style="width:110px">Start</th>
+                <th class="col-tablet" style="width:110px">Ende</th>
+                <th class="col-desktop">Umsatz</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="company-projects-body">
+              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- SEITE: KONTAKTE -->
@@ -510,6 +548,139 @@
       </div>
     </div>
 
+    <!-- SEITE: PROJEKTE (LISTE) -->
+    <div class="page" id="page-projects">
+      <div class="page-header">
+        <h1 class="page-title">Projekte</h1>
+        <button class="btn btn-primary" onclick="openProjectModal('new')">
+          + Neues Projekt
+        </button>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="projects-search"
+                   placeholder="Suche nach Name, Firma, Beschreibung ..."
+                   oninput="filterProjects()">
+          </div>
+          <div class="form-group" style="min-width:160px;margin:0">
+            <select id="projects-status-filter" onchange="filterProjects()">
+              <option value="">Alle Status</option>
+              <option value="_active">Aktive (Lead, Angebot, In Arbeit)</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:180px;margin:0">
+            <select id="projects-company-filter" onchange="filterProjects()">
+              <option value="">Alle Firmen</option>
+              <option value="__none__">Interne Projekte (ohne Firma)</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:160px;margin:0">
+            <select id="projects-verantwortlicher-filter" onchange="filterProjects()">
+              <option value="">Alle Verantwortlichen</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="projects-count">Projekte</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:120px">Status</th>
+                <th class="col-tablet">Firma</th>
+                <th class="col-desktop">Verantwortlich</th>
+                <th class="col-desktop" style="width:110px">Start</th>
+                <th class="col-desktop" style="width:110px">Ende</th>
+                <th class="col-tablet">Umsatz</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="projects-table-body">
+              <tr><td colspan="8"><div class="empty">Lade Projekte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: PROJEKT-DETAIL -->
+    <div class="page" id="page-project-detail">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="navigateTo('projects')" aria-label="Zurück">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <a class="breadcrumb-link" onclick="navigateTo('projects')">Projekte</a>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current" id="project-detail-name">…</span>
+      </div>
+
+      <div class="card detail-card">
+        <div class="detail-header">
+          <div>
+            <h1 class="page-title" id="project-detail-title">…</h1>
+            <div class="detail-subline" id="project-detail-subline"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="project-detail-edit-btn">Bearbeiten</button>
+          </div>
+        </div>
+
+        <div class="detail-grid" id="project-detail-info"></div>
+
+        <div id="project-detail-beschreibung-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="detail-label">Beschreibung</div>
+          <div id="project-detail-beschreibung" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+        </div>
+
+        <div id="project-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="detail-label">Notizen</div>
+          <div id="project-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+        </div>
+      </div>
+
+      <!-- TERMINE DES PROJEKTS -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="project-appointments-count">Termine</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="project-detail-add-appointment-btn">
+            + Termin hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th style="width:90px" class="col-tablet">Uhrzeit</th>
+                <th>Titel</th>
+                <th class="col-tablet">Typ</th>
+                <th style="width:110px">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="project-appointments-body">
+              <tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="project-appointments-show-all" style="display:none;text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <a class="cell-link" id="project-appointments-show-all-link">Alle Termine dieses Projekts anzeigen →</a>
+        </div>
+      </div>
+    </div>
+
     <!-- SEITE: BENUTZER -->
     <div class="page" id="page-users">
       <div class="page-header">
@@ -611,16 +782,6 @@
       </svg>
       <span>Firmen</span>
     </button>
-    <button class="mobile-nav-item" id="m-nav-contacts"
-            onclick="navigateTo('contacts')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M16 2v2"/><path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
-        <path d="M8 2v2"/><circle cx="12" cy="11" r="3"/>
-        <rect x="3" y="4" width="18" height="18" rx="2"/>
-      </svg>
-      <span>Kontakte</span>
-    </button>
     <button class="mobile-nav-item" id="m-nav-appointments"
             onclick="navigateTo('appointments')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -631,6 +792,14 @@
         <line x1="3" y1="10" x2="21" y2="10"/>
       </svg>
       <span>Termine</span>
+    </button>
+    <button class="mobile-nav-item" id="m-nav-projects"
+            onclick="navigateTo('projects')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Projekte</span>
     </button>
     <button class="mobile-nav-item" id="m-nav-more" onclick="openMoreMenu()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -653,6 +822,18 @@
                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
+        </button>
+      </div>
+
+      <div class="more-section">
+        <div class="more-section-title">Hauptbereich</div>
+        <button class="more-item" id="m-more-contacts" onclick="navigateTo('contacts'); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 2v2"/><path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
+            <path d="M8 2v2"/><circle cx="12" cy="11" r="3"/>
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+          </svg>
+          Kontakte
         </button>
       </div>
 
@@ -880,6 +1061,10 @@
         <select id="t-contact"></select>
       </div>
       <div class="form-group full">
+        <label>Projekt</label>
+        <select id="t-project"></select>
+      </div>
+      <div class="form-group full">
         <label>Ort</label>
         <input type="text" id="t-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
         <div id="t-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
@@ -903,6 +1088,80 @@
       </button>
       <button class="btn" onclick="closeAppointmentModal()">Abbrechen</button>
       <button class="btn btn-primary" id="t-save-btn" onclick="saveAppointment()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PROJEKT -->
+<div class="modal-overlay" id="modal-project">
+  <div class="modal" style="width:640px">
+    <div class="modal-title" id="modal-project-title">Neues Projekt</div>
+
+    <div class="modal-group-title">Stammdaten</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Name *</label>
+        <input type="text" id="p-name" placeholder="z. B. Heidenhain Klartext Grundlagen bei Müller">
+      </div>
+      <div class="form-group">
+        <label>Status *</label>
+        <select id="p-status"></select>
+      </div>
+      <div class="form-group">
+        <label>Geschätzter Umsatz (€)</label>
+        <input type="number" id="p-umsatz" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label>Firma</label>
+        <select id="p-company"></select>
+      </div>
+      <div class="form-group">
+        <label>Hauptkontakt</label>
+        <select id="p-hauptkontakt"></select>
+      </div>
+      <div class="form-group">
+        <label>Verantwortlich</label>
+        <select id="p-verantwortlicher"></select>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <span style="font-size:11px;color:var(--muted);line-height:1.4">
+          Ohne Firma = internes Projekt
+        </span>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Zeitraum</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Startdatum</label>
+        <input type="date" id="p-startdatum">
+      </div>
+      <div class="form-group">
+        <label>Enddatum (geplant)</label>
+        <input type="date" id="p-enddatum">
+      </div>
+    </div>
+
+    <div class="modal-group-title">Details</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Beschreibung</label>
+        <textarea id="p-beschreibung" rows="3" placeholder="Worum geht es bei diesem Projekt?"></textarea>
+      </div>
+      <div class="form-group full">
+        <label>Notizen</label>
+        <textarea id="p-notizen" rows="3" placeholder="Freitext-Notizen zum Projekt ..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="p-delete-btn"
+              onclick="deleteProject()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeProjectModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="p-save-btn" onclick="saveProject()">Anlegen</button>
     </div>
   </div>
 </div>

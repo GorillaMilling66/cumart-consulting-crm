@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.6.1 (Termine auf Firmen-Detailseite, Letzter Termin in Firmen-Liste, Firma-Filter)
+   Version 1.7.0 (Projekte-Modul)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -34,13 +34,20 @@ let editingAppointmentId = null;
 let inPasswordRecovery = false;
 
 let currentCompanyDetailId = null;
+let currentProjectDetailId = null;
 let contactModalPrefillCompanyId = null;
 let appointmentModalPrefillCompanyId = null;
+let appointmentModalPrefillProjectId = null;
+let projectModalPrefillCompanyId = null;
+let editingProjectId = null;
 
 let companiesCache   = [];
 let contactsCache    = [];
 let appointmentsCache = [];
+let projectsCache    = [];
 let terminTypenCache = [];
+let projektStatusCache = [];
+let userProfilesCache = [];
 
 // Map: companyId → { next: {datum, titel, id} | null, last: {datum, titel, id} | null }
 let companyAppointmentMap = {};
@@ -240,6 +247,7 @@ function showPage(name) {
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
+  if (name === 'projects') loadProjects();
 }
 
 function setMobileNav(pageName) {
@@ -247,10 +255,10 @@ function setMobileNav(pageName) {
 
   if (pageName === 'companies' || pageName === 'company-detail') {
     document.getElementById('m-nav-companies')?.classList.add('active');
-  } else if (pageName === 'contacts') {
-    document.getElementById('m-nav-contacts')?.classList.add('active');
   } else if (pageName === 'appointments') {
     document.getElementById('m-nav-appointments')?.classList.add('active');
+  } else if (pageName === 'projects' || pageName === 'project-detail') {
+    document.getElementById('m-nav-projects')?.classList.add('active');
   } else {
     document.getElementById('m-nav-more')?.classList.add('active');
   }
@@ -274,14 +282,20 @@ function navigateTo(page, param) {
   let hash;
   if (page === 'firma' && param) {
     hash = `#/firma/${param}`;
+  } else if (page === 'projekt' && param) {
+    hash = `#/projekt/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
     hash = `#/termine?firma=${param.firma}`;
+  } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
+    hash = `#/termine?projekt=${param.projekt}`;
   } else if (page === 'companies') {
     hash = '#/firmen';
   } else if (page === 'contacts') {
     hash = '#/kontakte';
   } else if (page === 'appointments') {
     hash = '#/termine';
+  } else if (page === 'projects') {
+    hash = '#/projekte';
   } else if (page === 'users') {
     hash = '#/benutzer';
   } else if (page === 'services') {
@@ -319,17 +333,22 @@ function handleHashChange() {
     if (id) { loadCompanyDetail(id); return; }
   }
 
+  if (hash.startsWith('#/projekt/')) {
+    const id = hash.slice('#/projekt/'.length);
+    if (id) { loadProjectDetail(id); return; }
+  }
+
   if (hash.startsWith('#/termine')) {
     const { params } = parseHashQuery(hash);
-    if (params.firma) {
-      pendingAppointmentsFilter = { firma: params.firma };
-    }
+    if (params.firma)   pendingAppointmentsFilter = { firma: params.firma };
+    if (params.projekt) pendingAppointmentsFilter = { projekt: params.projekt };
     showPage('appointments');
     return;
   }
 
   if (hash === '#/firmen' || hash === '' || hash === '#') { showPage('companies'); return; }
   if (hash === '#/kontakte')   { showPage('contacts'); return; }
+  if (hash === '#/projekte')   { showPage('projects'); return; }
   if (hash === '#/benutzer')   { showPage('users'); return; }
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
@@ -1495,6 +1514,7 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-contacts-body').innerHTML = '<tr><td colspan="5"><div class="empty">Lade Kontakte ...</div></td></tr>';
   document.getElementById('company-appointments-body').innerHTML = '<tr><td colspan="7"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('company-appointments-show-all').style.display = 'none';
+  document.getElementById('company-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
 
   const { data, error } = await db.from('companies')
     .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
@@ -1510,6 +1530,7 @@ async function loadCompanyDetail(companyId) {
   renderCompanyDetail(data);
   await loadCompanyContacts(companyId);
   await loadCompanyAppointments(companyId);
+  await loadCompanyProjects(companyId);
 }
 
 function renderCompanyDetail(c) {
@@ -1538,6 +1559,11 @@ function renderCompanyDetail(c) {
   document.getElementById('company-detail-add-appointment-btn').onclick = () => {
     appointmentModalPrefillCompanyId = c.id;
     openAppointmentModal('new');
+  };
+
+  document.getElementById('company-detail-add-project-btn').onclick = () => {
+    projectModalPrefillCompanyId = c.id;
+    openProjectModal('new');
   };
 
   const info = document.getElementById('company-detail-info');
@@ -2160,6 +2186,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
   companySelect.value = '';
 
   await rebuildContactDropdownForAppointment('');
+  await rebuildProjectDropdownForAppointment('');
 
   if (mode === 'new') {
     document.getElementById('modal-appointment-title').textContent = 'Neuer Termin';
@@ -2170,8 +2197,29 @@ async function openAppointmentModal(mode, appointmentId = null) {
     if (appointmentModalPrefillCompanyId) {
       companySelect.value = appointmentModalPrefillCompanyId;
       await rebuildContactDropdownForAppointment(appointmentModalPrefillCompanyId);
+      await rebuildProjectDropdownForAppointment(appointmentModalPrefillCompanyId);
       updateOrtHint();
       appointmentModalPrefillCompanyId = null;
+    }
+
+    // Prefill-Project aus Projekt-Detailseite
+    if (appointmentModalPrefillProjectId) {
+      // Projekt laden, um zugehörige Firma zu setzen
+      const { data: proj } = await db.from('projects')
+        .select('id, name, company_id').eq('id', appointmentModalPrefillProjectId).single();
+      if (proj) {
+        if (proj.company_id) {
+          companySelect.value = proj.company_id;
+          await rebuildContactDropdownForAppointment(proj.company_id);
+          await rebuildProjectDropdownForAppointment(proj.company_id);
+          updateOrtHint();
+        } else {
+          await rebuildProjectDropdownForAppointment('');
+        }
+        const projSelect = document.getElementById('t-project');
+        if (projSelect) projSelect.value = proj.id;
+      }
+      appointmentModalPrefillProjectId = null;
     }
   } else {
     document.getElementById('modal-appointment-title').textContent = 'Termin bearbeiten';
@@ -2192,8 +2240,15 @@ async function openAppointmentModal(mode, appointmentId = null) {
     if (data.company_id) {
       companySelect.value = data.company_id;
       await rebuildContactDropdownForAppointment(data.company_id);
+      await rebuildProjectDropdownForAppointment(data.company_id);
       if (data.contact_id) document.getElementById('t-contact').value = data.contact_id;
       updateOrtHint();
+    } else {
+      await rebuildProjectDropdownForAppointment('');
+    }
+    if (data.project_id) {
+      const projSelect = document.getElementById('t-project');
+      if (projSelect) projSelect.value = data.project_id;
     }
   }
 
@@ -2207,6 +2262,7 @@ function closeAppointmentModal() {
   document.getElementById('modal-appointment').classList.remove('open');
   editingAppointmentId = null;
   appointmentModalPrefillCompanyId = null;
+  appointmentModalPrefillProjectId = null;
   lastAutoFilledOrt = '';
 }
 
@@ -2283,6 +2339,7 @@ function setupAppointmentAutoFill() {
 
   companySelect.onchange = async () => {
     await rebuildContactDropdownForAppointment(companySelect.value);
+    await rebuildProjectDropdownForAppointment(companySelect.value);
     updateOrtHint();
     autoFillOrtIfAppropriate();
   };
@@ -2301,6 +2358,7 @@ async function saveAppointment() {
   const status       = document.getElementById('t-status').value;
   const company_id   = document.getElementById('t-company').value || null;
   const contact_id   = document.getElementById('t-contact').value || null;
+  const project_id   = document.getElementById('t-project')?.value || null;
   const ort          = document.getElementById('t-ort').value.trim();
   const notizen      = document.getElementById('t-notizen').value.trim();
   const btn          = document.getElementById('t-save-btn');
@@ -2324,7 +2382,7 @@ async function saveAppointment() {
       uhrzeit_von: uhrzeit_von || null,
       uhrzeit_bis: uhrzeit_bis || null,
       typ_id, status,
-      company_id, contact_id,
+      company_id, contact_id, project_id,
       ort: ort || null,
       notizen: notizen || null
     };
@@ -2338,8 +2396,10 @@ async function saveAppointment() {
     closeAppointmentModal();
     showToast(editingAppointmentId ? 'Termin aktualisiert.' : 'Termin angelegt.');
 
-    // Wenn wir auf der Firmen-Detailseite sind, nur die Detail-Daten refreshen
-    if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    // Kontext-sensibles Refresh
+    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+      await loadProjectAppointments(currentProjectDetailId);
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await Promise.all([
         loadCompanyAppointments(currentCompanyDetailId),
         loadCompanyAppointmentMap()
@@ -2370,7 +2430,9 @@ async function deleteAppointment() {
     closeAppointmentModal();
     showToast('Termin gelöscht.');
 
-    if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+      await loadProjectAppointments(currentProjectDetailId);
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await Promise.all([
         loadCompanyAppointments(currentCompanyDetailId),
         loadCompanyAppointmentMap()
@@ -2383,6 +2445,652 @@ async function deleteAppointment() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROJEKTE (PROJECTS)
+// ═══════════════════════════════════════════════════════════
+
+async function loadProjektStatus() {
+  if (projektStatusCache.length > 0) return projektStatusCache;
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe, reihenfolge').eq('kategorie', 'projekt_status').eq('ist_aktiv', true).order('reihenfolge');
+  if (error) { showToast('Fehler beim Laden der Projekt-Status: ' + error.message, true); return []; }
+  projektStatusCache = data || [];
+  return projektStatusCache;
+}
+
+function projektStatusFarbe(wert) {
+  const s = projektStatusCache.find(x => x.wert === wert);
+  return s?.farbe || '#6b7280';
+}
+
+async function loadUserProfilesCache() {
+  if (userProfilesCache.length > 0) return userProfilesCache;
+  const { data, error } = await db.from('user_profiles')
+    .select('id, name, email').in('status', ['aktiv', 'eingeladen']).order('name');
+  if (error) { return []; }
+  userProfilesCache = data || [];
+  return userProfilesCache;
+}
+
+async function loadProjects() {
+  const tbody = document.getElementById('projects-table-body');
+  tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Lade Projekte ...</div></td></tr>';
+
+  await loadProjektStatus();
+
+  // Firmen sicherstellen
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    companiesCache = cs || [];
+  }
+
+  // User sicherstellen
+  await loadUserProfilesCache();
+
+  // Filter-Dropdowns befüllen
+  const statusFilter = document.getElementById('projects-status-filter');
+  if (statusFilter.options.length <= 2) {
+    const existing = statusFilter.value;
+    let options = '<option value="">Alle Status</option><option value="_active">Aktive (Lead, Angebot, In Arbeit)</option>';
+    options += projektStatusCache.map(s => `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
+    statusFilter.innerHTML = options;
+    if (existing) statusFilter.value = existing;
+  }
+
+  const companyFilter = document.getElementById('projects-company-filter');
+  const existingComp = companyFilter.value;
+  companyFilter.innerHTML = '<option value="">Alle Firmen</option><option value="__none__">Interne Projekte (ohne Firma)</option>'
+    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  if (existingComp) companyFilter.value = existingComp;
+
+  const userFilter = document.getElementById('projects-verantwortlicher-filter');
+  const existingUser = userFilter.value;
+  userFilter.innerHTML = '<option value="">Alle Verantwortlichen</option>'
+    + '<option value="__none__">Ohne Verantwortlichen</option>'
+    + userProfilesCache.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+  if (existingUser) userFilter.value = existingUser;
+
+  const { data, error } = await db.from('projects')
+    .select('*, company:companies(id, name), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name)')
+    .order('startdatum', { ascending: false, nullsFirst: false });
+
+  if (error) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
+
+  projectsCache = data || [];
+  filterProjects();
+}
+
+function filterProjects() {
+  const searchTerm       = document.getElementById('projects-search').value.trim().toLowerCase();
+  const statusFilterVal  = document.getElementById('projects-status-filter').value;
+  const companyFilterVal = document.getElementById('projects-company-filter').value;
+  const userFilterVal    = document.getElementById('projects-verantwortlicher-filter').value;
+
+  let filtered = projectsCache;
+
+  if (statusFilterVal === '_active') {
+    filtered = filtered.filter(p => ['Lead', 'Angebot', 'In Arbeit'].includes(p.status));
+  } else if (statusFilterVal) {
+    filtered = filtered.filter(p => p.status === statusFilterVal);
+  }
+
+  if (companyFilterVal === '__none__') {
+    filtered = filtered.filter(p => !p.company_id);
+  } else if (companyFilterVal) {
+    filtered = filtered.filter(p => p.company_id === companyFilterVal);
+  }
+
+  if (userFilterVal === '__none__') {
+    filtered = filtered.filter(p => !p.verantwortlicher_id);
+  } else if (userFilterVal) {
+    filtered = filtered.filter(p => p.verantwortlicher_id === userFilterVal);
+  }
+
+  if (searchTerm) {
+    filtered = filtered.filter(p => {
+      const haystack = [p.name, p.beschreibung, p.notizen, p.company?.name, p.verantwortlicher?.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }
+
+  renderProjectsTable(filtered);
+}
+
+function renderProjectsTable(projects) {
+  const tbody = document.getElementById('projects-table-body');
+  const countEl = document.getElementById('projects-count');
+
+  const total = projectsCache.length;
+  const shown = projects.length;
+  countEl.textContent = (shown === total)
+    ? `${total} Projekt${total === 1 ? '' : 'e'}`
+    : `${shown} von ${total} Projekten`;
+
+  if (shown === 0) {
+    const msg = total === 0
+      ? 'Noch keine Projekte angelegt. Klicke oben auf „+ Neues Projekt".'
+      : 'Keine Projekte entsprechen den Filterkriterien.';
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = projects.map(p => {
+    const statusColor = projektStatusFarbe(p.status);
+    const firmaHtml = p.company_id && p.company
+      ? `<div class="cell-link" onclick="navigateTo('firma', '${esc(p.company_id)}')">${esc(p.company.name)}</div>`
+      : '<span style="color:var(--muted);font-style:italic">Intern</span>';
+    const verantwortlich = p.verantwortlicher?.name
+      ? esc(p.verantwortlicher.name)
+      : '<span style="color:var(--muted);font-style:italic">—</span>';
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-link" onclick="navigateTo('projekt', '${esc(p.id)}')">${esc(p.name)}</div>
+          ${p.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.beschreibung)}</div>` : ''}
+        </td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span></td>
+        <td class="col-tablet">${firmaHtml}</td>
+        <td class="col-desktop" style="color:var(--muted)">${verantwortlich}</td>
+        <td class="col-desktop" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
+        <td class="col-desktop" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
+        <td class="col-tablet">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="navigateTo('projekt', '${esc(p.id)}')">Details</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROJEKT-MODAL
+// ═══════════════════════════════════════════════════════════
+
+async function openProjectModal(mode, projectId = null) {
+  editingProjectId = projectId;
+
+  await loadProjektStatus();
+
+  // Firmen laden
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    companiesCache = cs || [];
+  }
+
+  await loadUserProfilesCache();
+
+  const statusSelect = document.getElementById('p-status');
+  statusSelect.innerHTML = projektStatusCache.map(s =>
+    `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
+
+  const companySelect = document.getElementById('p-company');
+  companySelect.innerHTML = '<option value="">— Intern (ohne Firma) —</option>'
+    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  const userSelect = document.getElementById('p-verantwortlicher');
+  userSelect.innerHTML = '<option value="">— Kein Verantwortlicher —</option>'
+    + userProfilesCache.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+
+  const hauptkontaktSelect = document.getElementById('p-hauptkontakt');
+  hauptkontaktSelect.innerHTML = '<option value="">— Erst Firma wählen —</option>';
+  hauptkontaktSelect.disabled = true;
+
+  // Firma onchange → Hauptkontakt-Dropdown neu aufbauen
+  companySelect.onchange = async () => {
+    await rebuildHauptkontaktDropdown(companySelect.value);
+  };
+
+  document.getElementById('p-name').value = '';
+  document.getElementById('p-beschreibung').value = '';
+  document.getElementById('p-startdatum').value = '';
+  document.getElementById('p-enddatum').value = '';
+  document.getElementById('p-umsatz').value = '';
+  document.getElementById('p-notizen').value = '';
+  statusSelect.value = 'Angebot';
+  companySelect.value = '';
+
+  if (mode === 'new') {
+    document.getElementById('modal-project-title').textContent = 'Neues Projekt';
+    document.getElementById('p-save-btn').textContent = 'Anlegen';
+    document.getElementById('p-delete-btn').style.display = 'none';
+
+    // Verantwortlicher: Default = aktueller User
+    if (currentUser?.id) userSelect.value = currentUser.id;
+
+    // Prefill-Company aus Firmen-Detailseite
+    if (projectModalPrefillCompanyId) {
+      companySelect.value = projectModalPrefillCompanyId;
+      await rebuildHauptkontaktDropdown(projectModalPrefillCompanyId);
+      projectModalPrefillCompanyId = null;
+    }
+  } else {
+    document.getElementById('modal-project-title').textContent = 'Projekt bearbeiten';
+    document.getElementById('p-save-btn').textContent = 'Speichern';
+    document.getElementById('p-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('projects').select('*').eq('id', projectId).single();
+    if (error || !data) { showToast('Projekt konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingProjectId = null; return; }
+
+    document.getElementById('p-name').value = data.name || '';
+    document.getElementById('p-beschreibung').value = data.beschreibung || '';
+    document.getElementById('p-startdatum').value = data.startdatum || '';
+    document.getElementById('p-enddatum').value = data.enddatum || '';
+    document.getElementById('p-umsatz').value = data.geschaetzter_umsatz ?? '';
+    document.getElementById('p-notizen').value = data.notizen || '';
+    statusSelect.value = data.status || 'Angebot';
+    if (data.verantwortlicher_id) userSelect.value = data.verantwortlicher_id;
+    if (data.company_id) {
+      companySelect.value = data.company_id;
+      await rebuildHauptkontaktDropdown(data.company_id);
+      if (data.hauptkontakt_id) hauptkontaktSelect.value = data.hauptkontakt_id;
+    }
+  }
+
+  document.getElementById('modal-project').classList.add('open');
+  setTimeout(() => document.getElementById('p-name').focus(), 100);
+}
+
+async function rebuildHauptkontaktDropdown(companyId) {
+  const hauptkontaktSelect = document.getElementById('p-hauptkontakt');
+  if (!companyId) {
+    hauptkontaktSelect.innerHTML = '<option value="">— Erst Firma wählen —</option>';
+    hauptkontaktSelect.disabled = true;
+    return;
+  }
+  hauptkontaktSelect.disabled = false;
+  const { data, error } = await db.from('contacts')
+    .select('id, vorname, nachname').eq('company_id', companyId).order('nachname').order('vorname');
+  if (error) { hauptkontaktSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
+  const contacts = data || [];
+  if (contacts.length === 0) {
+    hauptkontaktSelect.innerHTML = '<option value="">— Keine Kontakte bei dieser Firma —</option>';
+  } else {
+    hauptkontaktSelect.innerHTML = '<option value="">— Kein Hauptkontakt —</option>'
+      + contacts.map(k => `<option value="${esc(k.id)}">${esc([k.vorname, k.nachname].filter(Boolean).join(' '))}</option>`).join('');
+  }
+}
+
+function closeProjectModal() {
+  document.getElementById('modal-project').classList.remove('open');
+  editingProjectId = null;
+  projectModalPrefillCompanyId = null;
+}
+
+async function saveProject() {
+  const name              = document.getElementById('p-name').value.trim();
+  const status            = document.getElementById('p-status').value;
+  const company_id        = document.getElementById('p-company').value || null;
+  const hauptkontakt_id   = document.getElementById('p-hauptkontakt').value || null;
+  const verantwortlicher_id = document.getElementById('p-verantwortlicher').value || null;
+  const startdatum        = document.getElementById('p-startdatum').value || null;
+  const enddatum          = document.getElementById('p-enddatum').value || null;
+  const umsatzRaw         = document.getElementById('p-umsatz').value;
+  const beschreibung      = document.getElementById('p-beschreibung').value.trim();
+  const notizen           = document.getElementById('p-notizen').value.trim();
+  const btn               = document.getElementById('p-save-btn');
+
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+  if (!status) { showToast('Bitte Status auswählen.', true); return; }
+  if (!['Lead', 'Angebot', 'In Arbeit', 'Abgeschlossen', 'Verloren'].includes(status)) {
+    showToast('Status ungültig.', true); return;
+  }
+  if (startdatum && enddatum && startdatum > enddatum) {
+    showToast('Enddatum muss nach Startdatum liegen.', true); return;
+  }
+  if (hauptkontakt_id && !company_id) {
+    showToast('Hauptkontakt ohne Firma ist nicht möglich.', true); return;
+  }
+
+  const geschaetzter_umsatz = umsatzRaw === '' ? 0 : Number(umsatzRaw);
+  if (Number.isNaN(geschaetzter_umsatz) || geschaetzter_umsatz < 0) {
+    showToast('Umsatz muss eine Zahl ≥ 0 sein.', true); return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = editingProjectId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      name, status,
+      company_id, hauptkontakt_id, verantwortlicher_id,
+      startdatum, enddatum,
+      geschaetzter_umsatz,
+      beschreibung: beschreibung || null,
+      notizen: notizen || null
+    };
+    if (!editingProjectId) payload.erstellt_von = currentUser?.id || null;
+
+    const savedId = editingProjectId;
+
+    let error;
+    if (editingProjectId) { ({ error } = await db.from('projects').update(payload).eq('id', editingProjectId)); }
+    else { ({ error } = await db.from('projects').insert(payload)); }
+    if (error) throw new Error(error.message);
+
+    closeProjectModal();
+    showToast(savedId ? 'Projekt aktualisiert.' : 'Projekt angelegt.');
+
+    // Kontext-sensibles Refresh
+    if (savedId && currentProjectDetailId === savedId) {
+      await loadProjectDetail(savedId);
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+      await loadCompanyProjects(currentCompanyDetailId);
+    } else {
+      await loadProjects();
+    }
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingProjectId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteProject() {
+  if (!editingProjectId) return;
+  if (!confirm('Projekt wirklich löschen?\n\nHinweis: Zugeordnete Termine verlieren die Projekt-Zuordnung, werden aber nicht gelöscht.')) return;
+
+  const btn = document.getElementById('p-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    const deletedId = editingProjectId;
+    const { error } = await db.from('projects').delete().eq('id', deletedId);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Dieses Projekt hat noch verknüpfte Einträge. Diese müssen zuerst entfernt werden.');
+      }
+      throw new Error(error.message);
+    }
+    closeProjectModal();
+    showToast('Projekt gelöscht.');
+
+    if (currentProjectDetailId === deletedId) {
+      currentProjectDetailId = null;
+      navigateTo('projects');
+    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+      await loadCompanyProjects(currentCompanyDetailId);
+    } else {
+      await loadProjects();
+    }
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROJEKT-DETAILSEITE
+// ═══════════════════════════════════════════════════════════
+
+async function loadProjectDetail(projectId) {
+  currentProjectDetailId = projectId;
+
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-project-detail').classList.add('active');
+  document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
+  document.getElementById('nav-projects')?.classList.add('active');
+  setMobileNav('project-detail');
+
+  document.getElementById('project-detail-name').textContent = '…';
+  document.getElementById('project-detail-title').textContent = '…';
+  document.getElementById('project-detail-subline').innerHTML = '';
+  document.getElementById('project-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Projekt ...</div>';
+  document.getElementById('project-detail-beschreibung-wrap').style.display = 'none';
+  document.getElementById('project-detail-notizen-wrap').style.display = 'none';
+  document.getElementById('project-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
+
+  await loadProjektStatus();
+
+  const { data, error } = await db.from('projects')
+    .select('*, company:companies(id, name), hauptkontakt:contacts(id, vorname, nachname, email, telefon), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name, email)')
+    .eq('id', projectId).single();
+
+  if (error || !data) {
+    document.getElementById('project-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">Projekt nicht gefunden oder Fehler: ${esc(error?.message || 'Unbekannt')}</div>`;
+    document.getElementById('project-detail-title').textContent = 'Fehler';
+    document.getElementById('project-detail-name').textContent = 'Fehler';
+    return;
+  }
+
+  renderProjectDetail(data);
+  await loadProjectAppointments(projectId);
+}
+
+function renderProjectDetail(p) {
+  document.getElementById('project-detail-name').textContent = p.name;
+  document.getElementById('project-detail-title').textContent = p.name;
+
+  const statusColor = projektStatusFarbe(p.status);
+  const subline = document.getElementById('project-detail-subline');
+  const sublineParts = [`<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span>`];
+  if (p.company) {
+    sublineParts.push(`<span>· <span class="cell-link" onclick="navigateTo('firma', '${esc(p.company.id)}')">${esc(p.company.name)}</span></span>`);
+  } else {
+    sublineParts.push('<span>· Internes Projekt</span>');
+  }
+  subline.innerHTML = sublineParts.join('');
+
+  const editBtn = document.getElementById('project-detail-edit-btn');
+  editBtn.onclick = () => openProjectModal('edit', p.id);
+
+  document.getElementById('project-detail-add-appointment-btn').onclick = () => {
+    appointmentModalPrefillProjectId = p.id;
+    openAppointmentModal('new');
+  };
+
+  const hauptkontaktName = p.hauptkontakt
+    ? [p.hauptkontakt.vorname, p.hauptkontakt.nachname].filter(Boolean).join(' ')
+    : null;
+
+  const verantwortlicherName = p.verantwortlicher?.name || null;
+
+  const info = document.getElementById('project-detail-info');
+  info.innerHTML = `
+    <div class="detail-field">
+      <div class="detail-label">Verantwortlich</div>
+      <div class="detail-value">${verantwortlicherName ? esc(verantwortlicherName) : '<span class="detail-value-muted">—</span>'}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Hauptkontakt</div>
+      <div class="detail-value">${hauptkontaktName ? esc(hauptkontaktName) : '<span class="detail-value-muted">—</span>'}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Startdatum</div>
+      <div class="detail-value">${p.startdatum ? esc(formatDateDE(p.startdatum)) : '<span class="detail-value-muted">—</span>'}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Enddatum (geplant)</div>
+      <div class="detail-value">${p.enddatum ? esc(formatDateDE(p.enddatum)) : '<span class="detail-value-muted">—</span>'}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Geschätzter Umsatz</div>
+      <div class="detail-value" style="font-weight:500">${esc(formatPreis(p.geschaetzter_umsatz))}</div>
+    </div>
+  `;
+
+  if (p.beschreibung) {
+    document.getElementById('project-detail-beschreibung-wrap').style.display = '';
+    document.getElementById('project-detail-beschreibung').textContent = p.beschreibung;
+  } else {
+    document.getElementById('project-detail-beschreibung-wrap').style.display = 'none';
+  }
+
+  if (p.notizen) {
+    document.getElementById('project-detail-notizen-wrap').style.display = '';
+    document.getElementById('project-detail-notizen').textContent = p.notizen;
+  } else {
+    document.getElementById('project-detail-notizen-wrap').style.display = 'none';
+  }
+}
+
+async function loadProjectAppointments(projectId) {
+  const tbody = document.getElementById('project-appointments-body');
+  const countEl = document.getElementById('project-appointments-count');
+
+  const { data, error } = await db.from('appointments')
+    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)')
+    .eq('project_id', projectId);
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Termine';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Termine';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Termine für dieses Projekt. Klicke oben auf „+ Termin hinzufügen".</div></td></tr>';
+    return;
+  }
+
+  const anzGeplant       = all.filter(a => a.status === 'geplant').length;
+  const anzDurchgefuehrt = all.filter(a => a.status === 'durchgefuehrt').length;
+  countEl.textContent = `${total} Termin${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgeführt`;
+
+  const todayISO = toISODate(new Date());
+  const upcoming = all.filter(a => a.datum >= todayISO)
+    .sort((a, b) => a.datum === b.datum
+      ? (a.uhrzeit_von || '').localeCompare(b.uhrzeit_von || '')
+      : a.datum.localeCompare(b.datum));
+  const past = all.filter(a => a.datum < todayISO)
+    .sort((a, b) => a.datum === b.datum
+      ? (b.uhrzeit_von || '').localeCompare(a.uhrzeit_von || '')
+      : b.datum.localeCompare(a.datum));
+
+  const sorted = upcoming.concat(past);
+
+  tbody.innerHTML = sorted.map(a => {
+    const typFarbe = a.typ?.farbe || '#6b7280';
+    const typWert  = a.typ?.wert || '—';
+    const isPast = a.datum < todayISO;
+    const uhrzeit = a.uhrzeit_von
+      ? (a.uhrzeit_bis ? `${formatTime(a.uhrzeit_von)}–${formatTime(a.uhrzeit_bis)}` : formatTime(a.uhrzeit_von))
+      : '';
+
+    return `
+      <tr>
+        <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
+        <td>
+          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')">${esc(a.titel || '—')}</div>
+        </td>
+        <td class="col-tablet">
+          <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
+        </td>
+        <td>
+          <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
+        </td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  // Show-All-Link immer ausblenden (wir zeigen hier ohnehin alle)
+  document.getElementById('project-appointments-show-all').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROJEKTE AUF FIRMEN-DETAILSEITE
+// ═══════════════════════════════════════════════════════════
+
+async function loadCompanyProjects(companyId) {
+  const tbody = document.getElementById('company-projects-body');
+  const countEl = document.getElementById('company-projects-count');
+
+  await loadProjektStatus();
+
+  const { data, error } = await db.from('projects')
+    .select('*').eq('company_id', companyId)
+    .order('startdatum', { ascending: false, nullsFirst: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Projekte';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Projekte';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Projekte für diese Firma. Klicke oben auf „+ Projekt hinzufügen".</div></td></tr>';
+    return;
+  }
+
+  const anzAktiv = all.filter(p => ['Lead', 'Angebot', 'In Arbeit'].includes(p.status)).length;
+  const anzAbgeschlossen = all.filter(p => p.status === 'Abgeschlossen').length;
+  countEl.textContent = `${total} Projekt${total === 1 ? '' : 'e'} · ${anzAktiv} aktiv · ${anzAbgeschlossen} abgeschlossen`;
+
+  // Sortierung: aktive zuerst, dann abgeschlossen, dann verloren
+  const sortPrio = { 'In Arbeit': 1, 'Angebot': 2, 'Lead': 3, 'Abgeschlossen': 4, 'Verloren': 5 };
+  const sorted = [...all].sort((a, b) => {
+    const pa = sortPrio[a.status] || 99;
+    const pb = sortPrio[b.status] || 99;
+    if (pa !== pb) return pa - pb;
+    return (b.startdatum || '').localeCompare(a.startdatum || '');
+  });
+
+  tbody.innerHTML = sorted.map(p => {
+    const statusColor = projektStatusFarbe(p.status);
+    return `
+      <tr>
+        <td>
+          <div class="cell-link" onclick="navigateTo('projekt', '${esc(p.id)}')">${esc(p.name)}</div>
+        </td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span></td>
+        <td class="col-tablet" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
+        <td class="col-tablet" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
+        <td class="col-desktop">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="navigateTo('projekt', '${esc(p.id)}')">Details</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROJEKT-DROPDOWN IM TERMIN-MODAL
+// ═══════════════════════════════════════════════════════════
+
+async function rebuildProjectDropdownForAppointment(companyId) {
+  const projectSelect = document.getElementById('t-project');
+  if (!projectSelect) return;
+
+  // Alle aktiven Projekte der Firma (oder interne, wenn keine Firma)
+  let query = db.from('projects')
+    .select('id, name, status')
+    .in('status', ['Lead', 'Angebot', 'In Arbeit']);
+
+  if (companyId) {
+    query = query.eq('company_id', companyId);
+  } else {
+    query = query.is('company_id', null);
+  }
+
+  const { data, error } = await query.order('name');
+
+  if (error) { projectSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
+
+  const projects = data || [];
+  if (projects.length === 0) {
+    const hint = companyId ? 'Keine aktiven Projekte bei dieser Firma' : 'Keine aktiven internen Projekte';
+    projectSelect.innerHTML = `<option value="">— ${hint} —</option>`;
+  } else {
+    projectSelect.innerHTML = '<option value="">— Kein Projekt —</option>'
+      + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   }
 }
 
