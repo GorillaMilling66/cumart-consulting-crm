@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.2 (Einsatz-Wert-Tracking bei Projekten, Spalte 'Wert')
+   Version 1.9.3 (Einsätze ohne Datum / Vorausplanung)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -3574,8 +3574,9 @@ async function loadServicesCache() {
   return servicesCache;
 }
 
-// Kompaktes Datum-Range-Format: "21.04.2026" oder "21.04.–23.04.2026"
+// Kompaktes Datum-Range-Format: "21.04.2026" oder "21.04.–23.04.2026" oder "Ungeplant"
 function formatDeploymentDateRange(von, bis) {
+  if (!von && !bis) return 'Ungeplant';
   if (!von) return '—';
   if (!bis || von === bis) return formatDateDE(von);
   // Beide Daten im selben Jahr?
@@ -3586,6 +3587,16 @@ function formatDeploymentDateRange(von, bis) {
     return `${vonStr}–${formatDateDE(bis).replace(/^[A-Za-z]{2}, /, '')}`;
   }
   return `${formatDateDE(von)} – ${formatDateDE(bis)}`;
+}
+
+/**
+ * Rendert das Datum einer Deployment-Zeile, inkl. "Ungeplant"-Badge bei NULL.
+ */
+function renderDeploymentDateCell(von, bis) {
+  if (!von && !bis) {
+    return '<span class="badge" style="background:#f3f4f6;color:#6b7280">Ungeplant</span>';
+  }
+  return `<div class="date-cell">${esc(formatDeploymentDateRange(von, bis))}</div>`;
 }
 
 function calcDeploymentGesamt(menge, einzelpreis) {
@@ -3625,7 +3636,8 @@ async function loadDeployments() {
 
   const { data, error } = await db.from('deployments')
     .select('*, company:companies(id, name), project:projects(id, name), service:services(id, name, einheit)')
-    .order('datum_von', { ascending: false });
+    .order('datum_von', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
 
   if (error) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
@@ -3646,24 +3658,27 @@ function filterDeployments() {
   let filtered = deploymentsCache;
 
   // Zeitraum
-  if (rangeFilter === 'upcoming') {
-    filtered = filtered.filter(d => d.datum_bis >= todayISO);
+  if (rangeFilter === 'unscheduled') {
+    filtered = filtered.filter(d => !d.datum_von);
+  } else if (rangeFilter === 'upcoming') {
+    filtered = filtered.filter(d => d.datum_bis && d.datum_bis >= todayISO);
   } else if (rangeFilter === 'past') {
-    filtered = filtered.filter(d => d.datum_bis < todayISO);
+    filtered = filtered.filter(d => d.datum_bis && d.datum_bis < todayISO);
   } else if (rangeFilter === 'month') {
     const mStart = toISODate(new Date(today.getFullYear(), today.getMonth(), 1));
     const mEnd   = toISODate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
-    filtered = filtered.filter(d => d.datum_von <= mEnd && d.datum_bis >= mStart);
+    filtered = filtered.filter(d => d.datum_von && d.datum_bis && d.datum_von <= mEnd && d.datum_bis >= mStart);
   } else if (rangeFilter === 'quarter') {
     const q = Math.floor(today.getMonth() / 3);
     const qStart = toISODate(new Date(today.getFullYear(), q * 3, 1));
     const qEnd   = toISODate(new Date(today.getFullYear(), q * 3 + 3, 0));
-    filtered = filtered.filter(d => d.datum_von <= qEnd && d.datum_bis >= qStart);
+    filtered = filtered.filter(d => d.datum_von && d.datum_bis && d.datum_von <= qEnd && d.datum_bis >= qStart);
   } else if (rangeFilter === 'year') {
     const yStart = toISODate(new Date(today.getFullYear(), 0, 1));
     const yEnd   = toISODate(new Date(today.getFullYear(), 11, 31));
-    filtered = filtered.filter(d => d.datum_von <= yEnd && d.datum_bis >= yStart);
+    filtered = filtered.filter(d => d.datum_von && d.datum_bis && d.datum_von <= yEnd && d.datum_bis >= yStart);
   }
+  // 'all' zeigt alle (inkl. Ungeplante)
 
   if (statusFilter) filtered = filtered.filter(d => d.status === statusFilter);
   if (companyFilterVal) filtered = filtered.filter(d => d.company_id === companyFilterVal);
@@ -3725,7 +3740,7 @@ function renderDeploymentsTable(deployments) {
 
     return `
       <tr>
-        <td><div class="date-cell">${esc(formatDeploymentDateRange(d.datum_von, d.datum_bis))}</div></td>
+        <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
         </td>
@@ -3774,9 +3789,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
 
   // Felder zurücksetzen
   document.getElementById('d-titel').value = '';
-  const todayISO = toISODate(new Date());
-  document.getElementById('d-datum-von').value = todayISO;
-  document.getElementById('d-datum-bis').value = todayISO;
+  // Datum bleibt leer beim Neu-Anlegen → User kann bewusst "Ungeplant" wählen
+  document.getElementById('d-datum-von').value = '';
+  document.getElementById('d-datum-bis').value = '';
   document.getElementById('d-uhrzeit-von').value = '';
   document.getElementById('d-uhrzeit-bis').value = '';
   document.getElementById('d-ort').value = '';
@@ -3787,6 +3802,8 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-notizen').value = '';
   document.getElementById('d-externe-techniker').value = '';
   document.getElementById('d-create-appointment').checked = false;
+  const datumHintWrap = document.getElementById('d-datum-hint-wrap');
+  if (datumHintWrap) datumHintWrap.style.display = '';
 
   renderTechnikerChipsForDeployment();
   await rebuildProjectDropdownForDeployment('');
@@ -4024,15 +4041,29 @@ async function saveDeployment() {
   const btn           = document.getElementById('d-save-btn');
 
   if (!titel)     { showToast('Bitte Titel eingeben.', true); return; }
-  if (!datum_von) { showToast('Bitte Datum von wählen.', true); return; }
-  if (!datum_bis) { showToast('Bitte Datum bis wählen.', true); return; }
-  if (datum_bis < datum_von) { showToast('Datum bis muss nach Datum von liegen.', true); return; }
   if (!company_id) { showToast('Bitte Firma auswählen.', true); return; }
+
+  // Datum: entweder beide gesetzt oder beide leer (Ungeplant)
+  const vonGesetzt = !!datum_von;
+  const bisGesetzt = !!datum_bis;
+  if (vonGesetzt !== bisGesetzt) {
+    showToast('Bitte entweder beide Daten setzen oder beide leer lassen (Ungeplant).', true);
+    return;
+  }
+  if (vonGesetzt && bisGesetzt && datum_bis < datum_von) {
+    showToast('Datum bis muss nach Datum von liegen.', true); return;
+  }
+
   if (!['Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert'].includes(status)) {
     showToast('Status ungültig.', true); return;
   }
   if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
     showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true); return;
+  }
+  // Uhrzeit ohne Datum macht keinen Sinn — Warnung
+  if (!vonGesetzt && (uhrzeit_von || uhrzeit_bis)) {
+    showToast('Uhrzeit ohne Datum nicht möglich. Bitte Datum setzen oder Uhrzeit leeren.', true);
+    return;
   }
 
   const menge = mengeRaw === '' ? 1 : Number(mengeRaw);
@@ -4045,7 +4076,9 @@ async function saveDeployment() {
 
   try {
     const payload = {
-      titel, datum_von, datum_bis,
+      titel,
+      datum_von: datum_von || null,
+      datum_bis: datum_bis || null,
       uhrzeit_von: uhrzeit_von || null,
       uhrzeit_bis: uhrzeit_bis || null,
       status,
@@ -4114,6 +4147,18 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   const { data: existing } = await db.from('appointments')
     .select('id').eq('deployment_id', deployment.id).limit(1);
   const existingId = existing?.[0]?.id;
+
+  // Ohne Datum kann kein Termin angelegt werden (Termine brauchen Datum)
+  if (!deployment.datum_von) {
+    if (existingId) {
+      // Wenn Einsatz jetzt kein Datum mehr hat, bestehenden Termin entkoppeln
+      await db.from('appointments').update({ deployment_id: null }).eq('id', existingId);
+    }
+    if (shouldHaveAppointment) {
+      showToast('Termin-Kopplung benötigt ein Datum. Bitte Datum setzen und erneut speichern.', true);
+    }
+    return;
+  }
 
   if (!shouldHaveAppointment) {
     if (existingId) {
@@ -4196,7 +4241,8 @@ async function loadCompanyDeployments(companyId) {
   const { data, error } = await db.from('deployments')
     .select('*, project:projects(id, name), service:services(id, name)')
     .eq('company_id', companyId)
-    .order('datum_von', { ascending: false });
+    .order('datum_von', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -4229,7 +4275,7 @@ async function loadCompanyDeployments(companyId) {
 
     return `
       <tr>
-        <td><div class="date-cell">${esc(formatDeploymentDateRange(d.datum_von, d.datum_bis))}</div></td>
+        <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
         </td>
@@ -4257,7 +4303,8 @@ async function loadProjectDeployments(projectId) {
   const { data, error } = await db.from('deployments')
     .select('*, service:services(id, name)')
     .eq('project_id', projectId)
-    .order('datum_von');
+    .order('datum_von', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -4279,9 +4326,12 @@ async function loadProjectDeployments(projectId) {
   const anzGeplant      = all.filter(d => d.status === 'Geplant').length;
   const anzDurchgefuehrt = all.filter(d => d.status === 'Durchgeführt').length;
   const anzAbgerechnet  = all.filter(d => d.status === 'Abgerechnet').length;
+  const anzUngeplant    = all.filter(d => !d.datum_von).length;
   const summeAufwand    = all.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
 
-  countEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
+  let countText = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
+  if (anzUngeplant > 0) countText += ` · ${anzUngeplant} ohne Datum`;
+  countEl.textContent = countText;
 
   tbody.innerHTML = all.map(d => {
     const statusColor = einsatzStatusFarbe(d.status);
@@ -4292,7 +4342,7 @@ async function loadProjectDeployments(projectId) {
 
     return `
       <tr>
-        <td><div class="date-cell">${esc(formatDeploymentDateRange(d.datum_von, d.datum_bis))}</div></td>
+        <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
         </td>

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.9.2 (Einsatz-Preis bei Projekt sichtbar mit klarem Hinweis, Spalte 'Wert' auf Projekt-Detail) -->
+<!-- VERSION: 1.9.3 (Einsätze ohne Datum - Vorausplanung für Projekte) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -876,6 +876,7 @@
           <div class="form-group" style="min-width:150px;margin:0">
             <select id="deployments-range-filter" onchange="filterDeployments()">
               <option value="all">Alle Zeiträume</option>
+              <option value="unscheduled">Nur Ungeplante</option>
               <option value="upcoming">Kommende</option>
               <option value="month">Diesen Monat</option>
               <option value="quarter">Dieses Quartal</option>
@@ -1447,12 +1448,17 @@
         <input type="text" id="d-titel" placeholder="z. B. Heidenhain Grundlagen – Tag 1">
       </div>
       <div class="form-group">
-        <label>Datum von *</label>
+        <label>Datum von</label>
         <input type="date" id="d-datum-von">
       </div>
       <div class="form-group">
-        <label>Datum bis *</label>
+        <label>Datum bis</label>
         <input type="date" id="d-datum-bis">
+      </div>
+      <div class="form-group full" id="d-datum-hint-wrap" style="display:none">
+        <div style="font-size:11px;color:var(--muted);padding:2px 0">
+          Leer lassen für „Ungeplant". Ideal für Paket-Einsätze, die noch nicht terminiert sind.
+        </div>
       </div>
       <div class="form-group">
         <label>Uhrzeit von</label>
