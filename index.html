@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.5.3 (Firmen-Detailseite mit Kontakten + Kopier-Buttons) -->
+<!-- VERSION: 1.6.0 (Termine – Phase 3a Stufe 1) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -137,6 +137,18 @@
         </svg>
         Kontakte
       </button>
+
+      <button class="nav-item" id="nav-appointments"
+              onclick="navigateTo('appointments')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Termine
+      </button>
     </nav>
 
     <div class="nav-bottom">
@@ -221,7 +233,7 @@
       </div>
       <div class="card">
         <p style="color:var(--muted);font-size:14px">
-          In Kürze findest du hier deine Arbeitsbereiche (Projekte, Termine, Einsätze).
+          In Kürze findest du hier deine Arbeitsbereiche (Projekte, Einsätze).
         </p>
       </div>
     </div>
@@ -277,8 +289,6 @@
 
     <!-- SEITE: FIRMEN-DETAIL -->
     <div class="page" id="page-company-detail">
-
-      <!-- Breadcrumb oben -->
       <div class="breadcrumb">
         <button class="breadcrumb-back" onclick="navigateTo('companies')" aria-label="Zurück">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -291,7 +301,6 @@
         <span class="breadcrumb-current" id="company-detail-name">…</span>
       </div>
 
-      <!-- Firmen-Kopf-Karte -->
       <div class="card detail-card">
         <div class="detail-header">
           <div>
@@ -310,9 +319,7 @@
           </div>
         </div>
 
-        <div class="detail-grid" id="company-detail-info">
-          <!-- aus JS -->
-        </div>
+        <div class="detail-grid" id="company-detail-info"></div>
 
         <div id="company-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
           <div class="detail-label">Notizen</div>
@@ -320,7 +327,6 @@
         </div>
       </div>
 
-      <!-- Kontakte-Sektion -->
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -347,7 +353,6 @@
           </table>
         </div>
       </div>
-
     </div>
 
     <!-- SEITE: KONTAKTE -->
@@ -393,6 +398,73 @@
             </thead>
             <tbody id="contacts-table-body">
               <tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: TERMINE (LISTE) -->
+    <div class="page" id="page-appointments">
+      <div class="page-header">
+        <h1 class="page-title">Termine</h1>
+        <button class="btn btn-primary" onclick="openAppointmentModal('new')">
+          + Neuer Termin
+        </button>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="appointments-search"
+                   placeholder="Suche nach Titel, Firma, Ort ..."
+                   oninput="filterAppointments()">
+          </div>
+          <div class="form-group" style="min-width:150px;margin:0">
+            <select id="appointments-range-filter" onchange="filterAppointments()">
+              <option value="upcoming">Kommende</option>
+              <option value="today">Heute</option>
+              <option value="week">Diese Woche</option>
+              <option value="month">Diesen Monat</option>
+              <option value="past">Vergangene</option>
+              <option value="all">Alle</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:130px;margin:0">
+            <select id="appointments-status-filter" onchange="filterAppointments()">
+              <option value="">Alle Status</option>
+              <option value="geplant">Geplant</option>
+              <option value="durchgefuehrt">Durchgeführt</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:130px;margin:0">
+            <select id="appointments-typ-filter" onchange="filterAppointments()">
+              <option value="">Alle Typen</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="appointments-count">Termine</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th style="width:90px" class="col-tablet">Uhrzeit</th>
+                <th>Titel</th>
+                <th class="col-tablet">Typ</th>
+                <th class="col-desktop">Firma</th>
+                <th class="col-desktop">Ort</th>
+                <th style="width:110px">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="appointments-table-body">
+              <tr><td colspan="8"><div class="empty">Lade Termine ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -510,6 +582,17 @@
       </svg>
       <span>Kontakte</span>
     </button>
+    <button class="mobile-nav-item" id="m-nav-appointments"
+            onclick="navigateTo('appointments')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      <span>Termine</span>
+    </button>
     <button class="mobile-nav-item" id="m-nav-more" onclick="openMoreMenu()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -578,6 +661,8 @@
   </div>
 
 </div>
+
+<!-- ══════════════ MODALS ══════════════ -->
 
 <!-- MODAL: FIRMA -->
 <div class="modal-overlay" id="modal-company">
@@ -705,6 +790,80 @@
       </button>
       <button class="btn" onclick="closeContactModal()">Abbrechen</button>
       <button class="btn btn-primary" id="k-save-btn" onclick="saveContact()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: TERMIN -->
+<div class="modal-overlay" id="modal-appointment">
+  <div class="modal" style="width:680px">
+    <div class="modal-title" id="modal-appointment-title">Neuer Termin</div>
+
+    <div class="modal-group-title">Termindaten</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Titel *</label>
+        <input type="text" id="t-titel" placeholder="z. B. Erstberatung Heidenhain-Schulung">
+      </div>
+      <div class="form-group">
+        <label>Datum *</label>
+        <input type="date" id="t-datum">
+      </div>
+      <div class="form-group">
+        <label>Typ *</label>
+        <select id="t-typ"></select>
+      </div>
+      <div class="form-group">
+        <label>Uhrzeit von</label>
+        <input type="time" id="t-uhrzeit-von">
+      </div>
+      <div class="form-group">
+        <label>Uhrzeit bis</label>
+        <input type="time" id="t-uhrzeit-bis">
+      </div>
+      <div class="form-group">
+        <label>Status *</label>
+        <select id="t-status">
+          <option value="geplant">Geplant</option>
+          <option value="durchgefuehrt">Durchgeführt</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Zuordnung</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Firma</label>
+        <select id="t-company"></select>
+      </div>
+      <div class="form-group">
+        <label>Kontakt</label>
+        <select id="t-contact"></select>
+      </div>
+      <div class="form-group full">
+        <label>Ort</label>
+        <input type="text" id="t-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
+        <div id="t-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+             onclick="useCompanyAddressForOrt()"
+             title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Notizen</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <textarea id="t-notizen" rows="3" placeholder="Freitext-Notizen zum Termin ..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="t-delete-btn"
+              onclick="deleteAppointment()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeAppointmentModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="t-save-btn" onclick="saveAppointment()">Anlegen</button>
     </div>
   </div>
 </div>
