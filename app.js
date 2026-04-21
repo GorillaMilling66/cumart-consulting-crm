@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.12.0 (Mitgliedschafts-Programme)
+   Version 1.13.0 (Mitgliedschaften + Entitlements)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -1965,6 +1965,424 @@ async function deleteProgram() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  MITGLIEDSCHAFTEN (v1.13.0)
+// ═══════════════════════════════════════════════════════════
+
+let editingMembershipId = null;
+let currentMembershipCompanyId = null;  // für Modal-Context
+
+/** Lädt Programme-Cache (für Dropdowns). */
+let programsCache = [];
+async function loadProgramsCache() {
+  if (programsCache.length > 0) return programsCache;
+  const { data, error } = await db.from('membership_programs')
+    .select('*, membership_program_benefits(*)')
+    .eq('ist_aktiv', true)
+    .order('name');
+  if (error) { return []; }
+  programsCache = data || [];
+  return programsCache;
+}
+
+/** Rendert die Mitgliedschafts-Sektion auf der Firma-Detail-Seite. */
+async function renderCompanyMemberships(companyId) {
+  const container = document.getElementById('company-memberships-body');
+  const countEl = document.getElementById('company-memberships-count');
+  if (!container) return;
+
+  container.innerHTML = '<div class="empty">Lade Mitgliedschaften ...</div>';
+
+  // Mitgliedschaften + Programm-Info + alle Entitlements + Redemptions
+  const { data: memberships, error } = await db.from('memberships')
+    .select(`
+      *,
+      membership_programs(name, laufzeit_monate),
+      contacts:hauptkontakt_id(vorname, nachname),
+      user_profiles:verantwortlicher_id(name)
+    `)
+    .eq('company_id', companyId)
+    .order('start_datum', { ascending: false });
+
+  if (error) {
+    container.innerHTML = `<div class="empty">Fehler: ${esc(error.message)}</div>`;
+    return;
+  }
+
+  if (!memberships || memberships.length === 0) {
+    countEl.textContent = 'Mitgliedschaften';
+    container.innerHTML = '<div class="empty">Noch keine Mitgliedschaften angelegt.</div>';
+    return;
+  }
+
+  // Für jede Mitgliedschaft: Entitlements + Redemptions holen
+  const membershipIds = memberships.map(m => m.id);
+  const { data: entitlements } = await db.from('entitlements')
+    .select('*')
+    .in('membership_id', membershipIds);
+  const entitlementsByMs = {};
+  (entitlements || []).forEach(e => {
+    if (!entitlementsByMs[e.membership_id]) entitlementsByMs[e.membership_id] = [];
+    entitlementsByMs[e.membership_id].push(e);
+  });
+
+  const entitlementIds = (entitlements || []).map(e => e.id);
+  let redemptionsByEnt = {};
+  if (entitlementIds.length > 0) {
+    const { data: redemptions } = await db.from('entitlement_redemptions')
+      .select('entitlement_id, menge_eingeloest')
+      .in('entitlement_id', entitlementIds);
+    (redemptions || []).forEach(r => {
+      redemptionsByEnt[r.entitlement_id] = (redemptionsByEnt[r.entitlement_id] || 0) + Number(r.menge_eingeloest || 0);
+    });
+  }
+
+  const aktiv = memberships.filter(m => m.status === 'aktiv').length;
+  countEl.textContent = `${memberships.length} Mitgliedschaft${memberships.length === 1 ? '' : 'en'}${aktiv > 0 ? ` · ${aktiv} aktiv` : ''}`;
+
+  container.innerHTML = memberships.map(m => renderMembershipCard(m, entitlementsByMs[m.id] || [], redemptionsByEnt)).join('');
+}
+
+/** Rendert eine einzelne Mitgliedschafts-Karte. */
+function renderMembershipCard(m, entitlements, redemptionsByEnt) {
+  const programName = m.membership_programs?.name || '(Programm entfernt)';
+  const hauptkontakt = m.contacts ? [m.contacts.vorname, m.contacts.nachname].filter(Boolean).join(' ') : '';
+  const verantwortlich = m.user_profiles?.name || '';
+
+  const statusBadge = {
+    aktiv:    '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>',
+    pausiert: '<span class="badge" style="background:#fef3c7;color:#d97706">Pausiert</span>',
+    beendet:  '<span class="badge" style="background:#f3f4f6;color:#6b7280">Beendet</span>'
+  }[m.status] || '';
+
+  // Tage bis Ablauf berechnen
+  let ablaufHinweis = '';
+  if (m.status === 'aktiv' && m.end_datum) {
+    const heute = new Date();
+    heute.setHours(0, 0, 0, 0);
+    const endDatum = parseLocalDate(m.end_datum);
+    const tage = Math.floor((endDatum - heute) / (1000 * 60 * 60 * 24));
+    if (tage < 0) {
+      ablaufHinweis = ` · <span style="color:var(--danger)">abgelaufen seit ${Math.abs(tage)} Tag${Math.abs(tage) === 1 ? '' : 'en'}</span>`;
+    } else if (tage <= 60) {
+      ablaufHinweis = ` · <span style="color:var(--warning)">läuft in ${tage} Tag${tage === 1 ? '' : 'en'} ab</span>`;
+    } else {
+      ablaufHinweis = ` · läuft in ${tage} Tagen ab`;
+    }
+  }
+
+  // Benefits rendern
+  const benefitsHtml = entitlements.length === 0
+    ? '<div style="font-size:12px;color:var(--muted);padding:4px 0">Keine Bonis angelegt.</div>'
+    : entitlements
+        .sort((a, b) => (a.reihenfolge || 0) - (b.reihenfolge || 0))
+        .map(e => renderEntitlementProgress(e, redemptionsByEnt[e.id] || 0))
+        .join('');
+
+  return `
+    <div class="membership-card">
+      <div class="membership-card-header">
+        <div>
+          <div class="membership-card-title" onclick="openMembershipModal('edit', '${esc(m.id)}', '${esc(m.company_id)}')">
+            ${esc(programName)}
+          </div>
+          <div class="membership-card-meta">
+            ${m.mitgliedsnummer ? `Nr. ${esc(m.mitgliedsnummer)} · ` : ''}${esc(formatDateDE(m.start_datum))} – ${esc(formatDateDE(m.end_datum))}${ablaufHinweis}
+          </div>
+          ${hauptkontakt || verantwortlich ? `
+            <div class="membership-card-meta" style="margin-top:4px">
+              ${hauptkontakt ? `Hauptkontakt: ${esc(hauptkontakt)}` : ''}${hauptkontakt && verantwortlich ? ' · ' : ''}${verantwortlich ? `Betreut von: ${esc(verantwortlich)}` : ''}
+            </div>
+          ` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${statusBadge}
+          <button class="btn btn-sm" onclick="openMembershipModal('edit', '${esc(m.id)}', '${esc(m.company_id)}')">Bearbeiten</button>
+        </div>
+      </div>
+      <div class="membership-card-benefits">${benefitsHtml}</div>
+    </div>`;
+}
+
+/** Rendert eine Fortschrittszeile für ein Entitlement. */
+function renderEntitlementProgress(e, eingeloest) {
+  const gesamt = Number(e.gesamt_menge) || 0;
+  const offen = Math.max(0, gesamt - eingeloest);
+  const anteil = gesamt > 0 ? Math.min(100, (eingeloest / gesamt) * 100) : 0;
+
+  let fillClass = '';
+  if (anteil >= 100) fillClass = '';
+  else if (offen > 0 && e.verfall_datum) {
+    const heute = new Date();
+    heute.setHours(0, 0, 0, 0);
+    const verfall = parseLocalDate(e.verfall_datum);
+    const tage = Math.floor((verfall - heute) / (1000 * 60 * 60 * 24));
+    if (tage < 0) fillClass = 'danger';
+    else if (tage <= 60) fillClass = 'warning';
+  }
+
+  const statusText = anteil >= 100
+    ? 'vollständig eingelöst'
+    : `${eingeloest} von ${gesamt} eingelöst`;
+
+  return `
+    <div class="benefit-progress-row">
+      <div>
+        <div style="font-weight:500">${esc(e.titel)}</div>
+        <div style="font-size:11px;color:var(--muted)">${esc(statusText)}${offen > 0 ? ` · ${offen} offen` : ''}</div>
+      </div>
+      <div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill ${fillClass}" style="width:${anteil}%"></div>
+        </div>
+        <div class="progress-bar-label">${Math.round(anteil)} %</div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:var(--muted)">
+        ${e.verfall_datum ? 'Verfall:<br>' + esc(formatDateDE(e.verfall_datum)) : ''}
+      </div>
+    </div>`;
+}
+
+/** Öffnet das Mitgliedschafts-Modal. */
+async function openMembershipModal(mode, membershipId = null, companyId = null) {
+  editingMembershipId = membershipId;
+  currentMembershipCompanyId = companyId;
+
+  // Programme + Kontakte + User laden
+  await loadProgramsCache();
+
+  const programSelect = document.getElementById('ms-program');
+  programSelect.innerHTML = '<option value="">— Programm wählen —</option>'
+    + programsCache.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+
+  // Hauptkontakt-Dropdown: Kontakte der Firma laden
+  const hauptkontaktSelect = document.getElementById('ms-hauptkontakt');
+  hauptkontaktSelect.innerHTML = '<option value="">— Kein Hauptkontakt —</option>';
+  if (companyId) {
+    const { data: contacts } = await db.from('contacts')
+      .select('id, vorname, nachname')
+      .eq('company_id', companyId).order('nachname');
+    (contacts || []).forEach(c => {
+      const name = [c.vorname, c.nachname].filter(Boolean).join(' ') || '(ohne Name)';
+      hauptkontaktSelect.innerHTML += `<option value="${esc(c.id)}">${esc(name)}</option>`;
+    });
+  }
+
+  // Verantwortlicher-Dropdown: alle aktiven User
+  if (userProfilesCache.length === 0) {
+    const { data } = await db.from('user_profiles').select('id, name, status').order('name');
+    userProfilesCache = data || [];
+  }
+  const verantwSelect = document.getElementById('ms-verantwortlicher');
+  verantwSelect.innerHTML = '<option value="">— Keiner —</option>'
+    + userProfilesCache.filter(u => u.status === 'aktiv')
+        .map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+
+  // Felder zurücksetzen
+  document.getElementById('ms-start').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('ms-end').value = '';
+  document.getElementById('ms-nummer').value = '';
+  document.getElementById('ms-preis').value = '';
+  document.getElementById('ms-status').value = 'aktiv';
+  document.getElementById('ms-notizen').value = '';
+  document.getElementById('ms-benefits-preview').style.display = 'none';
+
+  if (mode === 'new') {
+    document.getElementById('modal-membership-title').textContent = 'Neue Mitgliedschaft';
+    document.getElementById('ms-save-btn').textContent = 'Anlegen';
+    document.getElementById('ms-delete-btn').style.display = 'none';
+  } else {
+    document.getElementById('modal-membership-title').textContent = 'Mitgliedschaft bearbeiten';
+    document.getElementById('ms-save-btn').textContent = 'Speichern';
+    document.getElementById('ms-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('memberships').select('*').eq('id', membershipId).single();
+    if (error || !data) { showToast('Mitgliedschaft nicht gefunden: ' + (error?.message || ''), true); editingMembershipId = null; return; }
+
+    programSelect.value = data.program_id || '';
+    document.getElementById('ms-start').value = data.start_datum || '';
+    document.getElementById('ms-end').value   = data.end_datum || '';
+    document.getElementById('ms-nummer').value = data.mitgliedsnummer || '';
+    document.getElementById('ms-preis').value = data.preis ?? '';
+    document.getElementById('ms-status').value = data.status || 'aktiv';
+    document.getElementById('ms-notizen').value = data.notizen || '';
+    if (data.hauptkontakt_id) hauptkontaktSelect.value = data.hauptkontakt_id;
+    if (data.verantwortlicher_id) verantwSelect.value = data.verantwortlicher_id;
+  }
+
+  document.getElementById('modal-membership').classList.add('open');
+}
+
+function closeMembershipModal() {
+  document.getElementById('modal-membership').classList.remove('open');
+  editingMembershipId = null;
+  currentMembershipCompanyId = null;
+}
+
+/** Wird beim Programm-Wechsel aufgerufen: berechnet Enddatum, Preis-Vorschlag, Mitgliedsnummer, Benefits-Preview. */
+function onMembershipProgramChange() {
+  const programId = document.getElementById('ms-program').value;
+  const program = programsCache.find(p => p.id === programId);
+  if (!program) {
+    document.getElementById('ms-benefits-preview').style.display = 'none';
+    return;
+  }
+
+  // Enddatum berechnen
+  recalcMembershipEnd();
+
+  // Preis vorschlagen, wenn leer
+  const preisInput = document.getElementById('ms-preis');
+  if (!preisInput.value && program.standard_preis) {
+    preisInput.value = program.standard_preis;
+  }
+
+  // Mitgliedsnummer vorschlagen wenn leer und Präfix definiert (nur bei New-Mode)
+  const nummerInput = document.getElementById('ms-nummer');
+  if (!editingMembershipId && !nummerInput.value.trim() && program.mitgliedsnummer_praefix) {
+    nummerInput.value = `${program.mitgliedsnummer_praefix}-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+  }
+
+  // Benefits-Preview rendern
+  const benefits = (program.membership_program_benefits || []).sort((a, b) => (a.reihenfolge || 0) - (b.reihenfolge || 0));
+  const previewList = document.getElementById('ms-benefits-preview-list');
+  const previewBox = document.getElementById('ms-benefits-preview');
+
+  if (benefits.length === 0) {
+    previewBox.style.display = 'none';
+    return;
+  }
+
+  previewList.innerHTML = benefits.map(b =>
+    `• ${esc(b.titel)} — ${b.menge_pro_laufzeit}× pro Laufzeit`
+  ).join('<br>');
+  previewBox.style.display = 'block';
+}
+
+/** Berechnet Enddatum aus Startdatum + Laufzeit des gewählten Programms. */
+function recalcMembershipEnd() {
+  const programId = document.getElementById('ms-program').value;
+  const startStr = document.getElementById('ms-start').value;
+  const endInput = document.getElementById('ms-end');
+  if (!programId || !startStr) return;
+
+  const program = programsCache.find(p => p.id === programId);
+  if (!program) return;
+
+  // Nur überschreiben, wenn Enddatum leer (damit manuelle Änderungen erhalten bleiben)
+  if (endInput.value) return;
+
+  const start = parseLocalDate(startStr);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + (program.laufzeit_monate || 12));
+  end.setDate(end.getDate() - 1); // letzter Tag der Laufzeit
+
+  endInput.value = end.toISOString().slice(0, 10);
+}
+
+/** Speichert die Mitgliedschaft und erzeugt Entitlements bei Neuanlage. */
+async function saveMembership() {
+  const program_id   = document.getElementById('ms-program').value;
+  const start_datum  = document.getElementById('ms-start').value;
+  const end_datum    = document.getElementById('ms-end').value;
+  const mitgliedsnummer = document.getElementById('ms-nummer').value.trim();
+  const preisRaw     = document.getElementById('ms-preis').value;
+  const hauptkontakt_id = document.getElementById('ms-hauptkontakt').value || null;
+  const verantwortlicher_id = document.getElementById('ms-verantwortlicher').value || null;
+  const status       = document.getElementById('ms-status').value;
+  const notizen      = document.getElementById('ms-notizen').value.trim();
+  const btn          = document.getElementById('ms-save-btn');
+
+  if (!program_id) { showToast('Bitte Programm auswählen.', true); return; }
+  if (!start_datum) { showToast('Bitte Startdatum eingeben.', true); return; }
+  if (!end_datum) { showToast('Bitte Enddatum eingeben (oder Programm wählen für Auto-Berechnung).', true); return; }
+  if (end_datum < start_datum) { showToast('Enddatum muss nach dem Startdatum liegen.', true); return; }
+
+  const preis = preisRaw === '' ? 0 : Number(preisRaw);
+  if (Number.isNaN(preis) || preis < 0) { showToast('Preis muss eine Zahl ≥ 0 sein.', true); return; }
+
+  btn.disabled = true;
+  btn.textContent = editingMembershipId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      company_id: currentMembershipCompanyId,
+      program_id,
+      mitgliedsnummer: mitgliedsnummer || null,
+      status,
+      start_datum,
+      end_datum,
+      preis,
+      hauptkontakt_id,
+      verantwortlicher_id,
+      notizen: notizen || null,
+      erstellt_von: currentProfile?.id || null
+    };
+
+    if (editingMembershipId) {
+      const { error } = await db.from('memberships').update(payload).eq('id', editingMembershipId);
+      if (error) throw new Error(error.message);
+      showToast('Mitgliedschaft aktualisiert.');
+    } else {
+      const { data: newMs, error } = await db.from('memberships').insert(payload).select('id').single();
+      if (error) throw new Error(error.message);
+
+      // Entitlements aus Programm-Benefits erzeugen
+      const program = programsCache.find(p => p.id === program_id);
+      const benefits = (program?.membership_program_benefits || []);
+      if (benefits.length > 0) {
+        const entitlementRows = benefits.map(b => ({
+          company_id: currentMembershipCompanyId,
+          source_type: 'membership',
+          membership_id: newMs.id,
+          service_id: b.service_id,
+          titel: b.titel,
+          gesamt_menge: b.menge_pro_laufzeit,
+          verfall_datum: end_datum,
+          reihenfolge: b.reihenfolge || 0
+        }));
+        const { error: entErr } = await db.from('entitlements').insert(entitlementRows);
+        if (entErr) throw new Error('Mitgliedschaft angelegt, aber Bonis nicht: ' + entErr.message);
+      }
+
+      showToast(`Mitgliedschaft angelegt mit ${benefits.length} Bonus${benefits.length === 1 ? '' : 'sen'}.`);
+    }
+
+    closeMembershipModal();
+    if (currentCompanyDetailId) await renderCompanyMemberships(currentCompanyDetailId);
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingMembershipId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteMembership() {
+  if (!editingMembershipId) return;
+  if (!confirm('Mitgliedschaft wirklich löschen?\n\nAlle zugehörigen Bonis und Einlösungen werden mitgelöscht. Für beendete Mitgliedschaften besser den Status auf „beendet" setzen statt löschen.')) return;
+
+  const btn = document.getElementById('ms-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    // Entitlements und Redemptions werden via ON DELETE CASCADE automatisch entfernt
+    const { error } = await db.from('memberships').delete().eq('id', editingMembershipId);
+    if (error) throw new Error(error.message);
+
+    const companyId = currentMembershipCompanyId;
+    closeMembershipModal();
+    showToast('Mitgliedschaft gelöscht.');
+    if (companyId) await renderCompanyMemberships(companyId);
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
 //  FIRMEN (COMPANIES)
 // ═══════════════════════════════════════════════════════════
 
@@ -2317,6 +2735,7 @@ async function loadCompanyDetail(companyId) {
   await loadCompanyAppointments(companyId);
   await loadCompanyProjects(companyId);
   await loadCompanyDeployments(companyId);
+  await renderCompanyMemberships(companyId);
 }
 
 function renderCompanyDetail(c) {
@@ -2355,6 +2774,10 @@ function renderCompanyDetail(c) {
   document.getElementById('company-detail-add-deployment-btn').onclick = () => {
     deploymentModalPrefillCompanyId = c.id;
     openDeploymentModal('new');
+  };
+
+  document.getElementById('company-detail-add-membership-btn').onclick = () => {
+    openMembershipModal('new', null, c.id);
   };
 
   const info = document.getElementById('company-detail-info');

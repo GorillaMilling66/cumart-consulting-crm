@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.12.0 (Mitgliedschafts-Programme)
+   Version 1.13.0 (Mitgliedschaften + Entitlements-Fortschritt)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -981,4 +981,88 @@ tr:hover td { background: var(--bg); }
 .benefit-row-titel .benefit-service-hint {
   font-size: 11px;
   color: var(--muted);
+}
+
+/* ── MITGLIEDSCHAFTS-DARSTELLUNG (v1.13.0) ── */
+.membership-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  transition: border-color 0.15s;
+}
+.membership-card:hover {
+  border-color: #9ca3af;
+}
+.membership-card:last-child {
+  margin-bottom: 0;
+}
+.membership-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.membership-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.membership-card-title:hover {
+  color: var(--link);
+}
+.membership-card-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.membership-card-benefits {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.benefit-progress-row {
+  display: grid;
+  grid-template-columns: 1fr 140px 80px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.benefit-progress-row:not(:last-child) {
+  border-bottom: 1px dashed var(--border);
+}
+.progress-bar-wrap {
+  background: var(--bg);
+  border-radius: 100px;
+  height: 6px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--success);
+  transition: width 0.3s;
+}
+.progress-bar-fill.warning {
+  background: var(--warning);
+}
+.progress-bar-fill.danger {
+  background: var(--danger);
+}
+.progress-bar-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  margin-top: 2px;
+}
+@media (max-width: 767px) {
+  .benefit-progress-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
 }
