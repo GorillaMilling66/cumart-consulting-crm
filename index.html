@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.5.1 (Phase 2b komplett - Firmen + Kontakte) -->
+<!-- VERSION: 1.5.2 (Mobile Bottom-Navigation) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -106,7 +106,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
 
-  <!-- SIDEBAR -->
+  <!-- DESKTOP SIDEBAR (links, ab 768px sichtbar) -->
   <aside class="sidebar">
     <div class="sidebar-logo">
       Cumart CRM
@@ -136,7 +136,6 @@
       <!-- Kontakte -->
       <button class="nav-item" id="nav-contacts"
               onclick="showPage('contacts', this)">
-        <!-- Icon: Contact (Lucide) -->
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M16 2v2"/>
@@ -147,13 +146,10 @@
         </svg>
         Kontakte
       </button>
-
-      <!-- Phase 3: Projekte, Einsätze, Termine -->
     </nav>
 
     <!-- UNTEN: EINSTELLUNGEN + ABMELDEN -->
     <div class="nav-bottom">
-
       <div class="nav-group" id="nav-settings-group" data-admin-only="true" style="display:none">
         <button class="nav-item nav-item-group" id="nav-settings-toggle"
                 onclick="toggleSettings()">
@@ -164,8 +160,7 @@
           </svg>
           <span style="flex:1">Einstellungen</span>
           <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
-               aria-hidden="true">
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M6 9l6 6 6-6"/>
           </svg>
         </button>
@@ -219,6 +214,12 @@
       </button>
     </div>
   </aside>
+
+  <!-- MOBILE HEADER (nur < 768px sichtbar) -->
+  <header class="mobile-header">
+    <div class="mobile-header-title">Cumart CRM</div>
+    <div class="mobile-header-user" id="mobile-header-user"></div>
+  </header>
 
   <!-- MAIN -->
   <main class="main">
@@ -304,7 +305,6 @@
             <select id="contacts-company-filter" onchange="filterContacts()">
               <option value="">Alle Firmen</option>
               <option value="__none__">Ohne Firmenzuordnung</option>
-              <!-- wird aus JS befüllt -->
             </select>
           </div>
         </div>
@@ -434,6 +434,103 @@
     </div>
 
   </main>
+
+  <!-- MOBILE BOTTOM NAV (nur < 768px sichtbar) -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mobile-nav-item" id="m-nav-companies"
+            onclick="showPage('companies', null); setMobileNav('companies')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+        <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+        <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+        <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+      </svg>
+      <span>Firmen</span>
+    </button>
+    <button class="mobile-nav-item" id="m-nav-contacts"
+            onclick="showPage('contacts', null); setMobileNav('contacts')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M16 2v2"/>
+        <path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
+        <path d="M8 2v2"/>
+        <circle cx="12" cy="11" r="3"/>
+        <rect x="3" y="4" width="18" height="18" rx="2"/>
+      </svg>
+      <span>Kontakte</span>
+    </button>
+    <button class="mobile-nav-item" id="m-nav-more" onclick="openMoreMenu()">
+      <!-- Icon: Menu (drei Linien, Lucide) -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="18" x2="20" y2="18"/>
+      </svg>
+      <span>Mehr</span>
+    </button>
+  </nav>
+
+  <!-- MEHR-OVERLAY (nur < 768px genutzt) -->
+  <div class="more-overlay" id="more-overlay" onclick="closeMoreMenu(event)">
+    <div class="more-panel" onclick="event.stopPropagation()">
+      <div class="more-header">
+        <div class="more-title">Mehr</div>
+        <button class="more-close" onclick="closeMoreMenu()" aria-label="Schließen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Einstellungen (admin-only) -->
+      <div class="more-section" data-admin-only="true" style="display:none">
+        <div class="more-section-title">Einstellungen</div>
+        <button class="more-item" onclick="showPage('users', null); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Benutzer
+        </button>
+        <button class="more-item" onclick="showPage('services', null); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16.5 9.4 7.55 4.24"/>
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <path d="m3.3 7 8.7 5 8.7-5"/>
+            <path d="M12 22V12"/>
+          </svg>
+          Leistungen
+        </button>
+        <button class="more-item" onclick="showPage('lookups', null); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+            <path d="M3 12a9 3 0 0 0 18 0"/>
+          </svg>
+          Stammdaten
+        </button>
+      </div>
+
+      <!-- Konto -->
+      <div class="more-section">
+        <div class="more-section-title">Konto</div>
+        <button class="more-item more-item-danger" onclick="doLogout()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Abmelden
+        </button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- MODAL: FIRMA -->
