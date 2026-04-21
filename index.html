@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.9.8 (Fluessiges DOM-Update bei Checkbox-Toggle statt Page-Reload) -->
+<!-- VERSION: 1.10.0 (Auto-Fill im Einsatz-Modal: Titel, Uhrzeit aus Leistung, Ort aus Firma, Beschreibung) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1446,8 +1446,8 @@
     <div class="modal-group-title">Einsatzdaten</div>
     <div class="form-grid">
       <div class="form-group full">
-        <label>Titel *</label>
-        <input type="text" id="d-titel" placeholder="z. B. Heidenhain Grundlagen – Tag 1">
+        <label>Titel</label>
+        <input type="text" id="d-titel" placeholder="Leer lassen für Auto-Titel: Leistung × Firma × Benutzer">
       </div>
       <div class="form-group">
         <label>Datum von</label>
@@ -1656,6 +1656,19 @@
           <option value="true">Aktiv</option>
           <option value="false">Archiviert</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label>Standard-Uhrzeit von</label>
+        <input type="time" id="s-uhrzeit-von">
+      </div>
+      <div class="form-group">
+        <label>Standard-Uhrzeit bis</label>
+        <input type="time" id="s-uhrzeit-bis">
+      </div>
+      <div class="form-group full">
+        <div style="font-size:11px;color:var(--muted);padding:2px 0">
+          Standardzeiten werden im Einsatz-Modal automatisch übernommen, wenn noch keine Uhrzeit gesetzt ist.
+        </div>
       </div>
       <div class="form-group full">
         <label>Beschreibung</label>

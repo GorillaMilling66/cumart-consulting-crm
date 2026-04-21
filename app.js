@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.8 (Fluessiges DOM-Update bei Toggle)
+   Version 1.10.0 (Auto-Fill im Einsatz-Modal)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -1042,6 +1042,8 @@ async function openServiceModal(mode, serviceId = null) {
   document.getElementById('s-einheit').value = 'Tag';
   document.getElementById('s-preis').value = '';
   document.getElementById('s-aktiv').value = 'true';
+  document.getElementById('s-uhrzeit-von').value = '';
+  document.getElementById('s-uhrzeit-bis').value = '';
 
   if (mode === 'new') {
     document.getElementById('modal-service-title').textContent = 'Neue Leistung';
@@ -1059,6 +1061,8 @@ async function openServiceModal(mode, serviceId = null) {
     document.getElementById('s-einheit').value = data.einheit || 'Tag';
     document.getElementById('s-preis').value = data.standardpreis ?? '';
     document.getElementById('s-aktiv').value = data.ist_aktiv ? 'true' : 'false';
+    document.getElementById('s-uhrzeit-von').value = data.standard_uhrzeit_von ? data.standard_uhrzeit_von.substring(0, 5) : '';
+    document.getElementById('s-uhrzeit-bis').value = data.standard_uhrzeit_bis ? data.standard_uhrzeit_bis.substring(0, 5) : '';
     if (data.kategorie_id) kategorieSelect.value = data.kategorie_id;
   }
 
@@ -1075,6 +1079,8 @@ async function saveService() {
   const einheit       = document.getElementById('s-einheit').value;
   const preisRaw      = document.getElementById('s-preis').value;
   const ist_aktiv     = document.getElementById('s-aktiv').value === 'true';
+  const uhrzeit_von   = document.getElementById('s-uhrzeit-von').value;
+  const uhrzeit_bis   = document.getElementById('s-uhrzeit-bis').value;
   const btn           = document.getElementById('s-save-btn');
 
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
@@ -1084,15 +1090,31 @@ async function saveService() {
   const standardpreis = preisRaw === '' ? 0 : Number(preisRaw);
   if (Number.isNaN(standardpreis) || standardpreis < 0) { showToast('Preis muss eine Zahl ≥ 0 sein.', true); return; }
 
+  if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
+    showToast('„Standard-Uhrzeit bis" muss nach „Standard-Uhrzeit von" liegen.', true); return;
+  }
+
   btn.disabled = true;
   btn.textContent = editingServiceId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
-    const payload = { name, beschreibung: beschreibung || null, kategorie_id, einheit, standardpreis, ist_aktiv };
+    const payload = {
+      name,
+      beschreibung: beschreibung || null,
+      kategorie_id,
+      einheit,
+      standardpreis,
+      ist_aktiv,
+      standard_uhrzeit_von: uhrzeit_von || null,
+      standard_uhrzeit_bis: uhrzeit_bis || null
+    };
     let error;
     if (editingServiceId) { ({ error } = await db.from('services').update(payload).eq('id', editingServiceId)); }
     else { ({ error } = await db.from('services').insert(payload)); }
     if (error) throw new Error(error.message);
+
+    // Cache invalidieren, damit neue/geänderte Zeiten beim nächsten Einsatz-Modal da sind
+    servicesCache = [];
 
     closeServiceModal();
     showToast(editingServiceId ? 'Leistung aktualisiert.' : 'Leistung angelegt.');
@@ -3601,7 +3623,8 @@ function einsatzStatusFarbe(wert) {
 async function loadServicesCache() {
   if (servicesCache.length > 0) return servicesCache;
   const { data, error } = await db.from('services')
-    .select('id, name, einheit, standardpreis, ist_aktiv').eq('ist_aktiv', true).order('name');
+    .select('id, name, einheit, standardpreis, ist_aktiv, standard_uhrzeit_von, standard_uhrzeit_bis')
+    .eq('ist_aktiv', true).order('name');
   if (error) { return []; }
   servicesCache = data || [];
   return servicesCache;
@@ -3789,6 +3812,93 @@ function renderDeploymentsTable(deployments) {
   }).join('');
 }
 
+/**
+ * Generiert einen Auto-Titel für den Einsatz:
+ *   "Leistungsname × Firma × Benutzer"
+ * Leere Teile werden übersprungen. Wird nur beim Neu-Anlegen verwendet.
+ */
+function generateDeploymentAutoTitle() {
+  const serviceSelect = document.getElementById('d-service');
+  let serviceName = '';
+  if (serviceSelect.value) {
+    const raw = serviceSelect.options[serviceSelect.selectedIndex]?.textContent || '';
+    serviceName = raw.split(' (')[0].trim(); // Einheit-Klammer entfernen
+  }
+
+  const companySelect = document.getElementById('d-company');
+  const companyName = companySelect.value
+    ? (companySelect.options[companySelect.selectedIndex]?.textContent || '').trim()
+    : '';
+
+  const userName = currentProfile?.name || currentUser?.email || '';
+
+  return [serviceName, companyName, userName].filter(Boolean).join(' × ');
+}
+
+/**
+ * Generiert eine Auto-Beschreibung für den Einsatz.
+ * Format: "Leistung bei Firma am Datum von/bis. Techniker: ... Ort: ..."
+ * Keine Preise. Wird nur beim Neu-Anlegen verwendet.
+ */
+function generateDeploymentAutoDescription() {
+  const lines = [];
+
+  const serviceSelect = document.getElementById('d-service');
+  let serviceName = 'Einsatz';
+  if (serviceSelect.value) {
+    const raw = serviceSelect.options[serviceSelect.selectedIndex]?.textContent || '';
+    serviceName = raw.split(' (')[0].trim();
+  }
+
+  const companySelect = document.getElementById('d-company');
+  const companyName = companySelect.value
+    ? (companySelect.options[companySelect.selectedIndex]?.textContent || '').trim()
+    : '';
+
+  const datumVon = document.getElementById('d-datum-von').value;
+  const datumBis = document.getElementById('d-datum-bis').value;
+  const uhrzeitVon = document.getElementById('d-uhrzeit-von').value;
+  const uhrzeitBis = document.getElementById('d-uhrzeit-bis').value;
+
+  // Satz 1: Was, Wo, Wann
+  let satz = `${serviceName}${companyName ? ' bei ' + companyName : ''}`;
+  if (datumVon && datumBis) {
+    if (datumVon === datumBis) {
+      satz += ` am ${formatDateDE(datumVon)}`;
+    } else {
+      satz += ` vom ${formatDateDE(datumVon)} bis ${formatDateDE(datumBis)}`;
+    }
+    if (uhrzeitVon && uhrzeitBis) {
+      satz += ` von ${uhrzeitVon} bis ${uhrzeitBis} Uhr`;
+    } else if (uhrzeitVon) {
+      satz += ` ab ${uhrzeitVon} Uhr`;
+    }
+  }
+  lines.push(satz + '.');
+
+  // Techniker
+  const techniker = [];
+  if (selectedTechnikerIds && selectedTechnikerIds.size > 0) {
+    const internal = [...selectedTechnikerIds]
+      .map(uid => userProfilesCache.find(u => u.id === uid)?.name)
+      .filter(Boolean);
+    techniker.push(...internal);
+  }
+  const externe = document.getElementById('d-externe-techniker').value.trim();
+  if (externe) techniker.push(externe + ' (extern)');
+  if (techniker.length > 0) {
+    lines.push(`Techniker: ${techniker.join(', ')}`);
+  }
+
+  // Ort
+  const ort = document.getElementById('d-ort').value.trim();
+  if (ort) {
+    lines.push(`Ort: ${ort}`);
+  }
+
+  return lines.join('\n');
+}
+
 // ═══════════════════════════════════════════════════════════
 //  EINSATZ-MODAL
 // ═══════════════════════════════════════════════════════════
@@ -3812,10 +3922,18 @@ async function openDeploymentModal(mode, deploymentId = null) {
   companySelect.innerHTML = '<option value="">— Firma wählen —</option>'
     + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
 
-  // Service-Dropdown
+  // Service-Dropdown (mit data-Attributen für Auto-Fill von Preis und Zeiten)
   const serviceSelect = document.getElementById('d-service');
   serviceSelect.innerHTML = '<option value="">— Keine Leistung —</option>'
-    + servicesCache.map(s => `<option value="${esc(s.id)}" data-preis="${s.standardpreis || 0}" data-einheit="${esc(s.einheit || '')}">${esc(s.name)} (${esc(s.einheit || '—')})</option>`).join('');
+    + servicesCache.map(s => {
+        const uhrzeitVon = s.standard_uhrzeit_von ? s.standard_uhrzeit_von.substring(0, 5) : '';
+        const uhrzeitBis = s.standard_uhrzeit_bis ? s.standard_uhrzeit_bis.substring(0, 5) : '';
+        return `<option value="${esc(s.id)}"
+                  data-preis="${s.standardpreis || 0}"
+                  data-einheit="${esc(s.einheit || '')}"
+                  data-uhrzeit-von="${esc(uhrzeitVon)}"
+                  data-uhrzeit-bis="${esc(uhrzeitBis)}">${esc(s.name)} (${esc(s.einheit || '—')})</option>`;
+      }).join('');
 
   // Status-Select dynamisch aus Lookup-Cache
   const statusSelect = document.getElementById('d-status');
@@ -3934,6 +4052,19 @@ function setupDeploymentModalListeners() {
   companySelect.onchange = async () => {
     await rebuildProjectDropdownForDeployment(companySelect.value);
     updateDeploymentOrtHint();
+
+    // Auto-Ort: Wenn Ort-Feld leer und Firma mit Adresse gewählt → automatisch übernehmen
+    const ortInput = document.getElementById('d-ort');
+    if (!ortInput.value.trim() && companySelect.value) {
+      const company = companiesCache.find(c => c.id === companySelect.value);
+      if (company) {
+        const parts = [company.strasse, [company.plz, company.stadt].filter(Boolean).join(' ')].filter(Boolean);
+        if (parts.length > 0) {
+          ortInput.value = parts.join(', ');
+        }
+      }
+    }
+
     updateDeploymentPriceHint();
   };
 
@@ -3945,10 +4076,20 @@ function setupDeploymentModalListeners() {
     // Auto-fill Einzelpreis aus Service-Standardpreis, wenn noch leer
     const opt = serviceSelect.options[serviceSelect.selectedIndex];
     const preis = opt?.getAttribute('data-preis');
+    const uhrzeitVon = opt?.getAttribute('data-uhrzeit-von');
+    const uhrzeitBis = opt?.getAttribute('data-uhrzeit-bis');
+
     const currentPreis = document.getElementById('d-einzelpreis').value;
     if (preis && (currentPreis === '' || Number(currentPreis) === 0)) {
       document.getElementById('d-einzelpreis').value = preis;
     }
+
+    // Auto-fill Uhrzeiten aus Service-Defaults, wenn Felder leer
+    const dVon = document.getElementById('d-uhrzeit-von');
+    const dBis = document.getElementById('d-uhrzeit-bis');
+    if (uhrzeitVon && !dVon.value) dVon.value = uhrzeitVon;
+    if (uhrzeitBis && !dBis.value) dBis.value = uhrzeitBis;
+
     updateDeploymentPriceHint();
   };
 
@@ -4071,13 +4212,18 @@ async function saveDeployment() {
   const mengeRaw      = document.getElementById('d-menge').value;
   const einzelRaw     = document.getElementById('d-einzelpreis').value;
   const ort           = document.getElementById('d-ort').value.trim();
-  const beschreibung  = document.getElementById('d-beschreibung').value.trim();
+  const beschreibungInput = document.getElementById('d-beschreibung').value.trim();
   const notizen       = document.getElementById('d-notizen').value.trim();
   const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
   const createAppointment = document.getElementById('d-create-appointment').checked;
   const btn           = document.getElementById('d-save-btn');
 
-  if (!titel)     { showToast('Bitte Titel eingeben.', true); return; }
+  // Auto-Titel + Auto-Beschreibung nur beim Neu-Anlegen (nicht beim Edit)
+  const isNew = !editingDeploymentId;
+  const finalTitel = titel || (isNew ? generateDeploymentAutoTitle() : '');
+  const finalBeschreibung = beschreibungInput || (isNew ? generateDeploymentAutoDescription() : '');
+
+  if (!finalTitel) { showToast('Bitte Titel eingeben (oder Leistung/Firma wählen für Auto-Titel).', true); return; }
   if (!company_id) { showToast('Bitte Firma auswählen.', true); return; }
 
   // Datum: entweder beide gesetzt oder beide leer (Ungeplant)
@@ -4114,7 +4260,7 @@ async function saveDeployment() {
 
   try {
     const payload = {
-      titel,
+      titel: finalTitel,
       datum_von: datum_von || null,
       datum_bis: datum_bis || null,
       uhrzeit_von: uhrzeit_von || null,
@@ -4123,7 +4269,7 @@ async function saveDeployment() {
       company_id, project_id, service_id,
       menge, einzelpreis,
       ort: ort || null,
-      beschreibung: beschreibung || null,
+      beschreibung: finalBeschreibung || null,
       notizen: notizen || null,
       externe_techniker: externe_techniker || null
     };
