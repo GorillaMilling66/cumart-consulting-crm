@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.5.3 (Firmen-Detailseite)
+   Version 1.5.3 (Firmen-Detailseite + Kopier-Buttons)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -339,7 +339,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  min-width: 0;  /* damit Text richtig umbricht */
+  min-width: 0;
 }
 .detail-label {
   font-size: 11px;
@@ -400,16 +400,47 @@ body {
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-danger:hover { background: #fef2f2; }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
-.btn-row { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.btn-row { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
-/* Kleiner Icon-Only-Button (z.B. Bearbeiten-Stift in Liste) */
-.btn-icon {
-  padding: 5px 8px;
+/* ── ICON-ONLY-COPY-BUTTON ── */
+/* Wird in Listen und auf Detailseite für „Block kopieren" verwendet */
+.btn-copy {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+  transition: background .1s, color .1s, border-color .1s;
+  flex-shrink: 0;
 }
-.btn-icon svg { width: 14px; height: 14px; }
+.btn-copy:hover {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-copy:active {
+  background: var(--border);
+}
+.btn-copy svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* In der Detail-Header-Zeile ein wenig größer */
+.detail-header .btn-copy {
+  width: 34px;
+  height: 34px;
+}
+.detail-header .btn-copy svg {
+  width: 17px;
+  height: 17px;
+}
 
 /* ── KLICKBARE ZELLEN/LINKS IN TABELLEN ── */
 .cell-link {
