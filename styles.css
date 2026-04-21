@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.5.2 (Mobile Bottom-Navigation)
+   Version 1.5.3 (Firmen-Detailseite)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -12,6 +12,7 @@
   --text:     #111827;
   --muted:    #6b7280;
   --primary:  #111827;
+  --link:     #1d4ed8;
   --danger:   #dc2626;
   --success:  #16a34a;
   --warning:  #d97706;
@@ -111,39 +112,28 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* ── EINSTELLUNGEN-UNTERMENÜ (Desktop) ── */
+/* ── EINSTELLUNGEN-UNTERMENÜ ── */
 .nav-group { display: block; }
 .nav-item-group .nav-chevron {
-  width: 16px;
-  height: 16px;
+  width: 16px; height: 16px;
   transition: transform .18s ease;
   opacity: .7;
 }
 .nav-group.open .nav-item-group .nav-chevron {
   transform: rotate(180deg);
 }
-.nav-submenu {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height .2s ease;
-}
-.nav-group.open .nav-submenu {
-  max-height: 260px;
-}
+.nav-submenu { max-height: 0; overflow: hidden; transition: max-height .2s ease; }
+.nav-group.open .nav-submenu { max-height: 260px; }
 .nav-item-sub {
   padding-left: 28px;
   font-size: 12.5px;
   gap: 10px;
 }
-.nav-item-sub svg {
-  width: 15px;
-  height: 15px;
-  opacity: .85;
-}
+.nav-item-sub svg { width: 15px; height: 15px; opacity: .85; }
 
-/* ── MOBILE HEADER (nur < 768px) ── */
+/* ── MOBILE HEADER ── */
 .mobile-header {
-  display: none;  /* per Default aus, wird in @media aktiviert */
+  display: none;
   position: fixed;
   top: 0; left: 0; right: 0;
   height: var(--mobile-header-height);
@@ -154,15 +144,8 @@ body {
   justify-content: space-between;
   z-index: 90;
 }
-.mobile-header-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-.mobile-header-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.mobile-header-title { font-size: 16px; font-weight: 600; }
+.mobile-header-user { display: flex; align-items: center; gap: 8px; }
 .mobile-header-user-name {
   font-size: 12px;
   color: var(--muted);
@@ -172,50 +155,37 @@ body {
   white-space: nowrap;
 }
 
-/* ── MOBILE BOTTOM-NAV (nur < 768px) ── */
+/* ── MOBILE BOTTOM-NAV ── */
 .mobile-bottom-nav {
-  display: none;  /* per Default aus, wird in @media aktiviert */
+  display: none;
   position: fixed;
   bottom: 0; left: 0; right: 0;
   height: var(--mobile-nav-height);
   background: var(--surface);
   border-top: 1px solid var(--border);
   z-index: 90;
-  /* Safe Area für iPhones mit Home-Indikator */
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 .mobile-nav-item {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
   gap: 4px;
   padding: 8px 4px;
   border: none;
   background: none;
   color: var(--muted);
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 11px; font-weight: 500;
   cursor: pointer;
   transition: color .1s;
 }
-.mobile-nav-item svg {
-  width: 22px;
-  height: 22px;
-}
-.mobile-nav-item.active {
-  color: var(--text);
-}
-.mobile-nav-item.active svg {
-  stroke-width: 2;
-}
-.mobile-nav-item:active {
-  background: var(--bg);
-}
+.mobile-nav-item svg { width: 22px; height: 22px; }
+.mobile-nav-item.active { color: var(--text); }
+.mobile-nav-item.active svg { stroke-width: 2; }
+.mobile-nav-item:active { background: var(--bg); }
 
-/* ── MEHR-OVERLAY (nur mobile, aber per CSS überall versteckt bis geöffnet) ── */
+/* ── MEHR-OVERLAY ── */
 .more-overlay {
   display: none;
   position: fixed;
@@ -248,58 +218,39 @@ body {
   border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
 }
-.more-title {
-  font-size: 16px;
-  font-weight: 600;
-}
+.more-title { font-size: 16px; font-weight: 600; }
 .more-close {
-  background: none;
-  border: none;
+  background: none; border: none;
   width: 32px; height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   color: var(--muted);
   border-radius: 50%;
 }
 .more-close:active { background: var(--bg); }
 .more-close svg { width: 20px; height: 20px; }
-.more-section {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
+.more-section { padding: 8px 0; border-bottom: 1px solid var(--border); }
 .more-section:last-child { border-bottom: none; }
 .more-section-title {
   padding: 8px 20px 4px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11px; font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: .4px;
 }
 .more-item {
   width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  display: flex; align-items: center; gap: 14px;
   padding: 14px 20px;
-  border: none;
-  background: none;
+  border: none; background: none;
   color: var(--text);
   font-family: inherit;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 15px; font-weight: 500;
   cursor: pointer;
   text-align: left;
 }
 .more-item:active { background: var(--bg); }
-.more-item svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  color: var(--muted);
-}
+.more-item svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--muted); }
 .more-item-danger { color: var(--danger); }
 .more-item-danger svg { color: var(--danger); }
 
@@ -323,6 +274,91 @@ body {
   flex-wrap: wrap;
 }
 .page-title { font-size: 20px; font-weight: 600; }
+
+/* ── BREADCRUMB ── */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.breadcrumb-back {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--text);
+  flex-shrink: 0;
+  transition: background .1s;
+}
+.breadcrumb-back:hover { background: var(--bg); }
+.breadcrumb-back svg { width: 16px; height: 16px; }
+.breadcrumb-link {
+  cursor: pointer;
+  color: var(--link);
+}
+.breadcrumb-link:hover { text-decoration: underline; }
+.breadcrumb-sep { color: var(--muted); }
+.breadcrumb-current {
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── DETAIL-SEITE ── */
+.detail-card { padding: 24px; }
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.detail-subline {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px 24px;
+}
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;  /* damit Text richtig umbricht */
+}
+.detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.detail-value {
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-word;
+}
+.detail-value a {
+  color: var(--link);
+  text-decoration: none;
+}
+.detail-value a:hover { text-decoration: underline; }
+.detail-value-muted { color: var(--muted); font-style: italic; }
 
 /* ── CARD ── */
 .card {
@@ -364,7 +400,25 @@ body {
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-danger:hover { background: #fef2f2; }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
-.btn-row { display: inline-flex; gap: 6px; }
+.btn-row { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+/* Kleiner Icon-Only-Button (z.B. Bearbeiten-Stift in Liste) */
+.btn-icon {
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-icon svg { width: 14px; height: 14px; }
+
+/* ── KLICKBARE ZELLEN/LINKS IN TABELLEN ── */
+.cell-link {
+  color: var(--link);
+  cursor: pointer;
+  font-weight: 500;
+  text-decoration: none;
+}
+.cell-link:hover { text-decoration: underline; }
 
 /* ── FORM ── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -409,8 +463,7 @@ body {
 table { width: 100%; border-collapse: collapse; }
 th {
   text-align: left;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11px; font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: .4px;
@@ -426,7 +479,6 @@ td {
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--bg); }
 
-/* Responsive Auto-Hide für Tabellen-Spalten */
 .col-tablet { display: none; }
 .col-desktop { display: none; }
 @media (min-width: 768px) {
@@ -448,8 +500,7 @@ tr:hover td { background: var(--bg); }
 /* ── COLOR-DOT ── */
 .color-dot {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 14px; height: 14px;
   border-radius: 50%;
   border: 1px solid var(--border);
   vertical-align: middle;
@@ -495,8 +546,7 @@ tr:hover td { background: var(--bg); }
   margin-bottom: 16px;
 }
 .credentials-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11px; font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: .4px;
@@ -516,11 +566,7 @@ tr:hover td { background: var(--bg); }
 }
 .credentials-value:last-child { margin-bottom: 0; }
 .credentials-value span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.credentials-hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--warning);
-}
+.credentials-hint { margin-top: 10px; font-size: 12px; color: var(--warning); }
 
 /* ── AUTH ── */
 .auth-screen {
@@ -612,14 +658,12 @@ tr:hover td { background: var(--bg); }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   MOBILE LAYOUT — aktiv bei Viewport < 768px
+   MOBILE LAYOUT — < 768px
    ═══════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
 
-  /* Desktop-Sidebar komplett ausblenden */
   .sidebar { display: none; }
 
-  /* Main nimmt volle Breite; Toppadding für fixen Header, Bottompadding für Bottom-Nav */
   .main {
     margin-left: 0;
     padding: 20px 16px;
@@ -627,17 +671,9 @@ tr:hover td { background: var(--bg); }
     padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0) + 16px);
   }
 
-  /* Mobile Header einblenden */
-  .mobile-header {
-    display: flex;
-  }
+  .mobile-header { display: flex; }
+  .mobile-bottom-nav { display: flex; }
 
-  /* Bottom-Nav einblenden (als flex-row) */
-  .mobile-bottom-nav {
-    display: flex;
-  }
-
-  /* Toast über der Bottom-Nav positionieren */
   .toast {
     bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0) + 16px);
     right: 16px;
@@ -645,7 +681,6 @@ tr:hover td { background: var(--bg); }
     text-align: center;
   }
 
-  /* Modal: volle Breite mit kleinem Rand, Rollen + Scrollen erhalten */
   .modal {
     width: calc(100vw - 24px);
     max-width: calc(100vw - 24px);
@@ -653,23 +688,20 @@ tr:hover td { background: var(--bg); }
   }
   .modal-overlay { padding-top: 20px; padding-bottom: 20px; }
 
-  /* Formular im Modal: Auf Mobile einspaltig, alles volle Breite */
   .form-grid { grid-template-columns: 1fr; gap: 12px; }
   .form-group.full { grid-column: 1 / -1; }
 
-  /* Page-Header auf Mobile weniger Margin */
   .page-header { margin-bottom: 16px; }
   .page-title { font-size: 18px; }
 
-  /* Cards & Tabellen mit weniger Innenabstand */
   .card { padding: 14px; margin-bottom: 12px; }
+  .detail-card { padding: 18px; }
+  .detail-grid { grid-template-columns: 1fr; }
+
   td { padding: 12px 10px; }
   th { padding: 0 10px 8px; }
-
-  /* Auf ganz schmalen Screens (<360px) Schrift minimal kleiner */
 }
 
-/* Auf Desktop (≥768px) bleiben Mobile-Elemente versteckt (explizit, zur Sicherheit) */
 @media (min-width: 768px) {
   .mobile-header,
   .mobile-bottom-nav {
