@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.6 (Dynamische Status-Validierung gegen Lookup)
+   Version 1.9.7 (Termin-Abhaken in Projekten)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -3171,7 +3171,7 @@ async function loadProjectAppointments(projectId) {
     .eq('project_id', projectId);
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     countEl.textContent = 'Termine';
     return;
   }
@@ -3181,7 +3181,7 @@ async function loadProjectAppointments(projectId) {
 
   if (total === 0) {
     countEl.textContent = 'Keine Termine';
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Termine für dieses Projekt. Klicke oben auf „+ Termin hinzufügen".</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Termine für dieses Projekt. Klicke oben auf „+ Termin hinzufügen".</div></td></tr>';
     return;
   }
 
@@ -3209,8 +3209,19 @@ async function loadProjectAppointments(projectId) {
       ? (a.uhrzeit_bis ? `${formatTime(a.uhrzeit_von)}–${formatTime(a.uhrzeit_bis)}` : formatTime(a.uhrzeit_von))
       : '';
 
+    // Checkbox-State: durchgefuehrt = checked
+    const isDone = a.status === 'durchgefuehrt';
+    const checkboxTitle = isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren';
+
     return `
       <tr>
+        <td style="text-align:center">
+          <input type="checkbox" class="appointment-done-check"
+                 ${isDone ? 'checked' : ''}
+                 onchange="toggleAppointmentDone('${esc(a.id)}', this.checked, this)"
+                 title="${esc(checkboxTitle)}"
+                 style="width:16px;height:16px;cursor:pointer;margin:0">
+        </td>
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
@@ -4429,6 +4440,37 @@ async function loadProjectDeployments(projectId) {
   // Summary mit Aufwands-Info
   summaryEl.style.display = '';
   summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>. Kundenumsatz läuft über den Projekt-Paketpreis.`;
+}
+
+/**
+ * Quick-Toggle für Termin-Status via Checkbox in Projekt-Detail.
+ * Togglet zwischen 'geplant' und 'durchgefuehrt'.
+ * Triggert anschließend Auto-Status-Check für das Projekt.
+ */
+async function toggleAppointmentDone(appointmentId, isChecked, checkboxEl) {
+  const newStatus = isChecked ? 'durchgefuehrt' : 'geplant';
+
+  if (checkboxEl) checkboxEl.disabled = true;
+
+  try {
+    const { error } = await db.from('appointments')
+      .update({ status: newStatus })
+      .eq('id', appointmentId);
+    if (error) throw new Error(error.message);
+
+    // Projekt-Status-Check
+    if (currentProjectDetailId) {
+      await checkAndUpdateProjectStatus(currentProjectDetailId);
+      // Kompletten Refresh der Projekt-Seite (Header-Status + Badge-Farben)
+      await loadProjectDetail(currentProjectDetailId);
+    }
+  } catch (e) {
+    showToast('Status konnte nicht geändert werden: ' + e.message, true);
+    if (checkboxEl) {
+      checkboxEl.checked = !isChecked; // Rollback UI
+      checkboxEl.disabled = false;
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
