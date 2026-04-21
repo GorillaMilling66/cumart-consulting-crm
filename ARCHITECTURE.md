@@ -1,283 +1,225 @@
-# Cumart CRM – Architektur & Projektübersicht
+# Cumart CRM – Architektur & Entwicklungsplan
 
-> Lebendes Dokument. Wird bei jeder größeren Änderung aktualisiert.
-> Zuletzt aktualisiert: 2026-04-20 (v1.4.2)
-
----
-
-## 1. Was ist das Cumart CRM?
-
-Ein internes Management-System für **Cumart Consulting** (CNC Heidenhain Klartext
-Programmierung, Training & Beratung). Es löst das bisherige Chaos aus Excel,
-Teams, einem fremden CRM und Outlook ab und führt alle Informationen zu
-Kunden, Projekten, Einsätzen und Umsätzen an einem Ort zusammen.
-
-**Primäre Nutzer:** Cumart-Mitarbeiter (aktuell ~2, perspektivisch 5–20).
-Keine Kunden-Logins.
-
-**Primäres Ziel:**
-Jeder Mitarbeiter weiß jederzeit, **wer sind unsere Kunden**, **was läuft mit
-ihnen**, **wer ist wann wo im Einsatz** und **wie viel Umsatz haben wir
-erzielt / werden wir erzielen**.
+Stand: **21. April 2026**, Version **v1.5.3**
 
 ---
 
-## 2. Vision & Strategische Entscheidungen
+## 1. Zweck & Philosophie
 
-### Leistungsmodell
-Cumart bietet drei Hauptleistungstypen:
+Internes CRM für Cumart Consulting. Kein Verkauf, kein Multi-Tenant, nur unser Team.
+Gebaut für **Selcuk + wenige Mitarbeiter**. Einfachheit schlägt Skalierbarkeit.
 
-1. **Einsatz** – Techniker vor Ort beim Kunden (Tagessatz × Tage)
-2. **Trainingsprogramm hybrid** – Einsätze + Online-Einheiten gemischt,
-   oft als Projekt mit Festpreis
-3. **Projektgeschäft** – größere, längerfristige Aufträge mit Festpreis
+**Design-Prinzipien:**
 
-### Umsatzmodell
-**Modell C (gemischt):**
-- **Projekte** können einen Festpreis haben (`projects.festpreis`)
-- **Einsätze und Termine** können einen Preis × Menge haben
-  (`einzelpreis × menge`)
-- Der Umsatz wird dort erfasst, wo er logisch entsteht
-
-### Umsatz-Status (2 Stufen für MVP)
-- `geplant` – Einsatz/Termin steht im Kalender, aber noch nicht durchgeführt
-- `durchgeführt` – Leistung wurde erbracht
-- (Abrechnung & Zahlung laufen weiter über bestehendes Buchhaltungssystem)
-
-### Ziel-Tracking
-Primäre Dimension: **pro Mitarbeiter pro Monat** (z. B.
-"Yasin 12.500 € Monatsumsatz-Soll").
-Weitere Dimensionen (pro Leistungsart, pro Quartal) können später ergänzt werden.
-
-### Leistungskatalog (`services`)
-Admin-gepflegt in der App. Admins definieren selbst, welche Leistungen mit
-welchen Standardpreisen angeboten werden. Beim Anlegen eines Einsatzes oder
-Termins wird aus dem Katalog ausgewählt.
-
-### Stammdaten / Lookup-Werte
-Zentrale Dropdown-Werte werden in der Tabelle `lookup_values` verwaltet
-(Unternehmenstypen, Termintypen, Leistungskategorien, später Projekt-Status etc.).
-Admins können neue Kategorien und Werte direkt in der App pflegen – ohne SQL.
+- **Schema-first, Feature-second.** Erst die DB-Tabelle korrekt, dann das Frontend drumherum.
+- **Ein Feature zur Zeit.** Kein paralleles Rumflicken. Jede Version ist lauffähig.
+- **Kein Framework, kein Build-Step.** Vanilla HTML/CSS/JS. Wenn `app.js` > 1.500 Zeilen wird, modularisieren – aber erst dann.
+- **Admin-konfigurierbare Stammdaten.** Kategorien, Typen, Farben werden in `lookup_values` gepflegt – kein Code-Deploy für einen neuen Firmen-Typ.
+- **Cache-first, DB-fallback.** Listen werden einmal geladen und clientseitig gefiltert. Details & Schreibvorgänge immer direkt.
+- **UI deutsch, Code englisch.** Labels/Buttons deutsch, Funktionsnamen `camelCase` englisch, DB-Spalten `snake_case` deutsch/gemischt.
 
 ---
 
-## 3. Bau-Plan (Feature-Roadmap)
+## 2. Tech-Stack
 
-Farb-Legende: ✅ fertig · 🔨 in Arbeit · ⏳ geplant · 💭 Idee
+| Schicht | Technologie |
+|---|---|
+| Datenbank | Supabase Postgres (Free Plan) |
+| Auth | Supabase Auth (ES256 JWTs) |
+| Serverlogik | Supabase Edge Functions (Deno) |
+| Storage | – (noch nicht genutzt) |
+| Frontend | Vanilla HTML + CSS + JS |
+| Hosting | Vercel (Auto-Deploy von `main`) |
+| Repo | `GorillaMilling66/cumart-consulting-crm` |
+| Live-URL | `cumart-consulting-crm.vercel.app` |
 
-### Phase 0 – Fundament & Infrastruktur  ✅
-- ✅ Supabase Projekt aufgesetzt
-- ✅ 12-Tabellen-Schema angelegt
-- ✅ RLS Policies auf allen Tabellen sauber konfiguriert
-- ✅ GitHub-Repo + Vercel-Deployment
-- ✅ Code-Struktur: `index.html` + `styles.css` + `app.js`
-
-### Phase 1 – Benutzerverwaltung  ✅
-Release: **v1.3.1** (2026-04-20)
-
-- ✅ Admin / Vertrieb / Techniker als Rollen
-- ✅ Admin legt User mit Initialpasswort an (oder auto-generiert)
-- ✅ Zugangsdaten-Anzeige mit Kopier-Funktion
-- ✅ Passwort-Pflicht beim ersten Login
-- ✅ Admin-Passwort-Reset pro User
-- ✅ Self-Service Passwort-vergessen via E-Mail
-- ✅ Letzter-Admin-Schutz
-- ✅ Anti-Self-Demotion
-- ✅ Login-Blocker für inaktive User
-- ✅ Auto-Aktivierung bei erstem Login via DB-Trigger
-- ✅ Frontend-Gating für Admin-Funktionen
-
-### Phase 2a – Stammdaten & Leistungskatalog  ✅
-Release: **v1.4.2** (2026-04-20)
-
-- ✅ Lookup-Werte-Verwaltung (Kategorien, Werte, Farben, Reihenfolge, Status)
-- ✅ Leistungskatalog (Name, Kategorie als FK, Einheit, Preis, Status)
-- ✅ Leistungskategorien als Foreign Key auf `lookup_values`
-- ✅ Foreign-Key-Schutz beim Löschen (archivieren statt löschen)
-- ✅ Admin-only in "Einstellungen"-Untermenü gruppiert
-- ✅ Icon-Upgrade auf Lucide-Style
-
-### Phase 2b – Firmen & Kontakte  🔨
-- 🔨 **Firmen** (anlegen, auflisten, bearbeiten, löschen)
-  - Name, Typ (Lookup: Kunde/Interessent/Lieferant/Partner), Branche
-  - Adresse (Straße, PLZ, Stadt, Land)
-  - Kontakt (Telefon, E-Mail, Website)
-  - Notizen
-- ⏳ **Kontakte** (Ansprechpartner pro Firma)
-  - Vorname, Nachname, Position
-  - Telefon, E-Mail
-  - Zuordnung zu einer Firma
-  - Mehrere Kontakte pro Firma möglich
-
-### Phase 3 – Aktivitäten  ⏳
-- ⏳ **Projekte** als Klammer (Status, Festpreis, Zeitraum, Hauptkontakt)
-- ⏳ **Einsätze** (Techniker-Zuteilung, Datum, Service-Bezug, Preis × Menge)
-- ⏳ **Termine** (Erstgespräch, Angebotspräsentation, Online-Training mit Teilnehmern)
-- ⏳ **Notizen** zu Firmen / Kontakten / Projekten
-
-### Phase 4 – Auswertung & Ziele  ⏳
-- ⏳ **Umsatz-Dashboard** (geplant vs. durchgeführt, Monat/Quartal/Jahr)
-- ⏳ **Ziel-Tracking** pro Mitarbeiter pro Monat
-- ⏳ **Pipeline-View** (offene Angebote, kommende Einsätze)
-- ⏳ **„Meine Woche"** – Mitarbeiter-Dashboard
-
-### Phase 5 – Feinschliff & Erweiterungen  💭
-- 💭 Audit-Log (wer hat wann was geändert)
-- 💭 Soft-Delete für User (statt Hard-Delete)
-- 💭 Sortier-, Filter- und Suchfunktionen überall
-- 💭 Bulk-Aktionen
-- 💭 Import aus Excel / Outlook-Kontakten
-- 💭 Benachrichtigungen (neuer Termin, Reminder)
-- 💭 Permission-basierte UI (die `rechte`-JSON der Rollen nutzen)
-
-### Bewusst NICHT geplant (bis auf Weiteres)
-- Kunden-Portal mit eigenen Logins
-- Rechnungsstellung (bleibt im bestehenden Buchhaltungssystem)
-- Mobile App (Web-App ist mobil-responsive, das reicht zunächst)
+**Keine:** React, Vue, npm, Webpack, Vite, TypeScript, TanStack, shadcn, …
 
 ---
 
-## 4. Technische Architektur
+## 3. Repo-Struktur
 
-### Tech-Stack
-- **Frontend:** Vanilla HTML / CSS / JavaScript (kein Framework)
-- **Backend:** Supabase (Postgres + Auth + Edge Functions)
-- **Hosting Frontend:** Vercel (auto-deploy von GitHub main-Branch)
-- **Hosting Backend:** Supabase Cloud
-- **Versionskontrolle:** GitHub (`GorillaMilling66/cumart-consulting-crm`)
-- **Icon-Set:** Lucide (inline SVG, keine Runtime-Library)
-
-### Code-Struktur (aktueller Stand v1.4.2)
 ```
 /
-├── index.html                     ← HTML-Gerüst
-├── styles.css                     ← Alle Styles
-├── app.js                         ← Gesamte App-Logik
-├── ARCHITECTURE.md                ← Dieses Dokument
+├── index.html              – Thin-Shell mit allen Page-Containern und Modals
+├── styles.css              – Alle Styles
+├── app.js                  – Gesamte Frontend-Logik
+├── ARCHITECTURE.md         – Diese Datei
+├── README.md               – Kurzübersicht
 └── supabase/
     └── functions/
         └── manage-users/
-            └── index.ts           ← Edge Function für Benutzer-CRUD
+            └── index.ts    – Edge Function für User-Verwaltung
 ```
 
-**Refactoring-Strategie:** Aktuell ist `app.js` noch eine Datei (ca. 1200 Zeilen).
-Modularisierung startet sobald `app.js > 1500 Zeilen` oder ein Muster 3-fach
-auftaucht. Kein Premature-Modularize.
+**Backups liegen in einem separaten Ordner außerhalb des Repos** (Datenexporte als CSV).
 
-### Datenmodell (12 Tabellen)
+---
 
-**Benutzer & Rollen**
-- `user_profiles` – Cumart-Mitarbeiter (verknüpft mit `auth.users`)
-- `roles` – Admin / Vertrieb / Techniker (inkl. `rechte`-JSON für spätere Permissions)
+## 4. Datenbank-Schema (12 Tabellen)
 
-**Stammdaten**
-- `companies` – Firmen (Kunden, Interessenten, Lieferanten, Partner)
-- `contacts` – Ansprechpartner, gehören zu einer Firma
-- `services` – Leistungskatalog (Name, Kategorie-FK, Einheit, Standardpreis)
-- `lookup_values` – zentrale Dropdown-Werte (admin-gepflegt)
-
-**Aktivitäten**
-- `projects` – Aufträge (Festpreis, Status, Zeitraum)
-- `deployments` – Einsätze (datum_von/bis, Preis × Menge, Service-Bezug)
-- `deployment_technicians` – welcher Techniker auf welchem Einsatz
-- `appointments` – Termine (Erstgespräch, Online-Training, …)
-- `appointment_participants` – wer nimmt am Termin teil
-- `notes` – freie Notizen, verknüpfbar mit Firma / Kontakt / Projekt
-
-### Rechte-System
-
-| Rolle | Kann | Kann nicht |
+| Tabelle | Zweck | Status |
 |---|---|---|
-| **Admin** | Alles, inkl. Benutzerverwaltung, Stammdaten, Leistungen, Rollen-Änderungen | Sich selbst degradieren / löschen / letzter Admin |
-| **Vertrieb** | Firmen, Kontakte, Projekte, Termine, eigene Notizen | Einstellungen (keine eigene Sicht auf Leistungen/Benutzer/Stammdaten) |
-| **Techniker** | Eigene Einsätze einsehen, Notizen zu Einsätzen | Einstellungen, Preise ändern |
+| `user_profiles` | Benutzerprofil, 1:1 zu `auth.users` | ✅ In Benutzung |
+| `roles` | Admin/Vertrieb/Techniker | ✅ In Benutzung |
+| `lookup_values` | Admin-konfigurierbare Dropdowns | ✅ In Benutzung |
+| `companies` | Firmen (Kunden, Partner, Lieferanten) | ✅ In Benutzung |
+| `contacts` | Personen, optional einer Firma zugeordnet | ✅ In Benutzung |
+| `services` | Leistungskatalog (mit Kategorie & Standardpreis) | ✅ In Benutzung |
+| `projects` | Kundenprojekte mit Festpreis | 🔨 Schema existiert, UI fehlt |
+| `appointments` | Termine (Akquise, Erstberatung, Angebot, ...) | 🔨 Schema existiert, UI fehlt |
+| `appointment_participants` | N:M Termine ↔ Mitarbeiter | 🔨 Schema existiert, UI fehlt |
+| `deployments` | Einsätze mit Einzelpreis × Menge | 🔨 Schema existiert, UI fehlt |
+| `deployment_technicians` | N:M Einsätze ↔ Techniker | 🔨 Schema existiert, UI fehlt |
+| `notes` | Freitext-Notizen zu beliebigen Entitäten | 🔨 Schema existiert, UI fehlt |
 
-Haupt-Gate aktuell: „Admin / Nicht-Admin".
-Feingranulare Rechte via `roles.rechte` (JSON-Array) kommen in Phase 5.
+**RLS-Strategie (Option C, hybrid):**
+- `user_profiles`, `roles`: strikte rollen-basierte Policies (Admin schreibt, alle lesen eingeschränkt)
+- `lookup_values`: Lesen für alle, Schreiben nur Admin
+- Alle anderen Tabellen: Lesen/Schreiben für eingeloggte Benutzer
 
-### Sicherheit (Kernprinzipien)
+Verfeinerung später, wenn wir Anforderungen kennen.
 
-1. **Row-Level Security (RLS)** auf allen Tabellen
-2. **Edge Functions** für sensible Operationen (User anlegen, löschen, Passwort-Reset)
-3. **Kein Klartext-Passwort via E-Mail** – Anzeige im Admin-UI mit Kopier-Button
-4. **Frontend-Gating** kosmetisch – echter Schutz in DB + Edge Functions
-
----
-
-## 5. Design-Konventionen
-
-### Sprache
-- **UI:** Deutsch
-- **Code (Variablen, Funktionen, Kommentare):** Deutsch mischt mit Englisch
-  - Datenfelder bleiben englisch (`name`, `email`, `status`)
-  - Domain-spezifische Felder dürfen deutsch sein (`einzelpreis`, `menge`)
-  - Funktionsnamen im JS sind englisch (`loadUsers`, `saveCompany`)
-
-### Benennung
-- Tabellen: snake_case, Plural (`user_profiles`, `companies`)
-- Spalten: snake_case (`role_id`, `created_at`)
-- JS-Funktionen: camelCase (`loadUsers`, `isAdmin`)
-- CSS-Klassen: kebab-case mit Block-Präfix (`btn-primary`, `nav-item-sub`)
-- HTML-IDs: kebab-case, Prefix je Bereich (`u-name`, `s-kategorie`, `l-wert`)
-
-### UI-Prinzipien
-- Schlichtes, funktionales Design (wenig Farben, klare Hierarchie)
-- Lucide-Icon-Set, inline SVG, 18px in Hauptnav / 15px im Untermenü
-- Modals für alle Bearbeitungen (nicht Inline-Editing)
-- Toast-Meldungen für Feedback (3 Sekunden)
-- Keine destruktiven Aktionen ohne `confirm(...)`
-- Foreign-Key-Löschfehler werden abgefangen → freundliche Meldung „Archivieren statt löschen"
-
-### Sidebar-Struktur (ab v1.4.1)
-- **Oben:** User-Info (Name + Rolle)
-- **Mitte:** `#nav-main` – Arbeits-Menüpunkte (Phase 3: Firmen, Kontakte, …)
-- **Unten:**
-  - `#nav-settings-group` – ausklappbares „Einstellungen"-Untermenü
-    (Benutzer / Leistungen / Stammdaten), admin-only via `data-admin-only="true"`
-  - Abmelden
-
-### Admin-Gating
-Jedes UI-Element mit `data-admin-only="true"` wird in `applyAdminOnlyUI()` je
-nach Rolle ein-/ausgeblendet. Neue Admin-Bereiche einfach mit diesem Attribut
-markieren – keine separate Logik nötig.
+**Wichtige Konventionen:**
+- Primary Keys: UUID (`gen_random_uuid()`)
+- Soft-Delete: Noch nicht implementiert, offen
+- Audit-Spalten: `erstellt_von` (FK → `user_profiles`), `created_at`, `updated_at`
 
 ---
 
-## 6. Deployment & Backups
+## 5. Frontend-Konventionen
 
-### Deployment-Fluss
-1. Änderung in GitHub-Repo `main`-Branch
-2. Vercel deployed automatisch (~60 s)
-3. Edge Functions: Änderungen direkt im Supabase Dashboard; Code parallel
-   ins Repo nachführen (`supabase/functions/manage-users/index.ts`)
-4. DB-Migrationen: SQL via Supabase SQL Editor; Skripte später in
-   `supabase/migrations/` ablegen (Ordner noch anzulegen)
+**Naming:**
+- HTML-IDs: kebab-case, **per Seite/Section geprefixt**, um Kollisionen zu vermeiden:
+  - `u-*` = user modal
+  - `c-*` = company modal
+  - `k-*` = contact (kontakt) modal
+  - `s-*` = service modal
+  - `l-*` = lookup modal
+  - `page-*` = Seiten-Container
+  - `nav-*` / `m-nav-*` = Desktop- bzw. Mobile-Nav
+- JS-Funktionen: camelCase, englisch
+- DB-Spalten: snake_case
 
-### Backup-Strategie
-- **Code:** GitHub-Releases als Meilenstein-Tags (`v1.3.0`, `v1.3.1`, `v1.4.2`, …)
-- **Daten:** manueller SQL-Dump (CSV-Export via SQL Editor) bei jedem Meilenstein
-- **Automatische Supabase-Backups:** täglich (Free Plan), nicht selbst wiederherstellbar → deshalb manuelle Dumps
-- **Upgrade-Plan:** Sobald echte Kundendaten produktiv → Supabase Pro für Point-in-Time-Recovery
+**UI-Muster:**
+- **Modals, keine Inline-Editierung.** Jede Entität hat ein Bearbeiten-Modal (Vollständigkeit > Geschwindigkeit)
+- **Toast** für nicht-kritisches Feedback (3 Sekunden)
+- **`confirm()`** bei destruktiven Aktionen (Löschen)
+- **Foreign-Key-Fehler abfangen** → Empfehlung „archivieren statt löschen"
+- **Admin-Only**: `data-admin-only="true"` + `applyAdminOnlyUI()` macht Buttons/Menüs für Nicht-Admins unsichtbar
+- **Cache-First**: `companiesCache`, `contactsCache` – einmal laden, clientseitig filtern
+
+**Navigation:**
+- Hash-Router (kein SPA-Framework): `#/firmen`, `#/firma/UUID`, `#/kontakte`, `#/benutzer`, `#/leistungen`, `#/stammdaten`
+- `navigateTo(page, param)` → setzt Hash → `handleHashChange()` → `showPage()`
+- Browser-Zurück funktioniert, URLs sind bookmarkbar
+
+**Responsivität:**
+- Desktop-Sidebar ≥ 768 px
+- Mobile: fixe Header oben + Bottom-Nav (Firmen / Kontakte / Mehr)
+- Tabellen-Spalten verstecken sich progressiv: `.col-tablet` (≥ 768 px), `.col-desktop` (≥ 1024 px)
 
 ---
 
-## 7. Offene Fragen
+## 6. Wichtige Entscheidungen & deren Begründung
 
-- **Projekte:** Muss jeder Einsatz zu einem Projekt gehören, oder gibt es auch Einzeleinsätze?
-- **Einsatz-Zuteilung:** Ein oder mehrere Techniker pro Einsatz? (Schema erlaubt mehrere)
-- **Kalender-Ansicht:** Eigenständiger Kalender oder reicht Listenansicht?
-- **Feiertage / Urlaubsplanung:** Im Scope oder separat?
-- **Datenimport:** Später aus altem CRM? Aus Excel?
-- **Firmen-Soft-Delete:** Komplett löschen oder nur archivieren, wenn bereits Projekte dranhängen?
+| # | Entscheidung | Begründung |
+|---|---|---|
+| 1 | Vanilla statt Framework | Kleine App, kein Build-Step, maximal transparent |
+| 2 | Ein Admin erstellt Benutzer manuell (keine Self-Signup) | Interne App, <10 User, Free-Tier-Rate-Limit |
+| 3 | Legacy anon key + ES256 JWTs | Transition von HS256; "Verify JWT with legacy secret" in Edge-Functions deaktiviert |
+| 4 | Hybrid-RLS (Option C) | Strikte Policies da wo's zählt, lose wo wir noch nicht wissen |
+| 5 | Multi-Type-Firmen (Kunde+Partner) **verworfen** | Komplexität zu hoch, Nutzen unklar – falls Schmerz, später neu bewerten |
+| 6 | Modell C für Umsatz | Projekte = Festpreis, Einsätze/Termine = Einzelpreis × Menge, Status 2-stufig |
+| 7 | Kontakt-zu-Firma-Zuordnung: optional | Freelancer/Einzelpersonen existieren ohne Firma |
+| 8 | Responsive Spalten-Auto-Hide | Kein Column-Picker-UI nötig für <15 Benutzer |
+| 9 | Schema-first nach Rebuild | Vermeidet Code-Degradation durch iteratives Patching |
+| 10 | Hash-Router statt History API | Einfacher zu implementieren, kein Server-seitiges Routing nötig bei Vercel |
 
 ---
 
-## 8. Arbeitsprozess mit Claude
+## 7. Changelog
 
-1. **Erwähne „ARCHITECTURE.md"** in der ersten Nachricht einer neuen Session.
-2. **Kontext knapp:** „Wir bauen gerade Phase 2b (Firmen)" reicht.
-3. **Bei Unklarheiten** prüft Claude zuerst dieses Dokument.
-4. **Nach größeren Änderungen:** Claude aktualisiert diese Datei gemeinsam mit dir.
+### v1.5.3 – Firmen-Detailseite + Kopier-Buttons (21.04.2026) ✅
+- Hash-Router implementiert (`#/firmen`, `#/firma/UUID`, ...)
+- Firmen-Detailseite mit Kopf + Info-Grid + Kontakte-Sektion
+- Breadcrumb-Navigation mit Zurück-Pfeil
+- Klickbare Firmennamen in Firmen- und Kontaktlisten
+- Kopier-Icons in Firmenliste, Firmen-Detailseite, Kontaktliste
+- Plaintext-Formate für E-Mail-Copy-Paste (Firma + Adresse + Kontakte bzw. Kontakt + Firma)
 
-Die Datei wird **nicht automatisch** aktualisiert – wir müssen daran denken.
-Daumenregel: Feature fertig → Roadmap-Status ändern + „Zuletzt aktualisiert"-Timestamp oben.
+### v1.5.2 – Mobile Bottom-Navigation (April 2026)
+- Bottom-Nav für < 768 px: Firmen / Kontakte / Mehr
+- Safe-Area-Insets für iPhones
+- Mehr-Overlay als Bottom-Sheet
+
+### v1.5.1 – Kontakte (April 2026)
+- Kontakte-CRUD
+- Firma-Zuordnung optional
+- Filter nach Firma inkl. „ohne Firmenzuordnung"
+
+### v1.5.0 – Firmen (April 2026)
+- Firmen-CRUD mit 4-Section-Modal (Stammdaten / Adresse / Kontakt / Notizen)
+- `companies.typ` als FK auf `lookup_values`
+- Client-Suche + Typ-Filter
+
+### v1.4.2 – Icon-Upgrade (April 2026)
+- Lucide-Style SVG-Icons überall
+
+### v1.4.1 – Settings-Submenü (April 2026)
+- Einklappbare Einstellungen-Gruppe
+- Hauptnav nur Firmen + Kontakte
+
+### v1.4.0 – Services & Lookup-Management (April 2026)
+- Leistungskatalog mit Preis/Einheit/Kategorie
+- `services.kategorie` als FK auf `lookup_values`
+- Stammdaten-Seite mit Inline-Neue-Kategorie
+
+### v1.3.1 – Modularisierung (April 2026)
+- CSS → `styles.css`, JS → `app.js`, dünnes `index.html`
+
+### v1.3.0 – Benutzerverwaltung (April 2026)
+- User-CRUD mit admin-gesetzten Passwörtern
+- Credentials-Modal, Passwort-Reset, Must-Change-Flow
+- Login-Blocker für inaktive Benutzer, Auto-Aktivierung bei First-Login
+- Edge Function `manage-users` mit Last-Admin-Schutz und Anti-Self-Demotion
+
+---
+
+## 8. Offene Fragen / Technische Schulden
+
+- **Soft-Delete**: Firmen/Kontakte mit FK-Verweisen können aktuell nur archiviert werden (manuell als Typ umgestellt). Ein echtes `archiviert_am`-Feld fehlt.
+- **Multi-Type-Firmen**: Wenn eine Firma Kunde + Partner sein muss, gibt's aktuell keinen sauberen Weg. Falls es schmerzt → eigene Tabelle `company_typ_zuordnung` oder Array-Spalte.
+- **Edge Function Hardening**: `manage-users` noch nicht vollständig gegen Last-Admin-Deletion + Role-Self-Escalation getestet.
+- **Notizen als eigene Entität**: `notes`-Tabelle existiert, UI fehlt. Aktuell sind Notizen nur als Freitext-Feld in Firmen/Kontakten.
+- **Audit-Log**: Kein Tracking, wer wann was geändert hat. `updated_at` gibt's, aber keinen Änderungs-History.
+- **Datei-Anhänge**: Supabase Storage noch nicht eingebunden. Angebot-PDFs, Protokolle etc. liegen außerhalb des CRM.
+
+---
+
+## 9. Fahrplan (High-Level)
+
+### Phase 1 ✅ – Fundament
+Auth, Benutzerverwaltung, Rollen, RLS, Edge Function, Passwort-Flows
+
+### Phase 2a ✅ – Stammdaten
+Leistungskatalog, Lookup-Werte, Settings-Menü, Icons, Mobile-Nav
+
+### Phase 2b ✅ – CRM-Grunddaten
+Firmen, Kontakte, Detailseiten, Kopier-Buttons
+
+### Phase 3 🔨 – Operatives Geschäft (aktuell)
+- **3a: Termine** (Appointments) ← next
+- **3b: Projekte** (Projects)
+- **3c: Einsätze** (Deployments)
+
+### Phase 4 – Auswertung
+- Dashboard mit KPIs pro Mitarbeiter (Aktivität, Pipeline, Umsatz)
+- Umsatzsicht pro Projekt/Firma/Monat
+- Ziel-Tracking (monatliche Soll vs. Ist)
+
+### Phase 5 – Komfort
+- Notizen als eigene Entität mit Zeitstempel
+- Datei-Anhänge (Supabase Storage)
+- Soft-Delete/Archivierung überall
+- Audit-Log
