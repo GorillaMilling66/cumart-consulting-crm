@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.9.4 (Termin-Duplikat-Bug gefixt: Lösch-Semantik statt Entkopplung) -->
+<!-- VERSION: 1.9.6 (Dynamische Status-Validierung gegen Lookup statt hardcoded CHECK) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -840,6 +840,7 @@
           <table>
             <thead>
               <tr>
+                <th style="width:36px" title="Als durchgeführt markieren"></th>
                 <th style="width:110px">Datum</th>
                 <th>Titel</th>
                 <th class="col-tablet">Leistung</th>
@@ -849,7 +850,7 @@
               </tr>
             </thead>
             <tbody id="project-deployments-body">
-              <tr><td colspan="6"><div class="empty">Lade Einsätze ...</div></td></tr>
+              <tr><td colspan="7"><div class="empty">Lade Einsätze ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -1470,12 +1471,7 @@
       </div>
       <div class="form-group">
         <label>Status *</label>
-        <select id="d-status">
-          <option value="Geplant">Geplant</option>
-          <option value="Durchgeführt">Durchgeführt</option>
-          <option value="Abgerechnet">Abgerechnet</option>
-          <option value="Storniert">Storniert</option>
-        </select>
+        <select id="d-status"></select>
       </div>
       <div class="form-group full">
         <label>Ort</label>

@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.4 (Termin-Duplikat-Fix: Lösch-Semantik)
+   Version 1.9.6 (Dynamische Status-Validierung gegen Lookup)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -2575,11 +2575,16 @@ async function saveAppointment() {
     closeAppointmentModal();
     showToast(editingAppointmentId ? 'Termin aktualisiert.' : 'Termin angelegt.');
 
+    // Auto-Projekt-Status-Check wenn Termin an Projekt gebunden
+    if (project_id) {
+      await checkAndUpdateProjectStatus(project_id);
+    }
+
     // Kontext-sensibles Refresh
     if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
       await loadContactAppointments(currentContactDetailId);
     } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
-      await loadProjectAppointments(currentProjectDetailId);
+      await loadProjectDetail(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await Promise.all([
         loadCompanyAppointments(currentCompanyDetailId),
@@ -2605,16 +2610,26 @@ async function deleteAppointment() {
   btn.textContent = 'Wird gelöscht ...';
 
   try {
+    // project_id vorher merken für Status-Check
+    const { data: apptInfo } = await db.from('appointments')
+      .select('project_id').eq('id', editingAppointmentId).single();
+    const deletedProjectId = apptInfo?.project_id || null;
+
     const { error } = await db.from('appointments').delete().eq('id', editingAppointmentId);
     if (error) throw new Error(error.message);
 
     closeAppointmentModal();
     showToast('Termin gelöscht.');
 
+    // Auto-Projekt-Status-Check
+    if (deletedProjectId) {
+      await checkAndUpdateProjectStatus(deletedProjectId);
+    }
+
     if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
       await loadContactAppointments(currentContactDetailId);
     } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
-      await loadProjectAppointments(currentProjectDetailId);
+      await loadProjectDetail(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await Promise.all([
         loadCompanyAppointments(currentCompanyDetailId),
@@ -2933,8 +2948,11 @@ async function saveProject() {
 
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
   if (!status) { showToast('Bitte Status auswählen.', true); return; }
-  if (!['Lead', 'Angebot', 'In Arbeit', 'Abgeschlossen', 'Verloren'].includes(status)) {
-    showToast('Status ungültig.', true); return;
+  // Status gegen Lookup-Cache validieren (dynamisch statt hardcoded)
+  const validProjectStatuses = projektStatusCache.map(s => s.wert);
+  if (validProjectStatuses.length > 0 && !validProjectStatuses.includes(status)) {
+    showToast('Status ungültig. Erlaubte Werte: ' + validProjectStatuses.join(', '), true);
+    return;
   }
   if (startdatum && enddatum && startdatum > enddatum) {
     showToast('Enddatum muss nach Startdatum liegen.', true); return;
@@ -3122,6 +3140,10 @@ function renderProjectDetail(p) {
     <div class="detail-field">
       <div class="detail-label">Geschätzter Umsatz</div>
       <div class="detail-value" style="font-weight:500">${esc(formatPreis(p.geschaetzter_umsatz))}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Leistungsumsatz (Einsätze)</div>
+      <div class="detail-value" id="project-detail-leistungsumsatz" style="font-weight:500;color:var(--muted)">Lade ...</div>
     </div>
   `;
 
@@ -3784,8 +3806,12 @@ async function openDeploymentModal(mode, deploymentId = null) {
   serviceSelect.innerHTML = '<option value="">— Keine Leistung —</option>'
     + servicesCache.map(s => `<option value="${esc(s.id)}" data-preis="${s.standardpreis || 0}" data-einheit="${esc(s.einheit || '')}">${esc(s.name)} (${esc(s.einheit || '—')})</option>`).join('');
 
-  // Status-Select
-  document.getElementById('d-status').value = 'Geplant';
+  // Status-Select dynamisch aus Lookup-Cache
+  const statusSelect = document.getElementById('d-status');
+  statusSelect.innerHTML = einsatzStatusCache.map(s =>
+    `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`
+  ).join('');
+  statusSelect.value = einsatzStatusCache.find(s => s.wert === 'Geplant')?.wert || einsatzStatusCache[0]?.wert || '';
 
   // Felder zurücksetzen
   document.getElementById('d-titel').value = '';
@@ -4054,8 +4080,9 @@ async function saveDeployment() {
     showToast('Datum bis muss nach Datum von liegen.', true); return;
   }
 
-  if (!['Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert'].includes(status)) {
-    showToast('Status ungültig.', true); return;
+  if (!['Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert'].includes(status) &&
+      !einsatzStatusCache.some(s => s.wert === status)) {
+    showToast('Status ungültig. Bitte aus Liste wählen.', true); return;
   }
   if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
     showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true); return;
@@ -4120,9 +4147,14 @@ async function saveDeployment() {
     closeDeploymentModal();
     showToast(editingDeploymentId ? 'Einsatz aktualisiert.' : 'Einsatz angelegt.');
 
+    // Auto-Projekt-Status-Check wenn Einsatz an Projekt gebunden
+    if (saved.project_id) {
+      await checkAndUpdateProjectStatus(saved.project_id);
+    }
+
     // Kontext-sensibles Refresh
     if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
-      await loadProjectDeployments(currentProjectDetailId);
+      await loadProjectDetail(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyDeployments(currentCompanyDetailId);
     } else {
@@ -4208,6 +4240,11 @@ async function deleteDeployment() {
   btn.textContent = 'Wird gelöscht ...';
 
   try {
+    // project_id vorher merken für Status-Check nach Löschung
+    const { data: depInfo } = await db.from('deployments')
+      .select('project_id').eq('id', editingDeploymentId).single();
+    const deletedProjectId = depInfo?.project_id || null;
+
     // Gekoppelten Termin erst löschen (FK auf deployments ist ON DELETE SET NULL,
     // würde sonst als Waise zurückbleiben)
     await db.from('appointments').delete().eq('deployment_id', editingDeploymentId);
@@ -4218,8 +4255,13 @@ async function deleteDeployment() {
     closeDeploymentModal();
     showToast('Einsatz gelöscht.');
 
+    // Auto-Projekt-Status-Check
+    if (deletedProjectId) {
+      await checkAndUpdateProjectStatus(deletedProjectId);
+    }
+
     if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
-      await loadProjectDeployments(currentProjectDetailId);
+      await loadProjectDetail(currentProjectDetailId);
     } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
       await loadCompanyDeployments(currentCompanyDetailId);
     } else {
@@ -4302,6 +4344,7 @@ async function loadProjectDeployments(projectId) {
   const tbody = document.getElementById('project-deployments-body');
   const countEl = document.getElementById('project-deployments-count');
   const summaryEl = document.getElementById('project-deployments-summary');
+  const leistungsUmsatzEl = document.getElementById('project-detail-leistungsumsatz');
 
   await loadEinsatzStatus();
 
@@ -4312,18 +4355,26 @@ async function loadProjectDeployments(projectId) {
     .order('created_at', { ascending: true });
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     countEl.textContent = 'Einsätze';
     summaryEl.style.display = 'none';
+    if (leistungsUmsatzEl) leistungsUmsatzEl.textContent = '—';
     return;
   }
 
   const all = data || [];
   const total = all.length;
 
+  // Leistungsumsatz (Summe aller Einsatz-Werte) im Header anzeigen
+  const leistungsUmsatz = all.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+  if (leistungsUmsatzEl) {
+    leistungsUmsatzEl.textContent = formatPreis(leistungsUmsatz);
+    leistungsUmsatzEl.style.color = leistungsUmsatz > 0 ? 'var(--text)' : 'var(--muted)';
+  }
+
   if (total === 0) {
     countEl.textContent = 'Keine Einsätze';
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Einsätze für dieses Projekt. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Einsätze für dieses Projekt. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
     summaryEl.style.display = 'none';
     return;
   }
@@ -4345,8 +4396,23 @@ async function loadProjectDeployments(projectId) {
       : '<span style="color:var(--muted);font-style:italic">—</span>';
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
 
+    // Checkbox-State: Durchgeführt oder Abgerechnet = checked
+    const isDone = d.status === 'Durchgeführt' || d.status === 'Abgerechnet';
+    const isLocked = d.status === 'Abgerechnet' || d.status === 'Storniert';
+    const checkboxTitle = isLocked
+      ? `Status „${d.status}" kann nicht per Checkbox geändert werden`
+      : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
+
     return `
       <tr>
+        <td style="text-align:center">
+          <input type="checkbox" class="deployment-done-check"
+                 ${isDone ? 'checked' : ''}
+                 ${isLocked ? 'disabled' : ''}
+                 onchange="toggleDeploymentDone('${esc(d.id)}', this.checked, this)"
+                 title="${esc(checkboxTitle)}"
+                 style="width:16px;height:16px;cursor:${isLocked ? 'not-allowed' : 'pointer'};margin:0">
+        </td>
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
@@ -4363,6 +4429,102 @@ async function loadProjectDeployments(projectId) {
   // Summary mit Aufwands-Info
   summaryEl.style.display = '';
   summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>. Kundenumsatz läuft über den Projekt-Paketpreis.`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EINSATZ-ABHAKEN + AUTO-PROJEKT-STATUS (v1.9.5)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Quick-Toggle für Einsatz-Status via Checkbox in Projekt-Detail.
+ * Togglet zwischen 'Geplant' und 'Durchgeführt'.
+ * Triggert anschließend Auto-Status-Check für das Projekt.
+ */
+async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
+  const newStatus = isChecked ? 'Durchgeführt' : 'Geplant';
+
+  if (checkboxEl) checkboxEl.disabled = true;
+
+  try {
+    const { error } = await db.from('deployments')
+      .update({ status: newStatus })
+      .eq('id', deploymentId);
+    if (error) throw new Error(error.message);
+
+    // Projekt-Status-Check
+    if (currentProjectDetailId) {
+      await checkAndUpdateProjectStatus(currentProjectDetailId);
+      // Kompletten Refresh der Projekt-Seite (Header-Status + Einsatz-Badges + Leistungsumsatz)
+      await loadProjectDetail(currentProjectDetailId);
+    }
+  } catch (e) {
+    showToast('Status konnte nicht geändert werden: ' + e.message, true);
+    if (checkboxEl) {
+      checkboxEl.checked = !isChecked; // Rollback UI
+      checkboxEl.disabled = false;
+    }
+  }
+}
+
+/**
+ * Prüft den Stand aller Einsätze und Termine eines Projekts und
+ * aktualisiert den Projekt-Status automatisch:
+ *  - Alle Einsätze durchgeführt + alle Termine durchgeführt → 'Abgeschlossen'
+ *  - Alle Einsätze durchgeführt (min. 1)                     → 'Abschlussphase'
+ *  - Sonst (wenn bisher 'Abschlussphase'/'Abgeschlossen')    → 'In Arbeit'
+ *
+ * Läuft nur wenn Projekt in einem "aktiven" Status ist
+ * (Lead, Angebot, Verloren werden nicht automatisch angefasst).
+ */
+async function checkAndUpdateProjectStatus(projectId) {
+  // Aktuellen Projekt-Status holen
+  const { data: project, error: pErr } = await db.from('projects')
+    .select('id, status, name').eq('id', projectId).single();
+  if (pErr || !project) return;
+
+  const aktiveStatus = ['In Arbeit', 'Abschlussphase', 'Abgeschlossen'];
+  if (!aktiveStatus.includes(project.status)) return; // Lead/Angebot/Verloren: keine Automatik
+
+  // Einsätze laden
+  const { data: deployments } = await db.from('deployments')
+    .select('status').eq('project_id', projectId);
+  const allDeps = deployments || [];
+
+  // Termine laden
+  const { data: appointments } = await db.from('appointments')
+    .select('status').eq('project_id', projectId);
+  const allAppts = appointments || [];
+
+  const countsDone = (arr, doneValues) => {
+    if (arr.length === 0) return { hasAny: false, allDone: true }; // leer = neutral
+    const done = arr.filter(x => doneValues.includes(x.status)).length;
+    return { hasAny: true, allDone: done === arr.length };
+  };
+
+  const depStats = countsDone(allDeps, ['Durchgeführt', 'Abgerechnet']);
+  const apptStats = countsDone(allAppts, ['durchgefuehrt']);
+
+  // Logik für neuen Status
+  let neuerStatus = project.status;
+  if (!depStats.hasAny) {
+    // Keine Einsätze → kein Auto-Status-Change
+    return;
+  }
+  if (depStats.allDone && apptStats.allDone) {
+    neuerStatus = 'Abgeschlossen';
+  } else if (depStats.allDone) {
+    neuerStatus = 'Abschlussphase';
+  } else {
+    neuerStatus = 'In Arbeit';
+  }
+
+  if (neuerStatus !== project.status) {
+    const { error: updErr } = await db.from('projects')
+      .update({ status: neuerStatus }).eq('id', projectId);
+    if (!updErr) {
+      showToast(`Projekt-Status automatisch auf „${neuerStatus}" aktualisiert.`);
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
