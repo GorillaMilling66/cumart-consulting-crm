@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.7.0 (Projekte-Modul, Projekte auf Firmen-Detailseite, Projekt-Zuordnung für Termine) -->
+<!-- VERSION: 1.7.1 (iOS-Clipboard-Fix, Input-Validierung, Mobile-Layout-Fix) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -21,7 +21,9 @@
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-field">
       <label>E-Mail</label>
-      <input type="email" id="auth-email" placeholder="ihre@email.de" autocomplete="email">
+      <input type="email" id="auth-email" placeholder="ihre@email.de" autocomplete="email"
+             inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+             onblur="sanitizeEmailOnBlur(this)">
     </div>
     <div class="auth-field">
       <label>Passwort</label>
@@ -97,7 +99,9 @@
     </div>
     <div class="auth-field">
       <label>E-Mail</label>
-      <input type="email" id="reset-email" placeholder="ihre@email.de">
+      <input type="email" id="reset-email" placeholder="ihre@email.de"
+             inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+             onblur="sanitizeEmailOnBlur(this)">
     </div>
     <button class="auth-btn" id="reset-btn" onclick="doReset()">Link senden</button>
   </div>
@@ -257,7 +261,7 @@
       </div>
 
       <div class="card" style="padding:14px 20px">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="form-group" style="flex:1;min-width:200px;margin:0">
             <input type="text" id="companies-search"
                    placeholder="Suche nach Name, Ort, E-Mail ..."
@@ -285,7 +289,7 @@
                 <th class="col-tablet">Telefon</th>
                 <th class="col-desktop">Branche</th>
                 <th class="col-desktop">Nächster/letzter Termin</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="companies-table-body">
@@ -354,7 +358,7 @@
                 <th class="col-tablet">Position</th>
                 <th class="col-tablet">Telefon</th>
                 <th class="col-desktop">E-Mail</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="company-contacts-body">
@@ -384,7 +388,7 @@
                 <th class="col-tablet">Typ</th>
                 <th class="col-desktop">Kontakt</th>
                 <th style="width:110px">Status</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="company-appointments-body">
@@ -416,7 +420,7 @@
                 <th class="col-tablet" style="width:110px">Start</th>
                 <th class="col-tablet" style="width:110px">Ende</th>
                 <th class="col-desktop">Umsatz</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="company-projects-body">
@@ -437,7 +441,7 @@
       </div>
 
       <div class="card" style="padding:14px 20px">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="form-group" style="flex:1;min-width:200px;margin:0">
             <input type="text" id="contacts-search"
                    placeholder="Suche nach Name, Position, E-Mail ..."
@@ -465,7 +469,7 @@
                 <th class="col-tablet">Position</th>
                 <th class="col-tablet">Telefon</th>
                 <th class="col-desktop">E-Mail</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="contacts-table-body">
@@ -486,7 +490,7 @@
       </div>
 
       <div class="card" style="padding:14px 20px">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="form-group" style="flex:1;min-width:200px;margin:0">
             <input type="text" id="appointments-search"
                    placeholder="Suche nach Titel, Firma, Ort ..."
@@ -537,7 +541,7 @@
                 <th class="col-desktop">Firma</th>
                 <th class="col-desktop">Ort</th>
                 <th style="width:110px">Status</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="appointments-table-body">
@@ -558,7 +562,7 @@
       </div>
 
       <div class="card" style="padding:14px 20px">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="form-group" style="flex:1;min-width:200px;margin:0">
             <input type="text" id="projects-search"
                    placeholder="Suche nach Name, Firma, Beschreibung ..."
@@ -599,7 +603,7 @@
                 <th class="col-desktop" style="width:110px">Start</th>
                 <th class="col-desktop" style="width:110px">Ende</th>
                 <th class="col-tablet">Umsatz</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="projects-table-body">
@@ -667,7 +671,7 @@
                 <th>Titel</th>
                 <th class="col-tablet">Typ</th>
                 <th style="width:110px">Status</th>
-                <th></th>
+                <th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="project-appointments-body">
@@ -696,7 +700,7 @@
           <table>
             <thead>
               <tr>
-                <th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th></th>
+                <th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="users-table-body">
@@ -723,7 +727,7 @@
             <thead>
               <tr>
                 <th>Name</th><th>Kategorie</th><th>Einheit</th>
-                <th>Standardpreis</th><th>Status</th><th></th>
+                <th>Standardpreis</th><th>Status</th><th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="services-table-body">
@@ -756,7 +760,7 @@
           <table>
             <thead>
               <tr>
-                <th>Wert</th><th>Farbe</th><th>Reihenfolge</th><th>Status</th><th></th>
+                <th>Wert</th><th>Farbe</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th>
               </tr>
             </thead>
             <tbody id="lookups-table-body">
@@ -913,7 +917,9 @@
       </div>
       <div class="form-group">
         <label>PLZ</label>
-        <input type="text" id="c-plz" placeholder="71034">
+        <input type="text" id="c-plz" placeholder="71034"
+               inputmode="numeric" maxlength="10"
+               oninput="sanitizeNumericInput(this, 10)">
       </div>
       <div class="form-group">
         <label>Stadt</label>
@@ -929,11 +935,15 @@
     <div class="form-grid">
       <div class="form-group">
         <label>Telefon</label>
-        <input type="tel" id="c-telefon" placeholder="+49 7031 12345">
+        <input type="tel" id="c-telefon" placeholder="+49 7031 12345"
+               inputmode="tel"
+               oninput="sanitizePhoneInput(this)">
       </div>
       <div class="form-group">
         <label>E-Mail</label>
-        <input type="email" id="c-email" placeholder="info@firma.de">
+        <input type="email" id="c-email" placeholder="info@firma.de"
+               inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+               onblur="sanitizeEmailOnBlur(this)">
       </div>
       <div class="form-group full">
         <label>Website</label>
@@ -988,11 +998,15 @@
     <div class="form-grid">
       <div class="form-group">
         <label>Telefon</label>
-        <input type="tel" id="k-telefon" placeholder="+49 7031 12345">
+        <input type="tel" id="k-telefon" placeholder="+49 7031 12345"
+               inputmode="tel"
+               oninput="sanitizePhoneInput(this)">
       </div>
       <div class="form-group">
         <label>E-Mail</label>
-        <input type="email" id="k-email" placeholder="t.mueller@firma.de">
+        <input type="email" id="k-email" placeholder="t.mueller@firma.de"
+               inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+               onblur="sanitizeEmailOnBlur(this)">
       </div>
     </div>
 
@@ -1177,7 +1191,9 @@
       </div>
       <div class="form-group">
         <label>E-Mail *</label>
-        <input type="email" id="u-email" placeholder="max@cumart.de">
+        <input type="email" id="u-email" placeholder="max@cumart.de"
+               inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+               onblur="sanitizeEmailOnBlur(this)">
       </div>
       <div class="form-group full">
         <label>Rolle *</label>

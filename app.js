@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.7.0 (Projekte-Modul)
+   Version 1.7.1 (iOS-Clipboard-Fix, Input-Validierung, Mobile-Layout-Fix)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -49,6 +49,9 @@ let terminTypenCache = [];
 let projektStatusCache = [];
 let userProfilesCache = [];
 
+// Map: companyId → contacts[] (für synchronen Copy-Zugriff)
+let companyContactsMap = {};
+
 // Map: companyId → { next: {datum, titel, id} | null, last: {datum, titel, id} | null }
 let companyAppointmentMap = {};
 
@@ -85,6 +88,38 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+// ═══════════════════════════════════════════════════════════
+//  INPUT-SANITIZER (Tipp-Zeit-Validierung)
+// ═══════════════════════════════════════════════════════════
+
+/** Erlaubt nur telefon-taugliche Zeichen: Ziffern, +, -, (, ), /, ., Leerzeichen */
+function sanitizePhoneInput(el) {
+  const before = el.value;
+  const after  = before.replace(/[^\d+\-()\/. ]/g, '');
+  if (before !== after) {
+    const pos = el.selectionStart - (before.length - after.length);
+    el.value = after;
+    try { el.setSelectionRange(pos, pos); } catch {}
+  }
+}
+
+/** Erlaubt nur Ziffern (z.B. PLZ) */
+function sanitizeNumericInput(el, maxLen = null) {
+  const before = el.value;
+  let after = before.replace(/\D/g, '');
+  if (maxLen) after = after.slice(0, maxLen);
+  if (before !== after) {
+    const pos = el.selectionStart - (before.length - after.length);
+    el.value = after;
+    try { el.setSelectionRange(pos, pos); } catch {}
+  }
+}
+
+/** Trimmt und kleinbuchstabiert E-Mail sanft (keine Auto-Lowercasing beim Tippen, nur on blur) */
+function sanitizeEmailOnBlur(el) {
+  el.value = el.value.trim();
+}
+
 function showToast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -93,25 +128,58 @@ function showToast(msg, isError = false) {
 }
 
 async function copyToClipboard(text, toastMsg = 'In Zwischenablage kopiert.') {
+  // Diese Version wird für Kontext ohne User-Gesture-Druck verwendet (z.B. Credentials-Modal)
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
       showToast(toastMsg);
       return true;
     }
+    return copyTextSync(text, toastMsg);
+  } catch (e) {
+    // Fallback auf synchrone Variante
+    return copyTextSync(text, toastMsg);
+  }
+}
+
+/**
+ * Synchron kopieren - iOS-kompatibel, funktioniert nur wenn direkt
+ * aus einem User-Click-Event aufgerufen (kein async/await davor!).
+ */
+function copyTextSync(text, toastMsg = 'In Zwischenablage kopiert.') {
+  try {
     const ta = document.createElement('textarea');
     ta.value = text;
+    ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.width = '1px';
+    ta.style.height = '1px';
+    ta.style.opacity = '0';
+    ta.style.fontSize = '16px'; // verhindert iOS-Zoom
     document.body.appendChild(ta);
+
+    // iOS-Trick: Range + Selection für contenteditable workaround
+    ta.contentEditable = 'true';
+    ta.readOnly = false;
+    const range = document.createRange();
+    range.selectNodeContents(ta);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    ta.setSelectionRange(0, 999999);
+    ta.focus();
     ta.select();
+
     const ok = document.execCommand('copy');
     document.body.removeChild(ta);
-    if (!ok) throw new Error('execCommand copy failed');
+
+    if (!ok) throw new Error('Kopierbefehl fehlgeschlagen');
     showToast(toastMsg);
     return true;
   } catch (e) {
-    showToast('Kopieren nicht möglich: ' + e.message, true);
+    showToast('Kopieren nicht möglich.', true);
     return false;
   }
 }
@@ -149,32 +217,50 @@ function formatContactBlock(contact) {
   return lines.join('\n');
 }
 
-async function copyCompanyById(companyId) {
-  let company = companiesCache.find(c => c.id === companyId);
+/**
+ * SYNCHRON - darf keine async-Calls vor dem Copy haben (iOS-Bedingung).
+ * Greift auf Caches zu: companiesCache, companyContactsMap.
+ */
+function copyCompanyById(companyId) {
+  const company = companiesCache.find(c => c.id === companyId);
   if (!company) {
-    const { data, error } = await db.from('companies').select('*').eq('id', companyId).single();
-    if (error || !data) { showToast('Firma nicht gefunden.', true); return; }
-    company = data;
+    showToast('Firma noch nicht geladen. Bitte kurz warten und erneut versuchen.', true);
+    return;
   }
-  const { data: contacts, error: contactsErr } = await db
-    .from('contacts').select('vorname, nachname')
-    .eq('company_id', companyId).order('nachname');
-  if (contactsErr) { showToast('Kontakte konnten nicht geladen werden: ' + contactsErr.message, true); return; }
-  const text = formatCompanyBlock(company, contacts || []);
-  await copyToClipboard(text, 'Firmendaten kopiert.');
+  const contacts = companyContactsMap[companyId] || [];
+  const text = formatCompanyBlock(company, contacts);
+  copyTextSync(text, 'Firmendaten kopiert.');
 }
 
-async function copyContactById(contactId) {
-  let contact = contactsCache.find(k => k.id === contactId);
+/**
+ * SYNCHRON - sucht Kontakt in contactsCache oder companyContactsMap.
+ */
+function copyContactById(contactId) {
+  let contact = null;
+
+  // Erst contactsCache (hat meist .company dabei)
+  if (contactsCache.length > 0) {
+    contact = contactsCache.find(c => c.id === contactId);
+  }
+
+  // Sonst aus companyContactsMap zusammenbauen
   if (!contact) {
-    const { data, error } = await db.from('contacts')
-      .select('*, company:companies(name, strasse, plz, stadt)')
-      .eq('id', contactId).single();
-    if (error || !data) { showToast('Kontakt nicht gefunden.', true); return; }
-    contact = data;
+    for (const [cid, list] of Object.entries(companyContactsMap)) {
+      const hit = list.find(c => c.id === contactId);
+      if (hit) {
+        const company = companiesCache.find(c => c.id === cid);
+        contact = { ...hit, company };
+        break;
+      }
+    }
+  }
+
+  if (!contact) {
+    showToast('Kontakt noch nicht geladen. Bitte kurz warten und erneut versuchen.', true);
+    return;
   }
   const text = formatContactBlock(contact);
-  await copyToClipboard(text, 'Kontakt kopiert.');
+  copyTextSync(text, 'Kontakt kopiert.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -670,13 +756,17 @@ async function loadUsers() {
       }
     }
 
+    const nameHtml = canAdminister
+      ? `<div class="cell-link" onclick="openUserModal('edit', '${esc(u.id)}')">${esc(u.name)}</div>`
+      : `<div style="font-weight:500">${esc(u.name)}</div>`;
+
     return `
       <tr>
         <td>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="avatar">${esc(ini(u.name))}</div>
             <div>
-              <div style="font-weight:500">${esc(u.name)}</div>
+              ${nameHtml}
               ${isMe ? '<div style="font-size:11px;color:var(--muted)">Das bist du</div>' : ''}
             </div>
           </div>
@@ -684,7 +774,7 @@ async function loadUsers() {
         <td style="color:var(--muted)">${esc(u.email)}</td>
         <td><span class="badge" style="background:${roleBg};color:${roleColor}">${esc(u.roles?.name || '—')}</span></td>
         <td><span class="badge" style="background:${statusBg(u.status)};color:${statusColor(u.status)}">${esc(statusLabel(u.status))}</span></td>
-        <td style="text-align:right"><div class="btn-row" style="justify-content:flex-end">${actions}</div></td>
+        <td class="col-action" style="text-align:right"><div class="btn-row" style="justify-content:flex-end">${actions}</div></td>
       </tr>`;
   }).join('');
 }
@@ -892,17 +982,21 @@ async function loadServices() {
     const aktivTxt = s.ist_aktiv ? 'Aktiv' : 'Archiviert';
     const editBtn = canEdit ? `<button class="btn btn-sm" onclick="openServiceModal('edit', '${s.id}')">Bearbeiten</button>` : '';
 
+    const nameHtml = canEdit
+      ? `<div class="cell-link" onclick="openServiceModal('edit', '${esc(s.id)}')">${esc(s.name)}</div>`
+      : `<div style="font-weight:500">${esc(s.name)}</div>`;
+
     return `
       <tr>
         <td>
-          <div style="font-weight:500">${esc(s.name)}</div>
+          ${nameHtml}
           ${s.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.beschreibung)}</div>` : ''}
         </td>
         <td><span class="badge" style="background:${esc(katFarbe)}22;color:${esc(katFarbe)}">${esc(katWert)}</span></td>
         <td style="color:var(--muted)">${esc(s.einheit || '—')}</td>
         <td>${esc(formatPreis(s.standardpreis))}</td>
         <td><span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span></td>
-        <td style="text-align:right">${editBtn}</td>
+        <td class="col-action" style="text-align:right">${editBtn}</td>
       </tr>`;
   }).join('');
 }
@@ -1056,14 +1150,14 @@ async function loadLookups() {
     const aktivTxt = lv.ist_aktiv ? 'Aktiv' : 'Archiviert';
     return `
       <tr>
-        <td style="font-weight:500">${esc(lv.wert)}</td>
+        <td><div class="cell-link" onclick="openLookupModal('edit', '${esc(lv.id)}')">${esc(lv.wert)}</div></td>
         <td>
           <span class="color-dot" style="background:${esc(lv.farbe || '#6b7280')}"></span>
           <span style="font-family:'SF Mono',Menlo,monospace;font-size:12px;color:var(--muted)">${esc(lv.farbe || '#6b7280')}</span>
         </td>
         <td style="color:var(--muted)">${esc(String(lv.reihenfolge ?? 0))}</td>
         <td><span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span></td>
-        <td style="text-align:right"><button class="btn btn-sm" onclick="openLookupModal('edit', '${esc(lv.id)}')">Bearbeiten</button></td>
+        <td class="col-action" style="text-align:right"><button class="btn btn-sm" onclick="openLookupModal('edit', '${esc(lv.id)}')">Bearbeiten</button></td>
       </tr>`;
   }).join('');
 }
@@ -1246,12 +1340,25 @@ async function loadCompanies() {
       + typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
 
-  const [companiesResult] = await Promise.all([
+  const [companiesResult, contactsResult] = await Promise.all([
     db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').order('name'),
+    db.from('contacts').select('id, vorname, nachname, company_id, email, telefon').not('company_id', 'is', null),
     loadCompanyAppointmentMap()
   ]);
 
   const { data, error } = companiesResult;
+
+  // companyContactsMap aus allen Kontakten befüllen
+  companyContactsMap = {};
+  (contactsResult.data || []).forEach(k => {
+    if (!k.company_id) return;
+    if (!companyContactsMap[k.company_id]) companyContactsMap[k.company_id] = [];
+    companyContactsMap[k.company_id].push(k);
+  });
+  // Sortieren pro Firma
+  Object.keys(companyContactsMap).forEach(cid => {
+    companyContactsMap[cid].sort((a, b) => (a.nachname || '').localeCompare(b.nachname || ''));
+  });
 
   if (error) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
@@ -1337,7 +1444,7 @@ function renderCompaniesTable(companies) {
         <td class="col-tablet" style="color:var(--muted)">${esc(c.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(c.branche || '—')}</td>
         <td class="col-desktop">${renderNextAppointmentCell(c.id)}</td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <div class="btn-row" style="justify-content:flex-end">
             <button class="btn-copy" onclick="copyCompanyById('${esc(c.id)}')" title="Firmendaten kopieren" aria-label="Firmendaten kopieren">
               ${COPY_ICON_SVG}
@@ -1630,6 +1737,15 @@ async function loadCompanyContacts(companyId) {
     return;
   }
 
+  // Cache aktualisieren für sync-Copy
+  companyContactsMap[companyId] = data || [];
+
+  // Für die companiesCache-Lookup-Kompatibilität: Firma ins companiesCache pushen falls leer
+  if (companiesCache.length === 0) {
+    const { data: c } = await db.from('companies').select('*').eq('id', companyId).single();
+    if (c) companiesCache = [c];
+  }
+
   const total = (data || []).length;
   countEl.textContent = total === 0 ? 'Keine Kontakte' : `${total} Kontakt${total === 1 ? '' : 'e'}`;
 
@@ -1642,11 +1758,11 @@ async function loadCompanyContacts(companyId) {
     const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
     return `
       <tr>
-        <td><div style="font-weight:500">${esc(fullName)}</div></td>
+        <td><div class="cell-link" onclick="openContactModal('edit', '${esc(k.id)}')">${esc(fullName)}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <div class="btn-row" style="justify-content:flex-end">
             <button class="btn-copy" onclick="copyContactById('${esc(k.id)}')" title="Kontakt kopieren" aria-label="Kontakt kopieren">${COPY_ICON_SVG}</button>
             <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
@@ -1730,7 +1846,7 @@ async function loadCompanyAppointments(companyId) {
         <td>
           <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
         </td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
         </td>
       </tr>`;
@@ -1770,6 +1886,15 @@ async function loadContacts() {
   if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
   contactsCache = data || [];
+
+  // Sync-Copy-Cache aktualisieren
+  companyContactsMap = {};
+  contactsCache.forEach(k => {
+    if (!k.company_id) return;
+    if (!companyContactsMap[k.company_id]) companyContactsMap[k.company_id] = [];
+    companyContactsMap[k.company_id].push(k);
+  });
+
   filterContacts();
 }
 
@@ -1822,14 +1947,14 @@ function renderContactsTable(contacts) {
         <td>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="avatar">${esc(ini(fullName))}</div>
-            <div style="font-weight:500">${esc(fullName)}</div>
+            <div class="cell-link" onclick="openContactModal('edit', '${esc(k.id)}')">${esc(fullName)}</div>
           </div>
         </td>
         <td>${firmaHtml}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <div class="btn-row" style="justify-content:flex-end">
             <button class="btn-copy" onclick="copyContactById('${esc(k.id)}')" title="Kontakt kopieren" aria-label="Kontakt kopieren">${COPY_ICON_SVG}</button>
             <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
@@ -2142,7 +2267,7 @@ function renderAppointmentsTable(appointments) {
         <td>
           <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
         </td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
         </td>
       </tr>`;
@@ -2599,7 +2724,7 @@ function renderProjectsTable(projects) {
         <td class="col-desktop" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
         <td class="col-desktop" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
         <td class="col-tablet">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="navigateTo('projekt', '${esc(p.id)}')">Details</button>
         </td>
       </tr>`;
@@ -2991,7 +3116,7 @@ async function loadProjectAppointments(projectId) {
         <td>
           <span class="badge" style="background:${appointmentStatusBg(a.status)};color:${appointmentStatusColor(a.status)}">${esc(appointmentStatusLabel(a.status))}</span>
         </td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openAppointmentModal('edit', '${esc(a.id)}')">Bearbeiten</button>
         </td>
       </tr>`;
@@ -3054,7 +3179,7 @@ async function loadCompanyProjects(companyId) {
         <td class="col-tablet" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
         <td class="col-tablet" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
         <td class="col-desktop">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
-        <td style="text-align:right">
+        <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="navigateTo('projekt', '${esc(p.id)}')">Details</button>
         </td>
       </tr>`;

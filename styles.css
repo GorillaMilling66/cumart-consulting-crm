@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.7.0 (Projekte-Modul)
+   Version 1.7.1 (Mobile-Layout-Fix)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -515,11 +515,15 @@ tr:hover td { background: var(--bg); }
 
 .col-tablet { display: none; }
 .col-desktop { display: none; }
+.col-action  { display: table-cell; }
 @media (min-width: 768px) {
   .col-tablet { display: table-cell; }
 }
 @media (min-width: 1024px) {
   .col-desktop { display: table-cell; }
+}
+@media (max-width: 767px) {
+  .col-action { display: none; }
 }
 
 /* ── BADGE ── */
@@ -779,8 +783,40 @@ tr:hover td { background: var(--bg); }
   .detail-card { padding: 18px; }
   .detail-grid { grid-template-columns: 1fr; }
 
-  td { padding: 12px 10px; }
-  th { padding: 0 10px 8px; }
+  td { padding: 11px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th { padding: 0 8px 8px; }
+
+  /* Tabelle Mobile: kein horizontales Scrollen, feste Layouts */
+  .table-wrap { overflow-x: hidden; }
+  table { table-layout: fixed; width: 100%; }
+  .cell-link {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .date-cell { font-size: 12.5px; }
+
+  /* FILTER-CARDS: Dropdowns stapeln auf Mobile, nicht horizontal scrollen */
+  .filter-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .filter-row > .form-group {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+  }
+
+  /* TABLES: Content darf auf Mobile umbrechen/kompakter werden */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { font-size: 12.5px; }
+  td { padding: 10px 8px; }
+  th { padding: 0 8px 8px; font-size: 10px; }
+
+  /* Detail-Header: Buttons voll-breit auf Mobile */
+  .detail-header { flex-direction: column; align-items: stretch; }
+  .detail-header .btn-row { width: 100%; justify-content: flex-end; }
 }
 
 @media (min-width: 768px) {
