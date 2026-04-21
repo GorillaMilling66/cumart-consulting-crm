@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.5.0 (Phase 2b – Firmen)
+   Version 1.5.2 (Mobile Bottom-Navigation)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -17,6 +17,9 @@
   --warning:  #d97706;
   --radius:   8px;
   --shadow:   0 1px 3px rgba(0,0,0,.08);
+
+  --mobile-header-height: 56px;
+  --mobile-nav-height: 62px;
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -29,7 +32,7 @@ body {
 /* ── LAYOUT ── */
 .app { display: flex; min-height: 100vh; }
 
-/* ── SIDEBAR ── */
+/* ── DESKTOP-SIDEBAR ── */
 .sidebar {
   width: 220px;
   background: var(--surface);
@@ -108,7 +111,7 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* ── EINSTELLUNGEN-UNTERMENÜ ── */
+/* ── EINSTELLUNGEN-UNTERMENÜ (Desktop) ── */
 .nav-group { display: block; }
 .nav-item-group .nav-chevron {
   width: 16px;
@@ -138,6 +141,168 @@ body {
   opacity: .85;
 }
 
+/* ── MOBILE HEADER (nur < 768px) ── */
+.mobile-header {
+  display: none;  /* per Default aus, wird in @media aktiviert */
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--mobile-header-height);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 90;
+}
+.mobile-header-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.mobile-header-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mobile-header-user-name {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── MOBILE BOTTOM-NAV (nur < 768px) ── */
+.mobile-bottom-nav {
+  display: none;  /* per Default aus, wird in @media aktiviert */
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--mobile-nav-height);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 90;
+  /* Safe Area für iPhones mit Home-Indikator */
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.mobile-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color .1s;
+}
+.mobile-nav-item svg {
+  width: 22px;
+  height: 22px;
+}
+.mobile-nav-item.active {
+  color: var(--text);
+}
+.mobile-nav-item.active svg {
+  stroke-width: 2;
+}
+.mobile-nav-item:active {
+  background: var(--bg);
+}
+
+/* ── MEHR-OVERLAY (nur mobile, aber per CSS überall versteckt bis geöffnet) ── */
+.more-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .4);
+  z-index: 950;
+  align-items: flex-end;
+  justify-content: center;
+}
+.more-overlay.open { display: flex; }
+.more-panel {
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 640px;
+  padding: 8px 0 env(safe-area-inset-bottom, 0);
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: slideUp .22s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.more-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.more-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.more-close {
+  background: none;
+  border: none;
+  width: 32px; height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 50%;
+}
+.more-close:active { background: var(--bg); }
+.more-close svg { width: 20px; height: 20px; }
+.more-section {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.more-section:last-child { border-bottom: none; }
+.more-section-title {
+  padding: 8px 20px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.more-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+.more-item:active { background: var(--bg); }
+.more-item svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.more-item-danger { color: var(--danger); }
+.more-item-danger svg { color: var(--danger); }
+
 /* ── MAIN CONTENT ── */
 .main {
   flex: 1;
@@ -154,6 +319,8 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .page-title { font-size: 20px; font-weight: 600; }
 
@@ -225,7 +392,6 @@ body {
 .form-group textarea:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
 .form-group input[type="color"] { padding: 2px; height: 38px; cursor: pointer; }
 
-/* Modal-interne Gruppen-Überschriften */
 .modal-group-title {
   font-size: 11px;
   font-weight: 600;
@@ -263,7 +429,6 @@ tr:hover td { background: var(--bg); }
 /* Responsive Auto-Hide für Tabellen-Spalten */
 .col-tablet { display: none; }
 .col-desktop { display: none; }
-
 @media (min-width: 768px) {
   .col-tablet { display: table-cell; }
 }
@@ -444,4 +609,70 @@ tr:hover td { background: var(--bg); }
   background: #e5e7eb; color: var(--muted);
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE LAYOUT — aktiv bei Viewport < 768px
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+
+  /* Desktop-Sidebar komplett ausblenden */
+  .sidebar { display: none; }
+
+  /* Main nimmt volle Breite; Toppadding für fixen Header, Bottompadding für Bottom-Nav */
+  .main {
+    margin-left: 0;
+    padding: 20px 16px;
+    padding-top: calc(var(--mobile-header-height) + 16px);
+    padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0) + 16px);
+  }
+
+  /* Mobile Header einblenden */
+  .mobile-header {
+    display: flex;
+  }
+
+  /* Bottom-Nav einblenden (als flex-row) */
+  .mobile-bottom-nav {
+    display: flex;
+  }
+
+  /* Toast über der Bottom-Nav positionieren */
+  .toast {
+    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0) + 16px);
+    right: 16px;
+    left: 16px;
+    text-align: center;
+  }
+
+  /* Modal: volle Breite mit kleinem Rand, Rollen + Scrollen erhalten */
+  .modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    padding: 20px;
+  }
+  .modal-overlay { padding-top: 20px; padding-bottom: 20px; }
+
+  /* Formular im Modal: Auf Mobile einspaltig, alles volle Breite */
+  .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .form-group.full { grid-column: 1 / -1; }
+
+  /* Page-Header auf Mobile weniger Margin */
+  .page-header { margin-bottom: 16px; }
+  .page-title { font-size: 18px; }
+
+  /* Cards & Tabellen mit weniger Innenabstand */
+  .card { padding: 14px; margin-bottom: 12px; }
+  td { padding: 12px 10px; }
+  th { padding: 0 10px 8px; }
+
+  /* Auf ganz schmalen Screens (<360px) Schrift minimal kleiner */
+}
+
+/* Auf Desktop (≥768px) bleiben Mobile-Elemente versteckt (explizit, zur Sicherheit) */
+@media (min-width: 768px) {
+  .mobile-header,
+  .mobile-bottom-nav {
+    display: none !important;
+  }
 }
