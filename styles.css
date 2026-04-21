@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.6.0 (Termine – Phase 3a Stufe 1)
+   Version 1.6.1 (Termine auf Firmen-Detailseite, Letzter Termin in Firmen-Liste, Firma-Filter)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -544,6 +544,37 @@ tr:hover td { background: var(--bg); }
   font-weight: 400;
 }
 .date-cell.past {
+  color: var(--muted);
+}
+
+/* ── NÄCHSTER/LETZTER TERMIN IN FIRMEN-ÜBERSICHT (NEU v1.6.1) ── */
+.next-appt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.next-appt-date {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.next-appt-date.past { color: var(--muted); }
+.next-appt-date.upcoming { color: var(--link); }
+.next-appt-title {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.next-appt-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
   color: var(--muted);
 }
 
