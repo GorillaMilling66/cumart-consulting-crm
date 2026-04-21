@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.5.2 (Mobile Bottom-Navigation)
+   Version 1.5.3 (Firmen-Detailseite mit Kontakten)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -23,6 +23,16 @@ let editingLookupId    = null;
 let editingCompanyId   = null;
 let editingContactId   = null;
 let inPasswordRecovery = false;
+
+// Aktuelle Detail-Firma (wichtig, damit Modal-Saves/Deletes die Seite neu laden können)
+let currentCompanyDetailId = null;
+
+// Signal: öffnendes Kontakt-Modal soll Firma vorauswählen
+// (z. B. wenn "+ Kontakt hinzufügen" auf Firmen-Detailseite geklickt wird)
+let contactModalPrefillCompanyId = null;
+
+// Signal: nach Speichern/Löschen einer Firma ggf. zurück zur Liste navigieren
+// (wird vom saveCompany/deleteCompany gesetzt, wenn wir aus der Detailseite kommen)
 
 let companiesCache = [];
 let contactsCache  = [];
@@ -63,13 +73,20 @@ function showToast(msg, isError = false) {
   setTimeout(() => t.className = 'toast', 3000);
 }
 
-function showPage(name, el) {
+/**
+ * Zeigt eine Seite. Verwendet nur noch intern; die App navigiert
+ * öffentlich über navigateTo() → Hash → handleHashChange() → showPage().
+ */
+function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
-  el?.classList.add('active');
 
-  // Mobile Bottom-Nav auch aktivieren (unabhängig davon, ob el ein Sidebar-Button war)
+  // Sidebar-Button aktivieren
+  const navBtn = document.getElementById('nav-' + name);
+  if (navBtn) navBtn.classList.add('active');
+
+  // Mobile Bottom-Nav synchronisieren
   setMobileNav(name);
 
   if (name === 'users') loadUsers();
@@ -79,19 +96,14 @@ function showPage(name, el) {
   if (name === 'contacts') loadContacts();
 }
 
-/**
- * Markiert den korrekten Bottom-Nav-Eintrag als aktiv.
- * "mehr"-Ziele (users/services/lookups) aktivieren den Mehr-Button.
- */
 function setMobileNav(pageName) {
   document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
 
-  if (pageName === 'companies') {
+  if (pageName === 'companies' || pageName === 'company-detail') {
     document.getElementById('m-nav-companies')?.classList.add('active');
   } else if (pageName === 'contacts') {
     document.getElementById('m-nav-contacts')?.classList.add('active');
   } else {
-    // Alles andere (users / services / lookups / home) ist unter "Mehr" erreichbar
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
@@ -100,14 +112,61 @@ function toggleSettings() {
   document.getElementById('nav-settings-group').classList.toggle('open');
 }
 
-// Mehr-Overlay (nur Mobile)
-function openMoreMenu() {
-  document.getElementById('more-overlay').classList.add('open');
-}
+function openMoreMenu()  { document.getElementById('more-overlay').classList.add('open'); }
 function closeMoreMenu(event) {
-  // Nur schließen, wenn man außerhalb des Panels klickt, oder beim X-Button (ohne event)
   if (event && event.target !== event.currentTarget) return;
   document.getElementById('more-overlay').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HASH-ROUTER
+// ═══════════════════════════════════════════════════════════
+/*
+ * Unterstützte Routes:
+ *   #/firmen                    → Firmenliste
+ *   #/firma/<uuid>              → Firmen-Detailseite
+ *   #/kontakte                  → Kontaktliste
+ *   #/benutzer                  → Benutzerverwaltung
+ *   #/leistungen                → Leistungen
+ *   #/stammdaten                → Stammdaten
+ *   (leer / unbekannt)          → Firmenliste (Default)
+ */
+
+function navigateTo(page, param) {
+  const hash =
+    page === 'firma' && param ? `#/firma/${param}` :
+    page === 'companies'      ? '#/firmen' :
+    page === 'contacts'       ? '#/kontakte' :
+    page === 'users'          ? '#/benutzer' :
+    page === 'services'       ? '#/leistungen' :
+    page === 'lookups'        ? '#/stammdaten' :
+    '#/firmen';
+  window.location.hash = hash;
+}
+
+function handleHashChange() {
+  // Nur routen, wenn die App überhaupt angezeigt wird
+  if (document.getElementById('app').style.display === 'none') return;
+  if (inPasswordRecovery) return;
+
+  const hash = window.location.hash || '';
+
+  if (hash.startsWith('#/firma/')) {
+    const id = hash.slice('#/firma/'.length);
+    if (id) {
+      loadCompanyDetail(id);
+      return;
+    }
+  }
+
+  if (hash === '#/firmen' || hash === '' || hash === '#') { showPage('companies'); return; }
+  if (hash === '#/kontakte')   { showPage('contacts'); return; }
+  if (hash === '#/benutzer')   { showPage('users'); return; }
+  if (hash === '#/leistungen') { showPage('services'); return; }
+  if (hash === '#/stammdaten') { showPage('lookups'); return; }
+
+  // Fallback
+  showPage('companies');
 }
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
@@ -129,6 +188,7 @@ function showApp()            { hideAllScreens(); document.getElementById('app')
 async function initAuth() {
   const hash = window.location.hash;
 
+  // Recovery / Invite-Links haben Supabase-Tokens im Hash (z.B. ?type=recovery)
   if (hash.includes('type=recovery') || hash.includes('type=invite')) {
     inPasswordRecovery = true;
     showRecoveryScreen();
@@ -163,6 +223,9 @@ async function initAuth() {
       await onLogin(session.user);
     }
   });
+
+  // Hash-Änderungen (Browser-Zurück, manuelles Tippen) abfangen
+  window.addEventListener('hashchange', handleHashChange);
 }
 
 // ── LOGIN-FLOW ───────────────────────────────────────────────
@@ -202,15 +265,18 @@ async function onLogin(user) {
   renderMobileHeaderUser();
   applyAdminOnlyUI();
   showApp();
-  showDefaultPage();
 
-  await loadRoles();
-}
-
-function showDefaultPage() {
-  showPage('companies', document.getElementById('nav-companies'));
   if (isAdmin()) {
     document.getElementById('nav-settings-group').classList.add('open');
+  }
+
+  await loadRoles();
+
+  // Route auflösen: Hash respektieren (z.B. direkter Link zu einer Firma)
+  if (window.location.hash && window.location.hash !== '#') {
+    handleHashChange();
+  } else {
+    navigateTo('companies');
   }
 }
 
@@ -275,12 +341,13 @@ async function doLogin() {
 
 async function doLogout(skipConfirm = false) {
   if (!skipConfirm && !confirm('Wirklich abmelden?')) return;
-  // Mehr-Overlay ggf. schließen, damit's beim nächsten Login nicht offen ist
   document.getElementById('more-overlay')?.classList.remove('open');
   await db.auth.signOut();
   currentUser = null;
   currentProfile = null;
   inPasswordRecovery = false;
+  // Hash zurücksetzen, damit Re-Login sauber auf Firmen landet
+  window.location.hash = '';
   showLoginScreen();
 }
 
@@ -343,9 +410,11 @@ async function doMustChangePassword() {
     renderMobileHeaderUser();
     applyAdminOnlyUI();
     showApp();
-    showDefaultPage();
 
+    if (isAdmin()) document.getElementById('nav-settings-group').classList.add('open');
     await loadRoles();
+    navigateTo('companies');
+
     showToast('Passwort erfolgreich geändert.');
   } catch (e) {
     errEl.textContent = e.message;
@@ -1036,7 +1105,7 @@ function renderCompaniesTable(companies) {
     return `
       <tr>
         <td>
-          <div style="font-weight:500">${esc(c.name)}</div>
+          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${esc(c.name)}</div>
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
         </td>
         <td>
@@ -1047,7 +1116,7 @@ function renderCompaniesTable(companies) {
         <td class="col-desktop" style="color:var(--muted)">${esc(c.email || '—')}</td>
         <td class="col-desktop" style="color:var(--muted)">${esc(c.branche || '—')}</td>
         <td style="text-align:right">
-          <button class="btn btn-sm" onclick="openCompanyModal('edit', '${esc(c.id)}')">Bearbeiten</button>
+          <button class="btn btn-sm" onclick="navigateTo('firma', '${esc(c.id)}')">Details</button>
         </td>
       </tr>`;
   }).join('');
@@ -1146,14 +1215,22 @@ async function saveCompany() {
     };
     if (!editingCompanyId) payload.erstellt_von = currentUser?.id || null;
 
+    const savedId = editingCompanyId;
+
     let error;
     if (editingCompanyId) { ({ error } = await db.from('companies').update(payload).eq('id', editingCompanyId)); }
     else { ({ error } = await db.from('companies').insert(payload)); }
     if (error) throw new Error(error.message);
 
     closeCompanyModal();
-    showToast(editingCompanyId ? 'Firma aktualisiert.' : 'Firma angelegt.');
-    await loadCompanies();
+    showToast(savedId ? 'Firma aktualisiert.' : 'Firma angelegt.');
+
+    // Wenn wir gerade auf der Detailseite dieser Firma sind: Detailseite neu laden
+    if (savedId && currentCompanyDetailId === savedId) {
+      await loadCompanyDetail(savedId);
+    } else {
+      await loadCompanies();
+    }
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -1171,7 +1248,8 @@ async function deleteCompany() {
   btn.textContent = 'Wird gelöscht ...';
 
   try {
-    const { error } = await db.from('companies').delete().eq('id', editingCompanyId);
+    const deletedId = editingCompanyId;
+    const { error } = await db.from('companies').delete().eq('id', deletedId);
     if (error) {
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
         throw new Error('Diese Firma hat noch verknüpfte Kontakte, Projekte oder Einsätze. Diese müssen zuerst entfernt werden.');
@@ -1180,7 +1258,14 @@ async function deleteCompany() {
     }
     closeCompanyModal();
     showToast('Firma gelöscht.');
-    await loadCompanies();
+
+    // Falls wir auf der Detailseite dieser Firma waren: zurück zur Liste
+    if (currentCompanyDetailId === deletedId) {
+      currentCompanyDetailId = null;
+      navigateTo('companies');
+    } else {
+      await loadCompanies();
+    }
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -1190,7 +1275,188 @@ async function deleteCompany() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  KONTAKTE (CONTACTS)
+//  FIRMEN-DETAILSEITE
+// ═══════════════════════════════════════════════════════════
+
+async function loadCompanyDetail(companyId) {
+  currentCompanyDetailId = companyId;
+
+  // Seite sichtbar machen (nicht über showPage, weil das kein Load auslöst)
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-company-detail').classList.add('active');
+  // Sidebar: Firmen bleibt aktiv markiert
+  document.getElementById('nav-companies')?.classList.add('active');
+  setMobileNav('company-detail');
+
+  // Platzhalter-State
+  document.getElementById('company-detail-name').textContent = 'Wird geladen …';
+  document.getElementById('company-detail-title').textContent = 'Wird geladen …';
+  document.getElementById('company-detail-subline').innerHTML = '';
+  document.getElementById('company-detail-info').innerHTML = '';
+  document.getElementById('company-detail-notizen-wrap').style.display = 'none';
+  document.getElementById('company-contacts-body').innerHTML =
+    '<tr><td colspan="5"><div class="empty">Lade Kontakte ...</div></td></tr>';
+
+  // Firma laden
+  const { data: company, error } = await db
+    .from('companies')
+    .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
+    .eq('id', companyId)
+    .single();
+
+  if (error || !company) {
+    document.getElementById('company-detail-name').textContent = 'Firma nicht gefunden';
+    document.getElementById('company-detail-title').textContent = 'Firma nicht gefunden';
+    document.getElementById('company-detail-info').innerHTML = `
+      <div class="detail-field full">
+        <div class="detail-value detail-value-muted">
+          Diese Firma existiert nicht mehr oder du hast keinen Zugriff darauf.
+        </div>
+      </div>`;
+    document.getElementById('company-contacts-body').innerHTML =
+      '<tr><td colspan="5"><div class="empty">—</div></td></tr>';
+    document.getElementById('company-detail-edit-btn').onclick = () => navigateTo('companies');
+    document.getElementById('company-detail-edit-btn').textContent = 'Zurück';
+    document.getElementById('company-detail-add-contact-btn').style.display = 'none';
+    return;
+  }
+
+  renderCompanyDetail(company);
+  await loadCompanyContacts(companyId);
+}
+
+function renderCompanyDetail(c) {
+  // Breadcrumb + Titel
+  document.getElementById('company-detail-name').textContent = c.name;
+  document.getElementById('company-detail-title').textContent = c.name;
+  document.title = c.name + ' – Cumart CRM';
+
+  // Subline: Typ-Badge + Branche
+  const typFarbe = c.typ?.farbe || '#6b7280';
+  const typWert  = c.typ?.wert || '—';
+  let subline = `<span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>`;
+  if (c.branche) subline += `<span>${esc(c.branche)}</span>`;
+  document.getElementById('company-detail-subline').innerHTML = subline;
+
+  // Bearbeiten-Button
+  document.getElementById('company-detail-edit-btn').textContent = 'Bearbeiten';
+  document.getElementById('company-detail-edit-btn').onclick = () => openCompanyModal('edit', c.id);
+
+  // Info-Grid aufbauen
+  const adresseZeilen = [];
+  if (c.strasse) adresseZeilen.push(esc(c.strasse));
+  const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
+  if (ort) adresseZeilen.push(esc(ort));
+  if (c.land && c.land !== 'Deutschland') adresseZeilen.push(esc(c.land));
+  const adresseHtml = adresseZeilen.length
+    ? adresseZeilen.join('<br>')
+    : '<span class="detail-value-muted">—</span>';
+
+  const telefonHtml = c.telefon
+    ? `<a href="tel:${esc(c.telefon)}">${esc(c.telefon)}</a>`
+    : '<span class="detail-value-muted">—</span>';
+
+  const emailHtml = c.email
+    ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`
+    : '<span class="detail-value-muted">—</span>';
+
+  const websiteHtml = c.website
+    ? `<a href="${esc(c.website.startsWith('http') ? c.website : 'https://' + c.website)}" target="_blank" rel="noopener">${esc(c.website)}</a>`
+    : '<span class="detail-value-muted">—</span>';
+
+  document.getElementById('company-detail-info').innerHTML = `
+    <div class="detail-field">
+      <div class="detail-label">Adresse</div>
+      <div class="detail-value">${adresseHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Branche</div>
+      <div class="detail-value">${c.branche ? esc(c.branche) : '<span class="detail-value-muted">—</span>'}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Telefon</div>
+      <div class="detail-value">${telefonHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">E-Mail</div>
+      <div class="detail-value">${emailHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Website</div>
+      <div class="detail-value">${websiteHtml}</div>
+    </div>
+    <div class="detail-field">
+      <div class="detail-label">Typ</div>
+      <div class="detail-value">
+        <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
+      </div>
+    </div>
+  `;
+
+  // Notizen-Sektion
+  const notizenWrap = document.getElementById('company-detail-notizen-wrap');
+  if (c.notizen && c.notizen.trim()) {
+    document.getElementById('company-detail-notizen').textContent = c.notizen;
+    notizenWrap.style.display = '';
+  } else {
+    notizenWrap.style.display = 'none';
+  }
+
+  // „Kontakt hinzufügen"-Button mit vorausgewählter Firma
+  document.getElementById('company-detail-add-contact-btn').style.display = '';
+  document.getElementById('company-detail-add-contact-btn').onclick = () => {
+    contactModalPrefillCompanyId = c.id;
+    openContactModal('new');
+  };
+}
+
+async function loadCompanyContacts(companyId) {
+  const tbody = document.getElementById('company-contacts-body');
+  const countEl = document.getElementById('company-contacts-count');
+
+  const { data, error } = await db
+    .from('contacts')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('nachname');
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Kontakte';
+    return;
+  }
+
+  const list = data || [];
+  countEl.textContent = list.length === 1 ? '1 Kontakt' : `${list.length} Kontakte`;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Kontakte für diese Firma. Klicke oben auf „+ Kontakt hinzufügen".</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(k => {
+    const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
+    return `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="avatar">${esc(ini(fullName))}</div>
+            <div class="cell-link" onclick="openContactModal('edit', '${esc(k.id)}')" style="font-weight:500">${esc(fullName)}</div>
+          </div>
+        </td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
+        <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  KONTAKTE
 // ═══════════════════════════════════════════════════════════
 
 async function getCompaniesForDropdown() {
@@ -1267,7 +1533,7 @@ function renderContactsTable(contacts) {
   tbody.innerHTML = contacts.map(k => {
     const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
     const firmaCell = k.company?.name
-      ? `<span style="color:var(--text)">${esc(k.company.name)}</span>`
+      ? `<span class="cell-link" onclick="navigateTo('firma', '${esc(k.company.id)}')">${esc(k.company.name)}</span>`
       : `<span style="color:var(--muted);font-style:italic">ohne Firma</span>`;
 
     return `
@@ -1310,9 +1576,17 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-save-btn').textContent = 'Anlegen';
     document.getElementById('k-delete-btn').style.display = 'none';
 
-    const preselectedCompany = document.getElementById('contacts-company-filter').value;
-    if (preselectedCompany && preselectedCompany !== '__none__') {
-      companySelect.value = preselectedCompany;
+    // Priorität 1: explizites Prefill-Signal (z.B. von Firmen-Detailseite)
+    if (contactModalPrefillCompanyId) {
+      companySelect.value = contactModalPrefillCompanyId;
+      contactModalPrefillCompanyId = null; // Signal verbrauchen
+    } else {
+      // Priorität 2: aktueller Firmen-Filter auf der Kontakt-Listen-Seite
+      const filterSel = document.getElementById('contacts-company-filter');
+      const preselected = filterSel ? filterSel.value : '';
+      if (preselected && preselected !== '__none__') {
+        companySelect.value = preselected;
+      }
     }
   } else {
     document.getElementById('modal-contact-title').textContent = 'Kontakt bearbeiten';
@@ -1377,7 +1651,13 @@ async function saveContact() {
 
     closeContactModal();
     showToast(editingContactId ? 'Kontakt aktualisiert.' : 'Kontakt angelegt.');
-    await loadContacts();
+
+    // Wenn wir auf einer Firmen-Detailseite sind: Kontaktliste dort neu laden
+    if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+      await loadCompanyContacts(currentCompanyDetailId);
+    } else {
+      await loadContacts();
+    }
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -1404,7 +1684,12 @@ async function deleteContact() {
     }
     closeContactModal();
     showToast('Kontakt gelöscht.');
-    await loadContacts();
+
+    if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+      await loadCompanyContacts(currentCompanyDetailId);
+    } else {
+      await loadContacts();
+    }
   } catch (e) {
     showToast(e.message, true);
   } finally {
