@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.3 (Einsätze ohne Datum / Vorausplanung)
+   Version 1.9.4 (Termin-Duplikat-Fix: Lösch-Semantik)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -4138,10 +4138,12 @@ async function saveDeployment() {
 
 /**
  * Synchronisiert einen Termin zum Einsatz basierend auf Checkbox-Status.
- * - Checkbox an + kein verknüpfter Termin → neuen Termin anlegen
- * - Checkbox an + existiert → updaten
- * - Checkbox aus + existiert → entkoppeln (deployment_id=null), Termin bleibt
- * - Checkbox aus + nicht existiert → nichts
+ * Semantik (v1.9.4): Checkbox=Termin-Existenz, keine halben Sachen.
+ * - Checkbox an + kein Termin          → neuen Termin anlegen
+ * - Checkbox an + Termin existiert     → Termin updaten
+ * - Checkbox aus + Termin existiert    → Termin LÖSCHEN (verhindert Duplikate)
+ * - Checkbox aus + kein Termin         → nichts tun
+ * - Kein Datum am Einsatz              → existierenden Termin löschen (Termin braucht Datum)
  */
 async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   const { data: existing } = await db.from('appointments')
@@ -4151,8 +4153,7 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   // Ohne Datum kann kein Termin angelegt werden (Termine brauchen Datum)
   if (!deployment.datum_von) {
     if (existingId) {
-      // Wenn Einsatz jetzt kein Datum mehr hat, bestehenden Termin entkoppeln
-      await db.from('appointments').update({ deployment_id: null }).eq('id', existingId);
+      await db.from('appointments').delete().eq('id', existingId);
     }
     if (shouldHaveAppointment) {
       showToast('Termin-Kopplung benötigt ein Datum. Bitte Datum setzen und erneut speichern.', true);
@@ -4162,8 +4163,8 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
 
   if (!shouldHaveAppointment) {
     if (existingId) {
-      // Entkoppeln, nicht löschen
-      await db.from('appointments').update({ deployment_id: null }).eq('id', existingId);
+      // Hart löschen — Entkopplung würde bei erneutem Anhaken Duplikate erzeugen
+      await db.from('appointments').delete().eq('id', existingId);
     }
     return;
   }
@@ -4200,13 +4201,17 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
 
 async function deleteDeployment() {
   if (!editingDeploymentId) return;
-  if (!confirm('Einsatz wirklich löschen?\n\nHinweis: Zugeordnete Techniker-Zuordnungen werden automatisch entfernt. Ein verknüpfter Termin bleibt erhalten (wird nur entkoppelt).')) return;
+  if (!confirm('Einsatz wirklich löschen?\n\nHinweis: Zugeordnete Techniker-Zuordnungen und ein verknüpfter Termin im Kalender werden ebenfalls entfernt.')) return;
 
   const btn = document.getElementById('d-delete-btn');
   btn.disabled = true;
   btn.textContent = 'Wird gelöscht ...';
 
   try {
+    // Gekoppelten Termin erst löschen (FK auf deployments ist ON DELETE SET NULL,
+    // würde sonst als Waise zurückbleiben)
+    await db.from('appointments').delete().eq('deployment_id', editingDeploymentId);
+
     const { error } = await db.from('deployments').delete().eq('id', editingDeploymentId);
     if (error) throw new Error(error.message);
 
