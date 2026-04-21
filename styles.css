@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.5.3 (Firmen-Detailseite + Kopier-Buttons)
+   Version 1.6.0 (Termine – Phase 3a Stufe 1)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -170,20 +170,27 @@ body {
   flex: 1;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 4px;
-  padding: 8px 4px;
+  gap: 3px;
+  padding: 6px 4px;
   border: none;
   background: none;
   color: var(--muted);
   font-family: inherit;
-  font-size: 11px; font-weight: 500;
+  font-size: 10.5px; font-weight: 500;
   cursor: pointer;
   transition: color .1s;
+  min-width: 0;
 }
-.mobile-nav-item svg { width: 22px; height: 22px; }
+.mobile-nav-item svg { width: 20px; height: 20px; }
 .mobile-nav-item.active { color: var(--text); }
 .mobile-nav-item.active svg { stroke-width: 2; }
 .mobile-nav-item:active { background: var(--bg); }
+.mobile-nav-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── MEHR-OVERLAY ── */
 .more-overlay {
@@ -403,7 +410,6 @@ body {
 .btn-row { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
 /* ── ICON-ONLY-COPY-BUTTON ── */
-/* Wird in Listen und auf Detailseite für „Block kopieren" verwendet */
 .btn-copy {
   background: none;
   border: 1px solid transparent;
@@ -424,23 +430,10 @@ body {
   color: var(--text);
   border-color: var(--border);
 }
-.btn-copy:active {
-  background: var(--border);
-}
-.btn-copy svg {
-  width: 15px;
-  height: 15px;
-}
-
-/* In der Detail-Header-Zeile ein wenig größer */
-.detail-header .btn-copy {
-  width: 34px;
-  height: 34px;
-}
-.detail-header .btn-copy svg {
-  width: 17px;
-  height: 17px;
-}
+.btn-copy:active { background: var(--border); }
+.btn-copy svg { width: 15px; height: 15px; }
+.detail-header .btn-copy { width: 34px; height: 34px; }
+.detail-header .btn-copy svg { width: 17px; height: 17px; }
 
 /* ── KLICKBARE ZELLEN/LINKS IN TABELLEN ── */
 .cell-link {
@@ -489,6 +482,16 @@ body {
 }
 .modal-group-title:first-of-type { margin-top: 0; }
 
+/* Hinweis-Zeile unter Ort-Feld im Termin-Modal */
+#t-ort-hint {
+  padding: 3px 0;
+  line-height: 1.4;
+}
+#t-ort-hint:hover {
+  color: var(--link) !important;
+  text-decoration: underline;
+}
+
 /* ── TABELLE ── */
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
@@ -526,6 +529,22 @@ tr:hover td { background: var(--bg); }
   border-radius: 100px;
   font-size: 11px;
   font-weight: 500;
+}
+
+/* ── DATUM/ZEIT-ZELLE IN TERMINLISTE ── */
+.date-cell {
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.date-cell-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-weight: 400;
+}
+.date-cell.past {
+  color: var(--muted);
 }
 
 /* ── COLOR-DOT ── */
