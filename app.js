@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.1 (Einsatz-Preis-Visibility, Projekt-Einsatz-Refresh, Firman-Bug, Collapsible Modal-Gruppen)
+   Version 1.9.2 (Einsatz-Wert-Tracking bei Projekten, Spalte 'Wert')
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -3943,15 +3943,15 @@ function updateDeploymentPriceHint() {
   const projectSelect = document.getElementById('d-project');
   const projectName = projectId ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || 'Projekt') : null;
 
+  // Menge + Einzelpreis immer sichtbar — auch bei Projekt, damit Mehr-/Mindereinsätze trackbar sind
+  mengeGroup.style.display = '';
+  preisGroup.style.display = '';
+
   if (projectId) {
-    // Projekt-Zuordnung: Menge + Einzelpreis ausblenden, Info-Hint statt Gesamtpreis
-    mengeGroup.style.display = 'none';
-    preisGroup.style.display = 'none';
-    hintEl.innerHTML = `Einsatz ist Teil des Projekts „${esc(projectName)}". Abrechnung läuft über den Projekt-Paketpreis.`;
+    // Projekt-Zuordnung: Hinweis, dass Wert nur für internes Tracking ist
+    hintEl.innerHTML = `Interner Wert: <strong>${esc(formatPreis(gesamt))}</strong> · Nur zum Aufwands-Tracking. Kundenumsatz läuft über Projekt-Paketpreis „${esc(projectName)}".`;
   } else {
-    // Einzelbuchung: Felder sichtbar, Gesamtpreis wird angezeigt
-    mengeGroup.style.display = '';
-    preisGroup.style.display = '';
+    // Einzelbuchung: Gesamt-Preis wird direkt abgerechnet
     hintEl.innerHTML = `Gesamt: <strong>${esc(formatPreis(gesamt))}</strong> · Wird direkt dem Kunden berechnet.`;
   }
 }
