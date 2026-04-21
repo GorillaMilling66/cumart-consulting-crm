@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.11.0 (Icon-Action-Buttons in Listen)
+   Version 1.12.0 (Mitgliedschafts-Programme)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -935,4 +935,50 @@ tr:hover td { background: var(--bg); }
   .mobile-bottom-nav {
     display: none !important;
   }
+}
+
+/* ── BENEFIT-ROWS IN PROGRAMM-MODAL (v1.12.0) ── */
+.benefit-row {
+  display: grid;
+  grid-template-columns: 1fr 90px 40px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.benefit-row input,
+.benefit-row select {
+  margin: 0;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.benefit-row .benefit-remove {
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.benefit-row .benefit-remove:hover {
+  background: #fef2f2;
+}
+.benefit-row .benefit-remove svg {
+  width: 16px;
+  height: 16px;
+}
+.benefit-row-titel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.benefit-row-titel .benefit-service-hint {
+  font-size: 11px;
+  color: var(--muted);
 }

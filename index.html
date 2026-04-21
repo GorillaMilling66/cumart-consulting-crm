@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.11.0 (Icon-Action-Buttons in Listen + Duplizieren) -->
+<!-- VERSION: 1.12.0 (Mitgliedschafts-Programme: Admin-Katalog mit Benefits) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -225,6 +225,15 @@
               <path d="M3 12a9 3 0 0 0 18 0"/>
             </svg>
             Stammdaten
+          </button>
+
+          <button class="nav-item nav-item-sub" id="nav-programs"
+                  onclick="navigateTo('programs')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/>
+            </svg>
+            Mitgliedschafts-Programme
           </button>
         </div>
       </div>
@@ -1021,6 +1030,40 @@
       </div>
     </div>
 
+    <!-- PAGE: MITGLIEDSCHAFTS-PROGRAMME -->
+    <div class="page" id="page-programs">
+      <div class="page-header">
+        <h1 class="page-title">Mitgliedschafts-Programme</h1>
+        <button class="btn btn-primary" onclick="openProgramModal('new')">
+          + Neues Programm
+        </button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        Hier definierst du Mitgliedschafts-Pakete (z.&nbsp;B. TNC-Club Premium) und deren Bonis/Kontingente.
+        Diese Programme kannst du später einzelnen Firmen zuordnen.
+      </p>
+      <div class="card">
+        <div class="card-title">Programme</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th class="col-tablet">Laufzeit</th>
+                <th class="col-tablet">Preis</th>
+                <th class="col-desktop">Bonis</th>
+                <th>Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="programs-table-body">
+              <tr><td colspan="6"><div class="empty">Lade Programme ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- MOBILE BOTTOM NAV -->
@@ -1125,6 +1168,12 @@
             <path d="M3 12a9 3 0 0 0 18 0"/>
           </svg>
           Stammdaten
+        </button>
+        <button class="more-item" onclick="navigateTo('programs'); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/>
+          </svg>
+          Mitgliedschafts-Programme
         </button>
       </div>
 
@@ -1729,6 +1778,67 @@
       </button>
       <button class="btn" onclick="closeLookupModal()">Abbrechen</button>
       <button class="btn btn-primary" id="l-save-btn" onclick="saveLookup()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: MITGLIEDSCHAFTS-PROGRAMM -->
+<div class="modal-overlay" id="modal-program">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-title" id="modal-program-title">Neues Programm</div>
+
+    <div class="modal-group-title">Programm-Stammdaten</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Name *</label>
+        <input type="text" id="pr-name" placeholder="z. B. TNC-Club Premium">
+      </div>
+      <div class="form-group">
+        <label>Laufzeit (Monate) *</label>
+        <input type="number" id="pr-laufzeit" min="1" step="1" value="12">
+      </div>
+      <div class="form-group">
+        <label>Standard-Preis (€)</label>
+        <input type="number" id="pr-preis" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label>Mitgliedsnummer-Präfix</label>
+        <input type="text" id="pr-praefix" placeholder="z. B. TNC" maxlength="20">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="pr-aktiv">
+          <option value="true">Aktiv</option>
+          <option value="false">Archiviert</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Beschreibung</label>
+        <textarea id="pr-beschreibung" rows="2" placeholder="Optional: kurze Beschreibung"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Bonis / Kontingente</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Lege hier fest, welche Leistungen/Bonis der Kunde pro Laufzeit bekommt.
+      Z.&nbsp;B. 1× Technikerbesuch und 4× Online-Session.
+    </div>
+
+    <div id="pr-benefits-container">
+      <!-- Wird dynamisch in openProgramModal gefüllt -->
+    </div>
+
+    <button type="button" class="btn btn-sm" onclick="addBenefitRow()" style="margin-top:8px">
+      + Weiterer Bonus
+    </button>
+
+    <div class="modal-footer" style="margin-top:24px">
+      <button class="btn btn-danger btn-sm" id="pr-delete-btn"
+              onclick="deleteProgram()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeProgramModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="pr-save-btn" onclick="saveProgram()">Anlegen</button>
     </div>
   </div>
 </div>

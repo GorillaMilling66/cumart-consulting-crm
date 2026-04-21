@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.11.0 (Icon-Action-Buttons in Listen + Duplizieren)
+   Version 1.12.0 (Mitgliedschafts-Programme)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -704,6 +704,7 @@ function showPage(name) {
   if (name === 'users') loadUsers();
   if (name === 'services') loadServices();
   if (name === 'lookups') loadLookupsPage();
+  if (name === 'programs') loadPrograms();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
@@ -721,7 +722,7 @@ function setMobileNav(pageName) {
   } else if (pageName === 'deployments') {
     document.getElementById('m-nav-deployments')?.classList.add('active');
   } else {
-    // contacts, contact-detail, projects, project-detail, users, services, lookups → Mehr-Tab
+    // contacts, contact-detail, projects, project-detail, users, services, lookups, programs → Mehr-Tab
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
@@ -768,6 +769,8 @@ function navigateTo(page, param) {
     hash = '#/leistungen';
   } else if (page === 'lookups') {
     hash = '#/stammdaten';
+  } else if (page === 'programs') {
+    hash = '#/programme';
   } else {
     hash = '#/firmen';
   }
@@ -824,6 +827,7 @@ function handleHashChange() {
   if (hash === '#/benutzer')   { showPage('users'); return; }
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
+  if (hash === '#/programme')  { showPage('programs'); return; }
 
   showPage('companies');
 }
@@ -1679,6 +1683,279 @@ async function deleteLookup() {
     closeLookupModal();
     showToast('Wert gelöscht.');
     await loadLookupsPage();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Löschen';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MITGLIEDSCHAFTS-PROGRAMME (v1.12.0)
+// ═══════════════════════════════════════════════════════════
+
+let editingProgramId = null;
+
+/** Liste der Programme laden und rendern. */
+async function loadPrograms() {
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Seite.', true); return; }
+
+  const tbody = document.getElementById('programs-table-body');
+  tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Programme ...</div></td></tr>';
+
+  const { data: programs, error } = await db.from('membership_programs')
+    .select('*, membership_program_benefits(id)')
+    .order('name');
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+
+  if (!programs || programs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Programme angelegt. Klicke oben auf „+ Neues Programm".</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = programs.map(p => {
+    const anzahlBenefits = (p.membership_program_benefits || []).length;
+    const statusBadge = p.ist_aktiv
+      ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>'
+      : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>';
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-link" onclick="openProgramModal('edit', '${esc(p.id)}')">${esc(p.name)}</div>
+          ${p.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(p.beschreibung)}</div>` : ''}
+        </td>
+        <td class="col-tablet" style="color:var(--muted)">${p.laufzeit_monate} Monate</td>
+        <td class="col-tablet">${esc(formatPreis(p.standard_preis || 0))}</td>
+        <td class="col-desktop" style="color:var(--muted)">${anzahlBenefits} Bonus${anzahlBenefits === 1 ? '' : 'se'}</td>
+        <td>${statusBadge}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openProgramModal('edit', '${esc(p.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+/** Programm-Modal öffnen (new oder edit). */
+async function openProgramModal(mode, programId = null) {
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Aktion.', true); return; }
+  editingProgramId = programId;
+
+  // Services-Cache sicherstellen (für Benefit-Service-Dropdown)
+  await loadServicesCache();
+
+  // Felder zurücksetzen
+  document.getElementById('pr-name').value = '';
+  document.getElementById('pr-beschreibung').value = '';
+  document.getElementById('pr-laufzeit').value = '12';
+  document.getElementById('pr-preis').value = '';
+  document.getElementById('pr-praefix').value = '';
+  document.getElementById('pr-aktiv').value = 'true';
+
+  const benefitsContainer = document.getElementById('pr-benefits-container');
+  benefitsContainer.innerHTML = '';
+
+  if (mode === 'new') {
+    document.getElementById('modal-program-title').textContent = 'Neues Programm';
+    document.getElementById('pr-save-btn').textContent = 'Anlegen';
+    document.getElementById('pr-delete-btn').style.display = 'none';
+    // Eine leere Benefit-Row als Startpunkt
+    addBenefitRow();
+  } else {
+    document.getElementById('modal-program-title').textContent = 'Programm bearbeiten';
+    document.getElementById('pr-save-btn').textContent = 'Speichern';
+    document.getElementById('pr-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('membership_programs')
+      .select('*, membership_program_benefits(*)')
+      .eq('id', programId).single();
+    if (error || !data) {
+      showToast('Programm konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingProgramId = null;
+      return;
+    }
+
+    document.getElementById('pr-name').value = data.name || '';
+    document.getElementById('pr-beschreibung').value = data.beschreibung || '';
+    document.getElementById('pr-laufzeit').value = data.laufzeit_monate || 12;
+    document.getElementById('pr-preis').value = data.standard_preis ?? '';
+    document.getElementById('pr-praefix').value = data.mitgliedsnummer_praefix || '';
+    document.getElementById('pr-aktiv').value = data.ist_aktiv ? 'true' : 'false';
+
+    const benefits = (data.membership_program_benefits || []).sort((a, b) => (a.reihenfolge || 0) - (b.reihenfolge || 0));
+    if (benefits.length === 0) {
+      addBenefitRow();
+    } else {
+      benefits.forEach(b => addBenefitRow(b));
+    }
+  }
+
+  document.getElementById('modal-program').classList.add('open');
+  setTimeout(() => document.getElementById('pr-name').focus(), 100);
+}
+
+function closeProgramModal() {
+  document.getElementById('modal-program').classList.remove('open');
+  editingProgramId = null;
+}
+
+/** Neue Benefit-Zeile im Modal einfügen. Optional mit Daten vorbefüllen. */
+function addBenefitRow(data = null) {
+  const container = document.getElementById('pr-benefits-container');
+  const row = document.createElement('div');
+  row.className = 'benefit-row';
+  row.dataset.benefitId = data?.id || '';
+
+  const serviceOptions = '<option value="">— Kein Service (Freitext) —</option>'
+    + servicesCache.map(s => `<option value="${esc(s.id)}"${data?.service_id === s.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+
+  row.innerHTML = `
+    <div class="benefit-row-titel">
+      <input type="text" class="benefit-titel" placeholder="Bonus-Titel (z. B. Technikerbesuch)" value="${esc(data?.titel || '')}">
+      <select class="benefit-service">${serviceOptions}</select>
+    </div>
+    <input type="number" class="benefit-menge" placeholder="Menge" min="1" step="1" value="${data?.menge_pro_laufzeit || 1}" title="Wie oft pro Laufzeit">
+    <button type="button" class="benefit-remove" onclick="removeBenefitRow(this)" title="Bonus entfernen">
+      ${ICON_DELETE}
+    </button>
+  `;
+
+  // Auto-fill Titel aus Service wenn Service gewählt wird und Titel leer
+  const serviceSelect = row.querySelector('.benefit-service');
+  const titelInput = row.querySelector('.benefit-titel');
+  serviceSelect.onchange = () => {
+    if (!titelInput.value.trim() && serviceSelect.value) {
+      const opt = serviceSelect.options[serviceSelect.selectedIndex];
+      titelInput.value = opt?.textContent || '';
+    }
+  };
+
+  container.appendChild(row);
+}
+
+function removeBenefitRow(btn) {
+  const row = btn.closest('.benefit-row');
+  const container = document.getElementById('pr-benefits-container');
+  row.remove();
+  // Wenn nach dem Entfernen keine Row mehr da ist, eine leere anlegen
+  if (container.children.length === 0) addBenefitRow();
+}
+
+/** Programm + Benefits atomar speichern. */
+async function saveProgram() {
+  const name         = document.getElementById('pr-name').value.trim();
+  const beschreibung = document.getElementById('pr-beschreibung').value.trim();
+  const laufzeit     = parseInt(document.getElementById('pr-laufzeit').value, 10);
+  const preisRaw     = document.getElementById('pr-preis').value;
+  const praefix      = document.getElementById('pr-praefix').value.trim();
+  const ist_aktiv    = document.getElementById('pr-aktiv').value === 'true';
+  const btn          = document.getElementById('pr-save-btn');
+
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+  if (!laufzeit || laufzeit < 1) { showToast('Laufzeit muss mindestens 1 Monat sein.', true); return; }
+
+  const standard_preis = preisRaw === '' ? 0 : Number(preisRaw);
+  if (Number.isNaN(standard_preis) || standard_preis < 0) {
+    showToast('Preis muss eine Zahl ≥ 0 sein.', true); return;
+  }
+
+  // Benefits aus dem DOM einsammeln und validieren
+  const rows = document.querySelectorAll('#pr-benefits-container .benefit-row');
+  const benefits = [];
+  let reihenfolge = 0;
+  for (const row of rows) {
+    const titel      = row.querySelector('.benefit-titel').value.trim();
+    const service_id = row.querySelector('.benefit-service').value || null;
+    const mengeRaw   = row.querySelector('.benefit-menge').value;
+    const menge      = Number(mengeRaw);
+
+    // Leere Zeilen ignorieren
+    if (!titel && !service_id) continue;
+
+    if (!titel) { showToast('Jeder Bonus braucht einen Titel (oder wähle einen Service).', true); return; }
+    if (!mengeRaw || Number.isNaN(menge) || menge < 1) {
+      showToast(`Menge bei Bonus „${titel}" muss ≥ 1 sein.`, true); return;
+    }
+
+    benefits.push({
+      titel,
+      service_id,
+      menge_pro_laufzeit: menge,
+      reihenfolge: reihenfolge++
+    });
+  }
+
+  btn.disabled = true;
+  btn.textContent = editingProgramId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    const payload = {
+      name,
+      beschreibung: beschreibung || null,
+      laufzeit_monate: laufzeit,
+      standard_preis,
+      mitgliedsnummer_praefix: praefix || null,
+      ist_aktiv,
+      erstellt_von: currentProfile?.id || null
+    };
+
+    let programId = editingProgramId;
+
+    if (editingProgramId) {
+      const { error } = await db.from('membership_programs').update(payload).eq('id', editingProgramId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { data, error } = await db.from('membership_programs').insert(payload).select('id').single();
+      if (error) throw new Error(error.message);
+      programId = data.id;
+    }
+
+    // Benefits: simpler Replace-Approach - erst alle alten löschen, dann neue einfügen.
+    // Bei Edit-Mode: bestehende Entitlements, die auf diese Benefits verweisen, sind in v1.12 noch nicht existent.
+    // Ab v1.13 müssen wir smarter vorgehen (updaten statt replacen), damit laufende Mitgliedschaften nicht brechen.
+    await db.from('membership_program_benefits').delete().eq('program_id', programId);
+
+    if (benefits.length > 0) {
+      const benefitRows = benefits.map(b => ({ ...b, program_id: programId }));
+      const { error: bErr } = await db.from('membership_program_benefits').insert(benefitRows);
+      if (bErr) throw new Error('Bonis konnten nicht gespeichert werden: ' + bErr.message);
+    }
+
+    closeProgramModal();
+    showToast(editingProgramId ? 'Programm aktualisiert.' : 'Programm angelegt.');
+    await loadPrograms();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingProgramId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteProgram() {
+  if (!editingProgramId) return;
+  if (!confirm('Programm wirklich löschen?\n\nAlle zugehörigen Bonis werden mitgelöscht.\nHinweis: In späteren Versionen sind laufende Mitgliedschaften verknüpft — dann wäre Archivieren der bessere Weg.')) return;
+
+  const btn = document.getElementById('pr-delete-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht ...';
+
+  try {
+    // Benefits werden via ON DELETE CASCADE automatisch entfernt
+    const { error } = await db.from('membership_programs').delete().eq('id', editingProgramId);
+    if (error) {
+      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
+        throw new Error('Dieses Programm wird bereits von laufenden Mitgliedschaften verwendet. Archiviere es stattdessen.');
+      }
+      throw new Error(error.message);
+    }
+    closeProgramModal();
+    showToast('Programm gelöscht.');
+    await loadPrograms();
   } catch (e) {
     showToast(e.message, true);
   } finally {
