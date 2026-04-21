@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.9.0 (Einsätze / Phase 3c)
+   Version 1.9.1 (Collapsible Modal-Gruppen, Einsatz-Preis-Visibility)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -479,6 +479,31 @@ body {
   margin: 20px 0 10px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: color .15s;
+}
+.modal-group-title:hover { color: var(--text); }
+.modal-group-title::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  margin-right: 4px;
+  margin-bottom: 4px;
+  transition: transform .2s;
+  opacity: .7;
+}
+.modal-group-title.collapsed::after {
+  transform: rotate(-45deg);
+  margin-bottom: 0;
+  margin-top: 2px;
 }
 .modal-group-title:first-of-type { margin-top: 0; }
 

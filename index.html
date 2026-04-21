@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cumart CRM</title>
-<!-- VERSION: 1.9.0 (Einsätze / Phase 3c) -->
+<!-- VERSION: 1.9.1 (Einsatz-Preis bei Projekt ausblenden, Projekt-Einsatz-Refresh, Firman-Bug, Collapsible Modal-Gruppen) -->
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1499,11 +1499,11 @@
         <label>Leistung</label>
         <select id="d-service"></select>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="d-menge-group">
         <label>Menge</label>
         <input type="number" id="d-menge" min="0" step="0.5" value="1">
       </div>
-      <div class="form-group">
+      <div class="form-group" id="d-einzelpreis-group">
         <label>Einzelpreis (€)</label>
         <input type="number" id="d-einzelpreis" min="0" step="0.01" placeholder="0.00">
       </div>

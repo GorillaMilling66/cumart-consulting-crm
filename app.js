@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.9.0 (Einsätze / Phase 3c)
+   Version 1.9.1 (Einsatz-Preis-Visibility, Projekt-Einsatz-Refresh, Firman-Bug, Collapsible Modal-Gruppen)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -1439,7 +1439,7 @@ function renderCompaniesTable(companies) {
   const total = companiesCache.length;
   const shown = companies.length;
   countEl.textContent = (shown === total)
-    ? `${total} Firma${total === 1 ? '' : 'n'}`
+    ? `${total} ${total === 1 ? 'Firma' : 'Firmen'}`
     : `${shown} von ${total} Firmen`;
 
   if (shown === 0) {
@@ -3064,6 +3064,7 @@ async function loadProjectDetail(projectId) {
 
   renderProjectDetail(data);
   await loadProjectAppointments(projectId);
+  await loadProjectDeployments(projectId);
 }
 
 function renderProjectDetail(p) {
@@ -3933,14 +3934,24 @@ function useCompanyAddressForDeploymentOrt() {
 
 function updateDeploymentPriceHint() {
   const hintEl = document.getElementById('d-preis-hint');
+  const mengeGroup = document.getElementById('d-menge-group');
+  const preisGroup = document.getElementById('d-einzelpreis-group');
   const menge = Number(document.getElementById('d-menge').value) || 0;
   const einzel = Number(document.getElementById('d-einzelpreis').value) || 0;
   const gesamt = menge * einzel;
   const projectId = document.getElementById('d-project').value;
+  const projectSelect = document.getElementById('d-project');
+  const projectName = projectId ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || 'Projekt') : null;
 
   if (projectId) {
-    hintEl.innerHTML = `Gesamt: <strong>${esc(formatPreis(gesamt))}</strong> · Interner Aufwand. Kundenumsatz läuft über den Projekt-Paketpreis.`;
+    // Projekt-Zuordnung: Menge + Einzelpreis ausblenden, Info-Hint statt Gesamtpreis
+    mengeGroup.style.display = 'none';
+    preisGroup.style.display = 'none';
+    hintEl.innerHTML = `Einsatz ist Teil des Projekts „${esc(projectName)}". Abrechnung läuft über den Projekt-Paketpreis.`;
   } else {
+    // Einzelbuchung: Felder sichtbar, Gesamtpreis wird angezeigt
+    mengeGroup.style.display = '';
+    preisGroup.style.display = '';
     hintEl.innerHTML = `Gesamt: <strong>${esc(formatPreis(gesamt))}</strong> · Wird direkt dem Kunden berechnet.`;
   }
 }
@@ -4298,6 +4309,32 @@ async function loadProjectDeployments(projectId) {
   summaryEl.style.display = '';
   summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>. Kundenumsatz läuft über den Projekt-Paketpreis.`;
 }
+
+// ═══════════════════════════════════════════════════════════
+//  MODAL-GRUPPEN EIN-/AUSKLAPPEN
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Toggelt die Sichtbarkeit aller Geschwister-Elemente zwischen diesem
+ * modal-group-title und dem nächsten. Event-Delegation auf document.
+ */
+function toggleModalGroup(titleEl) {
+  const collapsed = titleEl.classList.toggle('collapsed');
+  let sib = titleEl.nextElementSibling;
+  while (sib && !sib.classList.contains('modal-group-title')) {
+    sib.style.display = collapsed ? 'none' : '';
+    sib = sib.nextElementSibling;
+  }
+}
+
+// Global click-delegation für alle Modal-Gruppen-Titel
+document.addEventListener('click', (e) => {
+  const title = e.target.closest('.modal-group-title');
+  if (!title) return;
+  // Nur wenn der Title selbst geklickt wurde, nicht ein Kind-Element
+  // (aktuell gibt's keine interaktiven Kinder, daher immer toggeln)
+  toggleModalGroup(title);
+});
 
 // ═══════════════════════════════════════════════════════════
 //  INITIALIZATION
