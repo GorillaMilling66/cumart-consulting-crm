@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.19.0 (Globale-Suche-Overlay + Sidebar-/Mobile-Such-Button)
+   Version 1.20.0 (Hover-Reveal Row-Actions + Kebab-Menu +
+   Confirm-Modal + Toast-Action-Button)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -835,9 +836,24 @@ tr:hover td { background: var(--bg); }
   font-size: 13px; z-index: 9999;
   opacity: 0; transition: opacity .25s;
   pointer-events: none;
+  display: flex; align-items: center; gap: 12px;
+  max-width: calc(100vw - 48px);
 }
-.toast.show { opacity: 1; }
+.toast.show { opacity: 1; pointer-events: auto; }
 .toast.error { background: var(--danger); }
+.toast-msg { flex: 1; }
+.toast-action {
+  background: none; border: none;
+  color: #fff;
+  font-weight: 600; font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-decoration: underline;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.toast-action:hover { background: rgba(255,255,255,0.12); }
 
 /* ── EMPTY STATE ── */
 .empty {
@@ -1234,4 +1250,81 @@ tr:hover td { background: var(--bg); }
   .search-overlay { padding-top: 8vh; }
   .search-panel { width: 100%; }
   .search-esc-hint { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ZEILEN-AKTIONEN — Hover-Reveal + Kebab-Menu (v1.20.0)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Default: Icons sind unsichtbar und nicht klickbar,
+   erst bei Hover über die Zeile tauchen sie auf. */
+tbody tr .action-icons {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+tbody tr:hover .action-icons,
+tbody tr:focus-within .action-icons,
+.action-icons.always-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Touch-Geräte: kein Hover → Aktionen dauerhaft sichtbar */
+@media (hover: none) {
+  tbody tr .action-icons {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Kebab-Menu (single shared instance) */
+.kebab-menu {
+  position: fixed;
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  padding: 4px;
+  min-width: 160px;
+  z-index: 1150;
+}
+.kebab-menu.open { display: block; }
+.kebab-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.kebab-menu-item:hover,
+.kebab-menu-item:focus { background: var(--bg); outline: none; }
+.kebab-menu-item.kebab-menu-danger { color: var(--danger); }
+.kebab-menu-item.kebab-menu-danger:hover { background: #fef2f2; }
+
+/* Confirm-Modal (z-index über normalen Modals) */
+.modal-overlay-confirm { z-index: 1200; }
+.confirm-message {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.confirm-message strong { color: var(--text); font-weight: 600; }
+
+/* Danger-Button (für Confirm + andere Destructive-Flows) */
+.btn.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+.btn.btn-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
 }

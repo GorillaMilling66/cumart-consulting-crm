@@ -1259,6 +1259,25 @@
 
 </div>
 
+<!-- SHARED: KEBAB-MENÜ (Listen-Zeilen sekundäre Aktionen, v1.20.0) -->
+<div class="kebab-menu" id="kebab-menu" role="menu">
+  <button class="kebab-menu-item" role="menuitem" onclick="handleKebabAction('copy')">Kopieren</button>
+  <button class="kebab-menu-item" role="menuitem" onclick="handleKebabAction('duplicate')">Duplizieren</button>
+  <button class="kebab-menu-item kebab-menu-danger" role="menuitem" onclick="handleKebabAction('delete')">Löschen</button>
+</div>
+
+<!-- SHARED: CONFIRM-DIALOG (v1.20.0, Promise-basiert) -->
+<div class="modal-overlay modal-overlay-confirm" id="modal-confirm">
+  <div class="modal" style="width:420px">
+    <div class="modal-title" id="confirm-title">Wirklich löschen?</div>
+    <div id="confirm-message" class="confirm-message"></div>
+    <div class="modal-footer">
+      <button class="btn" id="confirm-cancel-btn">Abbrechen</button>
+      <button class="btn btn-danger" id="confirm-ok-btn">Löschen</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ MODALS ══════════════ -->
 
 <!-- MODAL: FIRMA -->

@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.19.0 (Globale Suche via Cmd+K / Ctrl+K —
-   Overlay mit debounced Parallel-Queries gegen Firmen,
-   Kontakte, Projekte, Einsätze + „Zuletzt besucht")
+   Version 1.20.0 (Zeilen-Aktionen: Hover-Reveal + Kebab-Menü,
+   Custom Confirm-Dialog, Undo-Toast für Soft-Delete)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -160,12 +159,119 @@ function sanitizeEmailOnBlur(el) {
   el.value = el.value.trim();
 }
 
-function showToast(msg, isError = false) {
+let _toastActionTimer = null;
+
+/** Zeigt einen Toast. options = { actionLabel, onAction, durationMs }. */
+function showToast(msg, isError = false, options = {}) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  if (!t) return;
+  const hasAction = options.actionLabel && typeof options.onAction === 'function';
+  const duration = options.durationMs || (hasAction ? 5000 : 3000);
+
+  t.innerHTML = '';
+  const msgEl = document.createElement('span');
+  msgEl.className = 'toast-msg';
+  msgEl.textContent = msg;
+  t.appendChild(msgEl);
+
+  if (hasAction) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = options.actionLabel;
+    btn.onclick = () => {
+      clearTimeout(_toastActionTimer);
+      t.className = 'toast';
+      try { options.onAction(); } catch (err) { console.error(err); }
+    };
+    t.appendChild(btn);
+  }
+
   t.className = 'toast show' + (isError ? ' error' : '');
-  setTimeout(() => t.className = 'toast', 3000);
+  clearTimeout(_toastActionTimer);
+  _toastActionTimer = setTimeout(() => { t.className = 'toast'; }, duration);
 }
+
+// ─── Custom Confirm-Dialog (v1.20.0) ───
+let _confirmResolver = null;
+
+/** Zeigt einen Confirm-Dialog und gibt ein Promise<boolean> zurück.
+ *  Default-Fokus liegt auf „Abbrechen" — user muss aktiv zu „Löschen" klicken/tabben. */
+function confirmDialog({ title = 'Wirklich löschen?', message = '', confirmLabel = 'Löschen', cancelLabel = 'Abbrechen', danger = true } = {}) {
+  return new Promise((resolve) => {
+    _confirmResolver = resolve;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').innerHTML = message;
+    const cancelBtn = document.getElementById('confirm-cancel-btn');
+    const okBtn = document.getElementById('confirm-ok-btn');
+    cancelBtn.textContent = cancelLabel;
+    okBtn.textContent = confirmLabel;
+    okBtn.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+    cancelBtn.onclick = () => _closeConfirm(false);
+    okBtn.onclick     = () => _closeConfirm(true);
+    document.getElementById('modal-confirm').classList.add('open');
+    setTimeout(() => cancelBtn.focus(), 50);
+  });
+}
+
+function _closeConfirm(result) {
+  document.getElementById('modal-confirm').classList.remove('open');
+  if (_confirmResolver) { const r = _confirmResolver; _confirmResolver = null; r(result); }
+}
+
+// ─── Kebab-Menü (v1.20.0, single shared instance) ───
+let _kebabOpenFor = null;
+
+function openKebabMenu(entityType, id, btnEl, event) {
+  if (event) { event.stopPropagation(); event.preventDefault(); }
+  // Selber Button nochmal → schließen
+  if (_kebabOpenFor && _kebabOpenFor.entityType === entityType && _kebabOpenFor.id === id) {
+    closeKebabMenu();
+    return;
+  }
+  _kebabOpenFor = { entityType, id };
+  const menu = document.getElementById('kebab-menu');
+  const rect = btnEl.getBoundingClientRect();
+  // Menü rechts-bündig zum Kebab-Button, 4px darunter
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = Math.max(8, rect.right - 160) + 'px';
+  menu.classList.add('open');
+}
+
+function closeKebabMenu() {
+  _kebabOpenFor = null;
+  const m = document.getElementById('kebab-menu');
+  if (m) m.classList.remove('open');
+}
+
+function handleKebabAction(action) {
+  if (!_kebabOpenFor) return;
+  const { entityType, id } = _kebabOpenFor;
+  closeKebabMenu();
+  if (action === 'copy') {
+    const handlers = { company: copyCompanyById, contact: copyContactById, appointment: copyAppointmentById, project: copyProjectById, deployment: copyDeploymentById };
+    handlers[entityType]?.(id);
+  } else if (action === 'duplicate') {
+    duplicateEntity(entityType, id);
+  } else if (action === 'delete') {
+    deleteEntityById(entityType, id);
+  }
+}
+
+document.addEventListener('click', (ev) => {
+  if (!_kebabOpenFor) return;
+  if (ev.target.closest('#kebab-menu') || ev.target.closest('.kebab-btn')) return;
+  closeKebabMenu();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  if (_kebabOpenFor) { ev.preventDefault(); closeKebabMenu(); return; }
+  if (document.getElementById('modal-confirm')?.classList.contains('open')) {
+    ev.preventDefault(); _closeConfirm(false);
+  }
+});
+window.addEventListener('scroll', () => closeKebabMenu(), true);
+window.addEventListener('resize', () => closeKebabMenu());
 
 // ═══════════════════════════════════════════════════════════
 //  ICON-ACTION-BUTTONS (v1.11.0)
@@ -173,15 +279,13 @@ function showToast(msg, isError = false) {
 
 /** SVG-Icons (Heroicons-Style, inline damit keine Library nötig) */
 const ICON_EDIT = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
-const ICON_COPY = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>';
-const ICON_DUPLICATE = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>';
 const ICON_DELETE = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>';
+const ICON_KEBAB = '<svg fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
 
 /**
- * Rendert die 4 Standard-Action-Icons (Bearbeiten, Kopieren, Duplizieren, Löschen) für Listen-Zeilen.
- * entityType: 'company' | 'contact' | 'appointment' | 'project' | 'deployment'
- * id: UUID des Eintrags
- * Jede Aktion ruft die entsprechende Handler-Funktion mit der ID auf.
+ * Rendert die Standard-Aktionen für Listen-Zeilen (v1.20.0):
+ * Bearbeiten als Hover-sichtbares Primär-Icon + Kebab-Menü für sekundäre
+ * Aktionen (Kopieren / Duplizieren / Löschen).
  */
 function renderActionIcons(entityType, id) {
   const editHandler = {
@@ -192,23 +296,10 @@ function renderActionIcons(entityType, id) {
     deployment: `onclick="openDeploymentModal('edit', '${esc(id)}')"`
   }[entityType];
 
-  const copyHandler = {
-    company: `onclick="copyCompanyById('${esc(id)}', event)"`,
-    contact: `onclick="copyContactById('${esc(id)}', event)"`,
-    appointment: `onclick="copyAppointmentById('${esc(id)}', event)"`,
-    project: `onclick="copyProjectById('${esc(id)}', event)"`,
-    deployment: `onclick="copyDeploymentById('${esc(id)}', event)"`
-  }[entityType];
-
-  const dupHandler = `onclick="duplicateEntity('${entityType}', '${esc(id)}', event)"`;
-  const delHandler = `onclick="deleteEntityById('${entityType}', '${esc(id)}', event)"`;
-
   return `
     <div class="action-icons">
       <button class="icon-btn" ${editHandler} title="Bearbeiten">${ICON_EDIT}</button>
-      <button class="icon-btn" ${copyHandler} title="Kopieren">${ICON_COPY}</button>
-      <button class="icon-btn" ${dupHandler} title="Duplizieren">${ICON_DUPLICATE}</button>
-      <button class="icon-btn icon-danger" ${delHandler} title="Löschen">${ICON_DELETE}</button>
+      <button class="icon-btn kebab-btn" onclick="openKebabMenu('${entityType}', '${esc(id)}', this, event)" title="Weitere Aktionen">${ICON_KEBAB}</button>
     </div>`;
 }
 
@@ -216,42 +307,83 @@ function renderActionIcons(entityType, id) {
    DISPATCHER: LÖSCHEN & DUPLIZIEREN
    ─────────────────────────────────────────────── */
 
-/** Zentraler Delete-Dispatcher aus den Listen-Icons. Verhindert Event-Bubble. */
-async function deleteEntityById(entityType, id, ev) {
-  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-
-  const labels = {
-    company: 'Firma', contact: 'Kontakt', appointment: 'Termin',
-    project: 'Projekt', deployment: 'Einsatz'
-  };
-  const table = {
-    company: 'companies', contact: 'contacts', appointment: 'appointments',
-    project: 'projects', deployment: 'deployments'
-  }[entityType];
+/** Führt den eigentlichen Soft-Delete durch, inkl. Einsatz→Termin-Kaskade
+ *  und Undo-Toast (5s Rückgängig). Ohne Confirm — Caller muss vorher fragen. */
+async function _performSoftDelete(entityType, id) {
+  const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz' };
+  const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments' };
   const label = labels[entityType];
+  const table = tables[entityType];
   if (!table || !label) return;
 
-  if (!confirm(`${label} wirklich löschen?`)) return;
-
   try {
-    const { error } = await db.from(table).update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    const deletedAt = new Date().toISOString();
+    const { error } = await db.from(table).update({ deleted_at: deletedAt }).eq('id', id);
     if (error) {
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
-        throw new Error(`Dieser Eintrag wird noch an anderer Stelle verwendet und kann nicht gelöscht werden.`);
+        throw new Error('Dieser Eintrag wird noch an anderer Stelle verwendet und kann nicht gelöscht werden.');
       }
       throw new Error(error.message);
     }
 
-    // Bei Einsatz: gekoppelten Termin auch löschen (v1.9.4-Semantik)
+    // Bei Einsatz: gekoppelten Termin auch soft-deleten. IDs merken für Undo.
+    let coupledApptIds = [];
     if (entityType === 'deployment') {
-      await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('deployment_id', id);
+      const { data: appts } = await db.from('appointments').select('id').is('deleted_at', null).eq('deployment_id', id);
+      coupledApptIds = (appts || []).map(a => a.id);
+      if (coupledApptIds.length) {
+        await db.from('appointments').update({ deleted_at: deletedAt }).eq('deployment_id', id);
+      }
     }
 
-    showToast(`${label} gelöscht.`);
+    showToast(`${label} gelöscht.`, false, {
+      actionLabel: 'Rückgängig',
+      durationMs: 5000,
+      onAction: async () => {
+        try {
+          await db.from(table).update({ deleted_at: null }).eq('id', id);
+          if (coupledApptIds.length) {
+            await db.from('appointments').update({ deleted_at: null }).in('id', coupledApptIds);
+          }
+          showToast(`${label} wiederhergestellt.`);
+          await refreshAfterEntityChange(entityType);
+        } catch (err) {
+          showToast('Wiederherstellen fehlgeschlagen: ' + err.message, true);
+        }
+      }
+    });
     await refreshAfterEntityChange(entityType);
   } catch (e) {
     showToast(e.message, true);
   }
+}
+
+/** Zentraler Delete-Dispatcher aus den Listen-Icons (Kebab → Löschen).
+ *  Seit v1.20.0: Custom-Confirm + _performSoftDelete (Undo-Toast). */
+async function deleteEntityById(entityType, id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  closeKebabMenu();
+
+  const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz' };
+  const nameCols = { company: 'name', contact: 'nachname', appointment: 'titel', project: 'name', deployment: 'titel' };
+  const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments' };
+  const label = labels[entityType];
+  const nameCol = nameCols[entityType];
+  const table = tables[entityType];
+  if (!table || !label) return;
+
+  // Entity-Name für Confirm-Nachricht holen
+  const { data: ent } = await db.from(table).select(`id, ${nameCol}`).is('deleted_at', null).eq('id', id).single();
+  const entName = ent?.[nameCol] || '(ohne Name)';
+
+  const ok = await confirmDialog({
+    title: `${label} löschen?`,
+    message: `<strong>${esc(entName)}</strong> wirklich löschen?`,
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+
+  await _performSoftDelete(entityType, id);
 }
 
 /** Zentraler Duplicate-Dispatcher aus den Listen-Icons. */
@@ -1293,7 +1425,12 @@ async function saveUser() {
 async function deleteUser() {
   if (!editingUserId) return;
   if (editingUserId === currentUser?.id) { showToast('Du kannst dich nicht selbst löschen.', true); return; }
-  if (!confirm('Benutzer wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+  const ok = await confirmDialog({
+    title: 'Benutzer löschen?',
+    message: 'Der Benutzer wird <strong>endgültig</strong> gelöscht (Supabase Auth + Profil). Diese Aktion kann nicht rückgängig gemacht werden.',
+    confirmLabel: 'Endgültig löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   const btn = document.getElementById('u-delete-btn');
   btn.disabled = true;
@@ -1530,7 +1667,12 @@ async function saveService() {
 
 async function deleteService() {
   if (!editingServiceId) return;
-  if (!confirm('Leistung wirklich löschen?\n\nHinweis: Wenn sie bereits in Einsätzen oder Terminen verwendet wird, solltest du sie stattdessen archivieren.')) return;
+  const ok = await confirmDialog({
+    title: 'Leistung löschen?',
+    message: 'Falls die Leistung schon in Einsätzen oder Terminen verwendet wird, archiviere sie besser (über den „Aktiv"-Schalter), statt sie zu löschen.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   const btn = document.getElementById('s-delete-btn');
   btn.disabled = true;
@@ -1701,7 +1843,12 @@ async function saveLookup() {
 
 async function deleteLookup() {
   if (!editingLookupId) return;
-  if (!confirm('Wert wirklich löschen?\n\nFalls dieser Wert bereits an anderen Stellen referenziert wird, wird das Löschen vom System verhindert. In dem Fall bitte stattdessen archivieren.')) return;
+  const ok = await confirmDialog({
+    title: 'Wert löschen?',
+    message: 'Wenn dieser Wert noch referenziert wird, verhindert die DB das Löschen. Dann besser archivieren (Aktiv-Schalter ausschalten).',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   const btn = document.getElementById('l-delete-btn');
   btn.disabled = true;
@@ -1973,7 +2120,12 @@ async function saveProgram() {
 
 async function deleteProgram() {
   if (!editingProgramId) return;
-  if (!confirm('Programm wirklich löschen?\n\nAlle zugehörigen Bonis werden mitgelöscht.\nHinweis: In späteren Versionen sind laufende Mitgliedschaften verknüpft — dann wäre Archivieren der bessere Weg.')) return;
+  const ok = await confirmDialog({
+    title: 'Programm löschen?',
+    message: 'Alle zugehörigen Bonis werden mitgelöscht. Bei bereits laufenden Mitgliedschaften blockiert die DB das Löschen — dann bitte archivieren.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   const btn = document.getElementById('pr-delete-btn');
   btn.disabled = true;
@@ -2394,26 +2546,38 @@ async function saveMembership() {
 
 async function deleteMembership() {
   if (!editingMembershipId) return;
-  if (!confirm('Mitgliedschaft wirklich löschen?\n\nAlle zugehörigen Bonis und Einlösungen werden mitgelöscht. Für beendete Mitgliedschaften besser den Status auf „beendet" setzen statt löschen.')) return;
+  const id = editingMembershipId;
+  const companyId = currentMembershipCompanyId;
 
-  const btn = document.getElementById('ms-delete-btn');
-  btn.disabled = true;
-  btn.textContent = 'Wird gelöscht ...';
+  const ok = await confirmDialog({
+    title: 'Mitgliedschaft löschen?',
+    message: 'Die Mitgliedschaft wird ausgeblendet. Für beendete Verträge besser den Status auf „beendet" setzen, statt zu löschen. Rückgängig-Link erscheint 5 Sekunden lang.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   try {
-    // Entitlements und Redemptions werden via ON DELETE CASCADE automatisch entfernt
-    const { error } = await db.from('memberships').update({ deleted_at: new Date().toISOString() }).eq('id', editingMembershipId);
+    const { error } = await db.from('memberships').update({ deleted_at: new Date().toISOString() }).eq('id', id);
     if (error) throw new Error(error.message);
 
-    const companyId = currentMembershipCompanyId;
     closeMembershipModal();
-    showToast('Mitgliedschaft gelöscht.');
     if (companyId) await renderCompanyMemberships(companyId);
+
+    showToast('Mitgliedschaft gelöscht.', false, {
+      actionLabel: 'Rückgängig',
+      durationMs: 5000,
+      onAction: async () => {
+        try {
+          await db.from('memberships').update({ deleted_at: null }).eq('id', id);
+          if (companyId) await renderCompanyMemberships(companyId);
+          showToast('Mitgliedschaft wiederhergestellt.');
+        } catch (err) {
+          showToast('Wiederherstellen fehlgeschlagen: ' + err.message, true);
+        }
+      }
+    });
   } catch (e) {
     showToast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Löschen';
   }
 }
 
@@ -2699,36 +2863,15 @@ async function saveCompany() {
 
 async function deleteCompany() {
   if (!editingCompanyId) return;
-  if (!confirm('Firma wirklich löschen?\n\nHinweis: Wenn bereits Kontakte, Projekte oder Einsätze mit dieser Firma verknüpft sind, wird das Löschen vom System verhindert.')) return;
-
-  const btn = document.getElementById('c-delete-btn');
-  btn.disabled = true;
-  btn.textContent = 'Wird gelöscht ...';
-
-  try {
-    const deletedId = editingCompanyId;
-    const { error } = await db.from('companies').update({ deleted_at: new Date().toISOString() }).eq('id', deletedId);
-    if (error) {
-      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
-        throw new Error('Diese Firma hat noch verknüpfte Kontakte, Projekte oder Einsätze. Diese müssen zuerst entfernt werden.');
-      }
-      throw new Error(error.message);
-    }
-    closeCompanyModal();
-    showToast('Firma gelöscht.');
-
-    if (currentCompanyDetailId === deletedId) {
-      currentCompanyDetailId = null;
-      navigateTo('companies');
-    } else {
-      await loadCompanies();
-    }
-  } catch (e) {
-    showToast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Löschen';
-  }
+  const id = editingCompanyId;
+  const ok = await confirmDialog({
+    title: 'Firma löschen?',
+    message: 'Diese Firma wird ausgeblendet. Du kannst das 5 Sekunden lang rückgängig machen.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+  closeCompanyModal();
+  await _performSoftDelete('company', id);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3219,34 +3362,15 @@ async function saveContact() {
 
 async function deleteContact() {
   if (!editingContactId) return;
-  if (!confirm('Kontakt wirklich löschen?')) return;
-
-  const btn = document.getElementById('k-delete-btn');
-  btn.disabled = true;
-  btn.textContent = 'Wird gelöscht ...';
-
-  try {
-    const deletedId = editingContactId;
-    const { error } = await db.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', deletedId);
-    if (error) throw new Error(error.message);
-
-    closeContactModal();
-    showToast('Kontakt gelöscht.');
-
-    if (currentContactDetailId === deletedId) {
-      currentContactDetailId = null;
-      navigateTo('contacts');
-    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
-      await loadCompanyContacts(currentCompanyDetailId);
-    } else {
-      await loadContacts();
-    }
-  } catch (e) {
-    showToast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Löschen';
-  }
+  const id = editingContactId;
+  const ok = await confirmDialog({
+    title: 'Kontakt löschen?',
+    message: 'Der Kontakt wird ausgeblendet. Rückgängig-Link erscheint 5 Sekunden lang.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+  closeContactModal();
+  await _performSoftDelete('contact', id);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3719,46 +3843,60 @@ async function saveAppointment() {
 
 async function deleteAppointment() {
   if (!editingAppointmentId) return;
-  if (!confirm('Termin wirklich löschen?')) return;
-
-  const btn = document.getElementById('t-delete-btn');
-  btn.disabled = true;
-  btn.textContent = 'Wird gelöscht ...';
+  const id = editingAppointmentId;
+  const ok = await confirmDialog({
+    title: 'Termin löschen?',
+    message: 'Der Termin wird ausgeblendet. Rückgängig-Link erscheint 5 Sekunden lang.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   try {
     // project_id vorher merken für Status-Check
     const { data: apptInfo } = await db.from('appointments')
-      .select('project_id').is('deleted_at', null).eq('id', editingAppointmentId).single();
-    const deletedProjectId = apptInfo?.project_id || null;
+      .select('project_id').is('deleted_at', null).eq('id', id).single();
+    const affectedProjectId = apptInfo?.project_id || null;
 
-    const { error } = await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', editingAppointmentId);
+    const deletedAt = new Date().toISOString();
+    const { error } = await db.from('appointments').update({ deleted_at: deletedAt }).eq('id', id);
     if (error) throw new Error(error.message);
 
     closeAppointmentModal();
-    showToast('Termin gelöscht.');
 
-    // Auto-Projekt-Status-Check
-    if (deletedProjectId) {
-      await checkAndUpdateProjectStatus(deletedProjectId);
-    }
+    if (affectedProjectId) await checkAndUpdateProjectStatus(affectedProjectId);
+    await _refreshAppointmentContext();
 
-    if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
-      await loadContactAppointments(currentContactDetailId);
-    } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
-      await loadProjectDetail(currentProjectDetailId);
-    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
-      await Promise.all([
-        loadCompanyAppointments(currentCompanyDetailId),
-        loadCompanyAppointmentMap()
-      ]);
-    } else {
-      await loadAppointments();
-    }
+    showToast('Termin gelöscht.', false, {
+      actionLabel: 'Rückgängig',
+      durationMs: 5000,
+      onAction: async () => {
+        try {
+          await db.from('appointments').update({ deleted_at: null }).eq('id', id);
+          if (affectedProjectId) await checkAndUpdateProjectStatus(affectedProjectId);
+          await _refreshAppointmentContext();
+          showToast('Termin wiederhergestellt.');
+        } catch (err) {
+          showToast('Wiederherstellen fehlgeschlagen: ' + err.message, true);
+        }
+      }
+    });
   } catch (e) {
     showToast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Löschen';
+  }
+}
+
+async function _refreshAppointmentContext() {
+  if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
+    await loadContactAppointments(currentContactDetailId);
+  } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+    await loadProjectDetail(currentProjectDetailId);
+  } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    await Promise.all([
+      loadCompanyAppointments(currentCompanyDetailId),
+      loadCompanyAppointmentMap()
+    ]);
+  } else {
+    await loadAppointments();
   }
 }
 
@@ -4124,40 +4262,15 @@ async function saveProject() {
 
 async function deleteProject() {
   if (!editingProjectId) return;
-  if (!confirm('Projekt wirklich löschen?\n\nHinweis: Zugeordnete Termine verlieren die Projekt-Zuordnung, werden aber nicht gelöscht.')) return;
-
-  const btn = document.getElementById('p-delete-btn');
-  btn.disabled = true;
-  btn.textContent = 'Wird gelöscht ...';
-
-  try {
-    const deletedId = editingProjectId;
-    const { error } = await db.from('projects').update({ deleted_at: new Date().toISOString() }).eq('id', deletedId);
-    if (error) {
-      if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
-        throw new Error('Dieses Projekt hat noch verknüpfte Einträge. Diese müssen zuerst entfernt werden.');
-      }
-      throw new Error(error.message);
-    }
-    closeProjectModal();
-    showToast('Projekt gelöscht.');
-
-    if (currentProjectDetailId === deletedId) {
-      currentProjectDetailId = null;
-      navigateTo('projects');
-    } else if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
-      await loadContactProjects(currentContactDetailId);
-    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
-      await loadCompanyProjects(currentCompanyDetailId);
-    } else {
-      await loadProjects();
-    }
-  } catch (e) {
-    showToast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Löschen';
-  }
+  const id = editingProjectId;
+  const ok = await confirmDialog({
+    title: 'Projekt löschen?',
+    message: 'Das Projekt wird ausgeblendet. Zugeordnete Termine verlieren die Projekt-Zuordnung nicht, werden aber über die Projekt-Liste unerreichbar. Rückgängig-Link erscheint 5 Sekunden lang.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+  closeProjectModal();
+  await _performSoftDelete('project', id);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5716,51 +5829,80 @@ async function syncDeploymentRedemption(deploymentId) {
 
 async function deleteDeployment() {
   if (!editingDeploymentId) return;
-  if (!confirm('Einsatz wirklich löschen?\n\nHinweis: Zugeordnete Techniker-Zuordnungen und ein verknüpfter Termin im Kalender werden ebenfalls entfernt.')) return;
+  const id = editingDeploymentId;
 
-  const btn = document.getElementById('d-delete-btn');
-  btn.disabled = true;
-  btn.textContent = 'Wird gelöscht ...';
+  // Prüfen, ob Redemptions existieren (für die Warnung im Confirm)
+  const { data: existingReds } = await db.from('entitlement_redemptions')
+    .select('id').eq('deployment_id', id);
+  const hasRedemptions = (existingReds || []).length > 0;
+
+  const ok = await confirmDialog({
+    title: 'Einsatz löschen?',
+    message: hasRedemptions
+      ? 'Der Einsatz wird ausgeblendet. Verknüpfte Termine werden mit-ausgeblendet und sind über die Rückgängig-Aktion wieder erreichbar.<br><br><strong>Bonus-Einlösungen werden hart gelöscht</strong> und können nicht über Rückgängig wiederhergestellt werden.'
+      : 'Der Einsatz und der gekoppelte Termin werden ausgeblendet. Rückgängig-Link erscheint 5 Sekunden lang.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
 
   try {
     // project_id + company_id vorher merken für Status-Check nach Löschung
     const { data: depInfo } = await db.from('deployments')
-      .select('project_id, company_id').is('deleted_at', null).eq('id', editingDeploymentId).single();
-    const deletedProjectId = depInfo?.project_id || null;
-    const deletedCompanyId = depInfo?.company_id || null;
+      .select('project_id, company_id').is('deleted_at', null).eq('id', id).single();
+    const affectedProjectId = depInfo?.project_id || null;
+    const affectedCompanyId = depInfo?.company_id || null;
 
-    // Gekoppelten Termin erst löschen (FK auf deployments ist ON DELETE SET NULL,
-    // würde sonst als Waise zurückbleiben)
-    await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('deployment_id', editingDeploymentId);
+    // Gekoppelte Termine erst: IDs merken + soft-delete
+    const { data: appts } = await db.from('appointments').select('id').is('deleted_at', null).eq('deployment_id', id);
+    const coupledApptIds = (appts || []).map(a => a.id);
+    const deletedAt = new Date().toISOString();
+    if (coupledApptIds.length) {
+      await db.from('appointments').update({ deleted_at: deletedAt }).eq('deployment_id', id);
+    }
 
-    // Zugehörige Redemptions löschen (v1.14.0) - FK ist ON DELETE SET NULL,
-    // aber logisch gehört eine Redemption zum Einsatz
-    await db.from('entitlement_redemptions').delete().eq('deployment_id', editingDeploymentId);
+    // Zugehörige Redemptions hart löschen (v1.14.0) — NICHT über Undo wiederherstellbar
+    await db.from('entitlement_redemptions').delete().eq('deployment_id', id);
 
-    const { error } = await db.from('deployments').update({ deleted_at: new Date().toISOString() }).eq('id', editingDeploymentId);
+    const { error } = await db.from('deployments').update({ deleted_at: deletedAt }).eq('id', id);
     if (error) throw new Error(error.message);
 
     closeDeploymentModal();
-    showToast('Einsatz gelöscht.');
 
-    // Auto-Projekt-Status-Check
-    if (deletedProjectId) {
-      await checkAndUpdateProjectStatus(deletedProjectId);
-    }
+    if (affectedProjectId) await checkAndUpdateProjectStatus(affectedProjectId);
+    await _refreshDeploymentContext(affectedCompanyId);
 
-    if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
-      await loadProjectDetail(currentProjectDetailId);
-    } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
-      await loadCompanyDeployments(currentCompanyDetailId);
-      if (deletedCompanyId) await renderCompanyMemberships(deletedCompanyId);
-    } else {
-      await loadDeployments();
-    }
+    showToast('Einsatz gelöscht.', false, {
+      actionLabel: 'Rückgängig',
+      durationMs: 5000,
+      onAction: async () => {
+        try {
+          await db.from('deployments').update({ deleted_at: null }).eq('id', id);
+          if (coupledApptIds.length) {
+            await db.from('appointments').update({ deleted_at: null }).in('id', coupledApptIds);
+          }
+          if (affectedProjectId) await checkAndUpdateProjectStatus(affectedProjectId);
+          await _refreshDeploymentContext(affectedCompanyId);
+          showToast(hasRedemptions
+            ? 'Einsatz wiederhergestellt (Bonus-Einlösungen bleiben gelöscht).'
+            : 'Einsatz wiederhergestellt.');
+        } catch (err) {
+          showToast('Wiederherstellen fehlgeschlagen: ' + err.message, true);
+        }
+      }
+    });
   } catch (e) {
     showToast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Löschen';
+  }
+}
+
+async function _refreshDeploymentContext(companyId) {
+  if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+    await loadProjectDetail(currentProjectDetailId);
+  } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    await loadCompanyDeployments(currentCompanyDetailId);
+    if (companyId) await renderCompanyMemberships(companyId);
+  } else {
+    await loadDeployments();
   }
 }
 
