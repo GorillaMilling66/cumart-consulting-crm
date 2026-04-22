@@ -17,7 +17,22 @@ There is no build, lint, or test tooling. The repository is three flat files plu
 - **Run locally:** open `index.html` directly in a browser, or serve the directory with any static server (e.g. `python3 -m http.server 8000`). The Supabase URL and anon key are hardcoded in `app.js` — local dev hits production Supabase.
 - **Deploy:** commit + push to `main`. Vercel redeploys automatically in ~30–60s. Hard-reload (Cmd+Shift+R) to bust cache.
 - **Edge Function deploy:** `supabase/functions/manage-users/index.ts` must be deployed via the Supabase dashboard or CLI separately; it is *not* picked up by Vercel. "Verify JWT with legacy secret" must stay disabled on that function.
-- **Schema migrations:** applied by hand in the Supabase SQL editor. After applying, run the verification query at the end of `architecture.md` §14.6 to confirm all required constraints/tables/lookup values are present.
+- **Schema migrations:** applied by hand in the Supabase SQL editor, **or** via the Supabase Management API (`POST https://api.supabase.com/v1/projects/loohjeiysjxzbmfwkyvv/database/query` with a Personal Access Token the user provides in-session). After applying, run the verification query at the end of `architecture.md` §14.6 to confirm all required constraints/tables/lookup values are present.
+
+## Standing authorization (granted 2026-04-22 by Selcuk)
+
+The user has pre-authorized the following actions so you don't need to confirm case-by-case:
+
+- **Supabase data changes via migration SQL** — applying versioned migration files in `migrations/` against the production database (Management API or SQL editor). Includes DDL (`CREATE`, `ALTER`, `DROP`) and data-shape changes that are part of a checked-in migration.
+- **Git commits and pushes to `main`** — normal forward-moving commits and `git push` for feature releases. Vercel auto-deploys from `main`, so pushing = deploying to prod.
+
+**Still requires explicit confirmation** (the standing authorization does NOT cover):
+
+- **Destructive SQL outside a migration file** — ad-hoc `DELETE` / mass `UPDATE` against live user data, `DROP TABLE` outside a migration, reverting a migration in-place.
+- **Destructive Git operations** — `push --force`, `reset --hard` on `main`, deleting branches, rewriting published history.
+- **Credential/secret changes** — rotating the hardcoded `SUPABASE_ANON_KEY`, changing RLS in ways that could lock out the admin, modifying `manage-users` Edge Function auth behavior.
+
+When in doubt, ask first. Match the scope of your action to what the migration/commit actually says it does.
 
 ## Architecture
 
