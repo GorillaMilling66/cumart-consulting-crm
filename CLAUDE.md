@@ -39,10 +39,11 @@ When in doubt, ask first. Match the scope of your action to what the migration/c
 ### File layout
 
 ```
-index.html   ~1.95k lines — all pages as <div class="page">, all modals as hidden divs
-styles.css   ~1.07k lines — CSS variables + desktop/mobile
-app.js       ~6.15k lines — every module in one file, flat globals for state
+index.html   ~2.04k lines — all pages as <div class="page">, all modals as hidden divs
+styles.css   ~1.41k lines — CSS variables + desktop/mobile
+app.js       ~6.74k lines — every module in one file, flat globals for state
 supabase/functions/manage-users/index.ts — Deno edge fn for invite/update/delete/reset_password
+migrations/              — versioned SQL migrations, applied by hand or via Management API
 ```
 
 ### SPA model

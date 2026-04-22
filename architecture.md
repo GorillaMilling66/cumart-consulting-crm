@@ -57,9 +57,9 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~1.95k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~1.05k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~6.15k Zeilen  (alle Module in einer Datei)
+├── index.html       ~2.04k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css       ~1.41k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~6.74k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -630,9 +630,9 @@ End-to-End-Workflow in drei Stufen:
 
 ### 11.2 UI-Verhalten
 
-- Destruktive Aktionen mit `confirm()`
+- Destruktive Aktionen mit `confirmDialog()` (seit v1.20, Promise-basiert, Default-Fokus auf „Abbrechen") — native `confirm()` nur noch für non-destructive Prompts wie Logout oder Passwort-Reset
 - FK-Fehler in `deleteX()` abgefangen (ab v1.16 selten — Soft-Delete umgeht FK-Violations)
-- Toasts 3s Anzeige
+- Toasts: 3 s Default-Anzeige, 5 s bei Action-Button (z. B. Undo seit v1.20)
 - Admin-Only UI via `data-admin-only="true"` + `applyAdminOnlyUI()`
 
 ### 11.3 Soft-Delete-Regel (v1.16+)
@@ -689,26 +689,30 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 
 ### 13.2 Mittel — Fachlich
 
-| Punkt                         | Beschreibung                                           |
-|-------------------------------|--------------------------------------------------------|
-| Dashboard (v1.15 vorgesehen)  | Verfallende Bonis, Umsatz geplant vs. real, KPIs       |
-| Projekt-Kontingente           | Projekt mit „enthält 8 LifeCalls" → Auto-Entitlements  |
-| Dublettenerkennung            | Bei Firmen- und Kontakt-Anlage                         |
-| Export                        | CSV/Excel für alle Entitäten                           |
-| Multi-Leistungen pro Einsatz  | Sub-Positionen statt 1:1 service_id                    |
-| Kalender-View                 | Monat/Woche-Ansicht für Termine                        |
-| Manuelle Bonus-Einlösung      | Redemption ohne Einsatz (für Sonderfälle)              |
-| Verfalls-Notifications        | Mail-Erinnerung N Tage vor Ablauf                      |
+| Punkt                         | Status       | Beschreibung                                           |
+|-------------------------------|--------------|--------------------------------------------------------|
+| Dashboard                     | v1.22 geplant | Verfallende Bonis, Umsatz geplant vs. real, KPIs      |
+| Kalender-View                 | v1.23 geplant | Termine + Einsätze als Timeline (Task 4 der UX-Spec) |
+| Nav-Restruktur                | v1.23 geplant | 3 Kern-Bereiche (Task 3 der UX-Spec) — braucht Founder-Input zu Nav-Label („Kunden" vs. „Firmen & Kontakte") und Multi-User-Pläne |
+| Projekt-Kontingente           | offen        | Projekt mit „enthält 8 LifeCalls" → Auto-Entitlements  |
+| Dublettenerkennung            | offen        | Bei Firmen- und Kontakt-Anlage                         |
+| Export                        | offen        | CSV/Excel für alle Entitäten                           |
+| Multi-Leistungen pro Einsatz  | offen        | Sub-Positionen statt 1:1 service_id                    |
+| Manuelle Bonus-Einlösung      | offen        | Redemption ohne Einsatz (für Sonderfälle)              |
+| Verfalls-Notifications        | offen        | Mail-Erinnerung N Tage vor Ablauf                      |
 
 ### 13.3 Niedrig — Komfort
 
-| Punkt                      | Beschreibung                                           |
-|----------------------------|--------------------------------------------------------|
-| Notes-Entity aktivieren    | Separate Tabelle statt Freitext-Felder                 |
-| Audit-Log                  | Wer hat wann was geändert                              |
-| Globale Suche              | Cmd+K über alle Entitäten                              |
-| Storage                    | File-Uploads an Projekten/Einsätzen                    |
-| Email-Integration          | Termineinladungen, Zusagen tracken                     |
+| Punkt                      | Status       | Beschreibung                                           |
+|----------------------------|--------------|--------------------------------------------------------|
+| Globale Suche              | ✅ v1.19.0   | Cmd+K über companies / contacts / projects / deployments |
+| FAB Quick-Add              | ✅ v1.21.0   | Schwebender `+`-Button mit Kontext-Prefill             |
+| Zeilen-Aktionen aufräumen  | ✅ v1.20.0   | Hover-Reveal + Kebab + Undo-Toast                      |
+| Stammdaten-Labels          | ✅ v1.18.0   | Menschenlesbare Kategorie-Namen                        |
+| Notes-Entity aktivieren    | offen        | Separate Tabelle statt Freitext-Felder                 |
+| Audit-Log                  | offen        | Wer hat wann was geändert                              |
+| Storage                    | offen        | File-Uploads an Projekten/Einsätzen                    |
+| Email-Integration          | offen        | Termineinladungen, Zusagen tracken                     |
 
 ### 13.4 Aktuell ungenutzte Schema-Elemente
 
