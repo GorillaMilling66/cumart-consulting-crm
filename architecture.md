@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.17.0
+**Version:** 1.18.0
 **Stand:** 22. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -245,7 +245,9 @@ Default-Uhrzeiten werden im Einsatz-Modal automatisch übernommen, wenn die Uhrz
 | reihenfolge | integer     | Sortierung im Dropdown             |
 | ist_aktiv   | boolean     | Archiviert vs. aktiv               |
 
-**Kategorien** (admin-verwaltbar): unternehmens_typ · termin_typ · projekt_status · einsatz_status · leistungs_kategorie
+**Kategorien** (admin-verwaltbar, 6 aktuell): unternehmens_typ · termin_typ · termin_status · projekt_status · einsatz_status · leistungs_kategorie
+
+**UI-Darstellung (v1.18):** raw Keys werden in der UI über `kategorieLabel(key)` gerendert — `KATEGORIE_LABELS`-Mapping oben in app.js mit Title-Case-Fallback für unbekannte Keys. Wird z.B. auf `/#/stammdaten` im Filter-Dropdown und im Lookup-Modal eingesetzt.
 
 **Design-Entscheidung (v1.9.6):** Status-Werte für Projekte/Einsätze sind ausschließlich durch `lookup_values` definiert — keine hardcoded DB-CHECK-Constraints. Admin kann jederzeit neue Werte in den Stammdaten hinzufügen, die sofort im System verfügbar sind.
 
@@ -634,7 +636,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.14.0 | 21.04.2026  | Einlöse-Integration im Einsatz-Modal → End-to-End-Workflow geschlossen |
 | v1.15.0 | 22.04.2026  | Auth-Härtung (Last-Admin-Schutz, Role-Lock, Inaktiv-Blocker per RLS, Auto-Aktivierung per Trigger) |
 | v1.16.0 | 22.04.2026  | Soft-Delete auf companies/contacts/appointments/projects/deployments/memberships — Roadmap §13.1 vollständig abgeschlossen |
-| **v1.17.0** | **22.04.2026** | **UX-Bugfixes (B1–B4)**: 404-Seite für unbekannte Hashes, `friendlyFetchError()` gegen PGRST116-Leak, Detail-Seiten-Fehler unterdrücken Sub-Sektions-Spinner, Leistungs-Kategorie ohne Wert rendert als dezentes „—" statt Badge |
+| v1.17.0 | 22.04.2026  | UX-Bugfixes (B1–B4): 404-Seite für unbekannte Hashes, `friendlyFetchError()` gegen PGRST116-Leak, Detail-Seiten-Fehler unterdrücken Sub-Sektions-Spinner, Leistungs-Kategorie ohne Wert rendert als dezentes „—" statt Badge |
+| **v1.18.0** | **22.04.2026** | **Stammdaten-Labels**: `KATEGORIE_LABELS`-Mapping + `kategorieLabel()`-Helper — UI zeigt „Einsatz-Status" statt `einsatz_status`. Unbekannte Keys werden automatisch Title-Cased (Fallback). |
 
 ---
 
@@ -848,4 +851,4 @@ SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.17.0*
+*Ende der Dokumentation · Cumart CRM v1.18.0*

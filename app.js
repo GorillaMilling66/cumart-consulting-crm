@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.17.0 (UX-Bugfixes: 404-Route, saubere
-   PGRST116-Fehlermeldungen, Detail-Page-Error-Kaskade,
-   Leistungs-Kategorie ohne Wert nicht mehr als Badge)
+   Version 1.18.0 (Stammdaten-Kategorien mit menschenlesbaren
+   Labels statt Raw-Keys wie einsatz_status)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -92,6 +91,24 @@ function isAdmin() { return currentProfile?.roles?.name === 'Admin'; }
 function friendlyFetchError(error, entityLabel) {
   if (!error || error.code === 'PGRST116') return `${entityLabel} nicht gefunden.`;
   return 'Ein Fehler ist aufgetreten. Bitte die Seite neu laden.';
+}
+
+/** Mapping von lookup_values.kategorie-Keys auf UI-Labels.
+ *  Unbekannte Keys werden von kategorieLabel() automatisch Title-Cased. */
+const KATEGORIE_LABELS = {
+  einsatz_status:      'Einsatz-Status',
+  leistungs_kategorie: 'Leistungs-Kategorie',
+  projekt_status:      'Projekt-Status',
+  termin_status:       'Termin-Status',
+  termin_typ:          'Termin-Typ',
+  unternehmens_typ:    'Unternehmens-Typ',
+};
+
+function kategorieLabel(key) {
+  if (!key) return '';
+  if (KATEGORIE_LABELS[key]) return KATEGORIE_LABELS[key];
+  // Fallback: snake_case → Title Case
+  return key.split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
 }
 
 function formatPreis(value) {
@@ -1555,7 +1572,7 @@ async function loadLookupsPage() {
     select.innerHTML = '<option value="">— Keine Kategorien vorhanden —</option>';
   } else {
     const previous = select.value;
-    select.innerHTML = kategorien.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+    select.innerHTML = kategorien.map(k => `<option value="${esc(k)}">${esc(kategorieLabel(k))}</option>`).join('');
     if (kategorien.includes(previous)) select.value = previous;
   }
   await loadLookups();
@@ -1597,7 +1614,7 @@ async function openLookupModal(mode, lookupId = null) {
 
   const kategorien = await loadLookupKategorien();
   const kSelect = document.getElementById('l-kategorie');
-  let options = kategorien.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  let options = kategorien.map(k => `<option value="${esc(k)}">${esc(kategorieLabel(k))}</option>`).join('');
   options += '<option value="__new__">+ Neue Kategorie anlegen …</option>';
   kSelect.innerHTML = options;
 
