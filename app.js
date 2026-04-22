@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.20.0 (Zeilen-Aktionen: Hover-Reveal + Kebab-Menü,
-   Custom Confirm-Dialog, Undo-Toast für Soft-Delete)
+   Version 1.21.0 (FAB Quick-Add — kontext-aware Prefill für
+   Firma/Kontakt/Termin/Einsatz/Projekt, Shortcut „n")
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -997,6 +997,7 @@ function handleHashChange() {
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
 function hideAllScreens() {
+  hideFab?.();
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('reset-screen').style.display = 'none';
   document.getElementById('recovery-screen').style.display = 'none';
@@ -1008,7 +1009,7 @@ function showLoginScreen()    { hideAllScreens(); document.getElementById('auth-
 function showResetScreen()    { hideAllScreens(); document.getElementById('reset-screen').style.display = 'flex'; }
 function showRecoveryScreen() { hideAllScreens(); document.getElementById('recovery-screen').style.display = 'flex'; setTimeout(() => document.getElementById('recovery-1').focus(), 100); }
 function showMustChangeScreen() { hideAllScreens(); document.getElementById('mustchange-screen').style.display = 'flex'; setTimeout(() => document.getElementById('mustchange-1').focus(), 100); }
-function showApp()            { hideAllScreens(); document.getElementById('app').style.display = 'flex'; }
+function showApp()            { hideAllScreens(); document.getElementById('app').style.display = 'flex'; showFab?.(); }
 
 // ── AUTH INIT ────────────────────────────────────────────────
 async function initAuth() {
@@ -6602,6 +6603,127 @@ if (document.readyState === 'loading') {
 } else {
   wireSearchInput();
 }
+
+// ═══════════════════════════════════════════════════════════
+//  FAB — Quick-Add Floating Action Button (v1.21.0)
+// ═══════════════════════════════════════════════════════════
+
+let _fabOpen = false;
+
+function showFab() {
+  document.getElementById('fab')?.classList.add('visible');
+}
+
+function hideFab() {
+  document.getElementById('fab')?.classList.remove('visible');
+  closeFabMenu();
+}
+
+function toggleFabMenu(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (_fabOpen) closeFabMenu(); else openFabMenu();
+}
+
+function openFabMenu() {
+  const menu = document.getElementById('fab-menu');
+  if (!menu) return;
+  // Titel an aktuellen Kontext anpassen
+  const ctx = _getFabContext();
+  const title = document.getElementById('fab-menu-title');
+  if (title) title.textContent = ctx.label ? `Schnell anlegen · ${ctx.label}` : 'Schnell anlegen';
+  menu.classList.add('open');
+  _fabOpen = true;
+}
+
+function closeFabMenu() {
+  document.getElementById('fab-menu')?.classList.remove('open');
+  _fabOpen = false;
+}
+
+/** Ermittelt aktuellen Seiten-Kontext für Kontext-aware Prefill. */
+function _getFabContext() {
+  // Firmen-Detail aktiv?
+  if (document.getElementById('page-company-detail')?.classList.contains('active') && currentCompanyDetailId) {
+    return { type: 'company', id: currentCompanyDetailId, label: 'für diese Firma' };
+  }
+  if (document.getElementById('page-project-detail')?.classList.contains('active') && currentProjectDetailId) {
+    return { type: 'project', id: currentProjectDetailId, label: 'für dieses Projekt' };
+  }
+  if (document.getElementById('page-contact-detail')?.classList.contains('active') && currentContactDetailId) {
+    return { type: 'contact', id: currentContactDetailId, label: 'für diesen Kontakt' };
+  }
+  return { type: null, id: null, label: '' };
+}
+
+async function fabAction(target) {
+  closeFabMenu();
+  const ctx = _getFabContext();
+
+  // Kontext-abhängige Prefill-Variablen setzen und dann das jeweilige
+  // Modal öffnen.
+  if (target === 'company') {
+    openCompanyModal('new');
+    return;
+  }
+
+  if (target === 'contact') {
+    if (ctx.type === 'company') contactModalPrefillCompanyId = ctx.id;
+    openContactModal('new');
+    return;
+  }
+
+  if (target === 'appointment') {
+    if (ctx.type === 'company') {
+      appointmentModalPrefillCompanyId = ctx.id;
+    } else if (ctx.type === 'project') {
+      appointmentModalPrefillProjectId = ctx.id;
+    } else if (ctx.type === 'contact') {
+      appointmentModalPrefillContactId = ctx.id;
+    }
+    openAppointmentModal('new');
+    return;
+  }
+
+  if (target === 'project') {
+    if (ctx.type === 'company') {
+      projectModalPrefillCompanyId = ctx.id;
+    } else if (ctx.type === 'contact') {
+      // Hauptkontakt vorselektieren — das Modal zieht die Firma
+      // automatisch aus contact.company_id nach.
+      projectModalPrefillHauptkontaktId = ctx.id;
+    }
+    openProjectModal('new');
+    return;
+  }
+
+  if (target === 'deployment') {
+    if (ctx.type === 'company') deploymentModalPrefillCompanyId = ctx.id;
+    else if (ctx.type === 'project') deploymentModalPrefillProjectId = ctx.id;
+    openDeploymentModal('new');
+    return;
+  }
+}
+
+// Click-outside schließt FAB-Menu
+document.addEventListener('click', (ev) => {
+  if (!_fabOpen) return;
+  if (ev.target.closest('#fab-menu') || ev.target.closest('#fab')) return;
+  closeFabMenu();
+});
+
+// Tastenkürzel „n" (nur wenn kein Eingabefeld fokussiert und kein Modal offen)
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'n' && ev.key !== 'N') return;
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (isInputFocused()) return;
+  // Kein anderes Overlay/Menü offen
+  if (document.getElementById('search-overlay')?.classList.contains('open')) return;
+  if (document.getElementById('modal-confirm')?.classList.contains('open')) return;
+  if (document.querySelector('.modal-overlay.open:not(#modal-confirm)')) return;
+  if (!document.getElementById('fab')?.classList.contains('visible')) return;
+  ev.preventDefault();
+  toggleFabMenu();
+});
 
 // ═══════════════════════════════════════════════════════════
 //  INITIALIZATION

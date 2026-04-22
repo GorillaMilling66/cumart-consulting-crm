@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.20.0
+**Version:** 1.21.0
 **Stand:** 22. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -452,14 +452,6 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 - **Zentral gerendert via `renderActionIcons(entityType, id)`**; Dispatcher: `deleteEntityById()`, `duplicateEntity()`, `copyXById()`.
 - **Mobile:** Icon-Spalte via `.col-action { display: none; @media (max-width: 767px) }` weiterhin ausgeblendet (wie vorher) — Primär-Aktion über Titel-Link.
 
-### 7.11 Custom Confirm-Dialog + Undo-Toast (v1.20.0)
-
-- **`confirmDialog({ title, message, confirmLabel, cancelLabel, danger })`** liefert `Promise<boolean>`. Default-Fokus liegt auf „Abbrechen" (Enter schließt mit cancel, Tab→Löschen zum Bestätigen). HTML-Markup im `message`-Feld erlaubt — das Confirm-Modal nutzt `innerHTML`.
-- Alle 11 `delete*`-Handler (List-Dispatcher + 10 modal-delete) benutzen diese Funktion statt `confirm()`.
-- **`showToast(msg, isError, options)`**: `options = { actionLabel, onAction, durationMs }`. Mit Action wird ein zweiter Inline-Button gerendert, der bei Klick den Callback feuert. Default-Dauer mit Action ist 5 s (ohne 3 s).
-- **Undo-Toast-Flow:** nach jedem erfolgreichen Soft-Delete wird ein Toast mit „Rückgängig"-Button gezeigt. Bei Klick wird `deleted_at` wieder auf `NULL` gesetzt und die Liste refresht. Verfügbar für: companies / contacts / appointments / projects / deployments / memberships. Für Einsätze wird zusätzlich vermerkt, dass Bonus-Einlösungen hart gelöscht wurden und nicht revertet werden.
-- **`_performSoftDelete(entityType, id)`** ist der zentrale Helper (ohne Confirm) — beide Pfade (List-Kebab + Modal-Delete) rufen ihn, nachdem ihr jeweiliges Confirm durch ist. Das vermeidet doppelte Confirm-Dialoge bei geschachtelten Modalen.
-
 ### 7.10 Globale Suche (v1.19.0)
 
 - **Shortcut:** `Cmd+K` (Mac) / `Ctrl+K` (sonst), alternativ `/` wenn kein Eingabefeld fokussiert ist. Overlay schließen per `Esc` oder Backdrop-Klick.
@@ -468,6 +460,26 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 - **Ergebnis-Navigation:** `↑` / `↓` schalten `search-item.active`, `↵` öffnet den Treffer. Firma/Kontakt/Projekt routen direkt auf die Detail-Seite; Einsatz öffnet das Einsatz-Modal (kein eigener Detail-Route).
 - **„Zuletzt besucht":** Liste der letzten 5 Detail-Besuche aus `localStorage.cumart_recent_visits` als Empty-State (wird beim Öffnen des Overlays ohne Eingabe angezeigt). Wird in `loadCompany/Contact/ProjectDetail` über `trackVisit(type, id, title, subtitle)` gefüllt und beim Öffnen eines Suchtreffers aktualisiert.
 - **Keine Volltextsuche:** wir nutzen `ilike`, keine `tsvector`/`pg_trgm`. Kann bei >1000 Datensätzen pro Tabelle zum Performance-Upgrade werden.
+
+### 7.11 Custom Confirm-Dialog + Undo-Toast (v1.20.0)
+
+- **`confirmDialog({ title, message, confirmLabel, cancelLabel, danger })`** liefert `Promise<boolean>`. Default-Fokus liegt auf „Abbrechen" (Enter schließt mit cancel, Tab→Löschen zum Bestätigen). HTML-Markup im `message`-Feld erlaubt — das Confirm-Modal nutzt `innerHTML`.
+- Alle 11 `delete*`-Handler (List-Dispatcher + 10 modal-delete) benutzen diese Funktion statt `confirm()`.
+- **`showToast(msg, isError, options)`**: `options = { actionLabel, onAction, durationMs }`. Mit Action wird ein zweiter Inline-Button gerendert, der bei Klick den Callback feuert. Default-Dauer mit Action ist 5 s (ohne 3 s).
+- **Undo-Toast-Flow:** nach jedem erfolgreichen Soft-Delete wird ein Toast mit „Rückgängig"-Button gezeigt. Bei Klick wird `deleted_at` wieder auf `NULL` gesetzt und die Liste refresht. Verfügbar für: companies / contacts / appointments / projects / deployments / memberships. Für Einsätze wird zusätzlich vermerkt, dass Bonus-Einlösungen hart gelöscht wurden und nicht revertet werden.
+- **`_performSoftDelete(entityType, id)`** ist der zentrale Helper (ohne Confirm) — beide Pfade (List-Kebab + Modal-Delete) rufen ihn, nachdem ihr jeweiliges Confirm durch ist. Das vermeidet doppelte Confirm-Dialoge bei geschachtelten Modalen.
+
+### 7.12 FAB Quick-Add (v1.21.0)
+
+- **Schwebender `+`-Button** unten rechts, sichtbar sobald `showApp()` läuft (nach Login). Desktop: 24 px Abstand; Mobile: über der Bottom-Nav.
+- **Popover-Menü** mit 5 Aktionen (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Jede öffnet das bestehende Modal via `openXxxModal('new')`.
+- **Kontext-Awareness via `_getFabContext()`**: liest aktiven `.page` + `current*DetailId`-Var und setzt entsprechende Prefill-Globals vor dem Modal-Open:
+  - Firmen-Detail aktiv → `company_id` landet in `contactModalPrefillCompanyId` / `appointmentModalPrefillCompanyId` / `projectModalPrefillCompanyId` / `deploymentModalPrefillCompanyId`
+  - Projekt-Detail aktiv → `project_id` in `appointmentModalPrefillProjectId` / `deploymentModalPrefillProjectId`
+  - Kontakt-Detail aktiv → `contact_id` in `appointmentModalPrefillContactId` (für Termin) bzw. `projectModalPrefillHauptkontaktId` (für Projekt — das Modal zieht `company_id` über den Kontakt automatisch nach)
+- Der Menü-Titel zeigt den aktiven Kontext an („Schnell anlegen · für diese Firma").
+- **Shortcut `n`** (ohne Modifier, wenn kein `INPUT`/`TEXTAREA`/`contenteditable` fokussiert und kein anderes Overlay offen) toggelt das FAB-Menü.
+- **Click-outside / Esc** schließen das Menü.
 
 ---
 
@@ -658,7 +670,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.17.0 | 22.04.2026  | UX-Bugfixes (B1–B4): 404-Seite für unbekannte Hashes, `friendlyFetchError()` gegen PGRST116-Leak, Detail-Seiten-Fehler unterdrücken Sub-Sektions-Spinner, Leistungs-Kategorie ohne Wert rendert als dezentes „—" statt Badge |
 | v1.18.0 | 22.04.2026  | Stammdaten-Labels: `KATEGORIE_LABELS`-Mapping + `kategorieLabel()`-Helper — UI zeigt „Einsatz-Status" statt `einsatz_status`. Unbekannte Keys werden automatisch Title-Cased (Fallback). |
 | v1.19.0 | 22.04.2026  | Globale Suche (Cmd+K) — Overlay mit debounced Parallel-Queries gegen Firmen / Kontakte / Projekte / Einsätze, Pfeil-Navigation, Enter öffnet, „Zuletzt besucht" via localStorage |
-| **v1.20.0** | **22.04.2026** | **Zeilen-Aktionen aufgeräumt** — Hover-Reveal-Icons, Kebab-Menü für Secondary Actions (Kopieren / Duplizieren / Löschen), Custom `confirmDialog()` (Promise-basiert) statt native `confirm()`, Undo-Toast (5 s) für Soft-Delete-Rückgängig |
+| v1.20.0 | 22.04.2026  | Zeilen-Aktionen aufgeräumt — Hover-Reveal-Icons, Kebab-Menü für Secondary Actions (Kopieren / Duplizieren / Löschen), Custom `confirmDialog()` (Promise-basiert) statt native `confirm()`, Undo-Toast (5 s) für Soft-Delete-Rückgängig |
+| **v1.21.0** | **22.04.2026** | **FAB Quick-Add** — schwebender `+`-Button unten rechts mit Popover-Menü (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Kontext-Aware Prefill aus Firmen-/Projekt-/Kontakt-Detail. Shortcut `n` wenn kein Input fokussiert. |
 
 ---
 
@@ -872,4 +885,4 @@ SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.20.0*
+*Ende der Dokumentation · Cumart CRM v1.21.0*
