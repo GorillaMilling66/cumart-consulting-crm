@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.16.0
+**Version:** 1.17.0
 **Stand:** 22. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -633,7 +633,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.13.0 | Apr 2026    | **Mitgliedschaften auf Firma-Ebene** + automatische Entitlements   |
 | v1.14.0 | 21.04.2026  | Einlöse-Integration im Einsatz-Modal → End-to-End-Workflow geschlossen |
 | v1.15.0 | 22.04.2026  | Auth-Härtung (Last-Admin-Schutz, Role-Lock, Inaktiv-Blocker per RLS, Auto-Aktivierung per Trigger) |
-| **v1.16.0** | **22.04.2026** | **Soft-Delete** auf companies/contacts/appointments/projects/deployments/memberships — Roadmap §13.1 vollständig abgeschlossen |
+| v1.16.0 | 22.04.2026  | Soft-Delete auf companies/contacts/appointments/projects/deployments/memberships — Roadmap §13.1 vollständig abgeschlossen |
+| **v1.17.0** | **22.04.2026** | **UX-Bugfixes (B1–B4)**: 404-Seite für unbekannte Hashes, `friendlyFetchError()` gegen PGRST116-Leak, Detail-Seiten-Fehler unterdrücken Sub-Sektions-Spinner, Leistungs-Kategorie ohne Wert rendert als dezentes „—" statt Badge |
 
 ---
 
@@ -847,4 +848,4 @@ SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.16.0*
+*Ende der Dokumentation · Cumart CRM v1.17.0*

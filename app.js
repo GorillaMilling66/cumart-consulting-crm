@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.16.0 (Soft-Delete auf 6 Kern-Entitäten —
-   deleted_at statt hartem DELETE, alle List-/Detail-Queries
-   filtern deleted_at IS NULL)
+   Version 1.17.0 (UX-Bugfixes: 404-Route, saubere
+   PGRST116-Fehlermeldungen, Detail-Page-Error-Kaskade,
+   Leistungs-Kategorie ohne Wert nicht mehr als Badge)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -85,6 +85,14 @@ function statusBg(s) { return { eingeladen: '#fffbeb', aktiv: '#f0fdf4', inaktiv
 function statusColor(s) { return { eingeladen: '#d97706', aktiv: '#16a34a', inaktiv: '#dc2626' }[s] || '#6b7280'; }
 
 function isAdmin() { return currentProfile?.roles?.name === 'Admin'; }
+
+/** Übersetzt Supabase-/PostgREST-Fehler in eine alltagstaugliche Meldung.
+ *  PGRST116 = .single() hat 0 oder >1 Zeilen → "nicht gefunden".
+ *  entityLabel z.B. "Firma", "Kontakt", "Projekt". */
+function friendlyFetchError(error, entityLabel) {
+  if (!error || error.code === 'PGRST116') return `${entityLabel} nicht gefunden.`;
+  return 'Ein Fehler ist aufgetreten. Bitte die Seite neu laden.';
+}
 
 function formatPreis(value) {
   if (value === null || value === undefined || value === '') return '—';
@@ -831,7 +839,10 @@ function handleHashChange() {
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
   if (hash === '#/programme')  { showPage('programs'); return; }
 
-  showPage('companies');
+  // Unbekannte Route → 404
+  const lbl = document.getElementById('page-404-hash');
+  if (lbl) lbl.textContent = hash || '(leer)';
+  showPage('404');
 }
 
 // ── SCREEN-WECHSEL ───────────────────────────────────────────
@@ -1367,8 +1378,12 @@ async function loadServices() {
   const canEdit = isAdmin();
 
   tbody.innerHTML = data.map(s => {
+    const hasKategorie = !!s.kategorie;
     const katFarbe = s.kategorie?.farbe || '#6b7280';
-    const katWert  = s.kategorie?.wert || '—';
+    const katWert  = s.kategorie?.wert  || '—';
+    const katHtml  = hasKategorie
+      ? `<span class="badge" style="background:${esc(katFarbe)}22;color:${esc(katFarbe)}">${esc(katWert)}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
     const aktivBg  = s.ist_aktiv ? '#f0fdf4' : '#f3f4f6';
     const aktivCol = s.ist_aktiv ? '#16a34a' : '#6b7280';
     const aktivTxt = s.ist_aktiv ? 'Aktiv' : 'Archiviert';
@@ -1384,7 +1399,7 @@ async function loadServices() {
           ${nameHtml}
           ${s.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.beschreibung)}</div>` : ''}
         </td>
-        <td><span class="badge" style="background:${esc(katFarbe)}22;color:${esc(katFarbe)}">${esc(katWert)}</span></td>
+        <td>${katHtml}</td>
         <td style="color:var(--muted)">${esc(s.einheit || '—')}</td>
         <td>${esc(formatPreis(s.standardpreis))}</td>
         <td><span class="badge" style="background:${aktivBg};color:${aktivCol}">${aktivTxt}</span></td>
@@ -2726,9 +2741,19 @@ async function loadCompanyDetail(companyId) {
     .eq('id', companyId).single();
 
   if (error || !data) {
-    document.getElementById('company-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">Firma nicht gefunden oder Fehler: ${esc(error?.message || 'Unbekannt')}</div>`;
-    document.getElementById('company-detail-title').textContent = 'Fehler';
-    document.getElementById('company-detail-name').textContent = 'Fehler';
+    const msg = friendlyFetchError(error, 'Firma');
+    document.getElementById('company-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">${esc(msg)}</div>`;
+    document.getElementById('company-detail-title').textContent = msg;
+    document.getElementById('company-detail-name').textContent = '—';
+    document.getElementById('company-detail-subline').innerHTML = '';
+    // Abhängige Sektionen nicht starten, sondern leeren Zustand anzeigen
+    document.getElementById('company-contacts-body').innerHTML = '<tr><td colspan="5"><div class="empty">—</div></td></tr>';
+    document.getElementById('company-appointments-body').innerHTML = '<tr><td colspan="7"><div class="empty">—</div></td></tr>';
+    document.getElementById('company-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
+    const depBody = document.getElementById('company-deployments-body');
+    if (depBody) depBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
+    const msBody = document.getElementById('company-memberships-body');
+    if (msBody) msBody.innerHTML = '<div class="empty">—</div>';
     return;
   }
 
@@ -4144,9 +4169,14 @@ async function loadProjectDetail(projectId) {
     .eq('id', projectId).single();
 
   if (error || !data) {
-    document.getElementById('project-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">Projekt nicht gefunden oder Fehler: ${esc(error?.message || 'Unbekannt')}</div>`;
-    document.getElementById('project-detail-title').textContent = 'Fehler';
-    document.getElementById('project-detail-name').textContent = 'Fehler';
+    const msg = friendlyFetchError(error, 'Projekt');
+    document.getElementById('project-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">${esc(msg)}</div>`;
+    document.getElementById('project-detail-title').textContent = msg;
+    document.getElementById('project-detail-name').textContent = '—';
+    document.getElementById('project-detail-subline').innerHTML = '';
+    document.getElementById('project-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
+    const depBody = document.getElementById('project-deployments-body');
+    if (depBody) depBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     return;
   }
 
@@ -4432,9 +4462,14 @@ async function loadContactDetail(contactId) {
     .eq('id', contactId).single();
 
   if (error || !data) {
-    document.getElementById('contact-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">Kontakt nicht gefunden oder Fehler: ${esc(error?.message || 'Unbekannt')}</div>`;
-    document.getElementById('contact-detail-title').textContent = 'Fehler';
-    document.getElementById('contact-detail-name').textContent = 'Fehler';
+    const msg = friendlyFetchError(error, 'Kontakt');
+    document.getElementById('contact-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">${esc(msg)}</div>`;
+    document.getElementById('contact-detail-title').textContent = msg;
+    document.getElementById('contact-detail-name').textContent = '—';
+    document.getElementById('contact-detail-avatar').textContent = '—';
+    document.getElementById('contact-detail-subline').innerHTML = '';
+    document.getElementById('contact-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
+    document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     return;
   }
 
