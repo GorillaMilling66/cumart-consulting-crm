@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.18.0 (Stammdaten-Kategorien mit menschenlesbaren
-   Labels statt Raw-Keys wie einsatz_status)
+   Version 1.19.0 (Globale Suche via Cmd+K / Ctrl+K —
+   Overlay mit debounced Parallel-Queries gegen Firmen,
+   Kontakte, Projekte, Einsätze + „Zuletzt besucht")
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -2775,6 +2776,7 @@ async function loadCompanyDetail(companyId) {
   }
 
   renderCompanyDetail(data);
+  trackVisit('company', data.id, data.name, [data.stadt, data.branche].filter(Boolean).join(' · '));
   await loadCompanyContacts(companyId);
   await loadCompanyAppointments(companyId);
   await loadCompanyProjects(companyId);
@@ -4198,6 +4200,7 @@ async function loadProjectDetail(projectId) {
   }
 
   renderProjectDetail(data);
+  trackVisit('project', data.id, data.name, data.company?.name || '');
   await loadProjectAppointments(projectId);
   await loadProjectDeployments(projectId);
 }
@@ -4499,6 +4502,9 @@ async function loadContactDetail(contactId) {
   }
 
   renderContactDetail(data);
+  trackVisit('contact', data.id,
+    `${data.vorname || ''} ${data.nachname || ''}`.trim() || '—',
+    data.company?.name || data.email || '');
   await Promise.all([
     loadContactAppointments(contactId),
     loadContactProjects(contactId),
@@ -6193,6 +6199,267 @@ document.addEventListener('click', (e) => {
   // (aktuell gibt's keine interaktiven Kinder, daher immer toggeln)
   toggleModalGroup(title);
 });
+
+// ═══════════════════════════════════════════════════════════
+//  GLOBALE SUCHE (v1.19.0) — Cmd+K / Ctrl+K / "/"
+// ═══════════════════════════════════════════════════════════
+
+let searchDebounceTimer = null;
+let searchAbortController = null;
+let searchResults = [];        // flache Liste {type, id, title, subtitle}
+let searchActiveIndex = -1;
+
+const RECENT_VISITS_KEY = 'cumart_recent_visits';
+const RECENT_VISITS_MAX = 5;
+
+function getRecentlyVisited() {
+  try { return JSON.parse(localStorage.getItem(RECENT_VISITS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function pushRecentlyVisited(entry) {
+  if (!entry?.id || !entry?.type) return;
+  const clean = { type: entry.type, id: entry.id, title: entry.title || '', subtitle: entry.subtitle || '' };
+  let list = getRecentlyVisited().filter(e => !(e.type === clean.type && e.id === clean.id));
+  list.unshift(clean);
+  list = list.slice(0, RECENT_VISITS_MAX);
+  try { localStorage.setItem(RECENT_VISITS_KEY, JSON.stringify(list)); } catch {}
+}
+
+function trackVisit(type, id, title, subtitle) {
+  pushRecentlyVisited({ type, id, title, subtitle });
+}
+
+function openSearchOverlay() {
+  const overlay = document.getElementById('search-overlay');
+  overlay.classList.add('open');
+  const input = document.getElementById('search-input');
+  input.value = '';
+  searchActiveIndex = -1;
+  renderRecentlyVisited();
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeSearchOverlay() {
+  document.getElementById('search-overlay').classList.remove('open');
+  if (searchAbortController) { try { searchAbortController.abort(); } catch {} searchAbortController = null; }
+  clearTimeout(searchDebounceTimer);
+}
+
+function closeSearchOverlayOnBackdrop(ev) {
+  if (ev.target.id === 'search-overlay') closeSearchOverlay();
+}
+
+function renderRecentlyVisited() {
+  const container = document.getElementById('search-results');
+  const recent = getRecentlyVisited();
+  if (recent.length === 0) {
+    container.innerHTML = '<div class="search-hint">Tippe, um zu suchen. <kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd> navigieren · <kbd class="kbd">↵</kbd> öffnen</div>';
+    searchResults = [];
+    return;
+  }
+  searchResults = recent;
+  searchActiveIndex = 0;
+  const html = `<div class="search-group-header">Zuletzt besucht</div>` +
+    recent.map((e, i) => renderSearchItem(e, i)).join('');
+  container.innerHTML = html;
+  wireSearchItemClicks();
+}
+
+function searchIconForType(type) {
+  const icons = {
+    company: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/></svg>`,
+    contact: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 22v-1a7 7 0 0 1 16 0v1"/></svg>`,
+    project: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>`,
+    deployment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0L21 4.3A6 6 0 0 1 13 13l-7 7a2.1 2.1 0 0 1-3-3l7-7A6 6 0 0 1 19 2.6Z"/></svg>`,
+  };
+  return icons[type] || '';
+}
+
+function searchTypeLabel(type) {
+  return { company: 'Firma', contact: 'Kontakt', project: 'Projekt', deployment: 'Einsatz' }[type] || type;
+}
+
+function renderSearchItem(entry, idx) {
+  const icon = searchIconForType(entry.type);
+  const typeLabel = searchTypeLabel(entry.type);
+  return `
+    <div class="search-item${idx === searchActiveIndex ? ' active' : ''}" data-idx="${idx}" role="option" tabindex="-1">
+      <div class="search-item-icon">${icon}</div>
+      <div class="search-item-body">
+        <div class="search-item-title">${esc(entry.title || '—')}</div>
+        ${entry.subtitle ? `<div class="search-item-sub">${esc(entry.subtitle)}</div>` : ''}
+      </div>
+      <div class="search-item-type-badge">${typeLabel}</div>
+    </div>`;
+}
+
+function wireSearchItemClicks() {
+  document.querySelectorAll('#search-results .search-item').forEach(el => {
+    const idx = parseInt(el.dataset.idx, 10);
+    el.onclick = () => openSearchResult(searchResults[idx]);
+  });
+}
+
+function openSearchResult(entry) {
+  if (!entry) return;
+  pushRecentlyVisited(entry);
+  closeSearchOverlay();
+  if (entry.type === 'company')         location.hash = '#/firma/'   + entry.id;
+  else if (entry.type === 'contact')    location.hash = '#/kontakt/' + entry.id;
+  else if (entry.type === 'project')    location.hash = '#/projekt/' + entry.id;
+  else if (entry.type === 'deployment') {
+    // Einsatz hat keine Detail-Route → Liste + Modal
+    if (location.hash === '#/einsaetze') openDeploymentModal('edit', entry.id);
+    else { location.hash = '#/einsaetze'; setTimeout(() => openDeploymentModal('edit', entry.id), 120); }
+  }
+}
+
+function onSearchInput() {
+  const q = document.getElementById('search-input').value.trim();
+  clearTimeout(searchDebounceTimer);
+  if (q.length === 0) { renderRecentlyVisited(); return; }
+  if (q.length < 2) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">Mindestens 2 Zeichen eingeben.</div>';
+    searchResults = []; searchActiveIndex = -1;
+    return;
+  }
+  searchDebounceTimer = setTimeout(() => runSearchQueries(q), 200);
+}
+
+async function runSearchQueries(q) {
+  if (searchAbortController) { try { searchAbortController.abort(); } catch {} }
+  searchAbortController = new AbortController();
+  const signal = searchAbortController.signal;
+
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">Suche läuft …</div>';
+
+  // PostgREST .or() benutzt Kommas und Klammern als Trenner. Wir escapen.
+  const safe = q.replace(/([%,\(\)])/g, '\\$1');
+  const pat = `%${safe}%`;
+
+  try {
+    const [comps, conts, projs, deps] = await Promise.all([
+      db.from('companies').select('id, name, website, stadt').is('deleted_at', null)
+        .or(`name.ilike.${pat},website.ilike.${pat},stadt.ilike.${pat}`)
+        .abortSignal(signal).limit(5),
+      db.from('contacts').select('id, vorname, nachname, email').is('deleted_at', null)
+        .or(`vorname.ilike.${pat},nachname.ilike.${pat},email.ilike.${pat}`)
+        .abortSignal(signal).limit(5),
+      db.from('projects').select('id, name, beschreibung').is('deleted_at', null)
+        .or(`name.ilike.${pat},beschreibung.ilike.${pat}`)
+        .abortSignal(signal).limit(5),
+      db.from('deployments').select('id, titel, notizen').is('deleted_at', null)
+        .or(`titel.ilike.${pat},notizen.ilike.${pat}`)
+        .abortSignal(signal).limit(5),
+    ]);
+    if (signal.aborted) return;
+    renderSearchResults(comps, conts, projs, deps, q);
+  } catch (err) {
+    if (signal.aborted) return;
+    if (err?.name === 'AbortError') return;
+    document.getElementById('search-results').innerHTML =
+      `<div class="search-empty">Fehler: ${esc(err.message || String(err))}</div>`;
+  }
+}
+
+function renderSearchResults(comps, conts, projs, deps, q) {
+  const container = document.getElementById('search-results');
+  const results = [];
+
+  (comps.data || []).forEach(c => results.push({
+    type: 'company', id: c.id, title: c.name, subtitle: c.stadt || c.website || ''
+  }));
+  (conts.data || []).forEach(k => results.push({
+    type: 'contact', id: k.id,
+    title: `${k.vorname || ''} ${k.nachname || ''}`.trim() || '—',
+    subtitle: k.email || ''
+  }));
+  (projs.data || []).forEach(p => results.push({
+    type: 'project', id: p.id, title: p.name,
+    subtitle: (p.beschreibung || '').slice(0, 80)
+  }));
+  (deps.data || []).forEach(d => results.push({
+    type: 'deployment', id: d.id, title: d.titel || '(ohne Titel)',
+    subtitle: (d.notizen || '').slice(0, 80)
+  }));
+
+  searchResults = results;
+  searchActiveIndex = results.length > 0 ? 0 : -1;
+
+  if (results.length === 0) {
+    container.innerHTML = `<div class="search-empty">Keine Treffer für „${esc(q)}".</div>`;
+    return;
+  }
+
+  const labels = { company: 'Firmen', contact: 'Kontakte', project: 'Projekte', deployment: 'Einsätze' };
+  const order = ['company', 'contact', 'project', 'deployment'];
+  const byType = { company: [], contact: [], project: [], deployment: [] };
+  results.forEach((r, i) => byType[r.type].push({ entry: r, idx: i }));
+
+  container.innerHTML = order
+    .filter(t => byType[t].length > 0)
+    .map(t => `
+      <div class="search-group-header">${labels[t]}</div>
+      ${byType[t].map(x => renderSearchItem(x.entry, x.idx)).join('')}
+    `).join('');
+  wireSearchItemClicks();
+}
+
+function moveSearchActive(delta) {
+  if (searchResults.length === 0) return;
+  searchActiveIndex = (searchActiveIndex + delta + searchResults.length) % searchResults.length;
+  document.querySelectorAll('#search-results .search-item').forEach(el => {
+    const idx = parseInt(el.dataset.idx, 10);
+    const on = idx === searchActiveIndex;
+    el.classList.toggle('active', on);
+    if (on) el.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+function isInputFocused() {
+  const el = document.activeElement;
+  if (!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+}
+
+document.addEventListener('keydown', (ev) => {
+  const overlay = document.getElementById('search-overlay');
+  const isOpen = overlay?.classList.contains('open');
+
+  if (!isOpen) {
+    if ((ev.metaKey || ev.ctrlKey) && (ev.key === 'k' || ev.key === 'K')) {
+      ev.preventDefault();
+      openSearchOverlay();
+      return;
+    }
+    if (ev.key === '/' && !isInputFocused()) {
+      ev.preventDefault();
+      openSearchOverlay();
+    }
+    return;
+  }
+
+  if (ev.key === 'Escape') { ev.preventDefault(); closeSearchOverlay(); return; }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); moveSearchActive(1); return; }
+  if (ev.key === 'ArrowUp')   { ev.preventDefault(); moveSearchActive(-1); return; }
+  if (ev.key === 'Enter') {
+    if (searchActiveIndex >= 0 && searchResults[searchActiveIndex]) {
+      ev.preventDefault();
+      openSearchResult(searchResults[searchActiveIndex]);
+    }
+  }
+});
+
+function wireSearchInput() {
+  const input = document.getElementById('search-input');
+  if (input) input.addEventListener('input', onSearchInput);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireSearchInput);
+} else {
+  wireSearchInput();
+}
 
 // ═══════════════════════════════════════════════════════════
 //  INITIALIZATION

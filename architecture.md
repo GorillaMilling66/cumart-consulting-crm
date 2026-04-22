@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.18.0
+**Version:** 1.19.0
 **Stand:** 22. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -450,6 +450,15 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 - Tooltips via `title`-Attribut
 - Mobile: Icon-Spalte ausgeblendet (wie gehabt), Primär-Aktion über Titel-Link
 
+### 7.10 Globale Suche (v1.19.0)
+
+- **Shortcut:** `Cmd+K` (Mac) / `Ctrl+K` (sonst), alternativ `/` wenn kein Eingabefeld fokussiert ist. Overlay schließen per `Esc` oder Backdrop-Klick.
+- **Discovery-Buttons:** in der Sidebar und im Mobile-Header (🔍-Icon).
+- **Queries:** debounced 200 ms, dann 4 parallele `.or(ilike %q%)`-Queries gegen `companies`, `contacts`, `projects`, `deployments` — jeweils auf die wichtigsten Textspalten. `AbortController` verwirft alte Queries bei neuem Tastendruck. Minimum 2 Zeichen, Limit 5 pro Tabelle.
+- **Ergebnis-Navigation:** `↑` / `↓` schalten `search-item.active`, `↵` öffnet den Treffer. Firma/Kontakt/Projekt routen direkt auf die Detail-Seite; Einsatz öffnet das Einsatz-Modal (kein eigener Detail-Route).
+- **„Zuletzt besucht":** Liste der letzten 5 Detail-Besuche aus `localStorage.cumart_recent_visits` als Empty-State (wird beim Öffnen des Overlays ohne Eingabe angezeigt). Wird in `loadCompany/Contact/ProjectDetail` über `trackVisit(type, id, title, subtitle)` gefüllt und beim Öffnen eines Suchtreffers aktualisiert.
+- **Keine Volltextsuche:** wir nutzen `ilike`, keine `tsvector`/`pg_trgm`. Kann bei >1000 Datensätzen pro Tabelle zum Performance-Upgrade werden.
+
 ---
 
 ## 8. Cross-Entity-Logik
@@ -637,7 +646,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.15.0 | 22.04.2026  | Auth-Härtung (Last-Admin-Schutz, Role-Lock, Inaktiv-Blocker per RLS, Auto-Aktivierung per Trigger) |
 | v1.16.0 | 22.04.2026  | Soft-Delete auf companies/contacts/appointments/projects/deployments/memberships — Roadmap §13.1 vollständig abgeschlossen |
 | v1.17.0 | 22.04.2026  | UX-Bugfixes (B1–B4): 404-Seite für unbekannte Hashes, `friendlyFetchError()` gegen PGRST116-Leak, Detail-Seiten-Fehler unterdrücken Sub-Sektions-Spinner, Leistungs-Kategorie ohne Wert rendert als dezentes „—" statt Badge |
-| **v1.18.0** | **22.04.2026** | **Stammdaten-Labels**: `KATEGORIE_LABELS`-Mapping + `kategorieLabel()`-Helper — UI zeigt „Einsatz-Status" statt `einsatz_status`. Unbekannte Keys werden automatisch Title-Cased (Fallback). |
+| v1.18.0 | 22.04.2026  | Stammdaten-Labels: `KATEGORIE_LABELS`-Mapping + `kategorieLabel()`-Helper — UI zeigt „Einsatz-Status" statt `einsatz_status`. Unbekannte Keys werden automatisch Title-Cased (Fallback). |
+| **v1.19.0** | **22.04.2026** | **Globale Suche (Cmd+K)** — Overlay mit debounced Parallel-Queries gegen Firmen / Kontakte / Projekte / Einsätze, Pfeil-Navigation, Enter öffnet, „Zuletzt besucht" via localStorage |
 
 ---
 
@@ -851,4 +861,4 @@ SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.18.0*
+*Ende der Dokumentation · Cumart CRM v1.19.0*

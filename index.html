@@ -116,6 +116,16 @@
       Cumart CRM
       <span>Consulting Management</span>
     </div>
+
+    <button class="sidebar-search-btn" id="sidebar-search-btn" onclick="openSearchOverlay()" title="Globale Suche öffnen (⌘K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <span>Suchen</span>
+      <kbd class="kbd">⌘K</kbd>
+    </button>
+
     <div class="sidebar-user" id="sidebar-user"></div>
 
     <nav class="nav" id="nav-main">
@@ -253,7 +263,15 @@
   <!-- MOBILE HEADER -->
   <header class="mobile-header">
     <div class="mobile-header-title">Cumart CRM</div>
-    <div class="mobile-header-user" id="mobile-header-user"></div>
+    <div class="mobile-header-right">
+      <button class="mobile-search-btn" onclick="openSearchOverlay()" aria-label="Suchen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </button>
+      <div class="mobile-header-user" id="mobile-header-user"></div>
+    </div>
   </header>
 
   <!-- MAIN -->
@@ -1218,6 +1236,23 @@
           </svg>
           Abmelden
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GLOBALE SUCHE (Cmd+K / Ctrl+K) -->
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Globale Suche" onclick="closeSearchOverlayOnBackdrop(event)">
+    <div class="search-panel" onclick="event.stopPropagation()">
+      <div class="search-input-row">
+        <svg class="search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" id="search-input" placeholder="Firmen, Kontakte, Projekte, Einsätze …" autocomplete="off" spellcheck="false" />
+        <kbd class="kbd search-esc-hint">Esc</kbd>
+      </div>
+      <div class="search-results" id="search-results">
+        <div class="search-hint">Tippe, um zu suchen. <kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd> navigieren · <kbd class="kbd">↵</kbd> öffnen</div>
       </div>
     </div>
   </div>
