@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.14.0 (Einlösungs-Integration im Einsatz-Modal)
+   Version 1.15.0 (Auth-Härtung: Last-Admin-Schutz, Role-Lock,
+   Inaktiv-Blocker, Auto-Aktivierung serverseitig)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';

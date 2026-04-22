@@ -1,7 +1,7 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.14.0
-**Stand:** 21. April 2026
+**Version:** 1.15.0
+**Stand:** 22. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
 **Live:** `https://cumart.cloud` (Primary) · `https://cumart-consulting-crm.vercel.app` (Fallback)
@@ -60,6 +60,11 @@ cumart-consulting-crm/
 ├── index.html       ~1.95k Zeilen  (alle Pages + Modals als hidden divs)
 ├── styles.css       ~1.05k Zeilen  (CSS-Variablen, Desktop + Mobile)
 ├── app.js            ~6.15k Zeilen  (alle Module in einer Datei)
+├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
+├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
+│   └── v1.15.0_auth_hardening.sql
+├── supabase/
+│   └── functions/manage-users/
 └── .git/
 ```
 
@@ -346,7 +351,19 @@ Jede Einlösung eines Bonus wird hier protokolliert.
 
 **Hybrid-Strategie ("Option C"):** Strikt auf `user_profiles`, `roles`, `lookup_values` (Admin-Write). Open authenticated auf allen operativen Tabellen (inkl. aller Mitgliedschafts-Tabellen).
 
-**Bekannte offene Punkte** (siehe Roadmap): Role-Self-Escalation theoretisch möglich, Last-Admin-Schutz fehlt.
+### 5.1 Auth-Härtung (v1.15.0)
+
+Zusätzliche serverseitige Schichten:
+
+- **`is_active_user()`** (SECURITY DEFINER): `true`, wenn `auth.uid()` in `user_profiles` mit `status='aktiv'` existiert.
+- **Restrictive Policy `only_active_users`** auf allen 15 operativen Tabellen (companies, contacts, appointments, projects, deployments, deployment_technicians, services, lookup_values, memberships, membership_programs, membership_program_benefits, entitlements, entitlement_redemptions, notes, appointment_participants). Ausgenommen: `user_profiles` (inaktiver User muss eigenes Profil lesen können für Client-Screen), `roles` (für Profil-Join).
+- **Trigger `trg_user_profiles_update_guard`** (BEFORE UPDATE auf `user_profiles`):
+  - (a) Last-Admin-Schutz — gilt IMMER (auch für service_role). Blockt Downgrade oder Inaktivierung des letzten aktiven Admins.
+  - (b) `role_id` ist für `authenticated` schreibgeschützt (nur Edge Function / service_role darf).
+  - (c) Auto-Aktivierung: `eingeladen → aktiv` beim ersten Passwortwechsel (OLD.muss_passwort_aendern true → false, OLD.status='eingeladen'). Sonstige Status-Änderungen durch `authenticated` werden stumm zurückgerollt.
+- **Trigger `trg_prevent_last_admin_delete`** (BEFORE DELETE auf `user_profiles`): fängt Delete (inkl. ON DELETE CASCADE aus `auth.users`) des letzten Admins ab.
+
+Damit sind Roadmap §13.1 Items 1–4 durch DB-Triggers + Restrictive Policies gedeckt — app.js und Edge Function brauchen keine Änderung, die bestehenden Last-Admin-Checks in der Edge Function werden zur ersten Verteidigungslinie (nettere Fehlermeldungen).
 
 ---
 
@@ -597,7 +614,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.11.0 | Apr 2026    | Icon-Action-Buttons in allen Hauptlisten + Duplizieren             |
 | v1.12.0 | Apr 2026    | **Mitgliedschafts-Programme** (Admin-Katalog + Benefits)           |
 | v1.13.0 | Apr 2026    | **Mitgliedschaften auf Firma-Ebene** + automatische Entitlements   |
-| **v1.14.0** | **21.04.2026** | **Einlöse-Integration im Einsatz-Modal** → End-to-End-Workflow geschlossen |
+| v1.14.0 | 21.04.2026  | Einlöse-Integration im Einsatz-Modal → End-to-End-Workflow geschlossen |
+| **v1.15.0** | **22.04.2026** | **Auth-Härtung** (Last-Admin-Schutz, Role-Lock, Inaktiv-Blocker per RLS, Auto-Aktivierung per Trigger) |
 
 ---
 
@@ -605,13 +623,13 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 
 ### 13.1 Hoch — Security
 
-| Punkt                        | Beschreibung                                           |
-|------------------------------|--------------------------------------------------------|
-| Last-Admin-Schutz            | Edge Function verhindert Lösch/Downgrade des letzten Admins |
-| Role-Self-Escalation         | RLS-Policy blockiert Rollenwechsel durch User selbst   |
-| Login-Blocker inaktiv        | Server-seitige Blockade für Status=inaktiv             |
-| Auto eingeladen → aktiv      | Beim ersten Login + Passwort-Change                    |
-| Soft-Delete                  | `deleted_at` statt hard delete für wichtige Entitäten  |
+| Punkt                        | Status       | Beschreibung                                           |
+|------------------------------|--------------|--------------------------------------------------------|
+| Last-Admin-Schutz            | ✅ v1.15.0   | Edge Function + DB-Trigger blockiert Lösch/Downgrade/Inaktivierung des letzten aktiven Admins |
+| Role-Self-Escalation         | ✅ v1.15.0   | Trigger blockiert `role_id`-Änderung durch authenticated — nur Edge Function (service_role) darf |
+| Login-Blocker inaktiv        | ✅ v1.15.0   | Restrictive RLS-Policy `only_active_users` auf allen operativen Tabellen + Client-Check |
+| Auto eingeladen → aktiv      | ✅ v1.15.0   | BEFORE-UPDATE-Trigger flippt Status beim ersten `muss_passwort_aendern` true→false |
+| Soft-Delete                  | offen (v1.16 vorgesehen) | `deleted_at` statt hard delete für wichtige Entitäten  |
 
 ### 13.2 Mittel — Fachlich
 
@@ -692,6 +710,7 @@ Custom Domain `cumart.cloud` (IONOS):
 10. **v1.10.0:** `services.standard_uhrzeit_von/bis` (time nullable)
 11. **v1.12.0:** `membership_programs` + `membership_program_benefits`
 12. **v1.13.0:** `memberships` + `entitlements` + `entitlement_redemptions`
+13. **v1.15.0:** Auth-Härtung — `is_active_user()`, Restrictive Policies `only_active_users` auf 15 operativen Tabellen, `trg_user_profiles_update_guard`, `trg_prevent_last_admin_delete`. SQL: `migrations/v1.15.0_auth_hardening.sql`
 
 ### 14.6 Verifikations-Query (alle Migrationen prüfen)
 
@@ -749,7 +768,30 @@ UNION ALL
 SELECT 'Lookup-Wert Abschlussphase',
        CASE WHEN EXISTS (SELECT 1 FROM lookup_values
            WHERE kategorie='projekt_status' AND wert='Abschlussphase' AND ist_aktiv=true)
-       THEN 'OK' ELSE 'FEHLT' END;
+       THEN 'OK' ELSE 'FEHLT' END
+UNION ALL
+SELECT 'is_active_user function (v1.15)',
+       CASE WHEN EXISTS (SELECT 1 FROM pg_proc p
+           JOIN pg_namespace n ON n.oid=p.pronamespace
+           WHERE n.nspname='public' AND p.proname='is_active_user')
+       THEN 'OK' ELSE 'FEHLT' END
+UNION ALL
+SELECT 'trg_user_profiles_update_guard (v1.15)',
+       CASE WHEN EXISTS (SELECT 1 FROM pg_trigger
+           WHERE tgrelid='public.user_profiles'::regclass
+             AND tgname='trg_user_profiles_update_guard')
+       THEN 'OK' ELSE 'FEHLT' END
+UNION ALL
+SELECT 'trg_prevent_last_admin_delete (v1.15)',
+       CASE WHEN EXISTS (SELECT 1 FROM pg_trigger
+           WHERE tgrelid='public.user_profiles'::regclass
+             AND tgname='trg_prevent_last_admin_delete')
+       THEN 'OK' ELSE 'FEHLT' END
+UNION ALL
+SELECT 'Restrictive Policies only_active_users (v1.15, Soll=15)',
+       CASE WHEN (SELECT COUNT(*) FROM pg_policies
+           WHERE schemaname='public' AND policyname='only_active_users') = 15
+       THEN 'OK' ELSE 'TEILWEISE' END;
 ```
 
 ---
@@ -770,4 +812,4 @@ SELECT 'Lookup-Wert Abschlussphase',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.14.0*
+*Ende der Dokumentation · Cumart CRM v1.15.0*
