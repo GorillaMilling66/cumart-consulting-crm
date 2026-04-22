@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.15.0 (Auth-Härtung: Last-Admin-Schutz, Role-Lock,
-   Inaktiv-Blocker, Auto-Aktivierung serverseitig)
+   Version 1.16.0 (Soft-Delete auf 6 Kern-Entitäten —
+   deleted_at statt hartem DELETE, alle List-/Detail-Queries
+   filtern deleted_at IS NULL)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -207,7 +208,7 @@ async function deleteEntityById(entityType, id, ev) {
   if (!confirm(`${label} wirklich löschen?`)) return;
 
   try {
-    const { error } = await db.from(table).delete().eq('id', id);
+    const { error } = await db.from(table).update({ deleted_at: new Date().toISOString() }).eq('id', id);
     if (error) {
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
         throw new Error(`Dieser Eintrag wird noch an anderer Stelle verwendet und kann nicht gelöscht werden.`);
@@ -217,7 +218,7 @@ async function deleteEntityById(entityType, id, ev) {
 
     // Bei Einsatz: gekoppelten Termin auch löschen (v1.9.4-Semantik)
     if (entityType === 'deployment') {
-      await db.from('appointments').delete().eq('deployment_id', id);
+      await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('deployment_id', id);
     }
 
     showToast(`${label} gelöscht.`);
@@ -278,7 +279,7 @@ async function refreshAfterEntityChange(entityType) {
 
 /** Firma duplizieren: gleiche Stammdaten + Name "X (Kopie)", keine Kontakte/Termine/Projekte. */
 async function duplicateCompany(sourceId) {
-  const { data: src, error } = await db.from('companies').select('*').eq('id', sourceId).single();
+  const { data: src, error } = await db.from('companies').select('*').is('deleted_at', null).eq('id', sourceId).single();
   if (error || !src) throw new Error(error?.message || 'Firma nicht gefunden');
 
   const payload = {
@@ -304,7 +305,7 @@ async function duplicateCompany(sourceId) {
 
 /** Kontakt duplizieren: gleiche Firma, Nachname mit "(Kopie)". */
 async function duplicateContact(sourceId) {
-  const { data: src, error } = await db.from('contacts').select('*').eq('id', sourceId).single();
+  const { data: src, error } = await db.from('contacts').select('*').is('deleted_at', null).eq('id', sourceId).single();
   if (error || !src) throw new Error(error?.message || 'Kontakt nicht gefunden');
 
   const payload = {
@@ -326,7 +327,7 @@ async function duplicateContact(sourceId) {
 
 /** Termin duplizieren: gleiche Daten inkl. Datum + "(Kopie)" im Titel, OHNE deployment_id-Kopplung. */
 async function duplicateAppointment(sourceId) {
-  const { data: src, error } = await db.from('appointments').select('*').eq('id', sourceId).single();
+  const { data: src, error } = await db.from('appointments').select('*').is('deleted_at', null).eq('id', sourceId).single();
   if (error || !src) throw new Error(error?.message || 'Termin nicht gefunden');
 
   const payload = {
@@ -353,7 +354,7 @@ async function duplicateAppointment(sourceId) {
 
 /** Projekt duplizieren: gleiche Header-Daten + "(Kopie)", OHNE Einsätze/Termine. */
 async function duplicateProject(sourceId) {
-  const { data: src, error } = await db.from('projects').select('*').eq('id', sourceId).single();
+  const { data: src, error } = await db.from('projects').select('*').is('deleted_at', null).eq('id', sourceId).single();
   if (error || !src) throw new Error(error?.message || 'Projekt nicht gefunden');
 
   const payload = {
@@ -378,7 +379,7 @@ async function duplicateProject(sourceId) {
 
 /** Einsatz duplizieren: gleiche Daten + "(Kopie)", OHNE Techniker/Termin-Kopplung. */
 async function duplicateDeployment(sourceId) {
-  const { data: src, error } = await db.from('deployments').select('*').eq('id', sourceId).single();
+  const { data: src, error } = await db.from('deployments').select('*').is('deleted_at', null).eq('id', sourceId).single();
   if (error || !src) throw new Error(error?.message || 'Einsatz nicht gefunden');
 
   const payload = {
@@ -415,7 +416,7 @@ async function copyAppointmentById(id, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   try {
     const { data: a, error } = await db.from('appointments')
-      .select('*, companies(name), contacts(vorname, nachname)')
+      .select('*, companies(name), contacts(vorname, nachname)').is('deleted_at', null)
       .eq('id', id).single();
     if (error || !a) throw new Error(error?.message || 'Termin nicht gefunden');
 
@@ -446,7 +447,7 @@ async function copyProjectById(id, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   try {
     const { data: p, error } = await db.from('projects')
-      .select('*, companies(name), contacts:hauptkontakt_id(vorname, nachname)')
+      .select('*, companies(name), contacts:hauptkontakt_id(vorname, nachname)').is('deleted_at', null)
       .eq('id', id).single();
     if (error || !p) throw new Error(error?.message || 'Projekt nicht gefunden');
 
@@ -474,7 +475,7 @@ async function copyDeploymentById(id, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   try {
     const { data: d, error } = await db.from('deployments')
-      .select('*, companies(name), projects(name), services(name, einheit)')
+      .select('*, companies(name), projects(name), services(name, einheit)').is('deleted_at', null)
       .eq('id', id).single();
     if (error || !d) throw new Error(error?.message || 'Einsatz nicht gefunden');
 
@@ -2000,7 +2001,7 @@ async function renderCompanyMemberships(companyId) {
       membership_programs(name, laufzeit_monate),
       contacts:hauptkontakt_id(vorname, nachname),
       user_profiles:verantwortlicher_id(name)
-    `)
+    `).is('deleted_at', null)
     .eq('company_id', companyId)
     .order('start_datum', { ascending: false });
 
@@ -2160,7 +2161,7 @@ async function openMembershipModal(mode, membershipId = null, companyId = null) 
   hauptkontaktSelect.innerHTML = '<option value="">— Kein Hauptkontakt —</option>';
   if (companyId) {
     const { data: contacts } = await db.from('contacts')
-      .select('id, vorname, nachname')
+      .select('id, vorname, nachname').is('deleted_at', null)
       .eq('company_id', companyId).order('nachname');
     (contacts || []).forEach(c => {
       const name = [c.vorname, c.nachname].filter(Boolean).join(' ') || '(ohne Name)';
@@ -2196,7 +2197,7 @@ async function openMembershipModal(mode, membershipId = null, companyId = null) 
     document.getElementById('ms-save-btn').textContent = 'Speichern';
     document.getElementById('ms-delete-btn').style.display = 'block';
 
-    const { data, error } = await db.from('memberships').select('*').eq('id', membershipId).single();
+    const { data, error } = await db.from('memberships').select('*').is('deleted_at', null).eq('id', membershipId).single();
     if (error || !data) { showToast('Mitgliedschaft nicht gefunden: ' + (error?.message || ''), true); editingMembershipId = null; return; }
 
     programSelect.value = data.program_id || '';
@@ -2368,7 +2369,7 @@ async function deleteMembership() {
 
   try {
     // Entitlements und Redemptions werden via ON DELETE CASCADE automatisch entfernt
-    const { error } = await db.from('memberships').delete().eq('id', editingMembershipId);
+    const { error } = await db.from('memberships').update({ deleted_at: new Date().toISOString() }).eq('id', editingMembershipId);
     if (error) throw new Error(error.message);
 
     const companyId = currentMembershipCompanyId;
@@ -2401,7 +2402,7 @@ async function loadUnternehmensTypen() {
  */
 async function loadCompanyAppointmentMap() {
   const { data, error } = await db.from('appointments')
-    .select('id, company_id, datum, titel, status, uhrzeit_von')
+    .select('id, company_id, datum, titel, status, uhrzeit_von').is('deleted_at', null)
     .not('company_id', 'is', null);
 
   if (error) { companyAppointmentMap = {}; return; }
@@ -2445,8 +2446,8 @@ async function loadCompanies() {
   }
 
   const [companiesResult, contactsResult] = await Promise.all([
-    db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').order('name'),
-    db.from('contacts').select('id, vorname, nachname, company_id, email, telefon').not('company_id', 'is', null),
+    db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null).order('name'),
+    db.from('contacts').select('id, vorname, nachname, company_id, email, telefon').is('deleted_at', null).not('company_id', 'is', null),
     loadCompanyAppointmentMap()
   ]);
 
@@ -2584,7 +2585,7 @@ async function openCompanyModal(mode, companyId = null) {
     document.getElementById('c-save-btn').textContent = 'Speichern';
     document.getElementById('c-delete-btn').style.display = 'block';
 
-    const { data, error } = await db.from('companies').select('*').eq('id', companyId).single();
+    const { data, error } = await db.from('companies').select('*').is('deleted_at', null).eq('id', companyId).single();
     if (error || !data) { showToast('Firma konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingCompanyId = null; return; }
 
     document.getElementById('c-name').value = data.name || '';
@@ -2673,7 +2674,7 @@ async function deleteCompany() {
 
   try {
     const deletedId = editingCompanyId;
-    const { error } = await db.from('companies').delete().eq('id', deletedId);
+    const { error } = await db.from('companies').update({ deleted_at: new Date().toISOString() }).eq('id', deletedId);
     if (error) {
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
         throw new Error('Diese Firma hat noch verknüpfte Kontakte, Projekte oder Einsätze. Diese müssen zuerst entfernt werden.');
@@ -2721,7 +2722,7 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
 
   const { data, error } = await db.from('companies')
-    .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)')
+    .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null)
     .eq('id', companyId).single();
 
   if (error || !data) {
@@ -2837,7 +2838,7 @@ async function loadCompanyContacts(companyId) {
   const countEl = document.getElementById('company-contacts-count');
 
   const { data, error } = await db.from('contacts')
-    .select('*').eq('company_id', companyId).order('nachname').order('vorname');
+    .select('*').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -2850,7 +2851,7 @@ async function loadCompanyContacts(companyId) {
 
   // Für die companiesCache-Lookup-Kompatibilität: Firma ins companiesCache pushen falls leer
   if (companiesCache.length === 0) {
-    const { data: c } = await db.from('companies').select('*').eq('id', companyId).single();
+    const { data: c } = await db.from('companies').select('*').is('deleted_at', null).eq('id', companyId).single();
     if (c) companiesCache = [c];
   }
 
@@ -2887,7 +2888,7 @@ async function loadCompanyAppointments(companyId) {
   const showAllLink = document.getElementById('company-appointments-show-all-link');
 
   const { data, error } = await db.from('appointments')
-    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe), contact:contacts(id, vorname, nachname)')
+    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe), contact:contacts(id, vorname, nachname)').is('deleted_at', null)
     .eq('company_id', companyId);
 
   if (error) {
@@ -2978,7 +2979,7 @@ async function loadContacts() {
   tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>';
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
 
@@ -2989,7 +2990,7 @@ async function loadContacts() {
   if (existingValue) companyFilter.value = existingValue;
 
   const { data, error } = await db.from('contacts')
-    .select('*, company:companies(id, name)').order('nachname').order('vorname');
+    .select('*, company:companies(id, name)').is('deleted_at', null).order('nachname').order('vorname');
 
   if (error) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
@@ -3071,7 +3072,7 @@ async function openContactModal(mode, contactId = null) {
   editingContactId = contactId;
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
   const companySelect = document.getElementById('k-company');
@@ -3100,7 +3101,7 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-save-btn').textContent = 'Speichern';
     document.getElementById('k-delete-btn').style.display = 'block';
 
-    const { data, error } = await db.from('contacts').select('*').eq('id', contactId).single();
+    const { data, error } = await db.from('contacts').select('*').is('deleted_at', null).eq('id', contactId).single();
     if (error || !data) { showToast('Kontakt konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingContactId = null; return; }
 
     document.getElementById('k-vorname').value = data.vorname || '';
@@ -3182,7 +3183,7 @@ async function deleteContact() {
 
   try {
     const deletedId = editingContactId;
-    const { error } = await db.from('contacts').delete().eq('id', deletedId);
+    const { error } = await db.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', deletedId);
     if (error) throw new Error(error.message);
 
     closeContactModal();
@@ -3222,7 +3223,7 @@ async function loadAppointments() {
   tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Lade Termine ...</div></td></tr>';
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
 
@@ -3248,7 +3249,7 @@ async function loadAppointments() {
   }
 
   const { data, error } = await db.from('appointments')
-    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe), company:companies(id, name), contact:contacts(id, vorname, nachname)')
+    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe), company:companies(id, name), contact:contacts(id, vorname, nachname)').is('deleted_at', null)
     .order('datum', { ascending: false }).order('uhrzeit_von', { ascending: false });
 
   if (error) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
@@ -3388,10 +3389,10 @@ async function openAppointmentModal(mode, appointmentId = null) {
 
   // Firmen laden
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').order('name');
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   } else {
-    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').order('name');
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || companiesCache;
   }
 
@@ -3439,7 +3440,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
     if (appointmentModalPrefillProjectId) {
       // Projekt laden, um zugehörige Firma zu setzen
       const { data: proj } = await db.from('projects')
-        .select('id, name, company_id').eq('id', appointmentModalPrefillProjectId).single();
+        .select('id, name, company_id').is('deleted_at', null).eq('id', appointmentModalPrefillProjectId).single();
       if (proj) {
         if (proj.company_id) {
           companySelect.value = proj.company_id;
@@ -3458,7 +3459,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
     // Prefill-Contact aus Kontakt-Detailseite
     if (appointmentModalPrefillContactId) {
       const { data: k } = await db.from('contacts')
-        .select('id, vorname, nachname, company_id').eq('id', appointmentModalPrefillContactId).single();
+        .select('id, vorname, nachname, company_id').is('deleted_at', null).eq('id', appointmentModalPrefillContactId).single();
       if (k) {
         if (k.company_id) {
           companySelect.value = k.company_id;
@@ -3475,7 +3476,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
     document.getElementById('t-save-btn').textContent = 'Speichern';
     document.getElementById('t-delete-btn').style.display = 'block';
 
-    const { data, error } = await db.from('appointments').select('*').eq('id', appointmentId).single();
+    const { data, error } = await db.from('appointments').select('*').is('deleted_at', null).eq('id', appointmentId).single();
     if (error || !data) { showToast('Termin konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingAppointmentId = null; return; }
 
     document.getElementById('t-titel').value = data.titel || '';
@@ -3525,7 +3526,7 @@ async function rebuildContactDropdownForAppointment(companyId) {
   }
   contactSelect.disabled = false;
   const { data, error } = await db.from('contacts')
-    .select('id, vorname, nachname').eq('company_id', companyId).order('nachname').order('vorname');
+    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
   if (error) { contactSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
 
   const contacts = data || [];
@@ -3683,10 +3684,10 @@ async function deleteAppointment() {
   try {
     // project_id vorher merken für Status-Check
     const { data: apptInfo } = await db.from('appointments')
-      .select('project_id').eq('id', editingAppointmentId).single();
+      .select('project_id').is('deleted_at', null).eq('id', editingAppointmentId).single();
     const deletedProjectId = apptInfo?.project_id || null;
 
-    const { error } = await db.from('appointments').delete().eq('id', editingAppointmentId);
+    const { error } = await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', editingAppointmentId);
     if (error) throw new Error(error.message);
 
     closeAppointmentModal();
@@ -3752,7 +3753,7 @@ async function loadProjects() {
 
   // Firmen sicherstellen
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
 
@@ -3783,7 +3784,7 @@ async function loadProjects() {
   if (existingUser) userFilter.value = existingUser;
 
   const { data, error } = await db.from('projects')
-    .select('*, company:companies(id, name), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name)')
+    .select('*, company:companies(id, name), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name)').is('deleted_at', null)
     .order('startdatum', { ascending: false, nullsFirst: false });
 
   if (error) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
@@ -3884,7 +3885,7 @@ async function openProjectModal(mode, projectId = null) {
 
   // Firmen laden
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
 
@@ -3938,7 +3939,7 @@ async function openProjectModal(mode, projectId = null) {
     // Prefill-Hauptkontakt aus Kontakt-Detailseite (setzt auch Firma vor)
     if (projectModalPrefillHauptkontaktId) {
       const { data: k } = await db.from('contacts')
-        .select('id, company_id').eq('id', projectModalPrefillHauptkontaktId).single();
+        .select('id, company_id').is('deleted_at', null).eq('id', projectModalPrefillHauptkontaktId).single();
       if (k) {
         if (k.company_id) {
           companySelect.value = k.company_id;
@@ -3953,7 +3954,7 @@ async function openProjectModal(mode, projectId = null) {
     document.getElementById('p-save-btn').textContent = 'Speichern';
     document.getElementById('p-delete-btn').style.display = 'block';
 
-    const { data, error } = await db.from('projects').select('*').eq('id', projectId).single();
+    const { data, error } = await db.from('projects').select('*').is('deleted_at', null).eq('id', projectId).single();
     if (error || !data) { showToast('Projekt konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingProjectId = null; return; }
 
     document.getElementById('p-name').value = data.name || '';
@@ -3984,7 +3985,7 @@ async function rebuildHauptkontaktDropdown(companyId) {
   }
   hauptkontaktSelect.disabled = false;
   const { data, error } = await db.from('contacts')
-    .select('id, vorname, nachname').eq('company_id', companyId).order('nachname').order('vorname');
+    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
   if (error) { hauptkontaktSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
   const contacts = data || [];
   if (contacts.length === 0) {
@@ -4087,7 +4088,7 @@ async function deleteProject() {
 
   try {
     const deletedId = editingProjectId;
-    const { error } = await db.from('projects').delete().eq('id', deletedId);
+    const { error } = await db.from('projects').update({ deleted_at: new Date().toISOString() }).eq('id', deletedId);
     if (error) {
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
         throw new Error('Dieses Projekt hat noch verknüpfte Einträge. Diese müssen zuerst entfernt werden.');
@@ -4139,7 +4140,7 @@ async function loadProjectDetail(projectId) {
   await loadProjektStatus();
 
   const { data, error } = await db.from('projects')
-    .select('*, company:companies(id, name), hauptkontakt:contacts(id, vorname, nachname, email, telefon), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name, email)')
+    .select('*, company:companies(id, name), hauptkontakt:contacts(id, vorname, nachname, email, telefon), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name, email)').is('deleted_at', null)
     .eq('id', projectId).single();
 
   if (error || !data) {
@@ -4236,7 +4237,7 @@ async function loadProjectAppointments(projectId) {
   const countEl = document.getElementById('project-appointments-count');
 
   const { data, error } = await db.from('appointments')
-    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)')
+    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)').is('deleted_at', null)
     .eq('project_id', projectId);
 
   if (error) {
@@ -4323,7 +4324,7 @@ async function loadCompanyProjects(companyId) {
   await loadProjektStatus();
 
   const { data, error } = await db.from('projects')
-    .select('*').eq('company_id', companyId)
+    .select('*').is('deleted_at', null).eq('company_id', companyId)
     .order('startdatum', { ascending: false, nullsFirst: false });
 
   if (error) {
@@ -4382,7 +4383,7 @@ async function rebuildProjectDropdownForAppointment(companyId) {
 
   // Alle aktiven Projekte der Firma (oder interne, wenn keine Firma)
   let query = db.from('projects')
-    .select('id, name, status')
+    .select('id, name, status').is('deleted_at', null)
     .in('status', ['Lead', 'Angebot', 'In Arbeit']);
 
   if (companyId) {
@@ -4427,7 +4428,7 @@ async function loadContactDetail(contactId) {
   document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
 
   const { data, error } = await db.from('contacts')
-    .select('*, company:companies(id, name, strasse, plz, stadt)')
+    .select('*, company:companies(id, name, strasse, plz, stadt)').is('deleted_at', null)
     .eq('id', contactId).single();
 
   if (error || !data) {
@@ -4532,7 +4533,7 @@ async function loadContactAppointments(contactId) {
   const countEl = document.getElementById('contact-appointments-count');
 
   const { data, error } = await db.from('appointments')
-    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)')
+    .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)').is('deleted_at', null)
     .eq('contact_id', contactId);
 
   if (error) {
@@ -4600,7 +4601,7 @@ async function loadContactProjects(contactId) {
   const countEl = document.getElementById('contact-projects-count');
 
   const { data, error } = await db.from('projects')
-    .select('*').eq('hauptkontakt_id', contactId)
+    .select('*').is('deleted_at', null).eq('hauptkontakt_id', contactId)
     .order('startdatum', { ascending: false, nullsFirst: false });
 
   if (error) {
@@ -4717,11 +4718,11 @@ async function loadDeployments() {
 
   // Firmen und Projekte für Filter
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').order('name');
+    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
   if (projectsCache.length === 0) {
-    const { data: ps } = await db.from('projects').select('id, name, company_id').order('name');
+    const { data: ps } = await db.from('projects').select('id, name, company_id').is('deleted_at', null).order('name');
     projectsCache = ps || [];
   }
 
@@ -4738,7 +4739,7 @@ async function loadDeployments() {
   if (existingProject) projectFilter.value = existingProject;
 
   const { data, error } = await db.from('deployments')
-    .select('*, company:companies(id, name), project:projects(id, name), service:services(id, name, einheit)')
+    .select('*, company:companies(id, name), project:projects(id, name), service:services(id, name, einheit)').is('deleted_at', null)
     .order('datum_von', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false });
 
@@ -4956,10 +4957,10 @@ async function openDeploymentModal(mode, deploymentId = null) {
   await Promise.all([loadEinsatzStatus(), loadServicesCache(), loadUserProfilesCache()]);
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').order('name');
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   } else {
-    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').order('name');
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || companiesCache;
   }
 
@@ -5030,7 +5031,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     if (deploymentModalPrefillProjectId) {
       // Projekt laden + dessen Firma setzen, falls noch nicht
       const { data: proj } = await db.from('projects')
-        .select('id, name, company_id').eq('id', deploymentModalPrefillProjectId).single();
+        .select('id, name, company_id').is('deleted_at', null).eq('id', deploymentModalPrefillProjectId).single();
       if (proj) {
         if (proj.company_id) {
           companySelect.value = proj.company_id;
@@ -5047,7 +5048,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     document.getElementById('d-save-btn').textContent = 'Speichern';
     document.getElementById('d-delete-btn').style.display = 'block';
 
-    const { data, error } = await db.from('deployments').select('*').eq('id', deploymentId).single();
+    const { data, error } = await db.from('deployments').select('*').is('deleted_at', null).eq('id', deploymentId).single();
     if (error || !data) { showToast('Einsatz konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true); editingDeploymentId = null; return; }
 
     document.getElementById('d-titel').value = data.titel || '';
@@ -5080,7 +5081,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
 
     // Verknüpften Termin prüfen
     const { data: linkedAppt } = await db.from('appointments')
-      .select('id').eq('deployment_id', deploymentId).limit(1);
+      .select('id').is('deleted_at', null).eq('deployment_id', deploymentId).limit(1);
     document.getElementById('d-create-appointment').checked = (linkedAppt || []).length > 0;
 
     // Bestehende Redemption laden (v1.14.0)
@@ -5224,7 +5225,7 @@ async function rebuildProjectDropdownForDeployment(companyId) {
     return;
   }
   const { data, error } = await db.from('projects')
-    .select('id, name, status').eq('company_id', companyId)
+    .select('id, name, status').is('deleted_at', null).eq('company_id', companyId)
     .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abgeschlossen'])
     .order('name');
   if (error) { select.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
@@ -5411,13 +5412,13 @@ async function saveDeployment() {
  */
 async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   const { data: existing } = await db.from('appointments')
-    .select('id').eq('deployment_id', deployment.id).limit(1);
+    .select('id').is('deleted_at', null).eq('deployment_id', deployment.id).limit(1);
   const existingId = existing?.[0]?.id;
 
   // Ohne Datum kann kein Termin angelegt werden (Termine brauchen Datum)
   if (!deployment.datum_von) {
     if (existingId) {
-      await db.from('appointments').delete().eq('id', existingId);
+      await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
     }
     if (shouldHaveAppointment) {
       showToast('Termin-Kopplung benötigt ein Datum. Bitte Datum setzen und erneut speichern.', true);
@@ -5428,7 +5429,7 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   if (!shouldHaveAppointment) {
     if (existingId) {
       // Hart löschen — Entkopplung würde bei erneutem Anhaken Duplikate erzeugen
-      await db.from('appointments').delete().eq('id', existingId);
+      await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
     }
     return;
   }
@@ -5666,19 +5667,19 @@ async function deleteDeployment() {
   try {
     // project_id + company_id vorher merken für Status-Check nach Löschung
     const { data: depInfo } = await db.from('deployments')
-      .select('project_id, company_id').eq('id', editingDeploymentId).single();
+      .select('project_id, company_id').is('deleted_at', null).eq('id', editingDeploymentId).single();
     const deletedProjectId = depInfo?.project_id || null;
     const deletedCompanyId = depInfo?.company_id || null;
 
     // Gekoppelten Termin erst löschen (FK auf deployments ist ON DELETE SET NULL,
     // würde sonst als Waise zurückbleiben)
-    await db.from('appointments').delete().eq('deployment_id', editingDeploymentId);
+    await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('deployment_id', editingDeploymentId);
 
     // Zugehörige Redemptions löschen (v1.14.0) - FK ist ON DELETE SET NULL,
     // aber logisch gehört eine Redemption zum Einsatz
     await db.from('entitlement_redemptions').delete().eq('deployment_id', editingDeploymentId);
 
-    const { error } = await db.from('deployments').delete().eq('id', editingDeploymentId);
+    const { error } = await db.from('deployments').update({ deleted_at: new Date().toISOString() }).eq('id', editingDeploymentId);
     if (error) throw new Error(error.message);
 
     closeDeploymentModal();
@@ -5716,7 +5717,7 @@ async function loadCompanyDeployments(companyId) {
   await loadEinsatzStatus();
 
   const { data, error } = await db.from('deployments')
-    .select('*, project:projects(id, name), service:services(id, name)')
+    .select('*, project:projects(id, name), service:services(id, name)').is('deleted_at', null)
     .eq('company_id', companyId)
     .order('datum_von', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false });
@@ -5779,7 +5780,7 @@ async function loadProjectDeployments(projectId) {
   await loadEinsatzStatus();
 
   const { data, error } = await db.from('deployments')
-    .select('*, service:services(id, name)')
+    .select('*, service:services(id, name)').is('deleted_at', null)
     .eq('project_id', projectId)
     .order('datum_von', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
@@ -5924,18 +5925,18 @@ function refreshProjectAppointmentsCountLabel() {
  */
 async function checkAndUpdateProjectStatusSmart(projectId) {
   const { data: project, error: pErr } = await db.from('projects')
-    .select('id, status').eq('id', projectId).single();
+    .select('id, status').is('deleted_at', null).eq('id', projectId).single();
   if (pErr || !project) return;
 
   const aktiveStatus = ['In Arbeit', 'Abschlussphase', 'Abgeschlossen'];
   if (!aktiveStatus.includes(project.status)) return;
 
   const { data: deployments } = await db.from('deployments')
-    .select('status').eq('project_id', projectId);
+    .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allDeps = deployments || [];
 
   const { data: appointments } = await db.from('appointments')
-    .select('status').eq('project_id', projectId);
+    .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allAppts = appointments || [];
 
   const countsDone = (arr, doneValues) => {
@@ -6067,7 +6068,7 @@ function refreshProjectDeploymentsCountLabel() {
 async function checkAndUpdateProjectStatus(projectId) {
   // Aktuellen Projekt-Status holen
   const { data: project, error: pErr } = await db.from('projects')
-    .select('id, status, name').eq('id', projectId).single();
+    .select('id, status, name').is('deleted_at', null).eq('id', projectId).single();
   if (pErr || !project) return;
 
   const aktiveStatus = ['In Arbeit', 'Abschlussphase', 'Abgeschlossen'];
@@ -6075,12 +6076,12 @@ async function checkAndUpdateProjectStatus(projectId) {
 
   // Einsätze laden
   const { data: deployments } = await db.from('deployments')
-    .select('status').eq('project_id', projectId);
+    .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allDeps = deployments || [];
 
   // Termine laden
   const { data: appointments } = await db.from('appointments')
-    .select('status').eq('project_id', projectId);
+    .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allAppts = appointments || [];
 
   const countsDone = (arr, doneValues) => {

@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.15.0
+**Version:** 1.16.0
 **Stand:** 22. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -62,7 +62,8 @@ cumart-consulting-crm/
 ├── app.js            ~6.15k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
-│   └── v1.15.0_auth_hardening.sql
+│   ├── v1.15.0_auth_hardening.sql
+│   └── v1.16.0_soft_delete.sql
 ├── supabase/
 │   └── functions/manage-users/
 └── .git/
@@ -120,6 +121,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | notizen       | text         | YES      |         |                                    |
 | erstellt_von  | uuid         | YES      |         | FK → user_profiles (ON DELETE SET NULL) |
 | created_at    | timestamptz  | YES      | now()   |                                    |
+| deleted_at    | timestamptz  | YES      |         | Soft-Delete (v1.16). NULL = aktiv, Wert = Löschzeitpunkt |
 
 ### 4.3 `contacts`
 
@@ -135,6 +137,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | notizen       | text         | YES      |         |                                    |
 | erstellt_von  | uuid         | YES      |         |                                    |
 | created_at    | timestamptz  | YES      | now()   |                                    |
+| deleted_at    | timestamptz  | YES      |         | Soft-Delete (v1.16)                |
 
 ### 4.4 `appointments`
 
@@ -155,6 +158,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | notizen        | text         | YES      |                |                                    |
 | erstellt_von   | uuid         | YES      |                |                                    |
 | created_at     | timestamptz  | YES      | now()          |                                    |
+| deleted_at     | timestamptz  | YES      |                | Soft-Delete (v1.16)                |
 
 ### 4.5 `projects`
 
@@ -173,6 +177,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | notizen             | text         |              |                                    |
 | erstellt_von        | uuid         |              |                                    |
 | created_at          | timestamptz  | now()        |                                    |
+| deleted_at          | timestamptz  |              | Soft-Delete (v1.16)                |
 
 **Projekt-Status-Werte** (Lookup `projekt_status`): Lead, Angebot, In Arbeit, Abschlussphase, Abgeschlossen, Verloren. Drei aktive Status werden automatisch gewechselt (siehe 8.5).
 
@@ -198,6 +203,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | notizen           | text         | YES      |           |                                    |
 | erstellt_von      | uuid         | YES      |           |                                    |
 | created_at        | timestamptz  | YES      | now()     |                                    |
+| deleted_at        | timestamptz  | YES      |           | Soft-Delete (v1.16)                |
 
 **Constraints:** `deployments_datum_consistency`: Entweder beide Datumsfelder NULL oder beide gesetzt mit `datum_bis >= datum_von`
 
@@ -301,6 +307,7 @@ Konkrete Mitgliedschaft einer Firma.
 | notizen             | text         | YES      |         |                                    |
 | erstellt_von        | uuid         | YES      |         |                                    |
 | created_at          | timestamptz  | YES      | now()   |                                    |
+| deleted_at          | timestamptz  | YES      |         | Soft-Delete (v1.16)                |
 
 **Indizes:** company_id, program_id, status, end_datum (für Ablauf-Warnings)
 
@@ -591,11 +598,21 @@ End-to-End-Workflow in drei Stufen:
 ### 11.2 UI-Verhalten
 
 - Destruktive Aktionen mit `confirm()`
-- FK-Fehler in `deleteX()` abgefangen
+- FK-Fehler in `deleteX()` abgefangen (ab v1.16 selten — Soft-Delete umgeht FK-Violations)
 - Toasts 3s Anzeige
 - Admin-Only UI via `data-admin-only="true"` + `applyAdminOnlyUI()`
 
-### 11.3 Farbsystem
+### 11.3 Soft-Delete-Regel (v1.16+)
+
+Für die sechs Kern-Entitäten (companies, contacts, appointments, projects, deployments, memberships) gilt:
+
+- **Löschen setzt `deleted_at = now()`** — kein hartes `DELETE`. Alle `delete*()`-Handler und der generische `deleteEntityById`-Dispatcher verwenden `update({ deleted_at: ... })`.
+- **Jede Read-Query muss `.is('deleted_at', null)` setzen** — List-Views, Detail-Fetches, Edit-Prefills, Dropdowns, Duplicate-Quellen. Folge: gelöschte Zeilen sind über die UI unsichtbar aber in der DB rekonstruierbar.
+- **Einsatz-Kaskade:** Beim Soft-Delete eines Einsatzes wird die gekoppelte Termin-Zeile (`appointments.deployment_id`) ebenfalls soft-gelöscht — hält die bisherige Kopplungs-Semantik aus §8.4 aufrecht.
+- **Kind-Entitäten werden NICHT kaskadiert** — soft-gelöschte Firma behält ihre Kontakte/Projekte/Einsätze in der DB; sie sind durch die Filter nur nicht mehr erreichbar (bewusste Entscheidung für v1.16, kann später kaskadiert werden).
+- **Neue Soft-Delete-Tabelle einführen?** Dann: (a) `deleted_at` + Partial-Index per Migration, (b) Handler auf Soft-Delete umstellen, (c) alle Read-Queries mit `.is('deleted_at', null)` versehen — z. B. über `migrations/_inject_soft_delete_filter.py`.
+
+### 11.4 Farbsystem
 
 CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars mit 3 States (grün/orange/rot je nach Restlaufzeit).
 
@@ -615,7 +632,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.12.0 | Apr 2026    | **Mitgliedschafts-Programme** (Admin-Katalog + Benefits)           |
 | v1.13.0 | Apr 2026    | **Mitgliedschaften auf Firma-Ebene** + automatische Entitlements   |
 | v1.14.0 | 21.04.2026  | Einlöse-Integration im Einsatz-Modal → End-to-End-Workflow geschlossen |
-| **v1.15.0** | **22.04.2026** | **Auth-Härtung** (Last-Admin-Schutz, Role-Lock, Inaktiv-Blocker per RLS, Auto-Aktivierung per Trigger) |
+| v1.15.0 | 22.04.2026  | Auth-Härtung (Last-Admin-Schutz, Role-Lock, Inaktiv-Blocker per RLS, Auto-Aktivierung per Trigger) |
+| **v1.16.0** | **22.04.2026** | **Soft-Delete** auf companies/contacts/appointments/projects/deployments/memberships — Roadmap §13.1 vollständig abgeschlossen |
 
 ---
 
@@ -629,7 +647,7 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | Role-Self-Escalation         | ✅ v1.15.0   | Trigger blockiert `role_id`-Änderung durch authenticated — nur Edge Function (service_role) darf |
 | Login-Blocker inaktiv        | ✅ v1.15.0   | Restrictive RLS-Policy `only_active_users` auf allen operativen Tabellen + Client-Check |
 | Auto eingeladen → aktiv      | ✅ v1.15.0   | BEFORE-UPDATE-Trigger flippt Status beim ersten `muss_passwort_aendern` true→false |
-| Soft-Delete                  | offen (v1.16 vorgesehen) | `deleted_at` statt hard delete für wichtige Entitäten  |
+| Soft-Delete                  | ✅ v1.16.0   | `deleted_at` auf 6 Kern-Entitäten, alle `delete*`-Handler auf UPDATE umgestellt, alle Read-Queries filtern `deleted_at IS NULL` |
 
 ### 13.2 Mittel — Fachlich
 
@@ -691,10 +709,11 @@ Custom Domain `cumart.cloud` (IONOS):
 
 ### 14.4 Benutzer aktuell
 
-| Name          | E-Mail                | Rolle    |
-|---------------|-----------------------|----------|
-| Selcuk Cumart | selcuk@cumart.tech    | Admin    |
-| Yasin Satici  | yasin@fiveax.com      | Vertrieb |
+| Name          | E-Mail                | Rolle    | Status |
+|---------------|-----------------------|----------|--------|
+| Selcuk Cumart | selcuk@cumart.tech    | Admin    | aktiv  |
+
+*Stand 22.04.2026 — nur ein User in der DB. Weitere Vertriebs- / Techniker-Profile werden über den Admin-Flow („Benutzer anlegen") eingeladen; der DB-Trigger flippt nach erstem Passwortwechsel automatisch von `eingeladen` → `aktiv` (v1.15).*
 
 ### 14.5 Schema-Migrationen (kritisch, in Reihenfolge)
 
@@ -711,6 +730,7 @@ Custom Domain `cumart.cloud` (IONOS):
 11. **v1.12.0:** `membership_programs` + `membership_program_benefits`
 12. **v1.13.0:** `memberships` + `entitlements` + `entitlement_redemptions`
 13. **v1.15.0:** Auth-Härtung — `is_active_user()`, Restrictive Policies `only_active_users` auf 15 operativen Tabellen, `trg_user_profiles_update_guard`, `trg_prevent_last_admin_delete`. SQL: `migrations/v1.15.0_auth_hardening.sql`
+14. **v1.16.0:** Soft-Delete — `deleted_at timestamptz` + Partial-Indexe auf companies / contacts / appointments / projects / deployments / memberships. SQL: `migrations/v1.16.0_soft_delete.sql`
 
 ### 14.6 Verifikations-Query (alle Migrationen prüfen)
 
@@ -791,6 +811,21 @@ UNION ALL
 SELECT 'Restrictive Policies only_active_users (v1.15, Soll=15)',
        CASE WHEN (SELECT COUNT(*) FROM pg_policies
            WHERE schemaname='public' AND policyname='only_active_users') = 15
+       THEN 'OK' ELSE 'TEILWEISE' END
+UNION ALL
+SELECT 'deleted_at auf 6 Soft-Delete-Tabellen (v1.16)',
+       CASE WHEN (SELECT COUNT(*) FROM information_schema.columns
+           WHERE table_schema='public' AND column_name='deleted_at'
+             AND table_name IN ('companies','contacts','appointments',
+                                'projects','deployments','memberships')) = 6
+       THEN 'OK' ELSE 'TEILWEISE' END
+UNION ALL
+SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
+       CASE WHEN (SELECT COUNT(*) FROM pg_indexes
+           WHERE schemaname='public'
+             AND indexname IN ('idx_companies_active','idx_contacts_active',
+                               'idx_appointments_active','idx_projects_active',
+                               'idx_deployments_active','idx_memberships_active')) = 6
        THEN 'OK' ELSE 'TEILWEISE' END;
 ```
 
@@ -812,4 +847,4 @@ SELECT 'Restrictive Policies only_active_users (v1.15, Soll=15)',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.15.0*
+*Ende der Dokumentation · Cumart CRM v1.16.0*
