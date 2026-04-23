@@ -129,52 +129,70 @@
     <div class="sidebar-user" id="sidebar-user"></div>
 
     <nav class="nav" id="nav-main">
-      <button class="nav-item" id="nav-companies"
-              onclick="navigateTo('companies')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-          <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-          <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-          <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
-        </svg>
-        Firmen
-      </button>
+      <!-- GRUPPE: KUNDEN -->
+      <div class="nav-group" id="nav-customers-group">
+        <button class="nav-item nav-item-group" id="nav-customers-toggle"
+                onclick="toggleNavGroup('nav-customers-group')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+            <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+            <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+            <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+          </svg>
+          <span style="flex:1">Kunden</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+        </button>
 
-      <button class="nav-item" id="nav-contacts"
-              onclick="navigateTo('contacts')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M16 2v2"/><path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
-          <path d="M8 2v2"/><circle cx="12" cy="11" r="3"/>
-          <rect x="3" y="4" width="18" height="18" rx="2"/>
-        </svg>
-        Kontakte
-      </button>
+        <div class="nav-submenu">
+          <button class="nav-item nav-item-sub" id="nav-companies"
+                  onclick="navigateTo('companies')">
+            Firmen
+          </button>
+          <button class="nav-item nav-item-sub" id="nav-contacts"
+                  onclick="navigateTo('contacts')">
+            Kontakte
+          </button>
+        </div>
+      </div>
 
-      <button class="nav-item" id="nav-appointments"
-              onclick="navigateTo('appointments')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="18" rx="2"/>
-          <line x1="16" y1="2" x2="16" y2="6"/>
-          <line x1="8" y1="2" x2="8" y2="6"/>
-          <line x1="3" y1="10" x2="21" y2="10"/>
-        </svg>
-        Termine
-      </button>
+      <!-- GRUPPE: AKTIVITÄT -->
+      <div class="nav-group" id="nav-activity-group">
+        <button class="nav-item nav-item-group" id="nav-activity-toggle"
+                onclick="toggleNavGroup('nav-activity-group')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span style="flex:1">Aktivität</span>
+          <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+        </button>
 
-      <button class="nav-item" id="nav-tasks"
-              onclick="navigateTo('tasks')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M9 11l3 3L22 4"/>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-        </svg>
-        <span style="flex:1;text-align:left">Aufgaben</span>
-        <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
-      </button>
+        <div class="nav-submenu">
+          <button class="nav-item nav-item-sub" id="nav-appointments"
+                  onclick="navigateTo('appointments')">
+            Termine
+          </button>
+          <button class="nav-item nav-item-sub" id="nav-tasks"
+                  onclick="navigateTo('tasks')">
+            Aufgaben
+          </button>
+          <button class="nav-item nav-item-sub" id="nav-deployments"
+                  onclick="navigateTo('deployments')">
+            Einsätze
+          </button>
+        </div>
+      </div>
 
+      <!-- PROJEKTE (eigenständig) -->
       <button class="nav-item" id="nav-projects"
               onclick="navigateTo('projects')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -182,17 +200,6 @@
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
         Projekte
-      </button>
-
-      <button class="nav-item" id="nav-deployments"
-              onclick="navigateTo('deployments')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 2 2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5"/>
-          <path d="M2 12l10 5 10-5"/>
-        </svg>
-        Einsätze
       </button>
     </nav>
 
@@ -380,16 +387,32 @@
             <button class="btn" id="company-detail-edit-btn">Bearbeiten</button>
           </div>
         </div>
+      </div>
 
-        <div class="detail-grid" id="company-detail-info"></div>
+      <!-- DETAIL-TABS (v1.23.0) -->
+      <div class="detail-tabs">
+        <button class="detail-tab active" data-tab="stammdaten" onclick="switchDetailTab('company','stammdaten')">Stammdaten</button>
+        <button class="detail-tab" data-tab="kontakte" onclick="switchDetailTab('company','kontakte')">Kontakte <span class="tab-count" id="tab-count-company-kontakte" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="termine" onclick="switchDetailTab('company','termine')">Termine <span class="tab-count" id="tab-count-company-termine" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="aufgaben" onclick="switchDetailTab('company','aufgaben')">Aufgaben <span class="tab-count" id="tab-count-company-aufgaben" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="projekte" onclick="switchDetailTab('company','projekte')">Projekte <span class="tab-count" id="tab-count-company-projekte" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="einsaetze" onclick="switchDetailTab('company','einsaetze')">Einsätze <span class="tab-count" id="tab-count-company-einsaetze" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="mitgliedschaften" onclick="switchDetailTab('company','mitgliedschaften')">Mitgliedschaften <span class="tab-count" id="tab-count-company-mitgliedschaften" style="display:none"></span></button>
+      </div>
 
-        <div id="company-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="detail-label">Notizen</div>
-          <div id="company-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+      <!-- PANEL: Stammdaten -->
+      <div class="detail-tab-panel active" data-tab="stammdaten">
+        <div class="card">
+          <div class="detail-grid" id="company-detail-info"></div>
+          <div id="company-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="detail-label">Notizen</div>
+            <div id="company-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+          </div>
         </div>
       </div>
 
-      <!-- KONTAKTE-SEKTION -->
+      <!-- PANEL: Kontakte -->
+      <div class="detail-tab-panel" data-tab="kontakte">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -416,8 +439,10 @@
           </table>
         </div>
       </div>
+      </div><!-- /panel kontakte -->
 
-      <!-- TERMINE-SEKTION (NEU in v1.6.1) -->
+      <!-- PANEL: Termine -->
+      <div class="detail-tab-panel" data-tab="termine">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -449,81 +474,10 @@
           <a class="cell-link" id="company-appointments-show-all-link">Alle Termine dieser Firma anzeigen →</a>
         </div>
       </div>
+      </div><!-- /panel termine -->
 
-      <!-- PROJEKTE-SEKTION (NEU in v1.7.0) -->
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="company-projects-count">Projekte</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="company-detail-add-project-btn">
-            + Projekt hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th style="width:120px">Status</th>
-                <th class="col-tablet" style="width:110px">Start</th>
-                <th class="col-tablet" style="width:110px">Ende</th>
-                <th class="col-desktop">Umsatz</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="company-projects-body">
-              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- EINSÄTZE-SEKTION (NEU in v1.9.0) -->
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="company-deployments-count">Einsätze</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="company-detail-add-deployment-btn">
-            + Einsatz hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:110px">Datum</th>
-                <th>Titel</th>
-                <th class="col-tablet">Projekt</th>
-                <th style="width:120px">Status</th>
-                <th class="col-desktop" style="width:110px">Preis</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="company-deployments-body">
-              <tr><td colspan="6"><div class="empty">Lade Einsätze ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Mitgliedschaften-Sektion (v1.13.0) -->
-      <div class="card" style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="company-memberships-count">Mitgliedschaften</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="company-detail-add-membership-btn">
-            + Mitgliedschaft anlegen
-          </button>
-        </div>
-        <div id="company-memberships-body">
-          <div class="empty">Lade Mitgliedschaften ...</div>
-        </div>
-      </div>
-
-      <!-- AUFGABEN-SEKTION (NEU v1.22.0) -->
+      <!-- PANEL: Aufgaben (v1.23: vorgezogen vor Projekte) -->
+      <div class="detail-tab-panel" data-tab="aufgaben">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -551,7 +505,87 @@
           </table>
         </div>
       </div>
-    </div>
+      </div><!-- /panel aufgaben -->
+
+      <!-- PANEL: Projekte -->
+      <div class="detail-tab-panel" data-tab="projekte">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="company-projects-count">Projekte</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="company-detail-add-project-btn">
+            + Projekt hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:120px">Status</th>
+                <th class="col-tablet" style="width:110px">Start</th>
+                <th class="col-tablet" style="width:110px">Ende</th>
+                <th class="col-desktop">Umsatz</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="company-projects-body">
+              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /panel projekte -->
+
+      <!-- PANEL: Einsätze -->
+      <div class="detail-tab-panel" data-tab="einsaetze">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="company-deployments-count">Einsätze</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="company-detail-add-deployment-btn">
+            + Einsatz hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px">Datum</th>
+                <th>Titel</th>
+                <th class="col-tablet">Projekt</th>
+                <th style="width:120px">Status</th>
+                <th class="col-desktop" style="width:110px">Preis</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="company-deployments-body">
+              <tr><td colspan="6"><div class="empty">Lade Einsätze ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /panel einsaetze -->
+
+      <!-- PANEL: Mitgliedschaften -->
+      <div class="detail-tab-panel" data-tab="mitgliedschaften">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="company-memberships-count">Mitgliedschaften</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="company-detail-add-membership-btn">
+            + Mitgliedschaft anlegen
+          </button>
+        </div>
+        <div id="company-memberships-body">
+          <div class="empty">Lade Mitgliedschaften ...</div>
+        </div>
+      </div>
+      </div><!-- /panel mitgliedschaften -->
+    </div><!-- /page-company-detail -->
 
     <!-- SEITE: KONTAKTE -->
     <div class="page" id="page-contacts">
@@ -636,16 +670,29 @@
             <button class="btn" id="contact-detail-edit-btn">Bearbeiten</button>
           </div>
         </div>
+      </div>
 
-        <div class="detail-grid" id="contact-detail-info"></div>
+      <!-- DETAIL-TABS (v1.23.0) -->
+      <div class="detail-tabs">
+        <button class="detail-tab active" data-tab="stammdaten" onclick="switchDetailTab('contact','stammdaten')">Stammdaten</button>
+        <button class="detail-tab" data-tab="termine" onclick="switchDetailTab('contact','termine')">Termine <span class="tab-count" id="tab-count-contact-termine" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="aufgaben" onclick="switchDetailTab('contact','aufgaben')">Aufgaben <span class="tab-count" id="tab-count-contact-aufgaben" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="projekte" onclick="switchDetailTab('contact','projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
+      </div>
 
-        <div id="contact-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="detail-label">Notizen</div>
-          <div id="contact-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+      <!-- PANEL: Stammdaten -->
+      <div class="detail-tab-panel active" data-tab="stammdaten">
+        <div class="card">
+          <div class="detail-grid" id="contact-detail-info"></div>
+          <div id="contact-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="detail-label">Notizen</div>
+            <div id="contact-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+          </div>
         </div>
       </div>
 
-      <!-- TERMINE DES KONTAKTS -->
+      <!-- PANEL: Termine -->
+      <div class="detail-tab-panel" data-tab="termine">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -673,37 +720,10 @@
           </table>
         </div>
       </div>
+      </div><!-- /panel termine -->
 
-      <!-- PROJEKTE DES KONTAKTS (Hauptkontakt) -->
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="contact-projects-count">Projekte als Hauptkontakt</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="contact-detail-add-project-btn">
-            + Projekt hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th style="width:120px">Status</th>
-                <th class="col-tablet" style="width:110px">Start</th>
-                <th class="col-tablet" style="width:110px">Ende</th>
-                <th class="col-desktop">Umsatz</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="contact-projects-body">
-              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- AUFGABEN DES KONTAKTS (NEU v1.22.0) -->
+      <!-- PANEL: Aufgaben (v1.23: vorgezogen vor Projekte) -->
+      <div class="detail-tab-panel" data-tab="aufgaben">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -731,7 +751,39 @@
           </table>
         </div>
       </div>
-    </div>
+      </div><!-- /panel aufgaben -->
+
+      <!-- PANEL: Projekte -->
+      <div class="detail-tab-panel" data-tab="projekte">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="contact-projects-count">Projekte als Hauptkontakt</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="contact-detail-add-project-btn">
+            + Projekt hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:120px">Status</th>
+                <th class="col-tablet" style="width:110px">Start</th>
+                <th class="col-tablet" style="width:110px">Ende</th>
+                <th class="col-desktop">Umsatz</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="contact-projects-body">
+              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /panel projekte -->
+    </div><!-- /page-contact-detail -->
 
     <!-- SEITE: TERMINE (LISTE) -->
     <div class="page" id="page-appointments">
@@ -960,21 +1012,35 @@
             <button class="btn" id="project-detail-edit-btn">Bearbeiten</button>
           </div>
         </div>
+      </div>
 
-        <div class="detail-grid" id="project-detail-info"></div>
+      <!-- DETAIL-TABS (v1.23.0) -->
+      <div class="detail-tabs">
+        <button class="detail-tab active" data-tab="stammdaten" onclick="switchDetailTab('project','stammdaten')">Stammdaten</button>
+        <button class="detail-tab" data-tab="termine" onclick="switchDetailTab('project','termine')">Termine <span class="tab-count" id="tab-count-project-termine" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="aufgaben" onclick="switchDetailTab('project','aufgaben')">Aufgaben <span class="tab-count" id="tab-count-project-aufgaben" style="display:none"></span></button>
+        <button class="detail-tab" data-tab="einsaetze" onclick="switchDetailTab('project','einsaetze')">Einsätze <span class="tab-count" id="tab-count-project-einsaetze" style="display:none"></span></button>
+      </div>
 
-        <div id="project-detail-beschreibung-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="detail-label">Beschreibung</div>
-          <div id="project-detail-beschreibung" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
-        </div>
+      <!-- PANEL: Stammdaten -->
+      <div class="detail-tab-panel active" data-tab="stammdaten">
+        <div class="card">
+          <div class="detail-grid" id="project-detail-info"></div>
 
-        <div id="project-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="detail-label">Notizen</div>
-          <div id="project-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+          <div id="project-detail-beschreibung-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="detail-label">Beschreibung</div>
+            <div id="project-detail-beschreibung" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+          </div>
+
+          <div id="project-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="detail-label">Notizen</div>
+            <div id="project-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+          </div>
         </div>
       </div>
 
-      <!-- TERMINE DES PROJEKTS -->
+      <!-- PANEL: Termine -->
+      <div class="detail-tab-panel" data-tab="termine">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -1006,8 +1072,41 @@
           <a class="cell-link" id="project-appointments-show-all-link">Alle Termine dieses Projekts anzeigen →</a>
         </div>
       </div>
+      </div><!-- /panel termine -->
 
-      <!-- EINSÄTZE DES PROJEKTS (NEU v1.9.0) -->
+      <!-- PANEL: Aufgaben (v1.23: vorgezogen vor Einsätze) -->
+      <div class="detail-tab-panel" data-tab="aufgaben">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="project-tasks-count">Aufgaben</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="project-detail-add-task-btn">
+            + Aufgabe hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px" title="Als erledigt markieren"></th>
+                <th>Titel</th>
+                <th style="width:120px">Fällig</th>
+                <th class="col-tablet">Zugewiesen</th>
+                <th style="width:120px">Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="project-tasks-body">
+              <tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /panel aufgaben -->
+
+      <!-- PANEL: Einsätze -->
+      <div class="detail-tab-panel" data-tab="einsaetze">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
           <div class="card-title" style="margin:0;padding:0;border:none">
@@ -1037,36 +1136,8 @@
         </div>
         <div id="project-deployments-summary" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
       </div>
-
-      <!-- AUFGABEN DES PROJEKTS (NEU v1.22.0) -->
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="project-tasks-count">Aufgaben</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="project-detail-add-task-btn">
-            + Aufgabe hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:36px" title="Als erledigt markieren"></th>
-                <th>Titel</th>
-                <th style="width:120px">Fällig</th>
-                <th class="col-tablet">Zugewiesen</th>
-                <th style="width:120px">Status</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="project-tasks-body">
-              <tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      </div><!-- /panel einsaetze -->
+    </div><!-- /page-project-detail -->
 
     <!-- SEITE: EINSÄTZE (LISTE) -->
     <div class="page" id="page-deployments">
@@ -1282,9 +1353,9 @@
 
   </main>
 
-  <!-- MOBILE BOTTOM NAV -->
+  <!-- MOBILE BOTTOM NAV (v1.23: Gruppen) -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
-    <button class="mobile-nav-item" id="m-nav-companies"
+    <button class="mobile-nav-item" id="m-nav-customers"
             onclick="navigateTo('companies')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1293,28 +1364,25 @@
         <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
         <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
       </svg>
-      <span>Firmen</span>
+      <span>Kunden</span>
     </button>
-    <button class="mobile-nav-item" id="m-nav-appointments"
-            onclick="navigateTo('appointments')">
+    <button class="mobile-nav-item" id="m-nav-activity"
+            onclick="navigateTo('tasks')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="3" y="4" width="18" height="18" rx="2"/>
-        <line x1="16" y1="2" x2="16" y2="6"/>
-        <line x1="8" y1="2" x2="8" y2="6"/>
-        <line x1="3" y1="10" x2="21" y2="10"/>
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
       </svg>
-      <span>Termine</span>
+      <span>Aktivität</span>
+      <span class="nav-badge mobile-nav-badge" id="m-nav-tasks-badge" style="display:none"></span>
     </button>
-    <button class="mobile-nav-item" id="m-nav-deployments"
-            onclick="navigateTo('deployments')">
+    <button class="mobile-nav-item" id="m-nav-projects"
+            onclick="navigateTo('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 2 2 7l10 5 10-5-10-5z"/>
-        <path d="M2 17l10 5 10-5"/>
-        <path d="M2 12l10 5 10-5"/>
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
       </svg>
-      <span>Einsätze</span>
+      <span>Projekte</span>
     </button>
     <button class="mobile-nav-item" id="m-nav-more" onclick="openMoreMenu()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -1341,7 +1409,7 @@
       </div>
 
       <div class="more-section">
-        <div class="more-section-title">Hauptbereich</div>
+        <div class="more-section-title">Kunden</div>
         <button class="more-item" id="m-more-contacts" onclick="navigateTo('contacts'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M16 2v2"/><path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
@@ -1350,18 +1418,26 @@
           </svg>
           Kontakte
         </button>
-        <button class="more-item" id="m-more-tasks" onclick="navigateTo('tasks'); closeMoreMenu()">
+      </div>
+
+      <div class="more-section">
+        <div class="more-section-title">Aktivität</div>
+        <button class="more-item" id="m-more-appointments" onclick="navigateTo('appointments'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 11l3 3L22 4"/>
-            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
           </svg>
-          Aufgaben
+          Termine
         </button>
-        <button class="more-item" id="m-more-projects" onclick="navigateTo('projects'); closeMoreMenu()">
+        <button class="more-item" id="m-more-deployments" onclick="navigateTo('deployments'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <path d="M12 2 2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
           </svg>
-          Projekte
+          Einsätze
         </button>
       </div>
 

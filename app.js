@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.22.0 (Aufgaben — eigene Entität, sich selbst oder
-   anderen zuweisbar; Liste, Modal, Sub-Sektionen auf Firma/
-   Kontakt/Projekt, Sidebar-Badge „meine offenen", FAB-Entry)
+   Version 1.23.0 (Nav-Restruktur: 3 Gruppen Kunden/Aktivität/
+   Projekte; Detail-Seiten auf Tabs umgestellt — Stammdaten +
+   Sub-Tabs mit Count-Badges; aktiver Tab via ?tab=xxx in URL)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -872,6 +872,19 @@ function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fd
 function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
 function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
 
+/** Zuordnung page → Nav-Gruppe (v1.23.0). */
+const NAV_PAGE_GROUP = {
+  companies:    'nav-customers-group',
+  contacts:     'nav-customers-group',
+  appointments: 'nav-activity-group',
+  tasks:        'nav-activity-group',
+  deployments:  'nav-activity-group',
+  users:        'nav-settings-group',
+  services:     'nav-settings-group',
+  lookups:      'nav-settings-group',
+  programs:     'nav-settings-group'
+};
+
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
@@ -879,6 +892,16 @@ function showPage(name) {
 
   const navBtn = document.getElementById('nav-' + name);
   if (navBtn) navBtn.classList.add('active');
+
+  // Nav-Gruppe aufklappen + markieren (v1.23.0)
+  document.querySelectorAll('.nav-group').forEach(g => g.classList.remove('has-active'));
+  const groupId = NAV_PAGE_GROUP[name];
+  if (groupId) {
+    const group = document.getElementById(groupId);
+    if (group) {
+      group.classList.add('open', 'has-active');
+    }
+  }
 
   setMobileNav(name);
 
@@ -897,20 +920,27 @@ function showPage(name) {
 function setMobileNav(pageName) {
   document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
 
-  if (pageName === 'companies' || pageName === 'company-detail') {
-    document.getElementById('m-nav-companies')?.classList.add('active');
-  } else if (pageName === 'appointments') {
-    document.getElementById('m-nav-appointments')?.classList.add('active');
-  } else if (pageName === 'deployments') {
-    document.getElementById('m-nav-deployments')?.classList.add('active');
+  // v1.23.0: Gruppierte Mobile-Nav (Kunden / Aktivität / Projekte / Mehr)
+  if (pageName === 'companies' || pageName === 'company-detail' || pageName === 'contacts' || pageName === 'contact-detail') {
+    document.getElementById('m-nav-customers')?.classList.add('active');
+  } else if (pageName === 'appointments' || pageName === 'tasks' || pageName === 'deployments') {
+    document.getElementById('m-nav-activity')?.classList.add('active');
+  } else if (pageName === 'projects' || pageName === 'project-detail') {
+    document.getElementById('m-nav-projects')?.classList.add('active');
   } else {
-    // contacts, contact-detail, projects, project-detail, tasks, users, services, lookups, programs → Mehr-Tab
+    // users, services, lookups, programs, 404 → Mehr-Tab
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
 
+/** Togglet eine Nav-Gruppe (generisch, ersetzt toggleSettings seit v1.23.0). */
+function toggleNavGroup(groupId) {
+  document.getElementById(groupId)?.classList.toggle('open');
+}
+
+/** Kompatibel zur alten Version — delegiert an toggleNavGroup. */
 function toggleSettings() {
-  document.getElementById('nav-settings-group').classList.toggle('open');
+  toggleNavGroup('nav-settings-group');
 }
 
 function openMoreMenu()  { document.getElementById('more-overlay').classList.add('open'); }
@@ -975,26 +1005,62 @@ function parseHashQuery(hashPart) {
   return { path, params };
 }
 
+let _currentDetailKey = null;
+
 function handleHashChange() {
   if (document.getElementById('app').style.display === 'none') return;
   if (inPasswordRecovery) return;
 
   const hash = window.location.hash || '';
+  const { path } = parseHashQuery(hash);
 
-  if (hash.startsWith('#/firma/')) {
-    const id = hash.slice('#/firma/'.length);
-    if (id) { loadCompanyDetail(id); return; }
+  // Detail-Seiten: Query-Params (z.B. ?tab=) strippen und Re-Load vermeiden,
+  // wenn derselbe Datensatz angezeigt wird (v1.23.0).
+  if (path.startsWith('#/firma/')) {
+    const id = path.slice('#/firma/'.length);
+    if (id) {
+      const key = 'firma:' + id;
+      if (_currentDetailKey !== key) {
+        _currentDetailKey = key;
+        loadCompanyDetail(id);
+      } else {
+        // nur Tab-Wechsel innerhalb der geladenen Seite
+        switchDetailTab('company', getActiveDetailTab());
+      }
+      return;
+    }
   }
 
-  if (hash.startsWith('#/projekt/')) {
-    const id = hash.slice('#/projekt/'.length);
-    if (id) { loadProjectDetail(id); return; }
+  if (path.startsWith('#/projekt/')) {
+    const id = path.slice('#/projekt/'.length);
+    if (id) {
+      const key = 'projekt:' + id;
+      if (_currentDetailKey !== key) {
+        _currentDetailKey = key;
+        loadProjectDetail(id);
+      } else {
+        switchDetailTab('project', getActiveDetailTab());
+      }
+      return;
+    }
   }
 
-  if (hash.startsWith('#/kontakt/')) {
-    const id = hash.slice('#/kontakt/'.length);
-    if (id) { loadContactDetail(id); return; }
+  if (path.startsWith('#/kontakt/')) {
+    const id = path.slice('#/kontakt/'.length);
+    if (id) {
+      const key = 'kontakt:' + id;
+      if (_currentDetailKey !== key) {
+        _currentDetailKey = key;
+        loadContactDetail(id);
+      } else {
+        switchDetailTab('contact', getActiveDetailTab());
+      }
+      return;
+    }
   }
+
+  // Anderen Seiten: Detail-Key zurücksetzen
+  _currentDetailKey = null;
 
   if (hash.startsWith('#/termine')) {
     const { params } = parseHashQuery(hash);
@@ -2262,6 +2328,7 @@ async function renderCompanyMemberships(companyId) {
 
   const aktiv = memberships.filter(m => m.status === 'aktiv').length;
   countEl.textContent = `${memberships.length} Mitgliedschaft${memberships.length === 1 ? '' : 'en'}${aktiv > 0 ? ` · ${aktiv} aktiv` : ''}`;
+  setTabCount('company', 'mitgliedschaften', memberships.length);
 
   container.innerHTML = memberships.map(m => renderMembershipCard(m, entitlementsByMs[m.id] || [], redemptionsByEnt)).join('');
 }
@@ -2961,6 +3028,7 @@ async function loadCompanyDetail(companyId) {
 
   renderCompanyDetail(data);
   trackVisit('company', data.id, data.name, [data.stadt, data.branche].filter(Boolean).join(' · '));
+  initDetailTabs('company');
   await loadCompanyContacts(companyId);
   await loadCompanyAppointments(companyId);
   await loadCompanyProjects(companyId);
@@ -3092,6 +3160,7 @@ async function loadCompanyContacts(companyId) {
 
   const total = (data || []).length;
   countEl.textContent = total === 0 ? 'Keine Kontakte' : `${total} Kontakt${total === 1 ? '' : 'e'}`;
+  setTabCount('company', 'kontakte', total);
 
   if (total === 0) {
     tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Kontakte für diese Firma. Klicke oben auf „+ Kontakt hinzufügen".</div></td></tr>';
@@ -3137,6 +3206,7 @@ async function loadCompanyAppointments(companyId) {
   const total = all.length;
   const anzGeplant       = all.filter(a => a.status === 'geplant').length;
   const anzDurchgefuehrt = all.filter(a => a.status === 'durchgefuehrt').length;
+  setTabCount('company', 'termine', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Termine';
@@ -4366,6 +4436,7 @@ async function loadProjectDetail(projectId) {
 
   renderProjectDetail(data);
   trackVisit('project', data.id, data.name, data.company?.name || '');
+  initDetailTabs('project');
   await loadProjectAppointments(projectId);
   await loadProjectDeployments(projectId);
   await loadProjectTasks(projectId);
@@ -4470,6 +4541,7 @@ async function loadProjectAppointments(projectId) {
 
   const all = data || [];
   const total = all.length;
+  setTabCount('project', 'termine', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Termine';
@@ -4557,6 +4629,7 @@ async function loadCompanyProjects(companyId) {
 
   const all = data || [];
   const total = all.length;
+  setTabCount('company', 'projekte', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Projekte';
@@ -4681,6 +4754,7 @@ async function loadContactDetail(contactId) {
   trackVisit('contact', data.id,
     `${data.vorname || ''} ${data.nachname || ''}`.trim() || '—',
     data.company?.name || data.email || '');
+  initDetailTabs('contact');
   await Promise.all([
     loadContactAppointments(contactId),
     loadContactProjects(contactId),
@@ -4785,6 +4859,7 @@ async function loadContactAppointments(contactId) {
 
   const all = data || [];
   const total = all.length;
+  setTabCount('contact', 'termine', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Termine';
@@ -4853,6 +4928,7 @@ async function loadContactProjects(contactId) {
 
   const all = data || [];
   const total = all.length;
+  setTabCount('contact', 'projekte', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Projekte als Hauptkontakt';
@@ -6000,6 +6076,7 @@ async function loadCompanyDeployments(companyId) {
 
   const all = data || [];
   const total = all.length;
+  setTabCount('company', 'einsaetze', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Einsätze';
@@ -6065,6 +6142,7 @@ async function loadProjectDeployments(projectId) {
 
   const all = data || [];
   const total = all.length;
+  setTabCount('project', 'einsaetze', total);
 
   // Leistungsumsatz (Summe aller Einsatz-Werte) im Header anzeigen
   const leistungsUmsatz = all.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
@@ -6674,6 +6752,62 @@ if (document.readyState === 'loading') {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  DETAIL-TABS (v1.23.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Tabs auf Firma-/Projekt-/Kontakt-Detail. Ersetzen die gestapelten
+// Cards durch eine Tab-Leiste. Der aktive Tab wird in die URL geschrieben
+// (`?tab=xxx`), damit Reload/Teilen funktioniert.
+
+/** Aktiviert einen Tab auf einer Detail-Seite und schreibt ihn in die URL.
+ *  entityType: 'company' | 'project' | 'contact'
+ *  tabKey: z.B. 'stammdaten', 'kontakte', 'termine', 'aufgaben' … */
+function switchDetailTab(entityType, tabKey) {
+  const pageId = { company: 'page-company-detail', project: 'page-project-detail', contact: 'page-contact-detail' }[entityType];
+  const page = document.getElementById(pageId);
+  if (!page) return;
+
+  page.querySelectorAll('.detail-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tabKey);
+  });
+  page.querySelectorAll('.detail-tab-panel').forEach(p => {
+    p.classList.toggle('active', p.dataset.tab === tabKey);
+  });
+
+  // URL aktualisieren ohne History-Eintrag
+  const hash = location.hash || '';
+  const [path, queryStr] = hash.split('?');
+  const params = new URLSearchParams(queryStr || '');
+  if (tabKey === 'stammdaten') params.delete('tab');
+  else params.set('tab', tabKey);
+  const newHash = path + (params.toString() ? '?' + params.toString() : '');
+  if (newHash !== hash) history.replaceState(null, '', newHash);
+}
+
+/** Liest ?tab= aus dem Hash, fällt auf 'stammdaten' zurück. */
+function getActiveDetailTab() {
+  const hash = location.hash || '';
+  const idx = hash.indexOf('?');
+  if (idx < 0) return 'stammdaten';
+  const params = new URLSearchParams(hash.substring(idx + 1));
+  return params.get('tab') || 'stammdaten';
+}
+
+/** Initialisiert den Tab-Zustand auf der gerade geladenen Detail-Seite. */
+function initDetailTabs(entityType) {
+  switchDetailTab(entityType, getActiveDetailTab());
+}
+
+/** Setzt eine Zahl ins Tab-Count-Badge. */
+function setTabCount(entityType, tabKey, count) {
+  const el = document.getElementById(`tab-count-${entityType}-${tabKey}`);
+  if (!el) return;
+  if (count === 0 || count == null) { el.style.display = 'none'; return; }
+  el.textContent = String(count);
+  el.style.display = '';
+}
+
+// ═══════════════════════════════════════════════════════════
 //  AUFGABEN (TASKS) — v1.22.0
 // ═══════════════════════════════════════════════════════════
 //
@@ -7203,7 +7337,7 @@ async function loadCompanyTasks(companyId) {
     countEl.textContent = 'Aufgaben';
     return;
   }
-  renderDetailTaskRows(tbody, countEl, data || []);
+  renderDetailTaskRows(tbody, countEl, data || [], 'company');
 }
 
 async function loadContactTasks(contactId) {
@@ -7219,7 +7353,7 @@ async function loadContactTasks(contactId) {
     countEl.textContent = 'Aufgaben';
     return;
   }
-  renderDetailTaskRows(tbody, countEl, data || []);
+  renderDetailTaskRows(tbody, countEl, data || [], 'contact');
 }
 
 async function loadProjectTasks(projectId) {
@@ -7235,13 +7369,14 @@ async function loadProjectTasks(projectId) {
     countEl.textContent = 'Aufgaben';
     return;
   }
-  renderDetailTaskRows(tbody, countEl, data || []);
+  renderDetailTaskRows(tbody, countEl, data || [], 'project');
 }
 
-function renderDetailTaskRows(tbody, countEl, tasks) {
+function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
   const total = tasks.length;
   const offen = tasks.filter(t => t.status !== 'erledigt').length;
   const erledigt = tasks.filter(t => t.status === 'erledigt').length;
+  if (entityType) setTabCount(entityType, 'aufgaben', total);
 
   if (total === 0) {
     countEl.textContent = 'Keine Aufgaben';
@@ -7300,24 +7435,29 @@ async function _refreshTaskContext() {
 // ── SIDEBAR-BADGE ───────────────────────────────────────────────────────────
 
 async function updateTaskBadge() {
-  const badge = document.getElementById('nav-tasks-badge');
-  if (!badge || !currentProfile?.id) return;
+  const badges = [
+    document.getElementById('nav-tasks-badge'),       // Desktop: auf Aktivität-Gruppe
+    document.getElementById('m-nav-tasks-badge')      // Mobile: auf Aktivität-Tab
+  ].filter(Boolean);
+  if (badges.length === 0 || !currentProfile?.id) return;
+
   const { data, error } = await db.from('tasks')
     .select('id, faelligkeit, status').is('deleted_at', null)
     .eq('assigned_to', currentProfile.id).neq('status', 'erledigt');
-  if (error) { badge.style.display = 'none'; return; }
+  if (error) { badges.forEach(b => b.style.display = 'none'); return; }
 
   const todayISO = toISODate(new Date());
   const offen = (data || []).length;
   const ueberfaellig = (data || []).filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
 
-  if (offen === 0) { badge.style.display = 'none'; return; }
-  badge.textContent = String(offen);
-  badge.style.display = '';
-  badge.classList.toggle('nav-badge-overdue', ueberfaellig > 0);
-  badge.title = ueberfaellig > 0
-    ? `${offen} offen · ${ueberfaellig} überfällig`
-    : `${offen} offen`;
+  if (offen === 0) { badges.forEach(b => b.style.display = 'none'); return; }
+  const title = ueberfaellig > 0 ? `${offen} offen · ${ueberfaellig} überfällig` : `${offen} offen`;
+  badges.forEach(badge => {
+    badge.textContent = String(offen);
+    badge.style.display = '';
+    badge.classList.toggle('nav-badge-overdue', ueberfaellig > 0);
+    badge.title = title;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

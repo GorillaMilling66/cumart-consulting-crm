@@ -1,7 +1,7 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.22.0
-**Stand:** 23. April 2026
+**Version:** 1.23.0
+**Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
 **Live:** `https://cumart.cloud` (Primary) · `https://cumart-consulting-crm.vercel.app` (Fallback)
@@ -59,9 +59,9 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.28k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~1.43k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~7.46k Zeilen  (alle Module in einer Datei)
+├── index.html       ~2.35k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css       ~1.49k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~7.60k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -425,13 +425,15 @@ Kein SSR, keine Builds. `index.html` enthält alle Pages als `<div class="page">
 
 Hash-basiert. Hashes: `#/firmen`, `#/firma/UUID`, `#/kontakte`, `#/kontakt/UUID`, `#/termine`, `#/aufgaben` (v1.22), `#/projekte`, `#/projekt/UUID`, `#/einsaetze`, `#/benutzer`, `#/leistungen`, `#/stammdaten`, `#/programme` (v1.12). `#/aufgaben` unterstützt Query-Parameter `?scope=mine_open|all_open|done|all`, `?firma=UUID`, `?projekt=UUID`, `?assignee=UUID`.
 
+**Detail-Tabs (v1.23):** `#/firma/UUID`, `#/projekt/UUID`, `#/kontakt/UUID` unterstützen `?tab=stammdaten|kontakte|termine|aufgaben|projekte|einsaetze|mitgliedschaften`. Der Router strippt die Query, bevor die ID extrahiert wird, und vermeidet Daten-Reload bei reinem Tab-Wechsel (siehe §7.14).
+
 Keine Detail-Route für Einsätze oder Mitgliedschaften — CRUD läuft via Modal.
 
 ### 7.3 Navigation
 
-- **Desktop-Sidebar:** Firmen / Kontakte / Termine / Aufgaben / Projekte / Einsätze + Einstellungen (admin-only: Benutzer, Leistungen, Stammdaten, Mitgliedschafts-Programme). Der Aufgaben-Link trägt ein Badge mit der Anzahl eigener offener Aufgaben (rot gefärbt bei Überfälligkeit).
-- **Mobile-Bottom-Nav:** Firmen / Termine / Einsätze / Mehr
-- **Mehr-Menü:** Kontakte, Aufgaben, Projekte + admin-Tools
+- **Desktop-Sidebar (v1.23):** drei Top-Level-Gruppen mit Submenü — **Kunden** (Firmen, Kontakte) · **Aktivität** (Termine, Aufgaben, Einsätze) · **Projekte** (eigenständig) + Einstellungen (admin-only: Benutzer, Leistungen, Stammdaten, Mitgliedschafts-Programme). Das Badge „eigene offene Aufgaben" sitzt auf dem Gruppen-Header „Aktivität" (rot bei Überfälligkeit).
+- **Mobile-Bottom-Nav (v1.23):** Kunden / Aktivität / Projekte / Mehr. Der Aktivität-Tap führt direkt auf `/#/aufgaben` (Meine offenen), weil Aufgaben der actionableste Einstieg sind.
+- **Mehr-Menü:** Unter „Kunden": Kontakte · Unter „Aktivität": Termine, Einsätze · + admin-Tools unter Einstellungen
 
 ### 7.4 State Management
 
@@ -518,7 +520,21 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 - **Scope-Filter:** `mine_open` (Default) · `assigned_to_me` · `created_by_me` · `all_open` · `done` · `all`. Zusätzliche Dropdowns für Zuweisung / Firma / Status. Search-Box matcht Titel, Beschreibung, Notizen, Firma, Projekt, Zugewiesen.
 - **Sortierung:** offene vor erledigten; innerhalb nach `faelligkeit` aufsteigend (NULL ans Ende), dann `created_at` desc.
 - **Checkbox-Toggle in der Zeile:** schaltet Status offen↔erledigt und setzt `erledigt_am` automatisch. `event.stopPropagation()` verhindert, dass ein Klick auf die Checkbox den Row-Link auslöst.
-- **Sidebar-Badge** (`#nav-tasks-badge`): zählt Aufgaben mit `assigned_to = me` und `status ≠ 'erledigt'`. Klasse `nav-badge-overdue` (rot) aktiv, sobald mindestens eine überfällig ist. Aktualisiert über `updateTaskBadge()` bei Login, nach jedem Task-Write und nach jedem List-Refresh.
+- **Badge** (`#nav-tasks-badge` Desktop + `#m-nav-tasks-badge` Mobile, seit v1.23 auf Aktivität-Gruppe): zählt Aufgaben mit `assigned_to = me` und `status ≠ 'erledigt'`. Klasse `nav-badge-overdue` (rot) aktiv, sobald mindestens eine überfällig ist. Aktualisiert über `updateTaskBadge()` bei Login, nach jedem Task-Write und nach jedem List-Refresh.
+
+### 7.14 Detail-Tabs (v1.23.0)
+
+Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizontale Tab-Leiste. Erster Tab immer „Stammdaten" (Adresse/Website/Notizen), dann pro Sub-Bereich ein Tab mit Count-Badge.
+
+- **Tab-Sets:**
+  - `company`: Stammdaten · Kontakte · Termine · Aufgaben · Projekte · Einsätze · Mitgliedschaften (7 Tabs)
+  - `project`: Stammdaten · Termine · Aufgaben · Einsätze (4 Tabs)
+  - `contact`: Stammdaten · Termine · Aufgaben · Projekte (4 Tabs)
+- **URL-Persistenz:** aktiver Tab in `?tab=xxx`. Default `stammdaten` wird weggelassen (saubere URL). Refresh/Teilen funktioniert.
+- **Router-Guard:** `_currentDetailKey` verhindert Re-Load der gesamten Detail-Daten bei reinem Tab-Switch. Hash-Änderung mit gleichem Datensatz → nur `switchDetailTab()`.
+- **Count-Badges:** `setTabCount(entityType, tabKey, count)` wird parallel zum bestehenden `countEl.textContent` in jeder Load-Funktion aufgerufen. Zahl 0 blendet das Badge aus (kein „0"-Müll).
+- **Mobile:** Tab-Leiste horizontal scrollbar (`overflow-x:auto`), kleinere Paddings.
+- **Kein Preloading:** Tabs zeigen bereits geladene Daten an (ein `SELECT ...WHERE entity_id=...` pro Sub-Sektion beim Öffnen der Detail-Seite). Tab-Wechsel = reiner DOM-Toggle, keine zusätzlichen Queries.
 
 ---
 
@@ -714,7 +730,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.19.0 | 22.04.2026  | Globale Suche (Cmd+K) — Overlay mit debounced Parallel-Queries gegen Firmen / Kontakte / Projekte / Einsätze, Pfeil-Navigation, Enter öffnet, „Zuletzt besucht" via localStorage |
 | v1.20.0 | 22.04.2026  | Zeilen-Aktionen aufgeräumt — Hover-Reveal-Icons, Kebab-Menü für Secondary Actions (Kopieren / Duplizieren / Löschen), Custom `confirmDialog()` (Promise-basiert) statt native `confirm()`, Undo-Toast (5 s) für Soft-Delete-Rückgängig |
 | v1.21.0 | 22.04.2026  | FAB Quick-Add — schwebender `+`-Button unten rechts mit Popover-Menü (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Kontext-Aware Prefill aus Firmen-/Projekt-/Kontakt-Detail. Shortcut `n` wenn kein Input fokussiert. |
-| **v1.22.0** | **23.04.2026** | **Aufgaben** — neue Entität `tasks` mit eigener Liste, Modal, Sub-Sektionen auf Firma/Kontakt/Projekt. Zuweisbar an `user_profiles.id` (self oder anderer Nutzer). Fälligkeit + überfällig-Badge. Checkbox-Toggle in Liste (→ erledigt). Sidebar-Badge „meine offenen" mit Rotfärbung bei Überfälligkeit. FAB-Eintrag + Soft-Delete + Undo-Toast. Status via `lookup_values.aufgabe_status`. |
+| v1.22.0 | 23.04.2026  | Aufgaben — neue Entität `tasks` mit eigener Liste, Modal, Sub-Sektionen auf Firma/Kontakt/Projekt. Zuweisbar an `user_profiles.id` (self oder anderer Nutzer). Fälligkeit + überfällig-Badge. Checkbox-Toggle in Liste (→ erledigt). Sidebar-Badge „meine offenen" mit Rotfärbung bei Überfälligkeit. FAB-Eintrag + Soft-Delete + Undo-Toast. Status via `lookup_values.aufgabe_status`. |
+| **v1.23.0** | **24.04.2026** | **Nav-Restruktur + Detail-Tabs** — Sidebar reduziert auf 3 Top-Gruppen (Kunden / Aktivität / Projekte). Mobile Bottom-Nav spiegelt die Gruppen. Aufgaben-Badge wandert auf Aktivität-Gruppe (Desktop+Mobile). Detail-Seiten (Firma/Projekt/Kontakt) mit Tab-Navigation statt gestapelter Cards; Stammdaten + Sub-Tabs mit Count-Badges; aktiver Tab in URL via `?tab=xxx`; Router-Guard gegen Re-Load bei reinem Tab-Wechsel. |
 
 ---
 
@@ -734,9 +751,9 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 
 | Punkt                         | Status       | Beschreibung                                           |
 |-------------------------------|--------------|--------------------------------------------------------|
-| Dashboard                     | v1.22 geplant | Verfallende Bonis, Umsatz geplant vs. real, KPIs      |
-| Kalender-View                 | v1.23 geplant | Termine + Einsätze als Timeline (Task 4 der UX-Spec) |
-| Nav-Restruktur                | v1.23 geplant | 3 Kern-Bereiche (Task 3 der UX-Spec) — braucht Founder-Input zu Nav-Label („Kunden" vs. „Firmen & Kontakte") und Multi-User-Pläne |
+| Dashboard                     | offen        | Verfallende Bonis, Umsatz geplant vs. real, KPIs       |
+| Kalender-View                 | offen        | Termine + Einsätze als Timeline (Task 4 der UX-Spec)   |
+| Nav-Restruktur                | ✅ v1.23.0   | 3 Gruppen (Kunden / Aktivität / Projekte) + Detail-Tabs |
 | Projekt-Kontingente           | offen        | Projekt mit „enthält 8 LifeCalls" → Auto-Entitlements  |
 | Dublettenerkennung            | offen        | Bei Firmen- und Kontakt-Anlage                         |
 | Export                        | offen        | CSV/Excel für alle Entitäten                           |
