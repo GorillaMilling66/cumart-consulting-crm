@@ -56,9 +56,23 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project
   ON public.tasks (project_id) WHERE deleted_at IS NULL;
 
 
--- ─── 3. RLS: only_active_users (analog zu v1.15.0) ──────────────────────────
+-- ─── 3. RLS: Basis-Permissive + only_active_users RESTRICTIVE ───────────────
 -- Die Funktion public.is_active_user() existiert bereits seit v1.15.0.
+--
+-- WICHTIG: Eine RESTRICTIVE-Policy allein erlaubt nichts — sie filtert nur
+-- weiter. Wie bei allen operativen Tabellen (companies, appointments, …)
+-- brauchen wir zusätzlich eine PERMISSIVE "authenticated = true"-Basis.
+-- Das Zusammenspiel: PERMISSIVE erlaubt authenticated alles; RESTRICTIVE
+-- schneidet davon inaktive Nutzer ab.
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tasks_all_authenticated" ON public.tasks;
+CREATE POLICY "tasks_all_authenticated" ON public.tasks
+  AS PERMISSIVE
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
 
 DROP POLICY IF EXISTS "only_active_users" ON public.tasks;
 CREATE POLICY "only_active_users" ON public.tasks
@@ -106,4 +120,11 @@ ON CONFLICT DO NOTHING;
 --        CASE WHEN (
 --          SELECT COUNT(*) FROM public.lookup_values
 --          WHERE kategorie='aufgabe_status' AND ist_aktiv=true
---        ) = 3 THEN 'OK' ELSE 'UNVOLLSTAENDIG' END;
+--        ) = 3 THEN 'OK' ELSE 'UNVOLLSTAENDIG' END
+-- UNION ALL
+-- SELECT 'Beide RLS-Policies auf tasks (permissive + restrictive)',
+--        CASE WHEN (
+--          SELECT COUNT(*) FROM pg_policies
+--          WHERE schemaname='public' AND tablename='tasks'
+--            AND policyname IN ('tasks_all_authenticated','only_active_users')
+--        ) = 2 THEN 'OK' ELSE 'UNVOLLSTAENDIG' END;
