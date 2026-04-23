@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.23.0
+**Version:** 1.24.0
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -59,14 +59,15 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.35k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~1.49k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~7.60k Zeilen  (alle Module in einer Datei)
+├── index.html       ~2.46k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css       ~1.68k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~7.87k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
 │   ├── v1.16.0_soft_delete.sql
-│   └── v1.22.0_tasks.sql
+│   ├── v1.22.0_tasks.sql
+│   └── v1.24.0_company_abc.sql
 ├── supabase/
 │   └── functions/manage-users/
 └── .git/
@@ -115,6 +116,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | name          | text         | NO       |         |                                    |
 | typ_id        | uuid         | YES      |         | FK → lookup_values (unternehmens_typ) |
 | branche       | text         | YES      |         |                                    |
+| abc_klassifizierung | text   | YES      |         | CHECK IN ('A','B','C') — strategische Einstufung (v1.24) |
 | strasse       | text         | YES      |         |                                    |
 | plz           | text         | YES      |         |                                    |
 | stadt         | text         | YES      |         |                                    |
@@ -431,9 +433,10 @@ Keine Detail-Route für Einsätze oder Mitgliedschaften — CRUD läuft via Moda
 
 ### 7.3 Navigation
 
-- **Desktop-Sidebar (v1.23):** drei Top-Level-Gruppen mit Submenü — **Kunden** (Firmen, Kontakte) · **Aktivität** (Termine, Aufgaben, Einsätze) · **Projekte** (eigenständig) + Einstellungen (admin-only: Benutzer, Leistungen, Stammdaten, Mitgliedschafts-Programme). Das Badge „eigene offene Aufgaben" sitzt auf dem Gruppen-Header „Aktivität" (rot bei Überfälligkeit).
-- **Mobile-Bottom-Nav (v1.23):** Kunden / Aktivität / Projekte / Mehr. Der Aktivität-Tap führt direkt auf `/#/aufgaben` (Meine offenen), weil Aufgaben der actionableste Einstieg sind.
-- **Mehr-Menü:** Unter „Kunden": Kontakte · Unter „Aktivität": Termine, Einsätze · + admin-Tools unter Einstellungen
+- **Desktop-Sidebar:** flache Liste der Haupt-Bereiche (Firmen / Kontakte / Termine / Aufgaben / Projekte / Einsätze) + Einstellungen-Submenü (admin-only: Benutzer, Leistungen, Stammdaten, Mitgliedschafts-Programme). Das Badge „eigene offene Aufgaben" sitzt auf dem Aufgaben-Nav-Item (rot bei Überfälligkeit).
+  - **Historisch:** v1.23 testete eine 3-Gruppen-Struktur (Kunden/Aktivität/Projekte) mit Submenüs. In v1.24 auf Wunsch zurück auf flach, weil die Gruppen ein zusätzlicher Klick wurden, um an die Listen zu kommen.
+- **Mobile-Bottom-Nav:** Firmen / Termine / Aufgaben / Mehr.
+- **Mehr-Menü:** Kontakte · Projekte · Einsätze + admin-Tools
 
 ### 7.4 State Management
 
@@ -524,7 +527,7 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 
 ### 7.14 Detail-Tabs (v1.23.0)
 
-Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizontale Tab-Leiste. Erster Tab immer „Stammdaten" (Adresse/Website/Notizen), dann pro Sub-Bereich ein Tab mit Count-Badge.
+Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizontale Tab-Leiste. Erster Tab immer „Stammdaten" (seit v1.24 Dashboard-Layout, siehe §7.15), dann pro Sub-Bereich ein Tab mit Count-Badge.
 
 - **Tab-Sets:**
   - `company`: Stammdaten · Kontakte · Termine · Aufgaben · Projekte · Einsätze · Mitgliedschaften (7 Tabs)
@@ -535,6 +538,26 @@ Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizont
 - **Count-Badges:** `setTabCount(entityType, tabKey, count)` wird parallel zum bestehenden `countEl.textContent` in jeder Load-Funktion aufgerufen. Zahl 0 blendet das Badge aus (kein „0"-Müll).
 - **Mobile:** Tab-Leiste horizontal scrollbar (`overflow-x:auto`), kleinere Paddings.
 - **Kein Preloading:** Tabs zeigen bereits geladene Daten an (ein `SELECT ...WHERE entity_id=...` pro Sub-Sektion beim Öffnen der Detail-Seite). Tab-Wechsel = reiner DOM-Toggle, keine zusätzlichen Queries.
+
+### 7.15 Stammdaten-Dashboard (v1.24.0)
+
+Der Stammdaten-Tab auf Firma- und Kontakt-Detail zeigt ein Mini-Dashboard im 2-Spalten-Layout (ab 960 px Viewport-Breite):
+
+- **Links (Main):**
+  - **Stats-Row** mit 3 Widgets:
+    - **ABC-Badge** (groß, farbig) — `A` grün (Top-Kunde) · `B` gelb (wichtig) · `C` grau (niedrige Prio) · leer/dashed (nicht klassifiziert). Bei Kontakt wird die ABC der zugeordneten Firma geerbt (readonly).
+    - **Gesamtumsatz** (nur Firma): `SUM(menge × einzelpreis)` aus direkten Einsätzen mit Status „Abgerechnet" + `SUM(geschaetzter_umsatz)` aus abgeschlossenen Projekten
+    - **Offene Aufgaben** (Count `tasks` wo `company_id`/`contact_id = X` und `status ≠ 'erledigt'`). Rot gefärbt, wenn mindestens eine überfällig. Kontakt zeigt zusätzlich **Projekte (als Hauptkontakt)**.
+  - **Letzte Aktivität** — picked aus `appointments` + `deployments` (Firma) bzw. `appointments` + `tasks` (Kontakt), sortiert nach Datum desc, Top 2.
+  - **Kontaktdaten** — das bestehende `detail-grid` (Adresse/Website/Telefon/E-Mail bei Firma, Telefon/E-Mail/Position/Firma bei Kontakt).
+  - **Notizen (inline-editierbar)** — `<textarea>` mit auto-save on blur (`saveCompanyNotesInline()` / `saveContactNotesInline()`), Status-Feedback „Gespeichert ✓".
+- **Rechts (Quick-Create-Panel):** Sticky vertikale Button-Liste zum direkten Anlegen mit Kontext-Prefill:
+  - Firma: + Kontakt · + Termin · + Aufgabe · + Einsatz · + Projekt · + Mitgliedschaft
+  - Kontakt: + Termin · + Aufgabe · + Projekt (als Hauptkontakt)
+
+Mobile (<960 px): Quick-Create-Panel rutscht unter den Main-Bereich (nicht sticky). Stats-Row wird einspaltig (<600 px).
+
+**Widget-Loader:** `loadCompanyDashboard(id)` / `loadContactDashboard(id)` feuern 4–5 parallele Supabase-Queries (`Promise.all`) und rendern sofort, sobald alles da ist. Das passiert parallel zum normalen Detail-Laden und blockiert den Rest nicht.
 
 ---
 
@@ -731,7 +754,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.20.0 | 22.04.2026  | Zeilen-Aktionen aufgeräumt — Hover-Reveal-Icons, Kebab-Menü für Secondary Actions (Kopieren / Duplizieren / Löschen), Custom `confirmDialog()` (Promise-basiert) statt native `confirm()`, Undo-Toast (5 s) für Soft-Delete-Rückgängig |
 | v1.21.0 | 22.04.2026  | FAB Quick-Add — schwebender `+`-Button unten rechts mit Popover-Menü (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Kontext-Aware Prefill aus Firmen-/Projekt-/Kontakt-Detail. Shortcut `n` wenn kein Input fokussiert. |
 | v1.22.0 | 23.04.2026  | Aufgaben — neue Entität `tasks` mit eigener Liste, Modal, Sub-Sektionen auf Firma/Kontakt/Projekt. Zuweisbar an `user_profiles.id` (self oder anderer Nutzer). Fälligkeit + überfällig-Badge. Checkbox-Toggle in Liste (→ erledigt). Sidebar-Badge „meine offenen" mit Rotfärbung bei Überfälligkeit. FAB-Eintrag + Soft-Delete + Undo-Toast. Status via `lookup_values.aufgabe_status`. |
-| **v1.23.0** | **24.04.2026** | **Nav-Restruktur + Detail-Tabs** — Sidebar reduziert auf 3 Top-Gruppen (Kunden / Aktivität / Projekte). Mobile Bottom-Nav spiegelt die Gruppen. Aufgaben-Badge wandert auf Aktivität-Gruppe (Desktop+Mobile). Detail-Seiten (Firma/Projekt/Kontakt) mit Tab-Navigation statt gestapelter Cards; Stammdaten + Sub-Tabs mit Count-Badges; aktiver Tab in URL via `?tab=xxx`; Router-Guard gegen Re-Load bei reinem Tab-Wechsel. |
+| v1.23.0 | 24.04.2026  | Nav-Restruktur (3 Gruppen Kunden/Aktivität/Projekte) + Detail-Tabs. In v1.24 teilweise zurückgenommen: Sidebar wieder flach, Detail-Tabs bleiben. |
+| **v1.24.0** | **24.04.2026** | **Stammdaten-Dashboard + ABC-Klassifizierung** — Sidebar zurück auf flach (User-Feedback: Gruppen waren ein extra Klick). Neues Feld `companies.abc_klassifizierung` (A/B/C, CHECK) mit farbigen Badges (grün/gelb/grau). Firma-Stammdaten-Tab komplett neu als Dashboard-Layout: Stats-Row (ABC · Gesamtumsatz · Offene Aufgaben, rot bei überfällig), Letzte Aktivität, Kontaktdaten, Inline-editierbare Notizen (auto-save on blur). Rechts ein sticky Quick-Create-Panel mit allen „+"-Aktionen für diesen Kunden direkt. Kontakt-Stammdaten analog mit geerbter ABC und reduziertem Quick-Create. |
 
 ---
 

@@ -403,6 +403,197 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* ── ABC-KLASSIFIZIERUNG BADGE (v1.24.0) ── */
+.abc-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.abc-badge-lg {
+  width: 48px; height: 48px;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.abc-badge-A { background: #16a34a; }  /* grün — Top-Kunde */
+.abc-badge-B { background: #f59e0b; }  /* gelb — wichtig  */
+.abc-badge-C { background: #9ca3af; }  /* grau — niedrige Prio */
+.abc-badge-unknown {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 10px;
+}
+.abc-badge-unknown.abc-badge-lg { font-size: 11px; }
+
+/* ── DETAIL-DASHBOARD (v1.24.0) ── */
+.detail-dashboard {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .detail-dashboard { grid-template-columns: 1fr; }
+}
+
+.dashboard-main { display: flex; flex-direction: column; gap: 14px; }
+
+/* 3-Spalten Stats-Row: ABC · Umsatz · Offene Aufgaben */
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .dashboard-stats { grid-template-columns: 1fr; }
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+}
+.stat-card-body { flex: 1; min-width: 0; }
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+.stat-value-muted { color: var(--muted); font-weight: 500; font-size: 14px; }
+.stat-value-overdue { color: #dc2626; }
+
+/* Info-Cards (Letzte Aktivität, Kontaktdaten, Notizen) */
+.info-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+.info-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 12px;
+}
+.info-card-empty { color: var(--muted); font-size: 13px; font-style: italic; }
+
+.last-activity-item { display: flex; gap: 12px; align-items: flex-start; padding: 2px 0; }
+.last-activity-date {
+  font-size: 12px;
+  color: var(--muted);
+  width: 90px;
+  flex-shrink: 0;
+}
+.last-activity-title { font-size: 13px; color: var(--text); flex: 1; }
+.last-activity-type {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+
+/* Inline-editierbares Notizen-Feld */
+.notes-edit-area {
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.notes-edit-area:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+/* Quick-Create Panel (rechte Spalte) */
+.quick-create-panel {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.quick-create-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.quick-create-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background .1s;
+}
+.quick-create-btn:hover { background: var(--bg); }
+.quick-create-btn svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+.quick-create-btn .plus-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+@media (max-width: 960px) {
+  .quick-create-panel { position: static; }
+}
+
 /* ── DETAIL-TABS (v1.23.0) ── */
 .detail-tabs {
   display: flex;

@@ -129,70 +129,52 @@
     <div class="sidebar-user" id="sidebar-user"></div>
 
     <nav class="nav" id="nav-main">
-      <!-- GRUPPE: KUNDEN -->
-      <div class="nav-group" id="nav-customers-group">
-        <button class="nav-item nav-item-group" id="nav-customers-toggle"
-                onclick="toggleNavGroup('nav-customers-group')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-            <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-            <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-            <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
-          </svg>
-          <span style="flex:1">Kunden</span>
-          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 9l6 6 6-6"/>
-          </svg>
-        </button>
+      <button class="nav-item" id="nav-companies"
+              onclick="navigateTo('companies')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+          <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+          <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+          <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+        </svg>
+        Firmen
+      </button>
 
-        <div class="nav-submenu">
-          <button class="nav-item nav-item-sub" id="nav-companies"
-                  onclick="navigateTo('companies')">
-            Firmen
-          </button>
-          <button class="nav-item nav-item-sub" id="nav-contacts"
-                  onclick="navigateTo('contacts')">
-            Kontakte
-          </button>
-        </div>
-      </div>
+      <button class="nav-item" id="nav-contacts"
+              onclick="navigateTo('contacts')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 2v2"/><path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
+          <path d="M8 2v2"/><circle cx="12" cy="11" r="3"/>
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+        </svg>
+        Kontakte
+      </button>
 
-      <!-- GRUPPE: AKTIVITÄT -->
-      <div class="nav-group" id="nav-activity-group">
-        <button class="nav-item nav-item-group" id="nav-activity-toggle"
-                onclick="toggleNavGroup('nav-activity-group')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-          <span style="flex:1">Aktivität</span>
-          <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
-          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 9l6 6 6-6"/>
-          </svg>
-        </button>
+      <button class="nav-item" id="nav-appointments"
+              onclick="navigateTo('appointments')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Termine
+      </button>
 
-        <div class="nav-submenu">
-          <button class="nav-item nav-item-sub" id="nav-appointments"
-                  onclick="navigateTo('appointments')">
-            Termine
-          </button>
-          <button class="nav-item nav-item-sub" id="nav-tasks"
-                  onclick="navigateTo('tasks')">
-            Aufgaben
-          </button>
-          <button class="nav-item nav-item-sub" id="nav-deployments"
-                  onclick="navigateTo('deployments')">
-            Einsätze
-          </button>
-        </div>
-      </div>
+      <button class="nav-item" id="nav-tasks"
+              onclick="navigateTo('tasks')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span style="flex:1;text-align:left">Aufgaben</span>
+        <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
+      </button>
 
-      <!-- PROJEKTE (eigenständig) -->
       <button class="nav-item" id="nav-projects"
               onclick="navigateTo('projects')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -200,6 +182,17 @@
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
         Projekte
+      </button>
+
+      <button class="nav-item" id="nav-deployments"
+              onclick="navigateTo('deployments')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2 2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        Einsätze
       </button>
     </nav>
 
@@ -400,14 +393,76 @@
         <button class="detail-tab" data-tab="mitgliedschaften" onclick="switchDetailTab('company','mitgliedschaften')">Mitgliedschaften <span class="tab-count" id="tab-count-company-mitgliedschaften" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten -->
+      <!-- PANEL: Stammdaten (Dashboard-Layout v1.24.0) -->
       <div class="detail-tab-panel active" data-tab="stammdaten">
-        <div class="card">
-          <div class="detail-grid" id="company-detail-info"></div>
-          <div id="company-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <div class="detail-label">Notizen</div>
-            <div id="company-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+        <div class="detail-dashboard">
+          <div class="dashboard-main">
+            <!-- Stats-Row: ABC · Umsatz · Offene Aufgaben -->
+            <div class="dashboard-stats">
+              <div class="stat-card">
+                <div id="company-abc-badge" class="abc-badge abc-badge-lg abc-badge-unknown">—</div>
+                <div class="stat-card-body">
+                  <div class="stat-label">ABC</div>
+                  <div class="stat-value stat-value-muted" id="company-abc-label">Nicht klassifiziert</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Gesamtumsatz</div>
+                  <div class="stat-value" id="company-total-revenue">—</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Offene Aufgaben</div>
+                  <div class="stat-value" id="company-open-tasks">—</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Letzte Aktivität -->
+            <div class="info-card">
+              <div class="info-card-title">Letzte Aktivität</div>
+              <div id="company-last-activity"><div class="info-card-empty">Lade ...</div></div>
+            </div>
+
+            <!-- Kontaktdaten -->
+            <div class="info-card">
+              <div class="info-card-title">Kontaktdaten</div>
+              <div class="detail-grid" id="company-detail-info"></div>
+            </div>
+
+            <!-- Notizen (inline-editierbar, speichert on blur) -->
+            <div class="info-card">
+              <div class="info-card-title">Notizen</div>
+              <textarea class="notes-edit-area" id="company-notes-inline"
+                        placeholder="Freitext-Notizen zu dieser Firma ..."
+                        onblur="saveCompanyNotesInline()"></textarea>
+              <div id="company-notes-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
+            </div>
           </div>
+
+          <aside class="quick-create-panel">
+            <div class="quick-create-title">Schnell anlegen</div>
+            <button class="quick-create-btn" id="company-quick-contact">
+              <span class="plus-icon">+</span> Kontakt
+            </button>
+            <button class="quick-create-btn" id="company-quick-appointment">
+              <span class="plus-icon">+</span> Termin
+            </button>
+            <button class="quick-create-btn" id="company-quick-task">
+              <span class="plus-icon">+</span> Aufgabe
+            </button>
+            <button class="quick-create-btn" id="company-quick-deployment">
+              <span class="plus-icon">+</span> Einsatz
+            </button>
+            <button class="quick-create-btn" id="company-quick-project">
+              <span class="plus-icon">+</span> Projekt
+            </button>
+            <button class="quick-create-btn" id="company-quick-membership">
+              <span class="plus-icon">+</span> Mitgliedschaft
+            </button>
+          </aside>
         </div>
       </div>
 
@@ -680,14 +735,63 @@
         <button class="detail-tab" data-tab="projekte" onclick="switchDetailTab('contact','projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten -->
+      <!-- PANEL: Stammdaten (Dashboard v1.24.0) -->
       <div class="detail-tab-panel active" data-tab="stammdaten">
-        <div class="card">
-          <div class="detail-grid" id="contact-detail-info"></div>
-          <div id="contact-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <div class="detail-label">Notizen</div>
-            <div id="contact-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+        <div class="detail-dashboard">
+          <div class="dashboard-main">
+            <div class="dashboard-stats">
+              <div class="stat-card">
+                <div id="contact-abc-badge" class="abc-badge abc-badge-lg abc-badge-unknown">—</div>
+                <div class="stat-card-body">
+                  <div class="stat-label">ABC (Firma)</div>
+                  <div class="stat-value stat-value-muted" id="contact-abc-label">Nicht klassifiziert</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Offene Aufgaben</div>
+                  <div class="stat-value" id="contact-open-tasks">—</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Projekte (Hauptkontakt)</div>
+                  <div class="stat-value" id="contact-project-count">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Letzte Aktivität</div>
+              <div id="contact-last-activity"><div class="info-card-empty">Lade ...</div></div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Kontaktdaten</div>
+              <div class="detail-grid" id="contact-detail-info"></div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Notizen</div>
+              <textarea class="notes-edit-area" id="contact-notes-inline"
+                        placeholder="Freitext-Notizen zu diesem Kontakt ..."
+                        onblur="saveContactNotesInline()"></textarea>
+              <div id="contact-notes-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
+            </div>
           </div>
+
+          <aside class="quick-create-panel">
+            <div class="quick-create-title">Schnell anlegen</div>
+            <button class="quick-create-btn" id="contact-quick-appointment">
+              <span class="plus-icon">+</span> Termin
+            </button>
+            <button class="quick-create-btn" id="contact-quick-task">
+              <span class="plus-icon">+</span> Aufgabe
+            </button>
+            <button class="quick-create-btn" id="contact-quick-project">
+              <span class="plus-icon">+</span> Projekt
+            </button>
+          </aside>
         </div>
       </div>
 
@@ -1353,9 +1457,9 @@
 
   </main>
 
-  <!-- MOBILE BOTTOM NAV (v1.23: Gruppen) -->
+  <!-- MOBILE BOTTOM NAV -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
-    <button class="mobile-nav-item" id="m-nav-customers"
+    <button class="mobile-nav-item" id="m-nav-companies"
             onclick="navigateTo('companies')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1364,25 +1468,28 @@
         <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
         <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
       </svg>
-      <span>Kunden</span>
+      <span>Firmen</span>
     </button>
-    <button class="mobile-nav-item" id="m-nav-activity"
+    <button class="mobile-nav-item" id="m-nav-appointments"
+            onclick="navigateTo('appointments')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      <span>Termine</span>
+    </button>
+    <button class="mobile-nav-item" id="m-nav-tasks"
             onclick="navigateTo('tasks')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="10"/>
-        <polyline points="12 6 12 12 16 14"/>
+        <path d="M9 11l3 3L22 4"/>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
       </svg>
-      <span>Aktivität</span>
+      <span>Aufgaben</span>
       <span class="nav-badge mobile-nav-badge" id="m-nav-tasks-badge" style="display:none"></span>
-    </button>
-    <button class="mobile-nav-item" id="m-nav-projects"
-            onclick="navigateTo('projects')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-      </svg>
-      <span>Projekte</span>
     </button>
     <button class="mobile-nav-item" id="m-nav-more" onclick="openMoreMenu()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -1409,7 +1516,7 @@
       </div>
 
       <div class="more-section">
-        <div class="more-section-title">Kunden</div>
+        <div class="more-section-title">Hauptbereich</div>
         <button class="more-item" id="m-more-contacts" onclick="navigateTo('contacts'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M16 2v2"/><path d="M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
@@ -1418,18 +1525,11 @@
           </svg>
           Kontakte
         </button>
-      </div>
-
-      <div class="more-section">
-        <div class="more-section-title">Aktivität</div>
-        <button class="more-item" id="m-more-appointments" onclick="navigateTo('appointments'); closeMoreMenu()">
+        <button class="more-item" id="m-more-projects" onclick="navigateTo('projects'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/>
-            <line x1="3" y1="10" x2="21" y2="10"/>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
-          Termine
+          Projekte
         </button>
         <button class="more-item" id="m-more-deployments" onclick="navigateTo('deployments'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -1566,6 +1666,15 @@
       <div class="form-group">
         <label>Branche</label>
         <input type="text" id="c-branche" placeholder="z. B. Automotive">
+      </div>
+      <div class="form-group">
+        <label>ABC-Klassifizierung</label>
+        <select id="c-abc">
+          <option value="">— Nicht klassifiziert —</option>
+          <option value="A">A — Kern-/Top-Kunde</option>
+          <option value="B">B — Wichtiger Kunde</option>
+          <option value="C">C — Geringerer strategischer Wert</option>
+        </select>
       </div>
     </div>
 

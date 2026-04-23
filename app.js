@@ -1,8 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.23.0 (Nav-Restruktur: 3 Gruppen Kunden/Aktivität/
-   Projekte; Detail-Seiten auf Tabs umgestellt — Stammdaten +
-   Sub-Tabs mit Count-Badges; aktiver Tab via ?tab=xxx in URL)
+   Version 1.24.0 (Sidebar flat revert + Stammdaten-Dashboard:
+   ABC-Klassifizierung A/B/C (farbig), Gesamtumsatz, offene
+   Aufgaben, letzte Aktivität, Inline-Notizen, Quick-Create-
+   Panel rechts für Kontakt/Termin/Aufgabe/Einsatz/Projekt/
+   Mitgliedschaft direkt aus der Firmen-/Kontakt-Detailseite.)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -465,6 +467,7 @@ async function duplicateCompany(sourceId) {
     name: (src.name || 'Firma') + ' (Kopie)',
     typ_id: src.typ_id,
     branche: src.branche,
+    abc_klassifizierung: src.abc_klassifizierung,
     strasse: src.strasse,
     plz: src.plz,
     stadt: src.stadt,
@@ -872,19 +875,6 @@ function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fd
 function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
 function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
 
-/** Zuordnung page → Nav-Gruppe (v1.23.0). */
-const NAV_PAGE_GROUP = {
-  companies:    'nav-customers-group',
-  contacts:     'nav-customers-group',
-  appointments: 'nav-activity-group',
-  tasks:        'nav-activity-group',
-  deployments:  'nav-activity-group',
-  users:        'nav-settings-group',
-  services:     'nav-settings-group',
-  lookups:      'nav-settings-group',
-  programs:     'nav-settings-group'
-};
-
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
@@ -892,16 +882,6 @@ function showPage(name) {
 
   const navBtn = document.getElementById('nav-' + name);
   if (navBtn) navBtn.classList.add('active');
-
-  // Nav-Gruppe aufklappen + markieren (v1.23.0)
-  document.querySelectorAll('.nav-group').forEach(g => g.classList.remove('has-active'));
-  const groupId = NAV_PAGE_GROUP[name];
-  if (groupId) {
-    const group = document.getElementById(groupId);
-    if (group) {
-      group.classList.add('open', 'has-active');
-    }
-  }
 
   setMobileNav(name);
 
@@ -920,27 +900,20 @@ function showPage(name) {
 function setMobileNav(pageName) {
   document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
 
-  // v1.23.0: Gruppierte Mobile-Nav (Kunden / Aktivität / Projekte / Mehr)
-  if (pageName === 'companies' || pageName === 'company-detail' || pageName === 'contacts' || pageName === 'contact-detail') {
-    document.getElementById('m-nav-customers')?.classList.add('active');
-  } else if (pageName === 'appointments' || pageName === 'tasks' || pageName === 'deployments') {
-    document.getElementById('m-nav-activity')?.classList.add('active');
-  } else if (pageName === 'projects' || pageName === 'project-detail') {
-    document.getElementById('m-nav-projects')?.classList.add('active');
+  if (pageName === 'companies' || pageName === 'company-detail') {
+    document.getElementById('m-nav-companies')?.classList.add('active');
+  } else if (pageName === 'appointments') {
+    document.getElementById('m-nav-appointments')?.classList.add('active');
+  } else if (pageName === 'tasks') {
+    document.getElementById('m-nav-tasks')?.classList.add('active');
   } else {
-    // users, services, lookups, programs, 404 → Mehr-Tab
+    // contacts, contact-detail, projects, project-detail, deployments, users, services, lookups, programs → Mehr-Tab
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
 
-/** Togglet eine Nav-Gruppe (generisch, ersetzt toggleSettings seit v1.23.0). */
-function toggleNavGroup(groupId) {
-  document.getElementById(groupId)?.classList.toggle('open');
-}
-
-/** Kompatibel zur alten Version — delegiert an toggleNavGroup. */
 function toggleSettings() {
-  toggleNavGroup('nav-settings-group');
+  document.getElementById('nav-settings-group').classList.toggle('open');
 }
 
 function openMoreMenu()  { document.getElementById('more-overlay').classList.add('open'); }
@@ -2837,10 +2810,14 @@ function renderCompaniesTable(companies) {
     const typWert  = c.typ?.wert || '—';
     const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
 
+    const abcHtml = c.abc_klassifizierung
+      ? `<span class="abc-badge abc-badge-${esc(c.abc_klassifizierung)}" title="ABC ${esc(c.abc_klassifizierung)}" style="margin-right:8px;vertical-align:middle">${esc(c.abc_klassifizierung)}</span>`
+      : '';
+
     return `
       <tr>
         <td>
-          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${esc(c.name)}</div>
+          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${abcHtml}${esc(c.name)}</div>
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
         </td>
         <td>
@@ -2868,6 +2845,7 @@ async function openCompanyModal(mode, companyId = null) {
 
   document.getElementById('c-name').value = '';
   document.getElementById('c-branche').value = '';
+  document.getElementById('c-abc').value = '';
   document.getElementById('c-strasse').value = '';
   document.getElementById('c-plz').value = '';
   document.getElementById('c-stadt').value = '';
@@ -2891,6 +2869,7 @@ async function openCompanyModal(mode, companyId = null) {
 
     document.getElementById('c-name').value = data.name || '';
     document.getElementById('c-branche').value = data.branche || '';
+    document.getElementById('c-abc').value = data.abc_klassifizierung || '';
     document.getElementById('c-strasse').value = data.strasse || '';
     document.getElementById('c-plz').value = data.plz || '';
     document.getElementById('c-stadt').value = data.stadt || '';
@@ -2912,6 +2891,8 @@ async function saveCompany() {
   const name     = document.getElementById('c-name').value.trim();
   const typ_id   = document.getElementById('c-typ').value;
   const branche  = document.getElementById('c-branche').value.trim();
+  const abcRaw   = document.getElementById('c-abc').value;
+  const abc_klassifizierung = ['A','B','C'].includes(abcRaw) ? abcRaw : null;
   const strasse  = document.getElementById('c-strasse').value.trim();
   const plz      = document.getElementById('c-plz').value.trim();
   const stadt    = document.getElementById('c-stadt').value.trim();
@@ -2935,7 +2916,8 @@ async function saveCompany() {
   try {
     const payload = {
       name, typ_id,
-      branche: branche || null, strasse: strasse || null, plz: plz || null,
+      branche: branche || null, abc_klassifizierung,
+      strasse: strasse || null, plz: plz || null,
       stadt: stadt || null, land: land || 'Deutschland',
       telefon: telefon || null, email: email || null,
       website: website || null, notizen: notizen || null
@@ -2995,7 +2977,6 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-detail-title').textContent = '…';
   document.getElementById('company-detail-subline').innerHTML = '';
   document.getElementById('company-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Firma ...</div>';
-  document.getElementById('company-detail-notizen-wrap').style.display = 'none';
   document.getElementById('company-contacts-body').innerHTML = '<tr><td colspan="5"><div class="empty">Lade Kontakte ...</div></td></tr>';
   document.getElementById('company-appointments-body').innerHTML = '<tr><td colspan="7"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('company-appointments-show-all').style.display = 'none';
@@ -3043,8 +3024,12 @@ function renderCompanyDetail(c) {
 
   const typFarbe = c.typ?.farbe || '#6b7280';
   const typWert  = c.typ?.wert || '—';
+  const abcBadgeHtml = c.abc_klassifizierung
+    ? `<span class="abc-badge abc-badge-${esc(c.abc_klassifizierung)}" title="ABC-Klassifizierung ${esc(c.abc_klassifizierung)}">${esc(c.abc_klassifizierung)}</span>`
+    : '';
   const subline = document.getElementById('company-detail-subline');
   subline.innerHTML = `
+    ${abcBadgeHtml}
     <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
     ${c.branche ? `<span>· ${esc(c.branche)}</span>` : ''}
   `;
@@ -3055,6 +3040,7 @@ function renderCompanyDetail(c) {
   const copyBtn = document.getElementById('company-detail-copy-btn');
   copyBtn.onclick = () => copyCompanyById(c.id);
 
+  // Bestehende Sektion-Add-Buttons (+ Kontakt hinzufügen etc.) im jeweiligen Tab-Panel
   document.getElementById('company-detail-add-contact-btn').onclick = () => {
     contactModalPrefillCompanyId = c.id;
     openContactModal('new');
@@ -3084,6 +3070,56 @@ function renderCompanyDetail(c) {
     taskModalPrefillCompanyId = c.id;
     openTaskModal('new');
   };
+
+  // Quick-Create-Panel im Stammdaten-Tab (v1.24.0)
+  document.getElementById('company-quick-contact').onclick = () => {
+    contactModalPrefillCompanyId = c.id; openContactModal('new');
+  };
+  document.getElementById('company-quick-appointment').onclick = () => {
+    appointmentModalPrefillCompanyId = c.id; openAppointmentModal('new');
+  };
+  document.getElementById('company-quick-task').onclick = () => {
+    taskModalPrefillCompanyId = c.id; openTaskModal('new');
+  };
+  document.getElementById('company-quick-deployment').onclick = () => {
+    deploymentModalPrefillCompanyId = c.id; openDeploymentModal('new');
+  };
+  document.getElementById('company-quick-project').onclick = () => {
+    projectModalPrefillCompanyId = c.id; openProjectModal('new');
+  };
+  document.getElementById('company-quick-membership').onclick = () => {
+    openMembershipModal('new', null, c.id);
+  };
+
+  // Stats-Widget: ABC
+  const abcBadge  = document.getElementById('company-abc-badge');
+  const abcLabel  = document.getElementById('company-abc-label');
+  abcBadge.classList.remove('abc-badge-A', 'abc-badge-B', 'abc-badge-C', 'abc-badge-unknown');
+  if (c.abc_klassifizierung) {
+    abcBadge.textContent = c.abc_klassifizierung;
+    abcBadge.classList.add(`abc-badge-${c.abc_klassifizierung}`);
+    abcLabel.textContent = {
+      A: 'Kern-/Top-Kunde',
+      B: 'Wichtiger Kunde',
+      C: 'Geringere Priorität'
+    }[c.abc_klassifizierung] || '';
+    abcLabel.classList.remove('stat-value-muted');
+  } else {
+    abcBadge.textContent = '—';
+    abcBadge.classList.add('abc-badge-unknown');
+    abcLabel.textContent = 'Nicht klassifiziert';
+    abcLabel.classList.add('stat-value-muted');
+  }
+
+  // Notizen inline-editierbar
+  const notesArea = document.getElementById('company-notes-inline');
+  notesArea.value = c.notizen || '';
+  notesArea.dataset.savedValue = c.notizen || '';
+  notesArea.dataset.companyId = c.id;
+  document.getElementById('company-notes-save-status').textContent = '';
+
+  // Stats-Widgets asynchron laden
+  loadCompanyDashboard(c.id);
 
   const info = document.getElementById('company-detail-info');
   const adrLines = [];
@@ -3127,13 +3163,7 @@ function renderCompanyDetail(c) {
       <div class="detail-value">${mailHtml}</div>
     </div>
   `;
-
-  if (c.notizen) {
-    document.getElementById('company-detail-notizen-wrap').style.display = '';
-    document.getElementById('company-detail-notizen').textContent = c.notizen;
-  } else {
-    document.getElementById('company-detail-notizen-wrap').style.display = 'none';
-  }
+  // Notizen: jetzt inline-editierbar im Dashboard (siehe oben, #company-notes-inline)
 }
 
 async function loadCompanyContacts(companyId) {
@@ -4718,14 +4748,13 @@ async function loadContactDetail(contactId) {
   document.getElementById('contact-detail-avatar').textContent = '…';
   document.getElementById('contact-detail-subline').innerHTML = '';
   document.getElementById('contact-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Kontakt ...</div>';
-  document.getElementById('contact-detail-notizen-wrap').style.display = 'none';
   document.getElementById('contact-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
   const kTasksBody = document.getElementById('contact-tasks-body');
   if (kTasksBody) kTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>';
 
   const { data, error } = await db.from('contacts')
-    .select('*, company:companies(id, name, strasse, plz, stadt)').is('deleted_at', null)
+    .select('*, company:companies(id, name, strasse, plz, stadt, abc_klassifizierung)').is('deleted_at', null)
     .eq('id', contactId).single();
 
   if (error || !data) {
@@ -4802,6 +4831,48 @@ function renderContactDetail(k) {
     openTaskModal('new');
   };
 
+  // Quick-Create-Panel im Stammdaten-Tab (v1.24.0)
+  document.getElementById('contact-quick-appointment').onclick = () => {
+    appointmentModalPrefillContactId = k.id; openAppointmentModal('new');
+  };
+  document.getElementById('contact-quick-task').onclick = () => {
+    taskModalPrefillContactId = k.id; openTaskModal('new');
+  };
+  document.getElementById('contact-quick-project').onclick = () => {
+    projectModalPrefillHauptkontaktId = k.id; openProjectModal('new');
+  };
+
+  // ABC-Badge (von der Firma geerbt, readonly auf Kontakt-Ebene)
+  const abc = k.company?.abc_klassifizierung;
+  const abcBadge = document.getElementById('contact-abc-badge');
+  const abcLabel = document.getElementById('contact-abc-label');
+  abcBadge.classList.remove('abc-badge-A', 'abc-badge-B', 'abc-badge-C', 'abc-badge-unknown');
+  if (abc) {
+    abcBadge.textContent = abc;
+    abcBadge.classList.add(`abc-badge-${abc}`);
+    abcLabel.textContent = {
+      A: 'Kern-/Top-Kunde',
+      B: 'Wichtiger Kunde',
+      C: 'Geringere Priorität'
+    }[abc] || '';
+    abcLabel.classList.remove('stat-value-muted');
+  } else {
+    abcBadge.textContent = '—';
+    abcBadge.classList.add('abc-badge-unknown');
+    abcLabel.textContent = k.company ? 'Nicht klassifiziert' : 'Keine Firma';
+    abcLabel.classList.add('stat-value-muted');
+  }
+
+  // Notizen inline-editierbar
+  const notesArea = document.getElementById('contact-notes-inline');
+  notesArea.value = k.notizen || '';
+  notesArea.dataset.savedValue = k.notizen || '';
+  notesArea.dataset.contactId = k.id;
+  document.getElementById('contact-notes-save-status').textContent = '';
+
+  // Stats-Widgets asynchron laden
+  loadContactDashboard(k.id);
+
   // Detail-Grid
   const telHtml = k.telefon
     ? `<a href="tel:${esc(k.telefon)}">${esc(k.telefon)}</a>`
@@ -4834,13 +4905,7 @@ function renderContactDetail(k) {
       <div class="detail-value">${firmaHtml}</div>
     </div>
   `;
-
-  if (k.notizen) {
-    document.getElementById('contact-detail-notizen-wrap').style.display = '';
-    document.getElementById('contact-detail-notizen').textContent = k.notizen;
-  } else {
-    document.getElementById('contact-detail-notizen-wrap').style.display = 'none';
-  }
+  // Notizen: jetzt inline im Dashboard (siehe unten, wird in loadContactDetail gesetzt)
 }
 
 async function loadContactAppointments(contactId) {
@@ -6805,6 +6870,203 @@ function setTabCount(entityType, tabKey, count) {
   if (count === 0 || count == null) { el.style.display = 'none'; return; }
   el.textContent = String(count);
   el.style.display = '';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DASHBOARD-WIDGETS (v1.24.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Firma-Stammdaten und Kontakt-Stammdaten zeigen ein Mini-Dashboard
+// mit Stats (ABC, Umsatz, Offene Aufgaben) + Letzte Aktivität.
+// Diese Funktionen laden die zugehörigen Daten und rendern sie.
+
+/** Lädt Umsatz + Offene Aufgaben + Letzte Aktivität für die Firma-Detail-Seite. */
+async function loadCompanyDashboard(companyId) {
+  // Parallel alle Queries anstoßen
+  const [depResult, projResult, openTasksResult, lastApptResult, lastDepResult] = await Promise.all([
+    // Umsatz aus direkten Einsätzen (Status Abgerechnet, ohne Projekt)
+    db.from('deployments')
+      .select('menge, einzelpreis, status, project_id').is('deleted_at', null)
+      .eq('company_id', companyId).eq('status', 'Abgerechnet').is('project_id', null),
+    // Umsatz aus abgeschlossenen Projekten (Paketpreis)
+    db.from('projects')
+      .select('geschaetzter_umsatz').is('deleted_at', null)
+      .eq('company_id', companyId).eq('status', 'Abgeschlossen'),
+    // Offene Aufgaben
+    db.from('tasks').select('id, faelligkeit', { count: 'exact' }).is('deleted_at', null)
+      .eq('company_id', companyId).neq('status', 'erledigt'),
+    // Letzter Termin
+    db.from('appointments')
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .eq('company_id', companyId).order('datum', { ascending: false }).limit(1),
+    // Letzter Einsatz (datum_von desc)
+    db.from('deployments')
+      .select('id, titel, datum_von, datum_bis').is('deleted_at', null)
+      .eq('company_id', companyId).not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1)
+  ]);
+
+  // Umsatz berechnen
+  const umsatzDirekt = (depResult.data || []).reduce(
+    (s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  const umsatzProjekte = (projResult.data || []).reduce(
+    (s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+  const umsatzTotal = umsatzDirekt + umsatzProjekte;
+
+  const revEl = document.getElementById('company-total-revenue');
+  if (revEl) {
+    revEl.textContent = umsatzTotal > 0 ? formatPreis(umsatzTotal) : '0,00 €';
+    revEl.classList.toggle('stat-value-muted', umsatzTotal === 0);
+  }
+
+  // Offene Aufgaben: count + überfällig-Färbung
+  const todayISO = toISODate(new Date());
+  const openTasks = openTasksResult.data || [];
+  const offenCount = openTasks.length;
+  const ueberfaellig = openTasks.filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
+  const tasksEl = document.getElementById('company-open-tasks');
+  if (tasksEl) {
+    tasksEl.textContent = offenCount === 0 ? '0' : String(offenCount);
+    tasksEl.classList.toggle('stat-value-muted', offenCount === 0);
+    tasksEl.classList.toggle('stat-value-overdue', ueberfaellig > 0);
+    tasksEl.title = ueberfaellig > 0 ? `${offenCount} offen, davon ${ueberfaellig} überfällig` : `${offenCount} offen`;
+  }
+
+  // Letzte Aktivität: pick latest across appointments + deployments
+  const lastAppt = (lastApptResult.data || [])[0] || null;
+  const lastDep = (lastDepResult.data || [])[0] || null;
+  const lastActEl = document.getElementById('company-last-activity');
+  if (lastActEl) {
+    const items = [];
+    if (lastAppt) items.push({
+      datum: lastAppt.datum, titel: lastAppt.titel, type: 'Termin',
+      typWert: lastAppt.typ?.wert
+    });
+    if (lastDep?.datum_von) items.push({
+      datum: lastDep.datum_von, titel: lastDep.titel, type: 'Einsatz'
+    });
+    items.sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
+    if (items.length === 0) {
+      lastActEl.innerHTML = '<div class="info-card-empty">Noch keine Aktivität erfasst.</div>';
+    } else {
+      lastActEl.innerHTML = items.slice(0, 2).map(i => `
+        <div class="last-activity-item">
+          <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
+          <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+/** Lädt Offene Aufgaben + Projekte + Letzte Aktivität für die Kontakt-Detail-Seite. */
+async function loadContactDashboard(contactId) {
+  const [openTasksResult, projCountResult, lastApptResult, lastTaskResult] = await Promise.all([
+    db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
+      .eq('contact_id', contactId).neq('status', 'erledigt'),
+    db.from('projects').select('id', { count: 'exact', head: true }).is('deleted_at', null)
+      .eq('hauptkontakt_id', contactId),
+    db.from('appointments')
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .eq('contact_id', contactId).order('datum', { ascending: false }).limit(1),
+    db.from('tasks')
+      .select('id, titel, created_at, status').is('deleted_at', null)
+      .eq('contact_id', contactId).order('created_at', { ascending: false }).limit(1)
+  ]);
+
+  // Offene Aufgaben
+  const todayISO = toISODate(new Date());
+  const openTasks = openTasksResult.data || [];
+  const offenCount = openTasks.length;
+  const ueberfaellig = openTasks.filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
+  const tasksEl = document.getElementById('contact-open-tasks');
+  if (tasksEl) {
+    tasksEl.textContent = offenCount === 0 ? '0' : String(offenCount);
+    tasksEl.classList.toggle('stat-value-muted', offenCount === 0);
+    tasksEl.classList.toggle('stat-value-overdue', ueberfaellig > 0);
+    tasksEl.title = ueberfaellig > 0 ? `${offenCount} offen, davon ${ueberfaellig} überfällig` : `${offenCount} offen`;
+  }
+
+  // Projekt-Count
+  const projEl = document.getElementById('contact-project-count');
+  if (projEl) {
+    const cnt = projCountResult.count || 0;
+    projEl.textContent = String(cnt);
+    projEl.classList.toggle('stat-value-muted', cnt === 0);
+  }
+
+  // Letzte Aktivität
+  const lastAppt = (lastApptResult.data || [])[0] || null;
+  const lastTask = (lastTaskResult.data || [])[0] || null;
+  const lastActEl = document.getElementById('contact-last-activity');
+  if (lastActEl) {
+    const items = [];
+    if (lastAppt) items.push({
+      datum: lastAppt.datum, titel: lastAppt.titel, type: 'Termin',
+      typWert: lastAppt.typ?.wert
+    });
+    if (lastTask) items.push({
+      datum: (lastTask.created_at || '').substring(0, 10),
+      titel: lastTask.titel, type: 'Aufgabe'
+    });
+    items.sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
+    if (items.length === 0) {
+      lastActEl.innerHTML = '<div class="info-card-empty">Noch keine Aktivität erfasst.</div>';
+    } else {
+      lastActEl.innerHTML = items.slice(0, 2).map(i => `
+        <div class="last-activity-item">
+          <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
+          <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+/** Inline-Notizen-Save: auf Blur speichern, wenn Wert sich geändert hat. */
+async function saveCompanyNotesInline() {
+  const area = document.getElementById('company-notes-inline');
+  const statusEl = document.getElementById('company-notes-save-status');
+  const newValue = area.value;
+  const oldValue = area.dataset.savedValue || '';
+  const companyId = area.dataset.companyId;
+  if (!companyId) return;
+  if (newValue === oldValue) return;
+
+  statusEl.textContent = 'Speichere ...';
+  const { error } = await db.from('companies')
+    .update({ notizen: newValue || null }).eq('id', companyId);
+  if (error) {
+    statusEl.textContent = 'Fehler beim Speichern: ' + error.message;
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  area.dataset.savedValue = newValue;
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = 'Gespeichert ✓';
+  setTimeout(() => { if (statusEl.textContent === 'Gespeichert ✓') statusEl.textContent = ''; }, 2000);
+}
+
+async function saveContactNotesInline() {
+  const area = document.getElementById('contact-notes-inline');
+  const statusEl = document.getElementById('contact-notes-save-status');
+  const newValue = area.value;
+  const oldValue = area.dataset.savedValue || '';
+  const contactId = area.dataset.contactId;
+  if (!contactId) return;
+  if (newValue === oldValue) return;
+
+  statusEl.textContent = 'Speichere ...';
+  const { error } = await db.from('contacts')
+    .update({ notizen: newValue || null }).eq('id', contactId);
+  if (error) {
+    statusEl.textContent = 'Fehler beim Speichern: ' + error.message;
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  area.dataset.savedValue = newValue;
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = 'Gespeichert ✓';
+  setTimeout(() => { if (statusEl.textContent === 'Gespeichert ✓') statusEl.textContent = ''; }, 2000);
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -39,9 +39,9 @@ Im Zweifel zuerst fragen. Der Umfang deiner Aktion muss sich an dem orientieren,
 ### Dateistruktur
 
 ```
-index.html   ~2,35k Zeilen — alle Seiten als <div class="page">, alle Modals als versteckte Divs
-styles.css   ~1,49k Zeilen — CSS-Variablen + Desktop/Mobile
-app.js       ~7,60k Zeilen — jedes Modul in einer Datei, flache Globals für State
+index.html   ~2,46k Zeilen — alle Seiten als <div class="page">, alle Modals als versteckte Divs
+styles.css   ~1,68k Zeilen — CSS-Variablen + Desktop/Mobile
+app.js       ~7,87k Zeilen — jedes Modul in einer Datei, flache Globals für State
 supabase/functions/manage-users/index.ts — Deno-Edge-Function für invite/update/delete/reset_password
 migrations/              — versionierte SQL-Migrationen, manuell oder per Management API angewendet
 ```
