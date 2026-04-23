@@ -164,6 +164,17 @@
         Termine
       </button>
 
+      <button class="nav-item" id="nav-tasks"
+              onclick="navigateTo('tasks')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span style="flex:1;text-align:left">Aufgaben</span>
+        <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
+      </button>
+
       <button class="nav-item" id="nav-projects"
               onclick="navigateTo('projects')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -511,6 +522,35 @@
           <div class="empty">Lade Mitgliedschaften ...</div>
         </div>
       </div>
+
+      <!-- AUFGABEN-SEKTION (NEU v1.22.0) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="company-tasks-count">Aufgaben</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="company-detail-add-task-btn">
+            + Aufgabe hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px" title="Als erledigt markieren"></th>
+                <th>Titel</th>
+                <th style="width:120px">Fällig</th>
+                <th class="col-tablet">Zugewiesen</th>
+                <th style="width:120px">Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="company-tasks-body">
+              <tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- SEITE: KONTAKTE -->
@@ -662,6 +702,35 @@
           </table>
         </div>
       </div>
+
+      <!-- AUFGABEN DES KONTAKTS (NEU v1.22.0) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="contact-tasks-count">Aufgaben</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="contact-detail-add-task-btn">
+            + Aufgabe hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px" title="Als erledigt markieren"></th>
+                <th>Titel</th>
+                <th style="width:120px">Fällig</th>
+                <th class="col-tablet">Zugewiesen</th>
+                <th style="width:120px">Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="contact-tasks-body">
+              <tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- SEITE: TERMINE (LISTE) -->
@@ -730,6 +799,75 @@
             </thead>
             <tbody id="appointments-table-body">
               <tr><td colspan="8"><div class="empty">Lade Termine ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEITE: AUFGABEN (LISTE) -->
+    <div class="page" id="page-tasks">
+      <div class="page-header">
+        <h1 class="page-title">Aufgaben</h1>
+        <button class="btn btn-primary" onclick="openTaskModal('new')">
+          + Neue Aufgabe
+        </button>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="tasks-search"
+                   placeholder="Suche nach Titel, Firma, Beschreibung ..."
+                   oninput="filterTasks()">
+          </div>
+          <div class="form-group" style="min-width:180px;margin:0">
+            <select id="tasks-scope-filter" onchange="filterTasks()">
+              <option value="mine_open">Meine offenen</option>
+              <option value="assigned_to_me">An mich zugewiesen</option>
+              <option value="created_by_me">Von mir erstellt</option>
+              <option value="all_open">Alle offenen</option>
+              <option value="done">Erledigt</option>
+              <option value="all">Alle</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:180px;margin:0">
+            <select id="tasks-assignee-filter" onchange="filterTasks()">
+              <option value="">Alle Zuweisungen</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:180px;margin:0">
+            <select id="tasks-company-filter" onchange="filterTasks()">
+              <option value="">Alle Firmen</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:140px;margin:0">
+            <select id="tasks-status-filter" onchange="filterTasks()">
+              <option value="">Alle Status</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="tasks-count">Aufgaben</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px" title="Als erledigt markieren"></th>
+                <th>Titel</th>
+                <th style="width:120px">Fällig</th>
+                <th class="col-tablet">Zugewiesen</th>
+                <th class="col-desktop">Kontext</th>
+                <th style="width:120px">Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="tasks-table-body">
+              <tr><td colspan="7"><div class="empty">Lade Aufgaben ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -898,6 +1036,35 @@
           </table>
         </div>
         <div id="project-deployments-summary" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
+      </div>
+
+      <!-- AUFGABEN DES PROJEKTS (NEU v1.22.0) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;padding:0;border:none">
+            <span id="project-tasks-count">Aufgaben</span>
+          </div>
+          <button class="btn btn-sm btn-primary" id="project-detail-add-task-btn">
+            + Aufgabe hinzufügen
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px" title="Als erledigt markieren"></th>
+                <th>Titel</th>
+                <th style="width:120px">Fällig</th>
+                <th class="col-tablet">Zugewiesen</th>
+                <th style="width:120px">Status</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="project-tasks-body">
+              <tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1183,6 +1350,13 @@
           </svg>
           Kontakte
         </button>
+        <button class="more-item" id="m-more-tasks" onclick="navigateTo('tasks'); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 11l3 3L22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Aufgaben
+        </button>
         <button class="more-item" id="m-more-projects" onclick="navigateTo('projects'); closeMoreMenu()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -1271,6 +1445,7 @@
   <div class="fab-menu-title" id="fab-menu-title">Schnell anlegen</div>
   <button class="fab-menu-item" role="menuitem" onclick="fabAction('company')">Neue Firma</button>
   <button class="fab-menu-item" role="menuitem" onclick="fabAction('contact')">Neuer Kontakt</button>
+  <button class="fab-menu-item" role="menuitem" onclick="fabAction('task')">Neue Aufgabe</button>
   <button class="fab-menu-item" role="menuitem" onclick="fabAction('appointment')">Neuer Termin</button>
   <button class="fab-menu-item" role="menuitem" onclick="fabAction('deployment')">Neuer Einsatz</button>
   <button class="fab-menu-item" role="menuitem" onclick="fabAction('project')">Neues Projekt</button>
@@ -1511,6 +1686,69 @@
       </button>
       <button class="btn" onclick="closeAppointmentModal()">Abbrechen</button>
       <button class="btn btn-primary" id="t-save-btn" onclick="saveAppointment()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: AUFGABE -->
+<div class="modal-overlay" id="modal-aufgabe">
+  <div class="modal" style="width:640px">
+    <div class="modal-title" id="modal-aufgabe-title">Neue Aufgabe</div>
+
+    <div class="modal-group-title">Aufgaben-Daten</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Titel *</label>
+        <input type="text" id="a-titel" placeholder="z. B. Angebot für TNC-Schulung nachfassen">
+      </div>
+      <div class="form-group">
+        <label>Fällig am</label>
+        <input type="date" id="a-faelligkeit">
+      </div>
+      <div class="form-group">
+        <label>Status *</label>
+        <select id="a-status"></select>
+      </div>
+      <div class="form-group full">
+        <label>Zugewiesen an *</label>
+        <select id="a-assigned-to"></select>
+      </div>
+      <div class="form-group full">
+        <label>Beschreibung</label>
+        <textarea id="a-beschreibung" rows="3" placeholder="Was genau ist zu tun?"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Zuordnung (optional)</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Firma</label>
+        <select id="a-company"></select>
+      </div>
+      <div class="form-group">
+        <label>Kontakt</label>
+        <select id="a-contact"></select>
+      </div>
+      <div class="form-group full">
+        <label>Projekt</label>
+        <select id="a-project"></select>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Notizen</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <textarea id="a-notizen" rows="2" placeholder="Interne Notizen zur Aufgabe ..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="a-delete-btn"
+              onclick="deleteTask()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeTaskModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="a-save-btn" onclick="saveTask()">Anlegen</button>
     </div>
   </div>
 </div>

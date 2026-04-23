@@ -107,6 +107,21 @@ body {
   flex-shrink: 0;
 }
 
+.nav-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+  background: var(--primary, #2563eb);
+  border-radius: 10px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.nav-badge.nav-badge-overdue { background: #dc2626; }
+
 .nav-bottom {
   padding: 8px 0;
   border-top: 1px solid var(--border);

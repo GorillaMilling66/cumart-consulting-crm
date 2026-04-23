@@ -1,108 +1,109 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Diese Datei enthält Hinweise für Claude Code (claude.ai/code), wenn mit Code in diesem Repository gearbeitet wird.
 
-## Project Snapshot
+## Projekt-Überblick
 
-Internal CRM for Cumart Consulting. **Vanilla HTML/CSS/JS SPA** (no framework, no build step) on top of **Supabase** (Postgres + Auth + one Edge Function). Deployed via Vercel auto-deploy from `main` to `https://cumart.cloud`.
+Internes CRM für Cumart Consulting. **Vanilla HTML/CSS/JS SPA** (kein Framework, kein Build-Schritt) auf Basis von **Supabase** (Postgres + Auth + eine Edge Function). Deployment via Vercel Auto-Deploy von `main` nach `https://cumart.cloud`.
 
-UI language is **German** throughout (labels, status values, user-facing strings). Keep new UI text in German.
+Die UI-Sprache ist durchgängig **Deutsch** (Labels, Statuswerte, sichtbare Texte). Neue UI-Texte bitte auf Deutsch halten.
 
-See `architecture.md` for the authoritative spec — it's kept in sync with each release and is the single source of truth for schema, version history, and cross-entity logic. **Bump its version and update the relevant section whenever you change schema, cross-entity behavior, or add a major feature.** `app.js`'s top-of-file banner should stay in sync too.
+Siehe `architecture.md` für die maßgebliche Spezifikation — sie wird mit jedem Release synchron gehalten und ist die einzige Quelle der Wahrheit für Schema, Versionshistorie und entitätsübergreifende Logik. **Version erhöhen und den betreffenden Abschnitt aktualisieren, sobald du Schema, entitätsübergreifendes Verhalten oder ein größeres Feature änderst.** Der Banner-Kommentar am Dateianfang von `app.js` sollte ebenfalls synchron bleiben.
 
-## Commands
+## Befehle
 
-There is no build, lint, or test tooling. The repository is three flat files plus one Edge Function.
+Es gibt kein Build-, Lint- oder Test-Tooling. Das Repository besteht aus drei flachen Dateien plus einer Edge Function.
 
-- **Run locally:** open `index.html` directly in a browser, or serve the directory with any static server (e.g. `python3 -m http.server 8000`). The Supabase URL and anon key are hardcoded in `app.js` — local dev hits production Supabase.
-- **Deploy:** commit + push to `main`. Vercel redeploys automatically in ~30–60s. Hard-reload (Cmd+Shift+R) to bust cache.
-- **Edge Function deploy:** `supabase/functions/manage-users/index.ts` must be deployed via the Supabase dashboard or CLI separately; it is *not* picked up by Vercel. "Verify JWT with legacy secret" must stay disabled on that function.
-- **Schema migrations:** applied by hand in the Supabase SQL editor, **or** via the Supabase Management API (`POST https://api.supabase.com/v1/projects/loohjeiysjxzbmfwkyvv/database/query` with a Personal Access Token the user provides in-session). After applying, run the verification query at the end of `architecture.md` §14.6 to confirm all required constraints/tables/lookup values are present.
+- **Lokal ausführen:** `index.html` direkt im Browser öffnen oder das Verzeichnis mit einem beliebigen statischen Server ausliefern (z. B. `python3 -m http.server 8000`). Die Supabase-URL und der Anon-Key sind in `app.js` hartcodiert — lokale Entwicklung greift auf das Produktions-Supabase zu.
+- **Deploy:** commit + push auf `main`. Vercel deployt automatisch in ~30–60 s neu. Hard-Reload (Cmd+Shift+R), um den Cache zu umgehen.
+- **Edge-Function-Deploy:** `supabase/functions/manage-users/index.ts` muss separat über das Supabase-Dashboard oder die CLI deployt werden; Vercel erkennt sie *nicht*. „Verify JWT with legacy secret" muss bei dieser Function deaktiviert bleiben.
+- **Schema-Migrationen:** manuell im Supabase SQL-Editor angewendet, **oder** über die Supabase Management API (`POST https://api.supabase.com/v1/projects/loohjeiysjxzbmfwkyvv/database/query` mit einem Personal Access Token, den der Nutzer in der Session bereitstellt). Nach dem Anwenden die Verifizierungs-Query am Ende von `architecture.md` §14.6 ausführen, um zu bestätigen, dass alle benötigten Constraints/Tabellen/Lookup-Werte vorhanden sind.
 
-## Standing authorization (granted 2026-04-22 by Selcuk)
+## Stehende Autorisierung (erteilt am 22.04.2026 durch Selcuk)
 
-The user has pre-authorized the following actions so you don't need to confirm case-by-case:
+Der Nutzer hat folgende Aktionen vorab autorisiert, sodass keine einzelne Bestätigung nötig ist:
 
-- **Supabase data changes via migration SQL** — applying versioned migration files in `migrations/` against the production database (Management API or SQL editor). Includes DDL (`CREATE`, `ALTER`, `DROP`) and data-shape changes that are part of a checked-in migration.
-- **Git commits and pushes to `main`** — normal forward-moving commits and `git push` for feature releases. Vercel auto-deploys from `main`, so pushing = deploying to prod.
+- **Supabase-Datenänderungen per Migrations-SQL** — Anwenden versionierter Migrationsdateien aus `migrations/` auf die Produktionsdatenbank (Management API oder SQL-Editor). Umfasst DDL (`CREATE`, `ALTER`, `DROP`) und Datenstrukturänderungen, die Teil einer eingecheckten Migration sind.
+- **Git-Commits und Pushes auf `main`** — normale vorwärtsgerichtete Commits und `git push` für Feature-Releases. Vercel deployt automatisch von `main`, d. h. Push = Deploy in Produktion.
 
-**Still requires explicit confirmation** (the standing authorization does NOT cover):
+**Weiterhin ausdrücklich bestätigungspflichtig** (NICHT durch die stehende Autorisierung abgedeckt):
 
-- **Destructive SQL outside a migration file** — ad-hoc `DELETE` / mass `UPDATE` against live user data, `DROP TABLE` outside a migration, reverting a migration in-place.
-- **Destructive Git operations** — `push --force`, `reset --hard` on `main`, deleting branches, rewriting published history.
-- **Credential/secret changes** — rotating the hardcoded `SUPABASE_ANON_KEY`, changing RLS in ways that could lock out the admin, modifying `manage-users` Edge Function auth behavior.
+- **Destruktives SQL außerhalb einer Migrationsdatei** — ad-hoc `DELETE` / Massen-`UPDATE` auf Live-Nutzerdaten, `DROP TABLE` außerhalb einer Migration, In-Place-Rückabwicklung einer Migration.
+- **Destruktive Git-Operationen** — `push --force`, `reset --hard` auf `main`, Löschen von Branches, Umschreiben veröffentlichter Historie.
+- **Credential-/Secret-Änderungen** — Rotieren des hartcodierten `SUPABASE_ANON_KEY`, Änderungen an RLS, die den Admin aussperren könnten, Änderungen am Auth-Verhalten der `manage-users` Edge Function.
 
-When in doubt, ask first. Match the scope of your action to what the migration/commit actually says it does.
+Im Zweifel zuerst fragen. Der Umfang deiner Aktion muss sich an dem orientieren, was die Migration/der Commit tatsächlich beschreibt.
 
-## Architecture
+## Architektur
 
-### File layout
+### Dateistruktur
 
 ```
-index.html   ~2.04k lines — all pages as <div class="page">, all modals as hidden divs
-styles.css   ~1.41k lines — CSS variables + desktop/mobile
-app.js       ~6.74k lines — every module in one file, flat globals for state
-supabase/functions/manage-users/index.ts — Deno edge fn for invite/update/delete/reset_password
-migrations/              — versioned SQL migrations, applied by hand or via Management API
+index.html   ~2,28k Zeilen — alle Seiten als <div class="page">, alle Modals als versteckte Divs
+styles.css   ~1,43k Zeilen — CSS-Variablen + Desktop/Mobile
+app.js       ~7,46k Zeilen — jedes Modul in einer Datei, flache Globals für State
+supabase/functions/manage-users/index.ts — Deno-Edge-Function für invite/update/delete/reset_password
+migrations/              — versionierte SQL-Migrationen, manuell oder per Management API angewendet
 ```
 
-### SPA model
+### SPA-Modell
 
-- Hash router (`#/firmen`, `#/firma/:id`, `#/projekt/:id`, …). Pages are sibling `<div class="page">` elements; routing toggles `.active`.
-- Einsätze and Mitgliedschaften have **no detail route** — they are edited exclusively via modal.
-- State lives in flat `let` globals at the top of `app.js` (`currentProfile`, `editing<Entity>Id`, `current<Entity>DetailId`, `<entity>Cache`, prefill vars).
-- Caches are **lazy-filled and manually invalidated after writes**. When adding a new write path for an entity, explicitly clear/refresh its cache (see existing patterns for `servicesCache`, `programsCache`, `companyContactsMap`).
+- Hash-Router (`#/firmen`, `#/firma/:id`, `#/projekt/:id`, …). Seiten sind gleichrangige `<div class="page">`-Elemente; das Routing schaltet `.active` um.
+- Einsätze und Mitgliedschaften haben **keine Detail-Route** — sie werden ausschließlich über Modals bearbeitet.
+- State lebt in flachen `let`-Globals am Anfang von `app.js` (`currentProfile`, `editing<Entity>Id`, `current<Entity>DetailId`, `<entity>Cache`, Prefill-Variablen).
+- Caches werden **lazy befüllt und nach Writes manuell invalidiert**. Wenn du einen neuen Write-Pfad für eine Entität hinzufügst, deren Cache explizit leeren/aktualisieren (siehe bestehende Muster für `servicesCache`, `programsCache`, `companyContactsMap`).
 
-### Modal conventions
+### Modal-Konventionen
 
-Each entity has its own modal with a short **ID prefix** for form fields (see `architecture.md` §7.6 for the full table):
-`c-*` companies, `k-*` contacts, `t-*` appointments, `p-*` projects, `d-*` deployments, `u-*` users, `s-*` services, `l-*` lookups, `pr-*` programs, `ms-*` memberships. Follow this scheme when adding fields — the prefix is how handlers find their inputs.
+Jede Entität hat ihr eigenes Modal mit einem kurzen **ID-Präfix** für Formularfelder (vollständige Tabelle in `architecture.md` §7.6):
+`c-*` Firmen, `k-*` Kontakte, `t-*` Termine, `p-*` Projekte, `d-*` Einsätze, `u-*` Nutzer, `s-*` Leistungen, `l-*` Lookups, `pr-*` Programme, `ms-*` Mitgliedschaften, `a-*` Aufgaben. Dieses Schema beim Hinzufügen von Feldern einhalten — über das Präfix finden die Handler ihre Inputs.
 
-Collapsible modal groups (`<div class="modal-group-title">`) toggle all following siblings via event delegation — works automatically in any modal.
+Zusammenklappbare Modal-Gruppen (`<div class="modal-group-title">`) schalten alle folgenden Geschwister-Elemente via Event-Delegation um — funktioniert automatisch in jedem Modal.
 
-### Domain model — what's billable vs. what's effort
+### Domänenmodell — was ist abrechenbar, was ist Aufwand
 
-This distinction is load-bearing across the app; violating it breaks revenue reporting:
+Diese Unterscheidung ist tragend durch die ganze App; sie zu verletzen bricht die Umsatzauswertung:
 
-- **Termin** — meeting/acquisition touchpoint. **Not billable.** Effort only.
-- **Einsatz (deployment)** — the billable unit. `menge × einzelpreis` is customer revenue *only when* there is no `project_id`.
-- **Projekt** — package of Einsätze with a fixed price (`geschaetzter_umsatz`). When an Einsatz has a `project_id`, its `einzelpreis` is *internal effort tracking*, not customer revenue. The package price is what the customer sees.
-- **Leistungsumsatz** — sum of Einsatz line-values inside a project (for soll/ist comparison against the package price).
-- **Mitgliedschaft** — subscription. **Benefits from the program become `entitlements`** (quota rows) when the membership is created; each use is logged in `entitlement_redemptions`, normally linked 1:1 to an Einsatz.
+- **Termin** — Meeting/Akquise-Kontaktpunkt. **Nicht abrechenbar.** Nur Aufwand.
+- **Einsatz (deployment)** — die abrechenbare Einheit. `menge × einzelpreis` ist Kundenumsatz *nur dann*, wenn keine `project_id` gesetzt ist.
+- **Projekt** — Paket aus Einsätzen mit einem Festpreis (`geschaetzter_umsatz`). Wenn ein Einsatz eine `project_id` hat, ist sein `einzelpreis` *internes Aufwands-Tracking*, kein Kundenumsatz. Der Paketpreis ist das, was der Kunde sieht.
+- **Aufgabe (task)** — interne To-Do-Notiz, zuweisbar an `user_profiles.id` (sich selbst oder anderen). **Nicht abrechenbar, keine Umsatzwirkung, keine Kopplung an Einsatz/Termin.** Bewusst entkoppelt, um die Domänen-Invarianten (Umsatz aus Einsätzen/Projekten) nicht zu stören.
+- **Leistungsumsatz** — Summe der Einsatz-Positionswerte innerhalb eines Projekts (für Soll/Ist-Vergleich gegen den Paketpreis).
+- **Mitgliedschaft** — Abonnement. **Leistungen aus dem Programm werden zu `entitlements`** (Kontingentzeilen), sobald die Mitgliedschaft erstellt wird; jede Nutzung wird in `entitlement_redemptions` protokolliert, normalerweise 1:1 mit einem Einsatz verknüpft.
 
-### Cross-entity flows to preserve
+### Entitätsübergreifende Abläufe, die erhalten bleiben müssen
 
-- **Appointment↔Deployment coupling** (`appointments.deployment_id`): toggling the "Auch als Termin eintragen" checkbox on an Einsatz creates, updates, or **deletes** the linked Termin. Deleting the Einsatz deletes its Termin. Removing the date deletes it. Full rules in `architecture.md` §8.4.
-- **Auto project status** (`checkAndUpdateProjectStatus*`): after any CRUD on a project's Einsätze/Termine, the project status transitions across `In Arbeit → Abschlussphase → Abgeschlossen` based on completion. Use the `…Smart()` variant for DOM-only updates (quick-toggle checkboxes), the plain one after modal saves. Table in `architecture.md` §8.5.
-- **Entitlement redemptions in the Einsatz modal** (v1.14): the modal shows a redemption section when the chosen firm has open entitlements. Edge cases handled via `window._pendingRedemption*` vars — see §8.9. Key rule: on edit, the deployment's *own* existing redemption must not count against remaining quota (otherwise you can never raise your own menge).
-- **Membership creation fans out entitlements** (v1.13): saving a Mitgliedschaft auto-creates one `entitlements` row per `membership_program_benefits` entry. Editing a program uses **benefits-replacement** (delete-all-then-insert) but does not touch entitlements of existing memberships.
-- **Context-sensitive refresh after CRUD**: `save<X>`/`delete<X>` check which detail page is active and refresh only the relevant section. Preserve this when adding new save paths — a firm's memberships section should refresh when one of its Einsätze changes.
+- **Termin↔Einsatz-Kopplung** (`appointments.deployment_id`): Das Umschalten der Checkbox „Auch als Termin eintragen" an einem Einsatz erstellt, aktualisiert oder **löscht** den verknüpften Termin. Das Löschen des Einsatzes löscht auch seinen Termin. Das Entfernen des Datums löscht ihn. Vollständige Regeln in `architecture.md` §8.4.
+- **Auto-Projektstatus** (`checkAndUpdateProjectStatus*`): Nach jedem CRUD an den Einsätzen/Terminen eines Projekts wechselt der Projektstatus basierend auf dem Fortschritt zwischen `In Arbeit → Abschlussphase → Abgeschlossen`. Die `…Smart()`-Variante für reine DOM-Updates (Quick-Toggle-Checkboxen) verwenden, die einfache Variante nach Modal-Speicherungen. Tabelle in `architecture.md` §8.5.
+- **Entitlement-Einlösungen im Einsatz-Modal** (v1.14): Das Modal zeigt einen Einlösungs-Abschnitt, wenn die gewählte Firma offene Entitlements hat. Edge Cases werden über `window._pendingRedemption*`-Variablen gehandhabt — siehe §8.9. Schlüsselregel: Beim Bearbeiten darf die *eigene* bestehende Einlösung des Einsatzes nicht gegen das Restkontingent zählen (sonst könntest du deine eigene Menge nie erhöhen).
+- **Anlage einer Mitgliedschaft erzeugt Entitlements** (v1.13): Das Speichern einer Mitgliedschaft erstellt automatisch pro `membership_program_benefits`-Eintrag eine `entitlements`-Zeile. Das Bearbeiten eines Programms verwendet **Benefits-Ersetzung** (erst alles löschen, dann neu einfügen), ändert aber die Entitlements bestehender Mitgliedschaften nicht.
+- **Kontextsensitives Refresh nach CRUD**: `save<X>`/`delete<X>` prüft, welche Detail-Seite gerade aktiv ist, und aktualisiert nur den relevanten Abschnitt. Das bitte erhalten, wenn du neue Speicherpfade hinzufügst — der Mitgliedschaften-Abschnitt einer Firma sollte aktualisiert werden, wenn sich einer ihrer Einsätze ändert.
 
-### Status values come from the DB, not from code
+### Statuswerte kommen aus der DB, nicht aus dem Code
 
-`projekt_status` and `einsatz_status` have **no CHECK constraints** (dropped in v1.9.6). Allowed values are whatever is active in `lookup_values`. Validation in `app.js` reads the lookup cache, not a hardcoded whitelist.
+`projekt_status`, `einsatz_status` und `aufgabe_status` haben **keine CHECK-Constraints** (entfernt in v1.9.6 bzw. nie angelegt in v1.22). Erlaubte Werte sind das, was in `lookup_values` aktiv ist. Die Validierung in `app.js` liest den Lookup-Cache, keine hartcodierte Whitelist.
 
-**Caveat:** the strings `Abschlussphase`, `Abgeschlossen`, `Durchgeführt`, `Abgerechnet`, `geplant`, `durchgefuehrt` are referenced by the auto-status logic. Don't rename them — deactivate with `ist_aktiv=false` instead.
+**Vorbehalt:** Die Strings `Abschlussphase`, `Abgeschlossen`, `Durchgeführt`, `Abgerechnet`, `geplant`, `durchgefuehrt`, `offen`, `erledigt` werden von der Auto-Status-Logik bzw. Checkbox-Toggle referenziert. Nicht umbenennen — stattdessen mit `ist_aktiv=false` deaktivieren.
 
-### RLS posture
+### RLS-Aufstellung
 
-Hybrid: strict admin-write on `user_profiles`, `roles`, `lookup_values`; open-authenticated on all operational tables (companies, contacts, deployments, memberships, entitlements, …). Privileged actions (invite / delete / password reset / admin role changes) go through the `manage-users` Edge Function, which is where last-admin protection belongs (see roadmap §13.1).
+Hybrid: striktes Admin-Write auf `user_profiles`, `roles`, `lookup_values`; offenes Authenticated auf allen operativen Tabellen (companies, contacts, deployments, memberships, entitlements, …). Privilegierte Aktionen (invite / delete / password reset / Admin-Rollenänderungen) laufen über die `manage-users` Edge Function, dort gehört auch der Schutz des letzten Admins hin (siehe Roadmap §13.1).
 
-### Admin-only UI
+### Admin-only-UI
 
-Use `data-admin-only="true"` on elements; `applyAdminOnlyUI()` hides them for non-admins. Don't gate admin UI with ad-hoc `if` checks.
+`data-admin-only="true"` an Elemente setzen; `applyAdminOnlyUI()` blendet sie für Nicht-Admins aus. Admin-UI nicht mit ad-hoc-`if`-Checks gaten.
 
-## Conventions
+## Konventionen
 
-- **Naming:** functions `camelCase` English (`loadCompanyDetail`), DB columns `snake_case` German (`geschaetzter_umsatz`), HTML IDs `kebab-case` with the modal prefix (`d-datum-von`).
-- **No emojis in UI text** (keep it professional German).
-- **Destructive actions** go through `confirm()`. FK-violation errors in `delete<X>` are caught and surfaced as friendly toasts.
-- **Icon action buttons** in list views (edit/copy/duplicate/delete) come from `renderActionIcons(entityType, id)` with central dispatchers (`deleteEntityById`, `duplicateEntity`, `copyXById`) — don't reinvent per-list.
-- **Mobile:** 16px input font-size is intentional (prevents iOS zoom). `.col-action` is hidden on mobile — primary action is the title link. Tables use `table-layout: fixed`.
+- **Benennung:** Funktionen `camelCase` in Englisch (`loadCompanyDetail`), DB-Spalten `snake_case` auf Deutsch (`geschaetzter_umsatz`), HTML-IDs `kebab-case` mit dem Modal-Präfix (`d-datum-von`).
+- **Keine Emojis in UI-Texten** (professionelles Deutsch beibehalten).
+- **Destruktive Aktionen** laufen über `confirm()`. FK-Verletzungsfehler in `delete<X>` werden abgefangen und als freundliche Toasts angezeigt.
+- **Icon-Action-Buttons** in Listenansichten (bearbeiten/kopieren/duplizieren/löschen) kommen aus `renderActionIcons(entityType, id)` mit zentralen Dispatchern (`deleteEntityById`, `duplicateEntity`, `copyXById`) — nicht pro Liste neu erfinden.
+- **Mobile:** 16 px Input-Font-Size ist Absicht (verhindert iOS-Zoom). `.col-action` ist auf Mobile ausgeblendet — primäre Aktion ist der Titel-Link. Tabellen verwenden `table-layout: fixed`.
 
-## When adding a feature
+## Wenn du ein Feature hinzufügst
 
-1. If it changes the schema: write the migration SQL, apply it in Supabase, extend the verification query in `architecture.md` §14.6.
-2. Add the feature to `app.js` (keep everything in one file — don't introduce modules/bundling).
-3. Update `architecture.md` (bump version, add a §12 row, update the relevant sections), and update the banner comment at the top of `app.js` to match.
-4. Commit with a version tag (see recent `git log` for the style — German, `vX.Y.Z: <summary>`).
+1. Falls es das Schema ändert: Migrations-SQL schreiben, in Supabase anwenden, Verifizierungs-Query in `architecture.md` §14.6 erweitern.
+2. Das Feature in `app.js` ergänzen (alles in einer Datei halten — keine Module/Bundling einführen).
+3. `architecture.md` aktualisieren (Version erhöhen, Zeile in §12 ergänzen, relevante Abschnitte aktualisieren) und den Banner-Kommentar am Anfang von `app.js` entsprechend anpassen.
+4. Mit Versions-Tag committen (siehe jüngstes `git log` für den Stil — Deutsch, `vX.Y.Z: <Zusammenfassung>`).

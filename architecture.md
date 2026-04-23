@@ -1,7 +1,7 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.21.0
-**Stand:** 22. April 2026
+**Version:** 1.22.0
+**Stand:** 23. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
 **Live:** `https://cumart.cloud` (Primary) · `https://cumart-consulting-crm.vercel.app` (Fallback)
@@ -17,6 +17,7 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 - **Terminen** (Vertrieb, Abstimmung — *keine* Umsatzbringer)
 - **Projekten** (Paket-Container mit Festpreis für Kundenrechnung)
 - **Einsätzen** (umsatzbringende Leistungen, einzeln oder im Projekt)
+- **Aufgaben** (interne To-Dos, zuweisbar an Nutzer, ab v1.22)
 - **Leistungen** (Katalog: Trainings, Consulting, Online-Sessions)
 - **Benutzern** (interne Cumart-Mitarbeiter mit Rollen)
 - **Mitgliedschaften & Bonis** (Kontingent-Tracking: TNC-Club, Pakete, ab v1.12)
@@ -28,6 +29,7 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 | Termin        | Gesprächstermin, Akquise, Abstimmung   | nein (Aufwand)  |
 | Einsatz       | Abrechenbare Leistung beim Kunden      | ja              |
 | Projekt       | Paket mehrerer Einsätze mit Festpreis  | ja (Paketpreis) |
+| Aufgabe       | Interne To-Do-Notiz, zuweisbar an User | nein            |
 | Mitgliedschaft| Vertragsverhältnis mit Kontingenten    | ja (abonnement) |
 | Entitlement   | Einzelner Bonus/Kontingent-Eintrag     | wird „verbraucht" |
 
@@ -57,13 +59,14 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.04k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~1.41k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~6.74k Zeilen  (alle Module in einer Datei)
+├── index.html       ~2.28k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css       ~1.43k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~7.46k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
-│   └── v1.16.0_soft_delete.sql
+│   ├── v1.16.0_soft_delete.sql
+│   └── v1.22.0_tasks.sql
 ├── supabase/
 │   └── functions/manage-users/
 └── .git/
@@ -72,7 +75,7 @@ cumart-consulting-crm/
 Supabase:
 ```
 Project: loohjeiysjxzbmfwkyvv.supabase.co
-├── Schema: public (16 operative Tabellen)
+├── Schema: public (17 operative Tabellen)
 └── Edge Functions:
     └── manage-users   (invite, update, delete, reset_password)
 ```
@@ -100,6 +103,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | `memberships`             | Konkrete Mitgliedschaft einer Firma (v1.13)          |
 | `entitlements`            | Kontingent-Einträge (v1.13)                          |
 | `entitlement_redemptions` | Einlösungen pro Einsatz (v1.14)                      |
+| `tasks`                   | Aufgaben / interne To-Dos (v1.22)                    |
 | `notes`                   | (angelegt, bisher ungenutzt)                         |
 | `appointment_participants`| (angelegt, bisher ungenutzt)                         |
 
@@ -354,6 +358,32 @@ Jede Einlösung eines Bonus wird hier protokolliert.
 
 **Design:** Normalerweise hat jede Redemption eine `deployment_id`. Bei manuellen Einlösungen (ohne Einsatz) ist sie NULL — aktuell nicht im UI, aber vorbereitet.
 
+### 4.16 `tasks` (v1.22.0)
+
+Interne Aufgaben, die Nutzer sich selbst oder anderen zuweisen. Bewusst entkoppelt von Termin/Einsatz — keine Kopplung, keine Auto-Projektstatus-Logik, keine Umsatzwirkung.
+
+| Spalte        | Typ          | Nullable | Default           | Notes                              |
+|---------------|--------------|----------|-------------------|------------------------------------|
+| id            | uuid         | NO       | gen_random_uuid() | PK                                 |
+| titel         | text         | NO       |                   |                                    |
+| beschreibung  | text         | YES      |                   |                                    |
+| status        | text         | NO       | 'offen'           | **Kein CHECK**, validiert über `lookup_values.aufgabe_status` |
+| faelligkeit   | date         | YES      |                   | Basis für „überfällig"-Badge       |
+| erledigt_am   | timestamptz  | YES      |                   | automatisch gesetzt bei Status-Wechsel → erledigt |
+| assigned_to   | uuid         | YES      |                   | FK → user_profiles (ON DELETE SET NULL) |
+| company_id    | uuid         | YES      |                   | FK → companies (ON DELETE SET NULL) |
+| contact_id    | uuid         | YES      |                   | FK → contacts (ON DELETE SET NULL) |
+| project_id    | uuid         | YES      |                   | FK → projects (ON DELETE SET NULL) |
+| deployment_id | uuid         | YES      |                   | FK → deployments (SET NULL) — Spalte vorbereitet, aktuell nicht im UI |
+| notizen       | text         | YES      |                   |                                    |
+| erstellt_von  | uuid         | YES      |                   | FK → user_profiles (SET NULL)      |
+| created_at    | timestamptz  | YES      | now()             |                                    |
+| deleted_at    | timestamptz  | YES      |                   | Soft-Delete                        |
+
+**Status-Werte** (Lookup `aufgabe_status`): offen · in_arbeit · erledigt. UI rendert Labels via `aufgabeStatusLabel()`. Der Wert `erledigt` wird von der Toggle-Logik und der „Meine offenen"-Query hart referenziert — nicht umbenennen, stattdessen `ist_aktiv=false` setzen.
+
+**Indizes:** partielle Indexe (`WHERE deleted_at IS NULL`) auf `faelligkeit`, `(assigned_to, status)`, `company_id`, `project_id`.
+
 ---
 
 ## 5. Row Level Security (RLS)
@@ -393,15 +423,15 @@ Kein SSR, keine Builds. `index.html` enthält alle Pages als `<div class="page">
 
 ### 7.2 Router
 
-Hash-basiert. Hashes: `#/firmen`, `#/firma/UUID`, `#/kontakte`, `#/kontakt/UUID`, `#/termine`, `#/projekte`, `#/projekt/UUID`, `#/einsaetze`, `#/benutzer`, `#/leistungen`, `#/stammdaten`, `#/programme` (v1.12).
+Hash-basiert. Hashes: `#/firmen`, `#/firma/UUID`, `#/kontakte`, `#/kontakt/UUID`, `#/termine`, `#/aufgaben` (v1.22), `#/projekte`, `#/projekt/UUID`, `#/einsaetze`, `#/benutzer`, `#/leistungen`, `#/stammdaten`, `#/programme` (v1.12). `#/aufgaben` unterstützt Query-Parameter `?scope=mine_open|all_open|done|all`, `?firma=UUID`, `?projekt=UUID`, `?assignee=UUID`.
 
 Keine Detail-Route für Einsätze oder Mitgliedschaften — CRUD läuft via Modal.
 
 ### 7.3 Navigation
 
-- **Desktop-Sidebar:** Firmen / Kontakte / Termine / Projekte / Einsätze + Einstellungen (admin-only: Benutzer, Leistungen, Stammdaten, Mitgliedschafts-Programme)
+- **Desktop-Sidebar:** Firmen / Kontakte / Termine / Aufgaben / Projekte / Einsätze + Einstellungen (admin-only: Benutzer, Leistungen, Stammdaten, Mitgliedschafts-Programme). Der Aufgaben-Link trägt ein Badge mit der Anzahl eigener offener Aufgaben (rot gefärbt bei Überfälligkeit).
 - **Mobile-Bottom-Nav:** Firmen / Termine / Einsätze / Mehr
-- **Mehr-Menü:** Kontakte, Projekte + admin-Tools
+- **Mehr-Menü:** Kontakte, Aufgaben, Projekte + admin-Tools
 
 ### 7.4 State Management
 
@@ -432,6 +462,7 @@ Caches werden lazy gefüllt, manuell invalidiert nach Writes.
 | Lookup                | modal-lookup       | l-*     |
 | Mitgliedschafts-Programm | modal-program   | pr-*    |
 | Mitgliedschaft        | modal-membership   | ms-*    |
+| Aufgabe               | modal-aufgabe      | a-*     |
 
 ### 7.7 Collapsible Modal-Gruppen (v1.9.1)
 
@@ -480,6 +511,14 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 - Der Menü-Titel zeigt den aktiven Kontext an („Schnell anlegen · für diese Firma").
 - **Shortcut `n`** (ohne Modifier, wenn kein `INPUT`/`TEXTAREA`/`contenteditable` fokussiert und kein anderes Overlay offen) toggelt das FAB-Menü.
 - **Click-outside / Esc** schließen das Menü.
+- **v1.22:** Eintrag „Neue Aufgabe" inkl. Kontext-Prefill via `taskModalPrefillCompanyId/ProjectId/ContactId`.
+
+### 7.13 Aufgaben-Liste & Sidebar-Badge (v1.22.0)
+
+- **Scope-Filter:** `mine_open` (Default) · `assigned_to_me` · `created_by_me` · `all_open` · `done` · `all`. Zusätzliche Dropdowns für Zuweisung / Firma / Status. Search-Box matcht Titel, Beschreibung, Notizen, Firma, Projekt, Zugewiesen.
+- **Sortierung:** offene vor erledigten; innerhalb nach `faelligkeit` aufsteigend (NULL ans Ende), dann `created_at` desc.
+- **Checkbox-Toggle in der Zeile:** schaltet Status offen↔erledigt und setzt `erledigt_am` automatisch. `event.stopPropagation()` verhindert, dass ein Klick auf die Checkbox den Row-Link auslöst.
+- **Sidebar-Badge** (`#nav-tasks-badge`): zählt Aufgaben mit `assigned_to = me` und `status ≠ 'erledigt'`. Klasse `nav-badge-overdue` (rot) aktiv, sobald mindestens eine überfällig ist. Aktualisiert über `updateTaskBadge()` bei Login, nach jedem Task-Write und nach jedem List-Refresh.
 
 ---
 
@@ -496,8 +535,11 @@ Alle 5 Hauptlisten (Firmen, Kontakte, Termine, Projekte, Einsätze) haben in der
 | Firma-Detail      | + Mitgliedschaft| Firma (via `currentMembershipCompanyId`) |
 | Kontakt-Detail    | + Termin        | Firma + Kontakt                         |
 | Kontakt-Detail    | + Projekt       | Firma + Hauptkontakt                    |
+| Kontakt-Detail    | + Aufgabe       | Firma + Kontakt                         |
 | Projekt-Detail    | + Termin        | Firma + Projekt                         |
 | Projekt-Detail    | + Einsatz       | Firma + Projekt                         |
+| Projekt-Detail    | + Aufgabe       | Firma + Projekt                         |
+| Firma-Detail      | + Aufgabe       | Firma                                   |
 
 ### 8.2 Auto-Fill im Einsatz-Modal (v1.10.0)
 
@@ -671,7 +713,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.18.0 | 22.04.2026  | Stammdaten-Labels: `KATEGORIE_LABELS`-Mapping + `kategorieLabel()`-Helper — UI zeigt „Einsatz-Status" statt `einsatz_status`. Unbekannte Keys werden automatisch Title-Cased (Fallback). |
 | v1.19.0 | 22.04.2026  | Globale Suche (Cmd+K) — Overlay mit debounced Parallel-Queries gegen Firmen / Kontakte / Projekte / Einsätze, Pfeil-Navigation, Enter öffnet, „Zuletzt besucht" via localStorage |
 | v1.20.0 | 22.04.2026  | Zeilen-Aktionen aufgeräumt — Hover-Reveal-Icons, Kebab-Menü für Secondary Actions (Kopieren / Duplizieren / Löschen), Custom `confirmDialog()` (Promise-basiert) statt native `confirm()`, Undo-Toast (5 s) für Soft-Delete-Rückgängig |
-| **v1.21.0** | **22.04.2026** | **FAB Quick-Add** — schwebender `+`-Button unten rechts mit Popover-Menü (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Kontext-Aware Prefill aus Firmen-/Projekt-/Kontakt-Detail. Shortcut `n` wenn kein Input fokussiert. |
+| v1.21.0 | 22.04.2026  | FAB Quick-Add — schwebender `+`-Button unten rechts mit Popover-Menü (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Kontext-Aware Prefill aus Firmen-/Projekt-/Kontakt-Detail. Shortcut `n` wenn kein Input fokussiert. |
+| **v1.22.0** | **23.04.2026** | **Aufgaben** — neue Entität `tasks` mit eigener Liste, Modal, Sub-Sektionen auf Firma/Kontakt/Projekt. Zuweisbar an `user_profiles.id` (self oder anderer Nutzer). Fälligkeit + überfällig-Badge. Checkbox-Toggle in Liste (→ erledigt). Sidebar-Badge „meine offenen" mit Rotfärbung bei Überfälligkeit. FAB-Eintrag + Soft-Delete + Undo-Toast. Status via `lookup_values.aufgabe_status`. |
 
 ---
 
@@ -721,6 +764,7 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 - `roles.rechte` (JSONB-Feld, noch kein granular rights system)
 - `entitlements.source_type = 'manual'` (vorbereitet, noch kein UI)
 - `entitlement_redemptions.deployment_id = NULL` (manuelle Einlösungen vorbereitet)
+- `tasks.deployment_id` (Spalte vorhanden, aktuell nicht im UI — für spätere Kopplung reserviert)
 
 ---
 

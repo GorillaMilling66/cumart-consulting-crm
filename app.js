@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.21.0 (FAB Quick-Add — kontext-aware Prefill für
-   Firma/Kontakt/Termin/Einsatz/Projekt, Shortcut „n")
+   Version 1.22.0 (Aufgaben — eigene Entität, sich selbst oder
+   anderen zuweisbar; Liste, Modal, Sub-Sektionen auf Firma/
+   Kontakt/Projekt, Sidebar-Badge „meine offenen", FAB-Entry)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -47,15 +48,21 @@ let deploymentModalPrefillCompanyId = null;
 let deploymentModalPrefillProjectId = null;
 let editingProjectId = null;
 let editingDeploymentId = null;
+let editingTaskId = null;
+let taskModalPrefillCompanyId = null;
+let taskModalPrefillProjectId = null;
+let taskModalPrefillContactId = null;
 
 let companiesCache   = [];
 let contactsCache    = [];
 let appointmentsCache = [];
 let projectsCache    = [];
 let deploymentsCache = [];
+let tasksCache       = [];
 let terminTypenCache = [];
 let projektStatusCache = [];
 let einsatzStatusCache = [];
+let aufgabeStatusCache = [];
 let servicesCache    = [];
 let userProfilesCache = [];
 
@@ -70,6 +77,11 @@ let companyAppointmentMap = {};
 
 // Pending filter für Termine, kommt aus URL-Hash-Parametern
 let pendingAppointmentsFilter = null;
+
+// Pending filter für Aufgaben (z.B. #/aufgaben?firma=…&scope=all_open)
+let pendingTasksFilter = null;
+// Aktiver Projekt-Filter (kein UI-Dropdown, nur per URL-Param)
+let tasksProjectFilterActive = null;
 
 // Auto-Fill-Tracking für Ort-Feld
 let lastAutoFilledOrt = '';
@@ -96,6 +108,7 @@ function friendlyFetchError(error, entityLabel) {
 /** Mapping von lookup_values.kategorie-Keys auf UI-Labels.
  *  Unbekannte Keys werden von kategorieLabel() automatisch Title-Cased. */
 const KATEGORIE_LABELS = {
+  aufgabe_status:      'Aufgaben-Status',
   einsatz_status:      'Einsatz-Status',
   leistungs_kategorie: 'Leistungs-Kategorie',
   projekt_status:      'Projekt-Status',
@@ -249,7 +262,7 @@ function handleKebabAction(action) {
   const { entityType, id } = _kebabOpenFor;
   closeKebabMenu();
   if (action === 'copy') {
-    const handlers = { company: copyCompanyById, contact: copyContactById, appointment: copyAppointmentById, project: copyProjectById, deployment: copyDeploymentById };
+    const handlers = { company: copyCompanyById, contact: copyContactById, appointment: copyAppointmentById, project: copyProjectById, deployment: copyDeploymentById, task: copyTaskById };
     handlers[entityType]?.(id);
   } else if (action === 'duplicate') {
     duplicateEntity(entityType, id);
@@ -293,7 +306,8 @@ function renderActionIcons(entityType, id) {
     contact: `onclick="openContactModal('edit', '${esc(id)}')"`,
     appointment: `onclick="openAppointmentModal('edit', '${esc(id)}')"`,
     project: `onclick="location.hash='#/projekt/${esc(id)}'"`,
-    deployment: `onclick="openDeploymentModal('edit', '${esc(id)}')"`
+    deployment: `onclick="openDeploymentModal('edit', '${esc(id)}')"`,
+    task: `onclick="openTaskModal('edit', '${esc(id)}')"`
   }[entityType];
 
   return `
@@ -310,8 +324,8 @@ function renderActionIcons(entityType, id) {
 /** Führt den eigentlichen Soft-Delete durch, inkl. Einsatz→Termin-Kaskade
  *  und Undo-Toast (5s Rückgängig). Ohne Confirm — Caller muss vorher fragen. */
 async function _performSoftDelete(entityType, id) {
-  const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz' };
-  const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments' };
+  const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz', task: 'Aufgabe' };
+  const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments', task: 'tasks' };
   const label = labels[entityType];
   const table = tables[entityType];
   if (!table || !label) return;
@@ -364,9 +378,9 @@ async function deleteEntityById(entityType, id, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   closeKebabMenu();
 
-  const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz' };
-  const nameCols = { company: 'name', contact: 'nachname', appointment: 'titel', project: 'name', deployment: 'titel' };
-  const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments' };
+  const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz', task: 'Aufgabe' };
+  const nameCols = { company: 'name', contact: 'nachname', appointment: 'titel', project: 'name', deployment: 'titel', task: 'titel' };
+  const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments', task: 'tasks' };
   const label = labels[entityType];
   const nameCol = nameCols[entityType];
   const table = tables[entityType];
@@ -397,6 +411,7 @@ async function duplicateEntity(entityType, id, ev) {
       case 'appointment': await duplicateAppointment(id); break;
       case 'project':     await duplicateProject(id); break;
       case 'deployment':  await duplicateDeployment(id); break;
+      case 'task':        await duplicateTask(id); break;
       default: throw new Error('Unbekannter Typ: ' + entityType);
     }
   } catch (e) {
@@ -428,6 +443,12 @@ async function refreshAfterEntityChange(entityType) {
     if (hash.startsWith('#/einsaetze')) await loadDeployments();
     else if (hash.startsWith('#/firma/') && currentCompanyDetailId) await loadCompanyDetail(currentCompanyDetailId);
     else if (hash.startsWith('#/projekt/') && currentProjectDetailId) await loadProjectDetail(currentProjectDetailId);
+  } else if (entityType === 'task') {
+    if (hash.startsWith('#/aufgaben')) await loadTasks();
+    else if (hash.startsWith('#/firma/') && currentCompanyDetailId) await loadCompanyTasks(currentCompanyDetailId);
+    else if (hash.startsWith('#/projekt/') && currentProjectDetailId) await loadProjectTasks(currentProjectDetailId);
+    else if (hash.startsWith('#/kontakt/') && currentContactDetailId) await loadContactTasks(currentContactDetailId);
+    updateTaskBadge();
   }
 }
 
@@ -868,6 +889,7 @@ function showPage(name) {
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
+  if (name === 'tasks') loadTasks();
   if (name === 'projects') loadProjects();
   if (name === 'deployments') loadDeployments();
 }
@@ -882,7 +904,7 @@ function setMobileNav(pageName) {
   } else if (pageName === 'deployments') {
     document.getElementById('m-nav-deployments')?.classList.add('active');
   } else {
-    // contacts, contact-detail, projects, project-detail, users, services, lookups, programs → Mehr-Tab
+    // contacts, contact-detail, projects, project-detail, tasks, users, services, lookups, programs → Mehr-Tab
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
@@ -919,6 +941,8 @@ function navigateTo(page, param) {
     hash = '#/kontakte';
   } else if (page === 'appointments') {
     hash = '#/termine';
+  } else if (page === 'tasks') {
+    hash = '#/aufgaben';
   } else if (page === 'projects') {
     hash = '#/projekte';
   } else if (page === 'deployments') {
@@ -977,6 +1001,16 @@ function handleHashChange() {
     if (params.firma)   pendingAppointmentsFilter = { firma: params.firma };
     if (params.projekt) pendingAppointmentsFilter = { projekt: params.projekt };
     showPage('appointments');
+    return;
+  }
+
+  if (hash.startsWith('#/aufgaben')) {
+    const { params } = parseHashQuery(hash);
+    if (params.scope)     pendingTasksFilter = { scope: params.scope };
+    if (params.firma)     pendingTasksFilter = { firma: params.firma };
+    if (params.projekt)   pendingTasksFilter = { projekt: params.projekt };
+    if (params.assignee)  pendingTasksFilter = { assignee: params.assignee };
+    showPage('tasks');
     return;
   }
 
@@ -1087,6 +1121,7 @@ async function onLogin(user) {
   }
 
   await loadRoles();
+  updateTaskBadge();
 
   if (window.location.hash && window.location.hash !== '#') {
     handleHashChange();
@@ -1223,6 +1258,7 @@ async function doMustChangePassword() {
 
     if (isAdmin()) document.getElementById('nav-settings-group').classList.add('open');
     await loadRoles();
+    updateTaskBadge();
     navigateTo('companies');
 
     showToast('Passwort erfolgreich geändert.');
@@ -2897,6 +2933,8 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-appointments-body').innerHTML = '<tr><td colspan="7"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('company-appointments-show-all').style.display = 'none';
   document.getElementById('company-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
+  const cTasksBody = document.getElementById('company-tasks-body');
+  if (cTasksBody) cTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>';
 
   const { data, error } = await db.from('companies')
     .select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null)
@@ -2916,6 +2954,8 @@ async function loadCompanyDetail(companyId) {
     if (depBody) depBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     const msBody = document.getElementById('company-memberships-body');
     if (msBody) msBody.innerHTML = '<div class="empty">—</div>';
+    const tasksBody = document.getElementById('company-tasks-body');
+    if (tasksBody) tasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     return;
   }
 
@@ -2926,6 +2966,7 @@ async function loadCompanyDetail(companyId) {
   await loadCompanyProjects(companyId);
   await loadCompanyDeployments(companyId);
   await renderCompanyMemberships(companyId);
+  await loadCompanyTasks(companyId);
 }
 
 function renderCompanyDetail(c) {
@@ -2968,6 +3009,12 @@ function renderCompanyDetail(c) {
 
   document.getElementById('company-detail-add-membership-btn').onclick = () => {
     openMembershipModal('new', null, c.id);
+  };
+
+  const addTaskBtn = document.getElementById('company-detail-add-task-btn');
+  if (addTaskBtn) addTaskBtn.onclick = () => {
+    taskModalPrefillCompanyId = c.id;
+    openTaskModal('new');
   };
 
   const info = document.getElementById('company-detail-info');
@@ -4294,6 +4341,8 @@ async function loadProjectDetail(projectId) {
   document.getElementById('project-detail-beschreibung-wrap').style.display = 'none';
   document.getElementById('project-detail-notizen-wrap').style.display = 'none';
   document.getElementById('project-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
+  const pTasksBody = document.getElementById('project-tasks-body');
+  if (pTasksBody) pTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>';
 
   await loadProjektStatus();
 
@@ -4310,6 +4359,8 @@ async function loadProjectDetail(projectId) {
     document.getElementById('project-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     const depBody = document.getElementById('project-deployments-body');
     if (depBody) depBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
+    const tasksBody = document.getElementById('project-tasks-body');
+    if (tasksBody) tasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     return;
   }
 
@@ -4317,6 +4368,7 @@ async function loadProjectDetail(projectId) {
   trackVisit('project', data.id, data.name, data.company?.name || '');
   await loadProjectAppointments(projectId);
   await loadProjectDeployments(projectId);
+  await loadProjectTasks(projectId);
 }
 
 function renderProjectDetail(p) {
@@ -4345,6 +4397,12 @@ function renderProjectDetail(p) {
     deploymentModalPrefillProjectId = p.id;
     deploymentModalPrefillCompanyId = p.company?.id || null;
     openDeploymentModal('new');
+  };
+
+  const addTaskBtn = document.getElementById('project-detail-add-task-btn');
+  if (addTaskBtn) addTaskBtn.onclick = () => {
+    taskModalPrefillProjectId = p.id;
+    openTaskModal('new');
   };
 
   const hauptkontaktName = p.hauptkontakt
@@ -4590,6 +4648,8 @@ async function loadContactDetail(contactId) {
   document.getElementById('contact-detail-notizen-wrap').style.display = 'none';
   document.getElementById('contact-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
+  const kTasksBody = document.getElementById('contact-tasks-body');
+  if (kTasksBody) kTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>';
 
   const { data, error } = await db.from('contacts')
     .select('*, company:companies(id, name, strasse, plz, stadt)').is('deleted_at', null)
@@ -4604,6 +4664,8 @@ async function loadContactDetail(contactId) {
     document.getElementById('contact-detail-subline').innerHTML = '';
     document.getElementById('contact-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
+    const emptyTasksBody = document.getElementById('contact-tasks-body');
+    if (emptyTasksBody) emptyTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     return;
   }
 
@@ -4622,6 +4684,7 @@ async function loadContactDetail(contactId) {
   await Promise.all([
     loadContactAppointments(contactId),
     loadContactProjects(contactId),
+    loadContactTasks(contactId),
     loadProjektStatus()
   ]);
   // Projekte nochmal rendern, falls sie vor projektStatus fertig waren
@@ -4657,6 +4720,12 @@ function renderContactDetail(k) {
   document.getElementById('contact-detail-add-project-btn').onclick = () => {
     projectModalPrefillHauptkontaktId = k.id;
     openProjectModal('new');
+  };
+
+  const addTaskBtn = document.getElementById('contact-detail-add-task-btn');
+  if (addTaskBtn) addTaskBtn.onclick = () => {
+    taskModalPrefillContactId = k.id;
+    openTaskModal('new');
   };
 
   // Detail-Grid
@@ -6605,6 +6674,653 @@ if (document.readyState === 'loading') {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  AUFGABEN (TASKS) — v1.22.0
+// ═══════════════════════════════════════════════════════════
+//
+// Abgrenzung zu Termin/Einsatz:
+//   Termin  = Meeting mit Kunden (nicht abrechenbar, Aufwand)
+//   Einsatz = abrechenbare Leistung (Kundenumsatz)
+//   Aufgabe = interne To-Dos, nicht kundenfakturierbar, nicht umsatzwirksam
+//
+// Aufgaben sind bewusst entkoppelt — kein Auto-Projektstatus-Trigger,
+// keine Termin-/Einsatz-Kopplung. Das schützt die Domänen-Invarianten.
+
+// Status-Badge-Helper (Lookup-Werte: offen / in_arbeit / erledigt)
+function aufgabeStatusBg(s) {
+  return { offen: '#f3f4f6', in_arbeit: '#fffbeb', erledigt: '#f0fdf4' }[s] || '#f3f4f6';
+}
+function aufgabeStatusColor(s) {
+  return { offen: '#6b7280', in_arbeit: '#d97706', erledigt: '#16a34a' }[s] || '#6b7280';
+}
+function aufgabeStatusLabel(s) {
+  return { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt' }[s] || s;
+}
+
+async function loadAufgabeStatus() {
+  if (aufgabeStatusCache.length > 0) return aufgabeStatusCache;
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe, reihenfolge').eq('kategorie', 'aufgabe_status').eq('ist_aktiv', true).order('reihenfolge');
+  if (error) { showToast('Fehler beim Laden der Aufgaben-Status: ' + error.message, true); return []; }
+  aufgabeStatusCache = data || [];
+  return aufgabeStatusCache;
+}
+
+function isTaskOverdue(task, todayISO) {
+  return task.status !== 'erledigt' && task.faelligkeit && task.faelligkeit < todayISO;
+}
+
+// ── LISTE ───────────────────────────────────────────────────────────────────
+
+async function loadTasks() {
+  const tbody = document.getElementById('tasks-table-body');
+  tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Lade Aufgaben ...</div></td></tr>';
+
+  await Promise.all([
+    loadAufgabeStatus(),
+    loadUserProfilesCache(),
+    (async () => {
+      if (companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+    })()
+  ]);
+
+  // Filter-Dropdowns befüllen
+  const companyFilter = document.getElementById('tasks-company-filter');
+  const existingCompany = companyFilter.value;
+  companyFilter.innerHTML = '<option value="">Alle Firmen</option>'
+    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  if (existingCompany) companyFilter.value = existingCompany;
+
+  const assigneeFilter = document.getElementById('tasks-assignee-filter');
+  const existingAssignee = assigneeFilter.value;
+  assigneeFilter.innerHTML = '<option value="">Alle Zuweisungen</option>'
+    + userProfilesCache.map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
+  if (existingAssignee) assigneeFilter.value = existingAssignee;
+
+  const statusFilter = document.getElementById('tasks-status-filter');
+  if (statusFilter.options.length <= 1) {
+    statusFilter.innerHTML = '<option value="">Alle Status</option>'
+      + aufgabeStatusCache.map(s => `<option value="${esc(s.wert)}">${esc(aufgabeStatusLabel(s.wert))}</option>`).join('');
+  }
+
+  // Pending filter aus URL
+  if (pendingTasksFilter?.scope)    document.getElementById('tasks-scope-filter').value = pendingTasksFilter.scope;
+  if (pendingTasksFilter?.firma)    { companyFilter.value = pendingTasksFilter.firma; document.getElementById('tasks-scope-filter').value = 'all'; }
+  if (pendingTasksFilter?.projekt)  document.getElementById('tasks-scope-filter').value = 'all';
+  if (pendingTasksFilter?.assignee) assigneeFilter.value = pendingTasksFilter.assignee;
+  tasksProjectFilterActive = pendingTasksFilter?.projekt || null;
+  pendingTasksFilter = null;
+
+  const { data, error } = await db.from('tasks')
+    .select('*, company:companies(id, name), project:projects(id, name), contact:contacts(id, vorname, nachname), assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)')
+    .is('deleted_at', null).order('faelligkeit', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false });
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+
+  tasksCache = data || [];
+  filterTasks();
+}
+
+function filterTasks() {
+  const searchTerm   = document.getElementById('tasks-search').value.trim().toLowerCase();
+  const scopeFilter  = document.getElementById('tasks-scope-filter').value;
+  const assigneeFilterVal = document.getElementById('tasks-assignee-filter').value;
+  const companyFilterVal  = document.getElementById('tasks-company-filter').value;
+  const statusFilter = document.getElementById('tasks-status-filter').value;
+  const projektFilter = tasksProjectFilterActive;
+
+  const meId = currentProfile?.id;
+  let filtered = tasksCache;
+
+  // Scope
+  if (scopeFilter === 'mine_open') {
+    filtered = filtered.filter(t => t.assigned_to === meId && t.status !== 'erledigt');
+  } else if (scopeFilter === 'assigned_to_me') {
+    filtered = filtered.filter(t => t.assigned_to === meId);
+  } else if (scopeFilter === 'created_by_me') {
+    filtered = filtered.filter(t => t.erstellt_von === meId);
+  } else if (scopeFilter === 'all_open') {
+    filtered = filtered.filter(t => t.status !== 'erledigt');
+  } else if (scopeFilter === 'done') {
+    filtered = filtered.filter(t => t.status === 'erledigt');
+  }
+  // 'all' = kein Scope-Filter
+
+  if (assigneeFilterVal) filtered = filtered.filter(t => t.assigned_to === assigneeFilterVal);
+  if (companyFilterVal)  filtered = filtered.filter(t => t.company_id === companyFilterVal);
+  if (projektFilter)     filtered = filtered.filter(t => t.project_id === projektFilter);
+  if (statusFilter)      filtered = filtered.filter(t => t.status === statusFilter);
+
+  if (searchTerm) {
+    filtered = filtered.filter(t => {
+      const haystack = [
+        t.titel, t.beschreibung, t.notizen,
+        t.company?.name, t.project?.name,
+        t.assigned ? (t.assigned.name || t.assigned.email) : '',
+        t.contact ? [t.contact.vorname, t.contact.nachname].filter(Boolean).join(' ') : ''
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }
+
+  // Sortierung: offene zuerst (nach Fälligkeit asc, überfällig oben), erledigte unten
+  filtered.sort((a, b) => {
+    const aDone = a.status === 'erledigt';
+    const bDone = b.status === 'erledigt';
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    const aF = a.faelligkeit || '9999-12-31';
+    const bF = b.faelligkeit || '9999-12-31';
+    if (aF !== bF) return aF.localeCompare(bF);
+    return (b.created_at || '').localeCompare(a.created_at || '');
+  });
+
+  renderTasksTable(filtered);
+}
+
+function renderTasksTable(tasks) {
+  const tbody = document.getElementById('tasks-table-body');
+  const countEl = document.getElementById('tasks-count');
+
+  const total = tasksCache.length;
+  const shown = tasks.length;
+  countEl.textContent = (shown === total)
+    ? `${total} Aufgabe${total === 1 ? '' : 'n'}`
+    : `${shown} von ${total} Aufgaben`;
+
+  if (shown === 0) {
+    const msg = total === 0
+      ? 'Noch keine Aufgaben angelegt. Klicke oben auf „+ Neue Aufgabe".'
+      : 'Keine Aufgaben entsprechen den Filterkriterien.';
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  const todayISO = toISODate(new Date());
+
+  tbody.innerHTML = tasks.map(t => {
+    const done = t.status === 'erledigt';
+    const overdue = isTaskOverdue(t, todayISO);
+    const assigneeName = t.assigned ? (t.assigned.name || t.assigned.email || '?') : '<span style="color:var(--muted);font-style:italic">—</span>';
+
+    const kontextParts = [];
+    if (t.company) kontextParts.push(`<span class="cell-link" onclick="event.stopPropagation();navigateTo('firma','${esc(t.company.id)}')">${esc(t.company.name)}</span>`);
+    if (t.project) kontextParts.push(`<span class="cell-link" onclick="event.stopPropagation();navigateTo('projekt','${esc(t.project.id)}')">${esc(t.project.name)}</span>`);
+    const kontextHtml = kontextParts.length ? kontextParts.join(' · ') : '<span style="color:var(--muted);font-style:italic">—</span>';
+
+    const fael = t.faelligkeit
+      ? `<span class="${overdue ? 'date-cell past' : 'date-cell'}" ${overdue ? 'style="color:#dc2626;font-weight:600"' : ''}>${esc(formatDateDE(t.faelligkeit))}</span>`
+      : '<span style="color:var(--muted)">—</span>';
+
+    const titelStyle = done ? 'text-decoration:line-through;color:var(--muted)' : '';
+
+    return `
+      <tr>
+        <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
+        <td><div class="cell-link" style="${titelStyle}" onclick="openTaskModal('edit','${esc(t.id)}')">${esc(t.titel || '—')}</div></td>
+        <td>${fael}</td>
+        <td class="col-tablet" style="color:var(--muted)">${assigneeName}</td>
+        <td class="col-desktop">${kontextHtml}</td>
+        <td><span class="badge" style="background:${aufgabeStatusBg(t.status)};color:${aufgabeStatusColor(t.status)}">${esc(aufgabeStatusLabel(t.status))}</span></td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('task', t.id)}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ── MODAL ───────────────────────────────────────────────────────────────────
+
+async function openTaskModal(mode, taskId = null) {
+  editingTaskId = taskId;
+
+  await Promise.all([
+    loadAufgabeStatus(),
+    loadUserProfilesCache(),
+    (async () => {
+      if (companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+    })()
+  ]);
+
+  // Dropdowns befüllen
+  const statusSelect = document.getElementById('a-status');
+  statusSelect.innerHTML = aufgabeStatusCache
+    .map(s => `<option value="${esc(s.wert)}">${esc(aufgabeStatusLabel(s.wert))}</option>`).join('');
+
+  const assigneeSelect = document.getElementById('a-assigned-to');
+  assigneeSelect.innerHTML = userProfilesCache
+    .map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
+
+  const companySelect = document.getElementById('a-company');
+  companySelect.innerHTML = '<option value="">— Keine Firma —</option>'
+    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  // Defaults
+  document.getElementById('a-titel').value = '';
+  document.getElementById('a-faelligkeit').value = '';
+  document.getElementById('a-beschreibung').value = '';
+  document.getElementById('a-notizen').value = '';
+  statusSelect.value = 'offen';
+  if (currentProfile?.id) assigneeSelect.value = currentProfile.id;
+  companySelect.value = '';
+
+  await rebuildContactDropdownForTask('');
+  await rebuildProjectDropdownForTask('');
+
+  if (mode === 'new') {
+    document.getElementById('modal-aufgabe-title').textContent = 'Neue Aufgabe';
+    document.getElementById('a-save-btn').textContent = 'Anlegen';
+    document.getElementById('a-delete-btn').style.display = 'none';
+
+    // Prefill aus Firmen-Detailseite
+    if (taskModalPrefillCompanyId) {
+      companySelect.value = taskModalPrefillCompanyId;
+      await rebuildContactDropdownForTask(taskModalPrefillCompanyId);
+      await rebuildProjectDropdownForTask(taskModalPrefillCompanyId);
+      taskModalPrefillCompanyId = null;
+    }
+
+    // Prefill aus Projekt-Detailseite
+    if (taskModalPrefillProjectId) {
+      const { data: proj } = await db.from('projects')
+        .select('id, name, company_id').is('deleted_at', null).eq('id', taskModalPrefillProjectId).single();
+      if (proj) {
+        if (proj.company_id) {
+          companySelect.value = proj.company_id;
+          await rebuildContactDropdownForTask(proj.company_id);
+        }
+        await rebuildProjectDropdownForTask(proj.company_id || '');
+        const projSel = document.getElementById('a-project');
+        if (projSel) projSel.value = proj.id;
+      }
+      taskModalPrefillProjectId = null;
+    }
+
+    // Prefill aus Kontakt-Detailseite
+    if (taskModalPrefillContactId) {
+      const { data: k } = await db.from('contacts')
+        .select('id, vorname, nachname, company_id').is('deleted_at', null).eq('id', taskModalPrefillContactId).single();
+      if (k) {
+        if (k.company_id) {
+          companySelect.value = k.company_id;
+          await rebuildContactDropdownForTask(k.company_id);
+          await rebuildProjectDropdownForTask(k.company_id);
+        }
+        document.getElementById('a-contact').value = k.id;
+      }
+      taskModalPrefillContactId = null;
+    }
+  } else {
+    document.getElementById('modal-aufgabe-title').textContent = 'Aufgabe bearbeiten';
+    document.getElementById('a-save-btn').textContent = 'Speichern';
+    document.getElementById('a-delete-btn').style.display = 'block';
+
+    const { data, error } = await db.from('tasks').select('*').is('deleted_at', null).eq('id', taskId).single();
+    if (error || !data) {
+      showToast('Aufgabe konnte nicht geladen werden: ' + (error?.message || 'Unbekannter Fehler'), true);
+      editingTaskId = null;
+      return;
+    }
+
+    document.getElementById('a-titel').value        = data.titel || '';
+    document.getElementById('a-faelligkeit').value  = data.faelligkeit || '';
+    document.getElementById('a-beschreibung').value = data.beschreibung || '';
+    document.getElementById('a-notizen').value      = data.notizen || '';
+    statusSelect.value   = data.status || 'offen';
+    if (data.assigned_to) assigneeSelect.value = data.assigned_to;
+    if (data.company_id) {
+      companySelect.value = data.company_id;
+      await rebuildContactDropdownForTask(data.company_id);
+      await rebuildProjectDropdownForTask(data.company_id);
+      if (data.contact_id) document.getElementById('a-contact').value = data.contact_id;
+    } else {
+      await rebuildProjectDropdownForTask('');
+    }
+    if (data.project_id) {
+      const projSel = document.getElementById('a-project');
+      if (projSel) projSel.value = data.project_id;
+    }
+  }
+
+  // Firma-Change-Handler für Kontakt/Projekt-Nachladen
+  companySelect.onchange = async () => {
+    await rebuildContactDropdownForTask(companySelect.value);
+    await rebuildProjectDropdownForTask(companySelect.value);
+  };
+
+  document.getElementById('modal-aufgabe').classList.add('open');
+  setTimeout(() => document.getElementById('a-titel').focus(), 100);
+}
+
+function closeTaskModal() {
+  document.getElementById('modal-aufgabe').classList.remove('open');
+  editingTaskId = null;
+  taskModalPrefillCompanyId = null;
+  taskModalPrefillProjectId = null;
+  taskModalPrefillContactId = null;
+}
+
+async function rebuildContactDropdownForTask(companyId) {
+  const contactSelect = document.getElementById('a-contact');
+  if (!companyId) {
+    contactSelect.innerHTML = '<option value="">— Kein Kontakt —</option>';
+    return;
+  }
+  const { data, error } = await db.from('contacts')
+    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
+  if (error) { contactSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
+  const contacts = data || [];
+  contactSelect.innerHTML = '<option value="">— Kein Kontakt —</option>'
+    + contacts.map(k => `<option value="${esc(k.id)}">${esc([k.vorname, k.nachname].filter(Boolean).join(' '))}</option>`).join('');
+}
+
+async function rebuildProjectDropdownForTask(companyId) {
+  const projSel = document.getElementById('a-project');
+  if (!projSel) return;
+  let query = db.from('projects').select('id, name, company_id').is('deleted_at', null).order('name');
+  if (companyId) query = query.eq('company_id', companyId);
+  const { data, error } = await query;
+  if (error) { projSel.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
+  const projects = data || [];
+  projSel.innerHTML = '<option value="">— Kein Projekt —</option>'
+    + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+}
+
+async function saveTask() {
+  const titel        = document.getElementById('a-titel').value.trim();
+  const faelligkeit  = document.getElementById('a-faelligkeit').value || null;
+  const beschreibung = document.getElementById('a-beschreibung').value.trim();
+  const status       = document.getElementById('a-status').value;
+  const assigned_to  = document.getElementById('a-assigned-to').value || null;
+  const company_id   = document.getElementById('a-company').value || null;
+  const contact_id   = document.getElementById('a-contact').value || null;
+  const project_id   = document.getElementById('a-project')?.value || null;
+  const notizen      = document.getElementById('a-notizen').value.trim();
+  const btn          = document.getElementById('a-save-btn');
+
+  if (!titel) { showToast('Bitte Titel eingeben.', true); return; }
+  if (!assigned_to) { showToast('Bitte eine Person zuweisen.', true); return; }
+  const gueltigeStatus = aufgabeStatusCache.map(s => s.wert);
+  if (gueltigeStatus.length && !gueltigeStatus.includes(status)) { showToast('Status ungültig.', true); return; }
+
+  btn.disabled = true;
+  btn.textContent = editingTaskId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
+
+  try {
+    // erledigt_am mitschreiben/zurücknehmen abhängig vom Status
+    let erledigt_am = null;
+    if (status === 'erledigt') {
+      // Behalte vorhandenes Datum, falls Aufgabe bereits erledigt war
+      if (editingTaskId) {
+        const { data: cur } = await db.from('tasks').select('status, erledigt_am').is('deleted_at', null).eq('id', editingTaskId).single();
+        erledigt_am = (cur?.status === 'erledigt' && cur.erledigt_am) ? cur.erledigt_am : new Date().toISOString();
+      } else {
+        erledigt_am = new Date().toISOString();
+      }
+    }
+
+    const payload = {
+      titel, faelligkeit,
+      beschreibung: beschreibung || null,
+      status, erledigt_am,
+      assigned_to,
+      company_id, contact_id, project_id,
+      notizen: notizen || null
+    };
+    if (!editingTaskId) payload.erstellt_von = currentProfile?.id || null;
+
+    let error;
+    if (editingTaskId) { ({ error } = await db.from('tasks').update(payload).eq('id', editingTaskId)); }
+    else { ({ error } = await db.from('tasks').insert(payload)); }
+    if (error) throw new Error(error.message);
+
+    closeTaskModal();
+    showToast(editingTaskId ? 'Aufgabe aktualisiert.' : 'Aufgabe angelegt.');
+    await _refreshTaskContext();
+    updateTaskBadge();
+  } catch (e) {
+    showToast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingTaskId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+async function deleteTask() {
+  if (!editingTaskId) return;
+  const id = editingTaskId;
+  const ok = await confirmDialog({
+    title: 'Aufgabe löschen?',
+    message: 'Die Aufgabe wird ausgeblendet. Rückgängig-Link erscheint 5 Sekunden lang.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+
+  try {
+    const deletedAt = new Date().toISOString();
+    const { error } = await db.from('tasks').update({ deleted_at: deletedAt }).eq('id', id);
+    if (error) throw new Error(error.message);
+
+    closeTaskModal();
+    await _refreshTaskContext();
+    updateTaskBadge();
+
+    showToast('Aufgabe gelöscht.', false, {
+      actionLabel: 'Rückgängig',
+      durationMs: 5000,
+      onAction: async () => {
+        try {
+          await db.from('tasks').update({ deleted_at: null }).eq('id', id);
+          await _refreshTaskContext();
+          updateTaskBadge();
+          showToast('Aufgabe wiederhergestellt.');
+        } catch (err) {
+          showToast('Wiederherstellen fehlgeschlagen: ' + err.message, true);
+        }
+      }
+    });
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function toggleTaskDone(taskId, isDone) {
+  const update = isDone
+    ? { status: 'erledigt', erledigt_am: new Date().toISOString() }
+    : { status: 'offen',    erledigt_am: null };
+  const { error } = await db.from('tasks').update(update).eq('id', taskId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast(isDone ? 'Aufgabe erledigt.' : 'Aufgabe reaktiviert.');
+  await _refreshTaskContext();
+  updateTaskBadge();
+}
+
+async function duplicateTask(sourceId) {
+  const { data: src, error } = await db.from('tasks').select('*').is('deleted_at', null).eq('id', sourceId).single();
+  if (error || !src) throw new Error(error?.message || 'Aufgabe nicht gefunden');
+
+  const payload = {
+    titel: (src.titel || 'Aufgabe') + ' (Kopie)',
+    beschreibung: src.beschreibung,
+    status: 'offen',
+    erledigt_am: null,
+    faelligkeit: src.faelligkeit,
+    assigned_to: src.assigned_to,
+    company_id: src.company_id,
+    contact_id: src.contact_id,
+    project_id: src.project_id,
+    notizen: src.notizen,
+    erstellt_von: currentProfile?.id || null
+  };
+  const { error: insErr } = await db.from('tasks').insert(payload);
+  if (insErr) throw new Error(insErr.message);
+
+  showToast('Aufgabe dupliziert.');
+  await refreshAfterEntityChange('task');
+}
+
+async function copyTaskById(id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  try {
+    const { data: t, error } = await db.from('tasks')
+      .select('*, companies(name), projects(name), assigned:user_profiles!tasks_assigned_to_fkey(name, email)').is('deleted_at', null)
+      .eq('id', id).single();
+    if (error || !t) throw new Error(error?.message || 'Aufgabe nicht gefunden');
+
+    const lines = [];
+    lines.push(t.titel || '(ohne Titel)');
+    if (t.faelligkeit) lines.push('Fällig: ' + formatDateDE(t.faelligkeit));
+    if (t.assigned) lines.push('Zugewiesen: ' + (t.assigned.name || t.assigned.email));
+    if (t.companies?.name) lines.push('Firma: ' + t.companies.name);
+    if (t.projects?.name)  lines.push('Projekt: ' + t.projects.name);
+    lines.push('Status: ' + aufgabeStatusLabel(t.status));
+    if (t.beschreibung) lines.push('', t.beschreibung);
+
+    await navigator.clipboard.writeText(lines.join('\n'));
+    showToast('Aufgabe in Zwischenablage kopiert.');
+  } catch (e) {
+    showToast('Kopieren fehlgeschlagen: ' + e.message, true);
+  }
+}
+
+// ── SUB-SEKTIONEN AUF DETAIL-SEITEN ─────────────────────────────────────────
+
+async function loadCompanyTasks(companyId) {
+  const tbody = document.getElementById('company-tasks-body');
+  const countEl = document.getElementById('company-tasks-count');
+  await loadAufgabeStatus();
+
+  const { data, error } = await db.from('tasks')
+    .select('*, assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)').is('deleted_at', null)
+    .eq('company_id', companyId);
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Aufgaben';
+    return;
+  }
+  renderDetailTaskRows(tbody, countEl, data || []);
+}
+
+async function loadContactTasks(contactId) {
+  const tbody = document.getElementById('contact-tasks-body');
+  const countEl = document.getElementById('contact-tasks-count');
+  await loadAufgabeStatus();
+
+  const { data, error } = await db.from('tasks')
+    .select('*, assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)').is('deleted_at', null)
+    .eq('contact_id', contactId);
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Aufgaben';
+    return;
+  }
+  renderDetailTaskRows(tbody, countEl, data || []);
+}
+
+async function loadProjectTasks(projectId) {
+  const tbody = document.getElementById('project-tasks-body');
+  const countEl = document.getElementById('project-tasks-count');
+  await loadAufgabeStatus();
+
+  const { data, error } = await db.from('tasks')
+    .select('*, assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)').is('deleted_at', null)
+    .eq('project_id', projectId);
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    countEl.textContent = 'Aufgaben';
+    return;
+  }
+  renderDetailTaskRows(tbody, countEl, data || []);
+}
+
+function renderDetailTaskRows(tbody, countEl, tasks) {
+  const total = tasks.length;
+  const offen = tasks.filter(t => t.status !== 'erledigt').length;
+  const erledigt = tasks.filter(t => t.status === 'erledigt').length;
+
+  if (total === 0) {
+    countEl.textContent = 'Keine Aufgaben';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Aufgaben. Klicke oben auf „+ Aufgabe hinzufügen".</div></td></tr>';
+    return;
+  }
+  countEl.textContent = `${total} Aufgabe${total === 1 ? '' : 'n'} · ${offen} offen · ${erledigt} erledigt`;
+
+  const todayISO = toISODate(new Date());
+
+  // Sortierung: offene zuerst nach Fälligkeit, erledigte ans Ende
+  tasks.sort((a, b) => {
+    const aDone = a.status === 'erledigt';
+    const bDone = b.status === 'erledigt';
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    const aF = a.faelligkeit || '9999-12-31';
+    const bF = b.faelligkeit || '9999-12-31';
+    if (aF !== bF) return aF.localeCompare(bF);
+    return (b.created_at || '').localeCompare(a.created_at || '');
+  });
+
+  tbody.innerHTML = tasks.slice(0, 10).map(t => {
+    const done = t.status === 'erledigt';
+    const overdue = isTaskOverdue(t, todayISO);
+    const assigneeName = t.assigned ? (t.assigned.name || t.assigned.email || '?') : '—';
+    const fael = t.faelligkeit
+      ? `<span ${overdue ? 'style="color:#dc2626;font-weight:600"' : ''}>${esc(formatDateDE(t.faelligkeit))}</span>`
+      : '<span style="color:var(--muted)">—</span>';
+    const titelStyle = done ? 'text-decoration:line-through;color:var(--muted)' : '';
+
+    return `
+      <tr>
+        <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
+        <td><div class="cell-link" style="${titelStyle}" onclick="openTaskModal('edit','${esc(t.id)}')">${esc(t.titel || '—')}</div></td>
+        <td>${fael}</td>
+        <td class="col-tablet" style="color:var(--muted)">${esc(assigneeName)}</td>
+        <td><span class="badge" style="background:${aufgabeStatusBg(t.status)};color:${aufgabeStatusColor(t.status)}">${esc(aufgabeStatusLabel(t.status))}</span></td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('task', t.id)}</td>
+      </tr>`;
+  }).join('');
+}
+
+async function _refreshTaskContext() {
+  const hash = location.hash || '';
+  if (hash.startsWith('#/aufgaben')) {
+    await loadTasks();
+  } else if (hash.startsWith('#/firma/') && currentCompanyDetailId) {
+    await loadCompanyTasks(currentCompanyDetailId);
+  } else if (hash.startsWith('#/projekt/') && currentProjectDetailId) {
+    await loadProjectTasks(currentProjectDetailId);
+  } else if (hash.startsWith('#/kontakt/') && currentContactDetailId) {
+    await loadContactTasks(currentContactDetailId);
+  }
+}
+
+// ── SIDEBAR-BADGE ───────────────────────────────────────────────────────────
+
+async function updateTaskBadge() {
+  const badge = document.getElementById('nav-tasks-badge');
+  if (!badge || !currentProfile?.id) return;
+  const { data, error } = await db.from('tasks')
+    .select('id, faelligkeit, status').is('deleted_at', null)
+    .eq('assigned_to', currentProfile.id).neq('status', 'erledigt');
+  if (error) { badge.style.display = 'none'; return; }
+
+  const todayISO = toISODate(new Date());
+  const offen = (data || []).length;
+  const ueberfaellig = (data || []).filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
+
+  if (offen === 0) { badge.style.display = 'none'; return; }
+  badge.textContent = String(offen);
+  badge.style.display = '';
+  badge.classList.toggle('nav-badge-overdue', ueberfaellig > 0);
+  badge.title = ueberfaellig > 0
+    ? `${offen} offen · ${ueberfaellig} überfällig`
+    : `${offen} offen`;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  FAB — Quick-Add Floating Action Button (v1.21.0)
 // ═══════════════════════════════════════════════════════════
 
@@ -6681,6 +7397,18 @@ async function fabAction(target) {
       appointmentModalPrefillContactId = ctx.id;
     }
     openAppointmentModal('new');
+    return;
+  }
+
+  if (target === 'task') {
+    if (ctx.type === 'company') {
+      taskModalPrefillCompanyId = ctx.id;
+    } else if (ctx.type === 'project') {
+      taskModalPrefillProjectId = ctx.id;
+    } else if (ctx.type === 'contact') {
+      taskModalPrefillContactId = ctx.id;
+    }
+    openTaskModal('new');
     return;
   }
 
