@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.35.0
+**Version:** 1.35.1
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -900,6 +900,7 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.32.1 | 24.04.2026  | FAB (Plus-Button) auf `bottom: 130 px` hochgezogen, damit er nicht mehr von der Kalender-Bar verdeckt wird. FAB-Menü mit. |
 | v1.33.0 | 24.04.2026  | Fünferpack Usability: Kontakt-Label-Vorrang in Verwandte-Aufgaben, Plus-Menü im Kalender-Popover, Werktage-basierte Auto-Menge im Einsatz, erweiterte Datum-Schnellauswahl (Werktage + 3 Monats-Buttons, generischer Helper), Ganztags-Checkbox (08:00–16:00). |
 | v1.34.0 | 24.04.2026  | Termin-Typ-Icons + erster Modal-Redesign-Wurf: Icon-Picker im Termin-Modal (Call 📞/Meeting 🤝/Schulung 🎓/…), Icons vor Titel in Listen + Kalender-Popover. Optional-Sektionen der Modals kollabiert. |
+| v1.35.1 | 24.04.2026  | Design-Harmonisierung der Kanban-Modals: Sektions-Header (Kanban-Spalten + Footer-Gruppen) teilen Typo/Größe/Padding; Inputs+Selects+Date 36 px einheitlich, Icons 14 px, Labels 12 px muted, Date-Shortcut- und Typ-Icon-Buttons 26 px. Symmetrie zwischen Termin/Einsatz/Aufgabe. |
 | **v1.35.0** | **24.04.2026** | **Modal-Redesign (Kanban-Stil)** — Termin-, Einsatz- und Aufgabe-Modal komplett neu: horizontale Mehr-Spalten-Layouts mit Icon-Headern, die den Formularfluss von links nach rechts organisieren. **Termin-Modal** (960 px, 3 Spalten): „📝 Was" (Titel · Typ · Status) · „📅 Wann" (Datum + Shortcuts · Ganztag · Uhrzeit von/bis als 2-col) · „👥 Wer & Wo" (Firma · Kontakt · Projekt · Ort). **Aufgabe-Modal** (960 px, 3 Spalten): „📝 Was" (Titel · Status · Beschreibung) · „📅 Wann & Wer" (Fälligkeit + Shortcuts · Zuständig) · „🔗 Kontext" (Firma · Kontakt · Projekt). **Einsatz-Modal** (1140 px, 4 Spalten): „🏢 Kunde" (Firma · Projekt · Ort) · „🎯 Leistung" (Service · Menge+↻ und Einzelpreis als 2-col · Preis-Hint) · „📅 Zeitraum" (Datum von · Datum bis · Ganztag · Uhrzeit von/bis als 2-col · Status) · „👷 Team" (Titel · Interne Techniker · Externe Techniker). Unter dem Kanban-Hauptblock ein **Footer-Bereich** mit „Kopplung" (Termin-Sync + Bonus-Einlösung, offen) und „Beschreibung & Notizen" (kollabiert). Trennlinien zwischen Spalten. Auf Mobile (<900 px) kollabieren die Spalten vertikal. Alle Feld-IDs und Handler unverändert — nur Container-Struktur und Breite. Neue CSS-Klassen `.modal-kanban`, `.modal-kanban-col`, `.modal-kanban-col-title`, `.modal-kanban-footer`, `.form-row-2`. Kein Schema-Change. |
 
 ---

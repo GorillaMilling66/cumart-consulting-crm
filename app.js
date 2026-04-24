@@ -1,5 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.35.1 (Design-Harmonisierung der Kanban-Modals:
+   Sektions-Header (Kanban-Spalten + Footer-Gruppen) teilen
+   jetzt dieselbe Typo/Größe, Input-Höhe durchgängig 36 px,
+   Icons 14 px, Labels 12 px, Date-Shortcut- und Typ-Icon-
+   Buttons 26 px. Symmetrie zwischen den drei Modals.)
    Version 1.35.0 (Modal-Redesign im Kanban-Stil: Termin-,
    Einsatz- und Aufgabe-Modals sind jetzt breite Mehr-Spalten-
    Layouts (links nach rechts durch den Formularfluss) mit
