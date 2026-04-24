@@ -1,5 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.35.2 (Fix: Im Termin-Dashboard „Offene Aufgaben
+   (Firma / Kontakt)" wird jetzt auch der Kunden-Name vor
+   dem Status angezeigt — vorher nur Status. Kontakt hat
+   Vorrang vor Firma, analog zum Aufgabe-Dashboard.)
    Version 1.35.1 (Design-Harmonisierung der Kanban-Modals:
    Sektions-Header (Kanban-Spalten + Footer-Gruppen) teilen
    jetzt dieselbe Typo/Größe, Input-Höhe durchgängig 36 px,
@@ -8206,7 +8210,9 @@ async function renderAppointmentExpandedRow(appointmentId) {
           .is('deleted_at', null).eq('company_id', a.company_id).neq('id', appointmentId)
           .order('datum', { ascending: false }).limit(3)
       : Promise.resolve({ data: [] }),
-    db.from('tasks').select('id, titel, faelligkeit, status').is('deleted_at', null)
+    db.from('tasks')
+      .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
+      .is('deleted_at', null)
       .or(`company_id.eq.${a.company_id || '00000000-0000-0000-0000-000000000000'},contact_id.eq.${a.contact_id || '00000000-0000-0000-0000-000000000000'}`)
       .neq('status', 'erledigt').order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
   ]);
@@ -8300,18 +8306,23 @@ async function renderAppointmentExpandedRow(appointmentId) {
        </div>`
     : '';
 
-  // Offene Aufgaben im Kontext (Firma oder Kontakt)
+  // Offene Aufgaben im Kontext (Firma oder Kontakt) — Meta zeigt Kunden-Name + Status (v1.35.2)
   const taskRows = (openTasksForCompanyOrContact.data || []);
   const tasksHtml = taskRows.length > 0
     ? `<div class="erp-related">
          <div class="erp-section-title">Offene Aufgaben (Firma / Kontakt)</div>
          ${taskRows.map(t => {
            const overdue = t.faelligkeit && t.faelligkeit < todayISO;
+           // Kontakt hat Vorrang vor Firma (analog zum Aufgabe-Dashboard v1.33)
+           const customerLabel = (t.contact ? [t.contact.vorname, t.contact.nachname].filter(Boolean).join(' ') : '')
+             || t.company?.name
+             || '';
+           const statusText = overdue ? 'überfällig' : aufgabeStatusLabel(t.status);
            return `
              <div class="erp-related-row">
                <div class="erp-related-date">${t.faelligkeit ? esc(formatDateDE(t.faelligkeit)) : '<span style="color:var(--muted)">—</span>'}</div>
                <div class="erp-related-title" onclick="openTaskModal('edit','${esc(t.id)}')">${esc(t.titel || '—')}</div>
-               <div class="erp-related-meta" ${overdue ? 'style="color:var(--danger);font-weight:600"' : ''}>${overdue ? 'überfällig' : esc(aufgabeStatusLabel(t.status))}</div>
+               <div class="erp-related-meta" ${overdue ? 'style="color:var(--danger);font-weight:600"' : ''}>${customerLabel ? esc(customerLabel) + ' · ' : ''}${esc(statusText)}</div>
              </div>`;
          }).join('')}
        </div>`
