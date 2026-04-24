@@ -152,6 +152,15 @@
         Kontakte
       </button>
 
+      <button class="nav-item" id="nav-projects"
+              onclick="navigateTo('projects')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        Projekte
+      </button>
+
       <button class="nav-item" id="nav-appointments"
               onclick="navigateTo('appointments')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -164,26 +173,6 @@
         Termine
       </button>
 
-      <button class="nav-item" id="nav-tasks"
-              onclick="navigateTo('tasks')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M9 11l3 3L22 4"/>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-        </svg>
-        <span style="flex:1;text-align:left">Aufgaben</span>
-        <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
-      </button>
-
-      <button class="nav-item" id="nav-projects"
-              onclick="navigateTo('projects')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-        Projekte
-      </button>
-
       <button class="nav-item" id="nav-deployments"
               onclick="navigateTo('deployments')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -193,6 +182,17 @@
           <path d="M2 12l10 5 10-5"/>
         </svg>
         Einsätze
+      </button>
+
+      <button class="nav-item" id="nav-tasks"
+              onclick="navigateTo('tasks')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span style="flex:1;text-align:left">Aufgaben</span>
+        <span class="nav-badge" id="nav-tasks-badge" style="display:none"></span>
       </button>
     </nav>
 

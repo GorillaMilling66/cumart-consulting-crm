@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.31.0 (Dreifach-Paket: 1) Sidebar-Reihenfolge auf
+   Firmen · Kontakte · Projekte · Termine · Einsätze · Aufgaben
+   umsortiert. 2) Einsatz-Dashboard bleibt bei „durchgeführt"
+   und „abgerechnet" offen — preserveExpandedRowAcross stellt
+   die aufgeklappte Zeile nach dem Liste-Refresh wieder her
+   (data-dep-id auf allen Einsatz-trs). 3) Verwandte offene
+   Aufgaben im Aufgabe-Dashboard filtern auf Firma/Kontakt
+   statt Firma/Zuständiger und zeigen den Kundenkontext vor
+   dem Status-Label.)
    Version 1.30.1 (Fix: loadProjectDetail crashte beim Init,
    weil es noch die in v1.30.0 entfernten HTML-Elemente
    project-detail-beschreibung-wrap / -notizen-wrap zu
@@ -5334,7 +5343,7 @@ function renderDeploymentsTable(deployments) {
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
 
     return `
-      <tr>
+      <tr data-dep-id="${esc(d.id)}">
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
@@ -6281,7 +6290,7 @@ async function loadCompanyDeployments(companyId) {
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
 
     return `
-      <tr>
+      <tr data-dep-id="${esc(d.id)}">
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
@@ -7799,6 +7808,30 @@ function closeExpandedRow() {
   _expandedRow = { type: null, id: null, rowEl: null, panelRow: null };
 }
 
+/** Findet die Trigger-Zeile einer Entität über ihr data-Attribut. Nur Typen mit
+ *  `data-*-id` auf `<tr>` werden gefunden — aktuell deployment, appointment, task. */
+function findRowForEntity(type, id) {
+  const attr = type === 'deployment'  ? 'data-dep-id'
+             : type === 'appointment' ? 'data-appt-id'
+             : type === 'task'        ? 'data-task-id'
+             : null;
+  if (!attr) return null;
+  return document.querySelector(`tr[${attr}="${CSS.escape(id)}"]`);
+}
+
+/** Führt `fn` aus und stellt die vorher aufgeklappte Zeile danach wieder her,
+ *  falls sie im neu gerenderten DOM noch existiert. Wichtig für Schnellaktionen,
+ *  die eine Status-Änderung bewirken und die Liste refreshen, aber das Dashboard
+ *  nicht schließen sollen (v1.31 — Einsatz durchgeführt/abgerechnet). */
+async function preserveExpandedRowAcross(fn) {
+  const prev = _expandedRow.id ? { type: _expandedRow.type, id: _expandedRow.id } : null;
+  closeExpandedRow();
+  await fn();
+  if (!prev) return;
+  const row = findRowForEntity(prev.type, prev.id);
+  if (row) await toggleRowExpand(prev.type, prev.id, row);
+}
+
 /** Auto-Expand (v1.27.1, generalisiert v1.28): Wenn in einem Sub-Tab genau ein Eintrag
  *  angezeigt wird, klappt die einzige Zeile automatisch auf — spart den manuellen Klick.
  *  Greift nicht auf Mobile (dort würde das Klick→Modal-Verhalten ungewöhnlich brechen). */
@@ -8343,7 +8376,9 @@ async function renderDeploymentExpandedRow(deploymentId) {
     </div>`;
 }
 
-/** Einsatz auf „Durchgeführt" setzen — mit Auto-Projekt-Status-Check. */
+/** Einsatz auf „Durchgeführt" setzen — mit Auto-Projekt-Status-Check.
+ *  Das Dashboard bleibt offen, damit der User direkt weiterarbeiten kann
+ *  (z. B. „Durchgeführt" → „Abgerechnet" ohne erneutes Aufklappen). */
 async function quickDeploymentMarkDone(deploymentId) {
   const { data: dep, error: selErr } = await db.from('deployments')
     .select('id, project_id, status').eq('id', deploymentId).single();
@@ -8356,11 +8391,11 @@ async function quickDeploymentMarkDone(deploymentId) {
   if (error) { showToast('Fehler: ' + error.message, true); return; }
   showToast('Einsatz auf „Durchgeführt" gesetzt.');
   if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
-  closeExpandedRow();
-  await refreshCurrentDeploymentList();
+  await preserveExpandedRowAcross(() => refreshCurrentDeploymentList());
 }
 
-/** Einsatz auf „Abgerechnet" setzen — nur aus „Durchgeführt" heraus. */
+/** Einsatz auf „Abgerechnet" setzen — nur aus „Durchgeführt" heraus.
+ *  Dashboard bleibt offen (v1.31). */
 async function quickDeploymentMarkBilled(deploymentId) {
   const { data: dep, error: selErr } = await db.from('deployments')
     .select('id, project_id, status').eq('id', deploymentId).single();
@@ -8373,8 +8408,7 @@ async function quickDeploymentMarkBilled(deploymentId) {
   if (error) { showToast('Fehler: ' + error.message, true); return; }
   showToast('Einsatz als „Abgerechnet" markiert.');
   if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
-  closeExpandedRow();
-  await refreshCurrentDeploymentList();
+  await preserveExpandedRowAcross(() => refreshCurrentDeploymentList());
 }
 
 /** Einsatz duplizieren (nutzt bestehende duplicateDeployment-Helfer, v1.11). */
@@ -8442,13 +8476,15 @@ async function renderTaskExpandedRow(taskId) {
   const t = taskResult.data;
   const todayISO = toISODate(new Date());
 
-  // Verwandte offene Aufgaben (selbe Firma oder selber Zuständiger, nicht diese)
+  // Verwandte offene Aufgaben — selbe Firma ODER selber Kontakt (nicht: selber Zuständiger).
+  // Fachlicher Grund: wir wollen „was steht sonst noch bei diesem Kunden an", nicht
+  // „was hat dieselbe Person sonst noch zu tun". Selber Zuständiger wurde nie gebraucht.
   const orParts = [];
-  if (t.company_id)   orParts.push(`company_id.eq.${t.company_id}`);
-  if (t.assigned_to)  orParts.push(`assigned_to.eq.${t.assigned_to}`);
+  if (t.company_id)  orParts.push(`company_id.eq.${t.company_id}`);
+  if (t.contact_id)  orParts.push(`contact_id.eq.${t.contact_id}`);
   const relResult = orParts.length
     ? await db.from('tasks')
-        .select('id, titel, faelligkeit, status, company_id, assigned_to')
+        .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
         .is('deleted_at', null).neq('id', taskId).neq('status', 'erledigt')
         .or(orParts.join(','))
         .order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
@@ -8517,18 +8553,21 @@ async function renderTaskExpandedRow(taskId) {
         <div class="erp-kv-label">Notizen</div>       <div class="erp-kv-value">${notizenVal}</div>
       </div>`;
 
-  // Verwandte offene Aufgaben
+  // Verwandte offene Aufgaben — vor dem Status-Label steht der Kunden-Kontext (Firma, sonst Kontakt).
   const relRows = (relResult.data || []);
   const relHtml = relRows.length > 0
     ? `<div class="erp-related">
-         <div class="erp-section-title">Verwandte offene Aufgaben (Firma / Zuständiger)</div>
+         <div class="erp-section-title">Verwandte offene Aufgaben (Firma / Kontakt)</div>
          ${relRows.map(r => {
            const rOver = r.faelligkeit && r.faelligkeit < todayISO;
+           const customerLabel = r.company?.name
+             || (r.contact ? [r.contact.vorname, r.contact.nachname].filter(Boolean).join(' ') : '');
+           const statusText = rOver ? 'überfällig' : aufgabeStatusLabel(r.status);
            return `
              <div class="erp-related-row">
                <div class="erp-related-date">${r.faelligkeit ? esc(formatDateDE(r.faelligkeit)) : '<span style="color:var(--muted)">—</span>'}</div>
                <div class="erp-related-title" onclick="openTaskModal('edit','${esc(r.id)}')">${esc(r.titel || '—')}</div>
-               <div class="erp-related-meta" ${rOver ? 'style="color:var(--danger);font-weight:600"' : ''}>${rOver ? 'überfällig' : esc(aufgabeStatusLabel(r.status))}</div>
+               <div class="erp-related-meta" ${rOver ? 'style="color:var(--danger);font-weight:600"' : ''}>${customerLabel ? esc(customerLabel) + ' · ' : ''}${esc(statusText)}</div>
              </div>`;
          }).join('')}
        </div>`
