@@ -1,10 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.28.0 (Einsatz-Inline-Expand-Dashboard — Klick
+   auf einen Einsatz-Titel klappt darunter ein Detail-
+   Dashboard auf. Stats (Status, Wert, Datum, ABC, Projekt-
+   Verknüpfung, gekoppelter Termin, Bonus-Einlösung), Kontext
+   (Firma, Leistung, Techniker, Uhrzeit, Menge×Preis, Ort,
+   Notizen), Projekt-Kontext mit Soll/Ist-Marge wenn im Projekt,
+   Historie letzter 3 Einsätze derselben Firma. Schnellaktionen:
+   als durchgeführt · als abgerechnet · duplizieren · Folge-
+   Einsatz · Vollbearbeitung. Auto-Expand bei genau einem
+   Einsatz in Firma-/Projekt-Detail-Tabs. Shared Helper
+   autoExpandSingleRow(tbody, entityType, items) generalisiert.)
    Version 1.27.1 (Auto-Expand bei genau einem Termin in
-   Detail-Tabs — spart den manuellen Klick, wenn ohnehin
-   nur eine Zeile da ist. Greift in Firma/Kontakt/Projekt-
-   Termin-Tabs, nicht in der globalen Haupt-Liste und nicht
-   auf Mobile.)
+   Detail-Tabs.)
    Version 1.27.0 (Termin-Inline-Expand-Dashboard: Klick auf
    einen Termin-Titel in einer Liste klappt darunter ein
    Detail-Dashboard auf — Stats (Status, Typ, Datum, ABC der
@@ -5248,6 +5256,7 @@ function filterDeployments() {
 }
 
 function renderDeploymentsTable(deployments) {
+  closeExpandedRow();
   const tbody = document.getElementById('deployments-table-body');
   const countEl = document.getElementById('deployments-count');
 
@@ -5289,7 +5298,7 @@ function renderDeploymentsTable(deployments) {
       <tr>
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
-          <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
         </td>
         <td class="col-tablet">${firmaHtml}</td>
         <td class="col-desktop">${projektHtml}</td>
@@ -6190,6 +6199,7 @@ async function _refreshDeploymentContext(companyId) {
 // ═══════════════════════════════════════════════════════════
 
 async function loadCompanyDeployments(companyId) {
+  closeExpandedRow();
   const tbody = document.getElementById('company-deployments-body');
   const countEl = document.getElementById('company-deployments-count');
 
@@ -6235,7 +6245,7 @@ async function loadCompanyDeployments(companyId) {
       <tr>
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
-          <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
         </td>
         <td class="col-tablet">${projektHtml}</td>
         <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
@@ -6245,6 +6255,9 @@ async function loadCompanyDeployments(companyId) {
         </td>
       </tr>`;
   }).join('');
+
+  // Auto-Expand wenn genau ein Einsatz (v1.28)
+  autoExpandSingleRow(tbody, 'deployment', all);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6252,6 +6265,7 @@ async function loadCompanyDeployments(companyId) {
 // ═══════════════════════════════════════════════════════════
 
 async function loadProjectDeployments(projectId) {
+  closeExpandedRow();
   const tbody = document.getElementById('project-deployments-body');
   const countEl = document.getElementById('project-deployments-count');
   const summaryEl = document.getElementById('project-deployments-summary');
@@ -6327,7 +6341,7 @@ async function loadProjectDeployments(projectId) {
         </td>
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
-          <div class="cell-link" onclick="openDeploymentModal('edit', '${esc(d.id)}')">${esc(d.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
         </td>
         <td class="col-tablet" style="color:var(--muted)">${leistungHtml}</td>
         <td class="dep-status-cell"><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
@@ -6341,6 +6355,9 @@ async function loadProjectDeployments(projectId) {
   // Summary mit Aufwands-Info
   summaryEl.style.display = '';
   summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>. Kundenumsatz läuft über den Projekt-Paketpreis.`;
+
+  // Auto-Expand wenn genau ein Einsatz (v1.28)
+  autoExpandSingleRow(tbody, 'deployment', all);
 }
 
 /**
@@ -7538,16 +7555,20 @@ function closeExpandedRow() {
   _expandedRow = { type: null, id: null, rowEl: null, panelRow: null };
 }
 
-/** Auto-Expand (v1.27.1): Wenn in einem Sub-Tab genau ein Termin angezeigt wird,
- *  klappt die einzige Zeile automatisch auf — spart den manuellen Klick.
+/** Auto-Expand (v1.27.1, generalisiert v1.28): Wenn in einem Sub-Tab genau ein Eintrag
+ *  angezeigt wird, klappt die einzige Zeile automatisch auf — spart den manuellen Klick.
  *  Greift nicht auf Mobile (dort würde das Klick→Modal-Verhalten ungewöhnlich brechen). */
-function autoExpandSingleAppointmentRow(tbody, items) {
+function autoExpandSingleRow(tbody, entityType, items) {
   if (!tbody || !Array.isArray(items) || items.length !== 1) return;
   if (isMobileForExpand()) return;
   const firstRow = tbody.querySelector('tr');
   if (!firstRow) return;
-  // Fire-and-forget: toggleRowExpand ist async (lädt Details nach), aber wir warten nicht
-  toggleRowExpand('appointment', items[0].id, firstRow);
+  toggleRowExpand(entityType, items[0].id, firstRow);
+}
+
+/** @deprecated Wrapper-Kompat — verwende autoExpandSingleRow(tbody, 'appointment', items). */
+function autoExpandSingleAppointmentRow(tbody, items) {
+  autoExpandSingleRow(tbody, 'appointment', items);
 }
 
 /** Öffnet oder schließt das Inline-Dashboard für eine Listen-Zeile.
@@ -7555,6 +7576,7 @@ function autoExpandSingleAppointmentRow(tbody, items) {
 async function toggleRowExpand(entityType, entityId, rowEl) {
   if (isMobileForExpand()) {
     if (entityType === 'appointment') return openAppointmentModal('edit', entityId);
+    if (entityType === 'deployment')  return openDeploymentModal('edit', entityId);
     return;
   }
 
@@ -7580,6 +7602,7 @@ async function toggleRowExpand(entityType, entityId, rowEl) {
   try {
     let html = '';
     if (entityType === 'appointment') html = await renderAppointmentExpandedRow(entityId);
+    else if (entityType === 'deployment') html = await renderDeploymentExpandedRow(entityId);
     td.innerHTML = `<div class="expanded-row-panel-inner">${html}</div>`;
   } catch (e) {
     td.innerHTML = `<div class="expanded-row-panel-inner"><div class="info-card-empty">Fehler: ${esc(e.message)}</div></div>`;
@@ -7846,6 +7869,308 @@ async function refreshCurrentAppointmentList() {
     await loadCompanyAppointments(currentCompanyDetailId);
   } else {
     await loadAppointments();
+  }
+}
+
+// ── EINSATZ-INLINE-DASHBOARD (v1.28.0) ──────────────────────
+
+/** Baut das Einsatz-Inline-Dashboard.
+ *  Lädt Einsatz + Firma/Service/Projekt + Techniker + gekoppelter Termin +
+ *  Entitlement-Einlösung (wenn vorhanden) + letzte 3 Einsätze derselben Firma.
+ *  Wenn Einsatz Teil eines Projekts ist, wird zusätzlich Soll-vs-Ist gegen den Paketpreis gezeigt. */
+async function renderDeploymentExpandedRow(deploymentId) {
+  const depResult = await db.from('deployments')
+    .select(`
+      *,
+      company:companies(id, name, abc_klassifizierung),
+      service:services(id, name, einheit),
+      project:projects(id, name, status, geschaetzter_umsatz)
+    `)
+    .is('deleted_at', null).eq('id', deploymentId).single();
+
+  if (depResult.error || !depResult.data) {
+    return `<div class="info-card-empty">Einsatz konnte nicht geladen werden.</div>`;
+  }
+  const d = depResult.data;
+
+  const [
+    technikerResult,
+    linkedApptResult,
+    redemptionResult,
+    relResult,
+    projectDepsResult
+  ] = await Promise.all([
+    // Techniker (intern) via Join-Tabelle
+    db.from('deployment_technicians')
+      .select('user_id, user:user_profiles!deployment_technicians_user_id_fkey(id, name)')
+      .eq('deployment_id', deploymentId),
+    // Gekoppelter Termin
+    db.from('appointments')
+      .select('id, titel, datum, status')
+      .is('deleted_at', null).eq('deployment_id', deploymentId).limit(1),
+    // Entitlement-Einlösung (nur Menge — Detail-Info lebt am Entitlement selbst)
+    db.from('entitlement_redemptions')
+      .select('id, menge_eingeloest')
+      .eq('deployment_id', deploymentId).limit(1),
+    // Letzte 3 Einsätze derselben Firma (ohne diesen)
+    d.company_id
+      ? db.from('deployments')
+          .select('id, titel, datum_von, status, menge, einzelpreis')
+          .is('deleted_at', null).eq('company_id', d.company_id).neq('id', deploymentId)
+          .order('datum_von', { ascending: false, nullsFirst: false }).limit(3)
+      : Promise.resolve({ data: [] }),
+    // Projekt-Einsätze (für Soll/Ist)
+    d.project_id
+      ? db.from('deployments')
+          .select('menge, einzelpreis').is('deleted_at', null).eq('project_id', d.project_id)
+      : Promise.resolve({ data: [] })
+  ]);
+
+  const todayISO = toISODate(new Date());
+
+  // Stats-Row
+  const statusColor = einsatzStatusFarbe(d.status);
+  const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+  const wertLabel = d.project_id ? 'Positionswert (Aufwand)' : 'Wert';
+
+  const abcBadge = d.company?.abc_klassifizierung
+    ? `<span class="abc-badge abc-badge-${d.company.abc_klassifizierung}" style="width:24px;height:24px;font-size:12px;display:inline-flex;align-items:center;justify-content:center">${esc(d.company.abc_klassifizierung)}</span>`
+    : `<span style="color:var(--muted)">—</span>`;
+
+  const datumLabel = d.datum_von
+    ? (d.datum_bis && d.datum_bis !== d.datum_von
+        ? `${esc(formatDateDE(d.datum_von))} – ${esc(formatDateDE(d.datum_bis))}`
+        : esc(formatDateDE(d.datum_von)))
+    : '<span class="erp-stat-muted">Ungeplant</span>';
+
+  const linkedAppt = (linkedApptResult.data || [])[0] || null;
+  const terminStat = linkedAppt
+    ? `<span class="cell-link" onclick="openAppointmentModal('edit','${esc(linkedAppt.id)}')">${esc(formatDateDE(linkedAppt.datum))}${linkedAppt.titel ? ' · ' + esc(linkedAppt.titel) : ''}</span>`
+    : '<span class="erp-stat-muted">nicht gekoppelt</span>';
+
+  const redemption = (redemptionResult.data || [])[0] || null;
+  const entitlementStat = redemption
+    ? `<span style="color:var(--success);font-weight:600">${esc(redemption.menge_eingeloest)} eingelöst</span>`
+    : '<span class="erp-stat-muted">keine</span>';
+
+  const statsHtml = `
+    <div class="erp-stats">
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Status</div>
+        <div><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">${esc(wertLabel)}</div>
+        <div class="erp-stat-value">${esc(formatPreis(gesamt))}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Datum</div>
+        <div class="erp-stat-value">${datumLabel}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">ABC (Firma)</div>
+        <div>${abcBadge}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Projekt</div>
+        <div class="erp-stat-value">${d.project
+          ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(d.project.id)}')">${esc(d.project.name)}</span>`
+          : '<span class="erp-stat-muted">Einzelbuchung</span>'}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Gekoppelter Termin</div>
+        <div class="erp-stat-value">${terminStat}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Bonus-Einlösung</div>
+        <div class="erp-stat-value">${entitlementStat}</div>
+      </div>
+    </div>`;
+
+  // Kontext-Block
+  const firmaVal = d.company
+    ? `<span class="cell-link" onclick="navigateTo('firma','${esc(d.company.id)}')">${esc(d.company.name)}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const serviceVal = d.service
+    ? `${esc(d.service.name)}${d.service.einheit ? ` <span style="color:var(--muted);font-size:11px">· ${esc(d.service.einheit)}</span>` : ''}`
+    : '<span class="erp-kv-muted">—</span>';
+
+  const internalTechniker = (technikerResult.data || [])
+    .map(t => t.user?.name).filter(Boolean);
+  const technikerList = [...internalTechniker];
+  if (d.externe_techniker) technikerList.push(`${d.externe_techniker} (extern)`);
+  const technikerVal = technikerList.length
+    ? esc(technikerList.join(', '))
+    : '<span class="erp-kv-muted">—</span>';
+
+  const uhrzeit = d.uhrzeit_von
+    ? (d.uhrzeit_bis ? `${formatTime(d.uhrzeit_von)}–${formatTime(d.uhrzeit_bis)}` : formatTime(d.uhrzeit_von))
+    : null;
+  const zeitVal = uhrzeit ? esc(uhrzeit) : '<span class="erp-kv-muted">—</span>';
+
+  const mengeVal = `${esc(d.menge ?? 0)} × ${esc(formatPreis(d.einzelpreis ?? 0))} = <strong>${esc(formatPreis(gesamt))}</strong>`;
+  const ortVal = d.ort ? esc(d.ort) : '<span class="erp-kv-muted">—</span>';
+  const notizenVal = d.notizen
+    ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:80px;overflow:auto">${esc(d.notizen)}</div>`
+    : '<span class="erp-kv-muted">—</span>';
+
+  const kontextHtml = `
+    <div>
+      <div class="erp-kv">
+        <div class="erp-kv-label">Firma</div>     <div class="erp-kv-value">${firmaVal}</div>
+        <div class="erp-kv-label">Leistung</div>  <div class="erp-kv-value">${serviceVal}</div>
+        <div class="erp-kv-label">Techniker</div> <div class="erp-kv-value">${technikerVal}</div>
+        <div class="erp-kv-label">Uhrzeit</div>   <div class="erp-kv-value">${zeitVal}</div>
+        <div class="erp-kv-label">Menge × €</div> <div class="erp-kv-value">${mengeVal}</div>
+        <div class="erp-kv-label">Ort</div>       <div class="erp-kv-value">${ortVal}</div>
+        <div class="erp-kv-label">Notizen</div>   <div class="erp-kv-value">${notizenVal}</div>
+      </div>`;
+
+  // Projekt-Kontext (Soll/Ist) wenn im Projekt
+  let projektKontextHtml = '';
+  if (d.project_id && d.project) {
+    const aufwandSumme = (projectDepsResult.data || [])
+      .reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis) || 0), 0);
+    const paket = Number(d.project.geschaetzter_umsatz) || 0;
+    const diff = paket - aufwandSumme;
+    const diffColor = diff >= 0 ? 'var(--success)' : 'var(--danger)';
+    const diffLabel = diff >= 0 ? 'Marge' : 'Überziehung';
+    projektKontextHtml = `
+      <div class="erp-related">
+        <div class="erp-section-title">Projekt-Kontext</div>
+        <div class="erp-kv" style="grid-template-columns:120px 1fr">
+          <div class="erp-kv-label">Paketpreis</div>       <div class="erp-kv-value">${esc(formatPreis(paket))}</div>
+          <div class="erp-kv-label">Interner Aufwand</div> <div class="erp-kv-value">${esc(formatPreis(aufwandSumme))}</div>
+          <div class="erp-kv-label">${esc(diffLabel)}</div> <div class="erp-kv-value" style="color:${diffColor};font-weight:600">${esc(formatPreis(Math.abs(diff)))}</div>
+        </div>
+      </div>`;
+  }
+
+  // Historie: letzte 3 Einsätze derselben Firma
+  const relRows = (relResult.data || []);
+  const relHtml = relRows.length > 0
+    ? `<div class="erp-related">
+         <div class="erp-section-title">Letzte Einsätze derselben Firma</div>
+         ${relRows.map(r => {
+           const gRel = calcDeploymentGesamt(r.menge, r.einzelpreis);
+           return `
+             <div class="erp-related-row">
+               <div class="erp-related-date">${r.datum_von ? esc(formatDateDE(r.datum_von)) : '<span style="color:var(--muted)">—</span>'}</div>
+               <div class="erp-related-title" onclick="openDeploymentModal('edit','${esc(r.id)}')">${esc(r.titel || '—')}</div>
+               <div class="erp-related-meta">${esc(r.status)} · ${esc(formatPreis(gRel))}</div>
+             </div>`;
+         }).join('')}
+       </div>`
+    : '';
+
+  // Schnellaktionen
+  const isGeplant      = d.status === 'Geplant';
+  const isDurchgefuehrt = d.status === 'Durchgeführt';
+  const isAbgerechnet  = d.status === 'Abgerechnet';
+
+  const actionsHtml = `
+    <div class="erp-actions">
+      <div class="erp-section-title" style="margin-top:0">Schnellaktionen</div>
+      ${isGeplant ? `<button class="erp-action-btn erp-action-primary" onclick="quickDeploymentMarkDone('${esc(d.id)}')">
+        <span class="erp-action-btn-icon">✓</span> Als durchgeführt markieren
+      </button>` : ''}
+      ${isDurchgefuehrt ? `<button class="erp-action-btn erp-action-primary" onclick="quickDeploymentMarkBilled('${esc(d.id)}')">
+        <span class="erp-action-btn-icon">€</span> Als abgerechnet markieren
+      </button>` : ''}
+      ${isAbgerechnet ? `<div style="padding:8px 12px;font-size:12px;color:var(--muted);background:#f9fafb;border-radius:6px;border:1px dashed var(--border)">Einsatz ist abgerechnet — kein weiterer Status-Wechsel per Schnellaktion.</div>` : ''}
+      <button class="erp-action-btn" onclick="quickDeploymentDuplicate('${esc(d.id)}')">
+        <span class="erp-action-btn-icon">⎘</span> Duplizieren
+      </button>
+      <button class="erp-action-btn" onclick="quickDeploymentFollowup('${esc(d.id)}')">
+        <span class="erp-action-btn-icon">+</span> Folge-Einsatz anlegen
+      </button>
+      <button class="erp-action-btn" onclick="openDeploymentModal('edit','${esc(d.id)}')">
+        <span class="erp-action-btn-icon">✎</span> Vollbearbeitung …
+      </button>
+    </div>`;
+
+  return `
+    ${statsHtml}
+    <div class="erp-body">
+      ${kontextHtml}${projektKontextHtml}${relHtml}</div>
+      ${actionsHtml}
+    </div>`;
+}
+
+/** Einsatz auf „Durchgeführt" setzen — mit Auto-Projekt-Status-Check. */
+async function quickDeploymentMarkDone(deploymentId) {
+  const { data: dep, error: selErr } = await db.from('deployments')
+    .select('id, project_id, status').eq('id', deploymentId).single();
+  if (selErr || !dep) { showToast('Einsatz nicht gefunden.', true); return; }
+  if (dep.status === 'Durchgeführt' || dep.status === 'Abgerechnet') {
+    showToast(`Einsatz ist bereits „${dep.status}".`, true); return;
+  }
+  const { error } = await db.from('deployments')
+    .update({ status: 'Durchgeführt' }).eq('id', deploymentId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Einsatz auf „Durchgeführt" gesetzt.');
+  if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
+  closeExpandedRow();
+  await refreshCurrentDeploymentList();
+}
+
+/** Einsatz auf „Abgerechnet" setzen — nur aus „Durchgeführt" heraus. */
+async function quickDeploymentMarkBilled(deploymentId) {
+  const { data: dep, error: selErr } = await db.from('deployments')
+    .select('id, project_id, status').eq('id', deploymentId).single();
+  if (selErr || !dep) { showToast('Einsatz nicht gefunden.', true); return; }
+  if (dep.status !== 'Durchgeführt') {
+    showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
+  }
+  const { error } = await db.from('deployments')
+    .update({ status: 'Abgerechnet' }).eq('id', deploymentId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Einsatz als „Abgerechnet" markiert.');
+  if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
+  closeExpandedRow();
+  await refreshCurrentDeploymentList();
+}
+
+/** Einsatz duplizieren (nutzt bestehende duplicateDeployment-Helfer, v1.11). */
+async function quickDeploymentDuplicate(deploymentId) {
+  closeExpandedRow();
+  try {
+    await duplicateDeployment(deploymentId);
+  } catch (e) {
+    showToast('Fehler: ' + e.message, true);
+  }
+}
+
+/** Folge-Einsatz: Modal im New-Mode mit Prefill aus dem aktuellen Einsatz.
+ *  Datum bleibt leer, damit der User bewusst neu plant. Status: Geplant. */
+async function quickDeploymentFollowup(deploymentId) {
+  const { data: d, error } = await db.from('deployments')
+    .select('company_id, project_id, service_id, einzelpreis, menge, ort, titel').eq('id', deploymentId).single();
+  if (error || !d) { showToast('Einsatz nicht gefunden.', true); return; }
+
+  closeExpandedRow();
+  if (d.company_id) deploymentModalPrefillCompanyId = d.company_id;
+  if (d.project_id) deploymentModalPrefillProjectId = d.project_id;
+  if (d.service_id) window._pendingDeploymentPrefillServiceId = d.service_id;
+
+  await openDeploymentModal('new');
+  if (d.ort)         document.getElementById('d-ort').value = d.ort;
+  if (d.titel)       document.getElementById('d-titel').value = `Folgeeinsatz: ${d.titel}`;
+  // Service-change-Event kümmert sich um Preis/Uhrzeit; wenn kein Service, behalten wir Menge/Preis
+  if (!d.service_id) {
+    if (d.menge)       document.getElementById('d-menge').value = d.menge;
+    if (d.einzelpreis) document.getElementById('d-einzelpreis').value = d.einzelpreis;
+  }
+}
+
+/** Hilfs-Refresh: lädt die aktuell sichtbare Einsatz-Liste neu. */
+async function refreshCurrentDeploymentList() {
+  if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+    await loadProjectDeployments(currentProjectDetailId);
+  } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    await loadCompanyDeployments(currentCompanyDetailId);
+  } else {
+    await loadDeployments();
   }
 }
 
