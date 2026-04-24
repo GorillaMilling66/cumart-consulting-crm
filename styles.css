@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.21.0 (FAB Quick-Add + Popover-Menü)
+   Version 1.27.0 (Inline-Expand-Row-Dashboard für Termine)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -1804,3 +1804,148 @@ tbody tr:focus-within .action-icons,
     left: 16px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   INLINE-EXPAND-ROW DASHBOARD (v1.27.0)
+   ═══════════════════════════════════════════════════════════
+   Klick auf eine Listen-Zeile klappt darunter ein Detail-Dashboard
+   auf. Nur eine Zeile gleichzeitig. Auf Mobile wird stattdessen
+   das Bearbeiten-Modal geöffnet.
+   ─────────────────────────────────────────────────────────── */
+
+tr.row-expanded > td {
+  background: #eef2ff;
+  border-bottom-color: transparent;
+}
+
+tr.expanded-row > td {
+  padding: 0;
+  background: #eef2ff;
+  border-top: none;
+}
+.expanded-row-panel-inner {
+  padding: 16px 20px 20px;
+  background: #ffffff;
+  border-left: 3px solid var(--link);
+  margin: 0 0 6px 0;
+  animation: expandRowIn 160ms ease-out;
+}
+@keyframes expandRowIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Dashboard-Inhalt innerhalb des Expand-Panels */
+.erp-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.erp-stat-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
+}
+.erp-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-bottom: 2px;
+}
+.erp-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.erp-stat-value.erp-stat-muted { color: var(--muted); font-weight: 500; }
+
+.erp-body {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 20px;
+}
+@media (max-width: 800px) {
+  .erp-body { grid-template-columns: 1fr; }
+}
+
+.erp-kv {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+.erp-kv-label { color: var(--muted); }
+.erp-kv-value { color: var(--text); word-break: break-word; }
+.erp-kv-value.erp-kv-muted { color: var(--muted); font-style: italic; }
+
+.erp-section-title {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
+.erp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.erp-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: all .08s;
+}
+.erp-action-btn:hover {
+  border-color: var(--link);
+  background: #eff6ff;
+}
+.erp-action-btn.erp-action-primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.erp-action-btn.erp-action-primary:hover {
+  background: #000;
+}
+.erp-action-btn-icon {
+  font-size: 14px;
+  width: 16px;
+  display: inline-flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.erp-related {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.erp-related-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12px;
+}
+.erp-related-row + .erp-related-row { border-top: 1px dashed var(--border); }
+.erp-related-date { color: var(--muted); min-width: 90px; }
+.erp-related-title { flex: 1; color: var(--text); cursor: pointer; }
+.erp-related-title:hover { color: var(--link); }
+.erp-related-meta { color: var(--muted); font-size: 11px; }

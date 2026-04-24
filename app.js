@@ -1,15 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.26.0 (Kontakt-Dashboard an Firma-Dashboard ange-
-   glichen: Umsatz-Card spiegelt Kalenderjahr-Umsatz der zu-
-   geordneten Firma + Historie-Subline; ABC-Card ist klickbar
-   und öffnet das ABC-Edit-Popover der Firma (Kontakt erbt);
-   Bevorstehend-Card zeigt Termine des Kontakts + Einsätze
-   der Firma; neues Opportunities-Widget (Projekte, in denen
-   der Kontakt Hauptkontakt ist, Status Lead/Angebot);
-   Schnellaktionen-Button im Quick-Create-Panel.
-   ABC-Renderer generalisiert via `renderAbcBadgeIn` —
-   Firma/Kontakt teilen jetzt dieselbe Logik.)
+   Version 1.27.0 (Termin-Inline-Expand-Dashboard: Klick auf
+   einen Termin-Titel in einer Liste klappt darunter ein
+   Detail-Dashboard auf — Stats (Status, Typ, Datum, ABC der
+   Firma, Gekoppelter Einsatz), Kontext-Card (Firma, Kontakt,
+   Projekt, Ort, Notizen), letzte Termine derselben Firma,
+   offene Aufgaben (Firma/Kontakt), Schnellaktionen (als
+   durchgeführt markieren · Folge-Termin +1 Woche · Aufgabe
+   aus Termin · Einsatz aus Termin · Vollbearbeitung). Nur
+   eine Zeile gleichzeitig offen app-weit. Mobile fällt
+   automatisch auf das Bearbeiten-Modal zurück. Wirkt in
+   allen 4 Termine-Listen: Haupt, Firma-Tab, Kontakt-Tab,
+   Projekt-Tab. Bearbeiten-Button/-Icon öffnet weiterhin
+   das volle Modal für tiefere Edits. Shared Infrastruktur
+   toggleRowExpand/closeExpandedRow — wiederverwendbar für
+   Einsatz v1.28 und Aufgabe v1.29.)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -3212,6 +3217,7 @@ async function loadCompanyContacts(companyId) {
 }
 
 async function loadCompanyAppointments(companyId) {
+  closeExpandedRow();
   const tbody = document.getElementById('company-appointments-body');
   const countEl = document.getElementById('company-appointments-count');
   const showAllWrap = document.getElementById('company-appointments-show-all');
@@ -3277,7 +3283,7 @@ async function loadCompanyAppointments(companyId) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -3641,6 +3647,7 @@ function filterAppointments() {
 }
 
 function renderAppointmentsTable(appointments) {
+  closeExpandedRow();
   const tbody = document.getElementById('appointments-table-body');
   const countEl = document.getElementById('appointments-count');
 
@@ -3680,7 +3687,7 @@ function renderAppointmentsTable(appointments) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -4576,6 +4583,7 @@ function renderProjectDetail(p) {
 }
 
 async function loadProjectAppointments(projectId) {
+  closeExpandedRow();
   const tbody = document.getElementById('project-appointments-body');
   const countEl = document.getElementById('project-appointments-count');
 
@@ -4639,7 +4647,7 @@ async function loadProjectAppointments(projectId) {
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -4947,6 +4955,7 @@ function renderContactDetail(k) {
 }
 
 async function loadContactAppointments(contactId) {
+  closeExpandedRow();
   const tbody = document.getElementById('contact-appointments-body');
   const countEl = document.getElementById('contact-appointments-count');
 
@@ -5000,7 +5009,7 @@ async function loadContactAppointments(contactId) {
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="openAppointmentModal('edit', '${esc(a.id)}')">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -7492,6 +7501,326 @@ async function runQuickActionTncTag() {
   deploymentModalPrefillCompanyId = companyId;
   window._pendingDeploymentPrefillServiceId = svc.id;
   await openDeploymentModal('new');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INLINE-EXPAND-ROW DASHBOARDS (v1.27.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Ein Klick auf eine Listen-Zeile klappt darunter ein Detail-Dashboard
+// auf (Stats · Kontext · verwandte Einträge · Schnellaktionen).
+// Nur eine Zeile gleichzeitig app-weit. Auf Mobile (<=600 px) wird
+// stattdessen das bestehende Bearbeiten-Modal geöffnet.
+
+let _expandedRow = { type: null, id: null, rowEl: null, panelRow: null };
+
+function isMobileForExpand() {
+  return window.matchMedia('(max-width: 600px)').matches;
+}
+
+function closeExpandedRow() {
+  if (_expandedRow.rowEl) _expandedRow.rowEl.classList.remove('row-expanded');
+  if (_expandedRow.panelRow) _expandedRow.panelRow.remove();
+  _expandedRow = { type: null, id: null, rowEl: null, panelRow: null };
+}
+
+/** Öffnet oder schließt das Inline-Dashboard für eine Listen-Zeile.
+ *  Auf Mobile: Fallback zum bestehenden Bearbeiten-Modal. */
+async function toggleRowExpand(entityType, entityId, rowEl) {
+  if (isMobileForExpand()) {
+    if (entityType === 'appointment') return openAppointmentModal('edit', entityId);
+    return;
+  }
+
+  const sameOpen = _expandedRow.id === entityId
+                && _expandedRow.type === entityType
+                && _expandedRow.rowEl === rowEl;
+  closeExpandedRow();
+  if (sameOpen) return;
+
+  // Neue Expand-Row einfügen
+  const panelRow = document.createElement('tr');
+  panelRow.className = 'expanded-row';
+  const colCount = rowEl.querySelectorAll('td').length || 1;
+  const td = document.createElement('td');
+  td.colSpan = colCount;
+  td.innerHTML = '<div class="expanded-row-panel-inner"><div class="info-card-empty">Lade ...</div></div>';
+  panelRow.appendChild(td);
+  rowEl.parentNode.insertBefore(panelRow, rowEl.nextSibling);
+  rowEl.classList.add('row-expanded');
+
+  _expandedRow = { type: entityType, id: entityId, rowEl, panelRow };
+
+  try {
+    let html = '';
+    if (entityType === 'appointment') html = await renderAppointmentExpandedRow(entityId);
+    td.innerHTML = `<div class="expanded-row-panel-inner">${html}</div>`;
+  } catch (e) {
+    td.innerHTML = `<div class="expanded-row-panel-inner"><div class="info-card-empty">Fehler: ${esc(e.message)}</div></div>`;
+  }
+}
+
+/** Baut das Termin-Inline-Dashboard (v1.27).
+ *  Lädt den Termin + Kontextdaten + 3 verwandte Termine + offene Aufgaben. */
+async function renderAppointmentExpandedRow(appointmentId) {
+  const [apptResult, relatedResult] = await Promise.all([
+    db.from('appointments')
+      .select(`
+        *,
+        typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe),
+        company:companies(id, name, abc_klassifizierung),
+        contact:contacts(id, vorname, nachname, telefon, email),
+        project:projects(id, name, status),
+        deployment:deployments(id, titel, status)
+      `)
+      .is('deleted_at', null).eq('id', appointmentId).single(),
+    // Platzhalter — echte „verwandte" Query kommt unten, sobald wir company_id kennen
+    Promise.resolve({ data: [] })
+  ]);
+
+  if (apptResult.error || !apptResult.data) {
+    return `<div class="info-card-empty">Termin konnte nicht geladen werden.</div>`;
+  }
+  const a = apptResult.data;
+
+  // Zweite Runde: verwandte Daten basierend auf company_id / contact_id
+  const todayISO = toISODate(new Date());
+  const [relAppts, openTasksForCompanyOrContact] = await Promise.all([
+    a.company_id
+      ? db.from('appointments')
+          .select('id, titel, datum, status, typ:lookup_values!appointments_typ_id_fkey(wert)')
+          .is('deleted_at', null).eq('company_id', a.company_id).neq('id', appointmentId)
+          .order('datum', { ascending: false }).limit(3)
+      : Promise.resolve({ data: [] }),
+    db.from('tasks').select('id, titel, faelligkeit, status').is('deleted_at', null)
+      .or(`company_id.eq.${a.company_id || '00000000-0000-0000-0000-000000000000'},contact_id.eq.${a.contact_id || '00000000-0000-0000-0000-000000000000'}`)
+      .neq('status', 'erledigt').order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
+  ]);
+
+  // Stats-Row
+  const statusBg  = appointmentStatusBg(a.status);
+  const statusCol = appointmentStatusColor(a.status);
+  const statusLbl = appointmentStatusLabel(a.status);
+  const typFarbe  = a.typ?.farbe || '#6b7280';
+  const typWert   = a.typ?.wert  || '—';
+
+  const abcBadge = a.company?.abc_klassifizierung
+    ? `<span class="abc-badge abc-badge-${a.company.abc_klassifizierung}" style="width:24px;height:24px;font-size:12px;display:inline-flex;align-items:center;justify-content:center">${esc(a.company.abc_klassifizierung)}</span>`
+    : `<span style="color:var(--muted)">—</span>`;
+
+  const uhrzeit = a.uhrzeit_von
+    ? (a.uhrzeit_bis ? `${formatTime(a.uhrzeit_von)}–${formatTime(a.uhrzeit_bis)}` : formatTime(a.uhrzeit_von))
+    : null;
+
+  const datumIst = a.datum < todayISO ? 'vergangen' : (a.datum === todayISO ? 'heute' : 'kommend');
+  const datumColor = a.datum === todayISO ? 'var(--warning)' : (a.datum < todayISO ? 'var(--muted)' : 'var(--text)');
+
+  const deploymentStat = a.deployment
+    ? `<span class="cell-link" onclick="openDeploymentModal('edit','${esc(a.deployment.id)}')">${esc(a.deployment.titel || '—')}</span>`
+    : '<span class="erp-stat-muted">nicht gekoppelt</span>';
+
+  const statsHtml = `
+    <div class="erp-stats">
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Status</div>
+        <div><span class="badge" style="background:${statusBg};color:${statusCol}">${esc(statusLbl)}</span></div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Typ</div>
+        <div><span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span></div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Datum</div>
+        <div class="erp-stat-value" style="color:${datumColor}">${esc(formatDateDE(a.datum))} · ${esc(datumIst)}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Uhrzeit</div>
+        <div class="erp-stat-value ${uhrzeit ? '' : 'erp-stat-muted'}">${uhrzeit ? esc(uhrzeit) : '—'}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">ABC (Firma)</div>
+        <div>${abcBadge}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Gekoppelter Einsatz</div>
+        <div class="erp-stat-value">${deploymentStat}</div>
+      </div>
+    </div>`;
+
+  // Kontext-Block
+  const firmaVal = a.company
+    ? `<span class="cell-link" onclick="navigateTo('firma','${esc(a.company.id)}')">${esc(a.company.name)}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const kontaktVal = a.contact
+    ? `<span class="cell-link" onclick="navigateTo('kontakt','${esc(a.contact.id)}')">${esc([a.contact.vorname, a.contact.nachname].filter(Boolean).join(' '))}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const projektVal = a.project
+    ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(a.project.id)}')">${esc(a.project.name)}</span> <span style="color:var(--muted);font-size:11px">· ${esc(a.project.status)}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const ortVal = a.ort ? esc(a.ort) : '<span class="erp-kv-muted">—</span>';
+  const notizenVal = a.notizen
+    ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:80px;overflow:auto">${esc(a.notizen)}</div>`
+    : '<span class="erp-kv-muted">—</span>';
+
+  const kontextHtml = `
+    <div>
+      <div class="erp-kv">
+        <div class="erp-kv-label">Firma</div>      <div class="erp-kv-value">${firmaVal}</div>
+        <div class="erp-kv-label">Kontakt</div>    <div class="erp-kv-value">${kontaktVal}</div>
+        <div class="erp-kv-label">Projekt</div>    <div class="erp-kv-value">${projektVal}</div>
+        <div class="erp-kv-label">Ort</div>        <div class="erp-kv-value">${ortVal}</div>
+        <div class="erp-kv-label">Notizen</div>    <div class="erp-kv-value">${notizenVal}</div>
+      </div>`;
+
+  // Verwandte Termine derselben Firma
+  const relHtml = (relAppts.data || []).length > 0
+    ? `<div class="erp-related">
+         <div class="erp-section-title">Letzte Termine derselben Firma</div>
+         ${relAppts.data.map(r => `
+           <div class="erp-related-row">
+             <div class="erp-related-date">${esc(formatDateDE(r.datum))}</div>
+             <div class="erp-related-title" onclick="openAppointmentModal('edit','${esc(r.id)}')">${esc(r.titel || '—')}</div>
+             <div class="erp-related-meta">${esc(r.typ?.wert || '')} · ${esc(appointmentStatusLabel(r.status))}</div>
+           </div>
+         `).join('')}
+       </div>`
+    : '';
+
+  // Offene Aufgaben im Kontext (Firma oder Kontakt)
+  const taskRows = (openTasksForCompanyOrContact.data || []);
+  const tasksHtml = taskRows.length > 0
+    ? `<div class="erp-related">
+         <div class="erp-section-title">Offene Aufgaben (Firma / Kontakt)</div>
+         ${taskRows.map(t => {
+           const overdue = t.faelligkeit && t.faelligkeit < todayISO;
+           return `
+             <div class="erp-related-row">
+               <div class="erp-related-date">${t.faelligkeit ? esc(formatDateDE(t.faelligkeit)) : '<span style="color:var(--muted)">—</span>'}</div>
+               <div class="erp-related-title" onclick="openTaskModal('edit','${esc(t.id)}')">${esc(t.titel || '—')}</div>
+               <div class="erp-related-meta" ${overdue ? 'style="color:var(--danger);font-weight:600"' : ''}>${overdue ? 'überfällig' : esc(aufgabeStatusLabel(t.status))}</div>
+             </div>`;
+         }).join('')}
+       </div>`
+    : '';
+
+  // Schnellaktionen
+  const isDone = a.status === 'durchgefuehrt';
+  const actionsHtml = `
+    <div class="erp-actions">
+      <div class="erp-section-title" style="margin-top:0">Schnellaktionen</div>
+      ${isDone ? '' : `<button class="erp-action-btn erp-action-primary" onclick="quickAppointmentMarkDone('${esc(a.id)}')">
+        <span class="erp-action-btn-icon">✓</span> Als durchgeführt markieren
+      </button>`}
+      <button class="erp-action-btn" onclick="quickAppointmentFollowup('${esc(a.id)}')">
+        <span class="erp-action-btn-icon">+</span> Folge-Termin (+1 Woche)
+      </button>
+      <button class="erp-action-btn" onclick="quickAppointmentCreateTask('${esc(a.id)}')">
+        <span class="erp-action-btn-icon">+</span> Aufgabe aus Termin
+      </button>
+      <button class="erp-action-btn" onclick="quickAppointmentCreateDeployment('${esc(a.id)}')">
+        <span class="erp-action-btn-icon">+</span> Einsatz aus Termin
+      </button>
+      <button class="erp-action-btn" onclick="openAppointmentModal('edit','${esc(a.id)}')">
+        <span class="erp-action-btn-icon">✎</span> Vollbearbeitung …
+      </button>
+    </div>`;
+
+  return `
+    ${statsHtml}
+    <div class="erp-body">
+      ${kontextHtml}${relHtml}${tasksHtml}</div>
+      ${actionsHtml}
+    </div>`;
+}
+
+// ── TERMIN-SCHNELLAKTIONEN ──────────────────────────────────
+
+/** Termin als durchgeführt markieren — UPDATE + Auto-Projekt-Status + Liste refreshen. */
+async function quickAppointmentMarkDone(appointmentId) {
+  const { data: appt, error: selErr } = await db.from('appointments')
+    .select('id, project_id, status').eq('id', appointmentId).single();
+  if (selErr || !appt) { showToast('Termin nicht gefunden.', true); return; }
+  if (appt.status === 'durchgefuehrt') { showToast('Termin ist bereits als durchgeführt markiert.', true); return; }
+
+  const { error } = await db.from('appointments')
+    .update({ status: 'durchgefuehrt' }).eq('id', appointmentId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+
+  showToast('Termin auf „durchgeführt" gesetzt.');
+  if (appt.project_id) await checkAndUpdateProjectStatus(appt.project_id);
+  closeExpandedRow();
+  await refreshCurrentAppointmentList();
+}
+
+/** Folge-Termin (+7 Tage) mit Prefill aus dem aktuellen Termin. */
+async function quickAppointmentFollowup(appointmentId) {
+  const { data: a, error } = await db.from('appointments')
+    .select('company_id, contact_id, project_id, typ_id, ort, titel').eq('id', appointmentId).single();
+  if (error || !a) { showToast('Termin nicht gefunden.', true); return; }
+
+  closeExpandedRow();
+
+  if (a.company_id)  appointmentModalPrefillCompanyId  = a.company_id;
+  if (a.contact_id)  appointmentModalPrefillContactId  = a.contact_id;
+  if (a.project_id)  appointmentModalPrefillProjectId  = a.project_id;
+
+  await openAppointmentModal('new');
+  // Nach dem Öffnen Prefill-Werte aus dem Ursprungstermin eintragen (Typ/Ort/Titel),
+  // Datum +7 Tage vom Originaldatum.
+  const d = new Date(); d.setDate(d.getDate() + 7);
+  document.getElementById('t-datum').value = toISODate(d);
+  if (a.ort)   document.getElementById('t-ort').value   = a.ort;
+  if (a.titel) document.getElementById('t-titel').value = `Folgetermin: ${a.titel}`;
+  if (a.typ_id) {
+    const typSelect = document.getElementById('t-typ');
+    if (typSelect) typSelect.value = a.typ_id;
+  }
+}
+
+/** Aufgabe aus Termin — Prefill auf Firma/Kontakt + Titel-Hinweis. */
+async function quickAppointmentCreateTask(appointmentId) {
+  const { data: a, error } = await db.from('appointments')
+    .select('company_id, contact_id, titel, datum').eq('id', appointmentId).single();
+  if (error || !a) { showToast('Termin nicht gefunden.', true); return; }
+
+  closeExpandedRow();
+  if (a.company_id) taskModalPrefillCompanyId = a.company_id;
+  if (a.contact_id) taskModalPrefillContactId = a.contact_id;
+  await openTaskModal('new');
+  const titleInput = document.getElementById('a-titel');
+  if (titleInput) titleInput.value = `Follow-up zu Termin: ${a.titel || formatDateDE(a.datum)}`;
+}
+
+/** Einsatz aus Termin — Prefill Firma + Datum, Techniker bleibt leer. */
+async function quickAppointmentCreateDeployment(appointmentId) {
+  const { data: a, error } = await db.from('appointments')
+    .select('company_id, project_id, datum, uhrzeit_von, uhrzeit_bis, ort, titel').eq('id', appointmentId).single();
+  if (error || !a) { showToast('Termin nicht gefunden.', true); return; }
+  if (!a.company_id) { showToast('Termin hat keine Firma — bitte erst Firma am Termin setzen.', true); return; }
+
+  closeExpandedRow();
+  deploymentModalPrefillCompanyId = a.company_id;
+  if (a.project_id) deploymentModalPrefillProjectId = a.project_id;
+  await openDeploymentModal('new');
+
+  if (a.datum)       document.getElementById('d-datum-von').value = a.datum;
+  if (a.uhrzeit_von) document.getElementById('d-uhrzeit-von').value = a.uhrzeit_von;
+  if (a.uhrzeit_bis) document.getElementById('d-uhrzeit-bis').value = a.uhrzeit_bis;
+  if (a.ort)         document.getElementById('d-ort').value = a.ort;
+  if (a.titel)       document.getElementById('d-titel').value = a.titel;
+}
+
+/** Hilfs-Refresh: lädt die aktuell sichtbare Termine-Liste neu (Haupt-Seite / Firma / Kontakt / Projekt). */
+async function refreshCurrentAppointmentList() {
+  if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
+    await loadContactAppointments(currentContactDetailId);
+  } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
+    await loadProjectAppointments(currentProjectDetailId);
+  } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    await loadCompanyAppointments(currentCompanyDetailId);
+  } else {
+    await loadAppointments();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
