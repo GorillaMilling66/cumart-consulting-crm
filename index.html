@@ -1981,14 +1981,25 @@
 
 <!-- MODAL: TERMIN -->
 <div class="modal-overlay" id="modal-appointment">
-  <div class="modal" style="width:960px;max-width:calc(100vw - 40px)">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-appointment-title">Neuer Termin</div>
 
-    <div class="modal-kanban cols-3">
-      <!-- Spalte 1: Was -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">📝</span> Was
+    <div class="modal-3col">
+      <!-- LINKS: Live-Vorschau -->
+      <aside class="modal-preview-card" id="t-preview">
+        <!-- Inhalt via renderAppointmentPreview() -->
+      </aside>
+
+      <!-- MITTE: Stammdaten & Zeit -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="9" y1="13" x2="15" y2="13"/>
+            <line x1="9" y1="17" x2="15" y2="17"/>
+          </svg>
+          Stammdaten &amp; Zeit
         </div>
         <div class="form-group">
           <label>Titel *</label>
@@ -2005,13 +2016,6 @@
             <option value="geplant">Geplant</option>
             <option value="durchgefuehrt">Durchgeführt</option>
           </select>
-        </div>
-      </div>
-
-      <!-- Spalte 2: Wann -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">📅</span> Wann
         </div>
         <div class="form-group">
           <label>Datum *</label>
@@ -2034,12 +2038,16 @@
             <input type="time" id="t-uhrzeit-bis">
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Spalte 3: Wer & Wo -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">👥</span> Wer &amp; Wo
+      <!-- RECHTS: Zugehörigkeiten -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          Zugehörigkeiten
         </div>
         <div class="form-group">
           <label>Firma</label>
@@ -2061,10 +2069,10 @@
                title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
           </div>
         </div>
-      </div>
+      </section>
     </div>
 
-    <div class="modal-kanban-footer">
+    <div class="modal-preview-footer">
       <div class="modal-group-title collapsed">Notizen</div>
       <div class="form-grid" style="display:none">
         <div class="form-group full">

@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.37.0 (Termin-Modal-Redesign mit Live-Preview:
+   3-Spalten-Layout (Preview links, Stammdaten mittig,
+   Zugehörigkeiten rechts), 1280 px breit. Linke Preview-
+   Card aktualisiert sich live beim Tippen — Typ-Pill mit
+   Farbpunkt, Titel, Datum+Uhrzeit, Kontext-KV, Status-Badge.
+   Termin-Typ-Emojis in Listen/Kalender/Dashboards ersetzt
+   durch farbige Punkte aus lookup_values.farbe. Sektions-
+   Header haben jetzt SVG-Icons statt Emojis. Alle Queries,
+   die Typ laden, holen jetzt auch farbe.)
    Version 1.36.2 (Kontext-Card im Inline-Expand-Dashboard nutzt
    jetzt die volle Breite: 2-Spalten-Layout mit Primär-Infos
    links (Firma/Leistung/Techniker/Menge/Ort/Notizen) und
@@ -1050,22 +1059,35 @@ function terminTypIcon(wert) {
   return '📅';
 }
 
-/** Füllt den Icon-Picker im Termin-Modal mit Buttons pro Typ. Der Dropdown bleibt
- *  als Fallback und als „Source of Truth" für den Wert (v1.34). */
+/** Gibt das HTML-Snippet für einen Termin-Typ-Dot zurück (farbig aus lookup_values.farbe).
+ *  Ersetzt die v1.34-Emoji-Implementierung ab v1.37. */
+function terminTypDotHtml(typ) {
+  const farbe = typ?.farbe;
+  const wert  = typ?.wert || '';
+  if (!farbe) {
+    return `<span class="termin-type-dot termin-type-dot-muted" title="${esc(wert)}"></span>`;
+  }
+  return `<span class="termin-type-dot" style="background:${esc(farbe)}" title="${esc(wert)}"></span>`;
+}
+
+/** Füllt den Icon-Picker im Termin-Modal mit Buttons pro Typ (v1.34, farbige Dots v1.37). */
 function renderTerminTypIconsPicker() {
   const container = document.getElementById('t-typ-icons');
   const select = document.getElementById('t-typ');
   if (!container || !select) return;
-  container.innerHTML = [...select.options]
-    .filter(o => o.value)
-    .map(o => `
-      <button type="button" class="termin-typ-icon-btn" data-typ-id="${esc(o.value)}"
-              onclick="selectTerminTypIcon('${esc(o.value)}')">
-        <span class="termin-typ-icon-emoji">${terminTypIcon(o.textContent)}</span>
-        ${esc(o.textContent)}
-      </button>`).join('');
+  container.innerHTML = terminTypenCache
+    .filter(t => t.ist_aktiv !== false)
+    .map(t => {
+      const farbe = t.farbe || '#9ca3af';
+      return `
+        <button type="button" class="termin-typ-icon-btn" data-typ-id="${esc(t.id)}"
+                onclick="selectTerminTypIcon('${esc(t.id)}')">
+          <span class="termin-type-dot" style="background:${esc(farbe)}"></span>
+          ${esc(t.wert)}
+        </button>`;
+    }).join('');
   updateTerminTypIconSelection();
-  select.onchange = updateTerminTypIconSelection;
+  select.onchange = () => { updateTerminTypIconSelection(); renderAppointmentPreview(); };
 }
 
 function selectTerminTypIcon(typId) {
@@ -1083,6 +1105,97 @@ function updateTerminTypIconSelection() {
   container.querySelectorAll('.termin-typ-icon-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.typId === currentId);
   });
+}
+
+/** Live-Preview im Termin-Modal (v1.37). Liest alle Feldwerte und rendert
+ *  eine Vorschau-Karte, wie der Termin später in Listen/Kalendern erscheint. */
+function renderAppointmentPreview() {
+  const el = document.getElementById('t-preview');
+  if (!el) return;
+
+  const titelVal = document.getElementById('t-titel').value.trim();
+  const datumVal = document.getElementById('t-datum').value;
+  const uhrzeitVon = document.getElementById('t-uhrzeit-von').value;
+  const uhrzeitBis = document.getElementById('t-uhrzeit-bis').value;
+  const typId = document.getElementById('t-typ').value;
+  const statusVal = document.getElementById('t-status').value;
+  const companyId = document.getElementById('t-company').value;
+  const contactSelect = document.getElementById('t-contact');
+  const contactName = contactSelect.value ? (contactSelect.options[contactSelect.selectedIndex]?.textContent || '') : '';
+  const projectSelect = document.getElementById('t-project');
+  const projectName = projectSelect.value ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || '') : '';
+  const ortVal = document.getElementById('t-ort').value.trim();
+  const ganztag = document.getElementById('t-ganztag')?.checked;
+
+  const typ = terminTypenCache.find(t => t.id === typId);
+  const company = companiesCache.find(c => c.id === companyId);
+
+  // Typ-Pill
+  const typPillHtml = typ
+    ? `<div class="preview-type-pill">${terminTypDotHtml(typ)}<span>${esc(typ.wert)}</span></div>`
+    : `<div class="preview-type-pill"><span class="preview-type-dot preview-type-dot-muted"></span><span style="color:var(--muted)">— Typ wählen —</span></div>`;
+
+  // Titel
+  const titelHtml = titelVal
+    ? `<div class="preview-title">${esc(titelVal)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neuer Termin</div>`;
+
+  // Zeit-Zeile
+  let timeStr = '';
+  if (datumVal) {
+    timeStr = formatDateDE(datumVal);
+    if (ganztag) {
+      timeStr += ' · Ganztag';
+    } else if (uhrzeitVon) {
+      timeStr += ' · ' + uhrzeitVon.substring(0, 5);
+      if (uhrzeitBis) timeStr += '–' + uhrzeitBis.substring(0, 5);
+    }
+  }
+  const timeHtml = timeStr
+    ? `<div class="preview-time">${esc(timeStr)}</div>`
+    : `<div class="preview-time preview-time-muted">— Datum wählen —</div>`;
+
+  // Kontext-KV
+  const kvRows = [];
+  if (company) kvRows.push(['Firma',   esc(company.name)]);
+  if (contactName) kvRows.push(['Kontakt', esc(contactName)]);
+  if (projectName && projectSelect.value) kvRows.push(['Projekt', esc(projectName)]);
+  if (ortVal)  kvRows.push(['Ort', esc(ortVal)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : `<div class="preview-kv-value-muted" style="font-size:12px">Keine Zuordnung gewählt.</div>`;
+
+  // Status-Badge
+  const statusHtml = `
+    <div class="preview-status-wrap">
+      <span class="badge" style="background:${appointmentStatusBg(statusVal)};color:${appointmentStatusColor(statusVal)}">
+        ${esc(appointmentStatusLabel(statusVal))}
+      </span>
+    </div>`;
+
+  el.innerHTML = `
+    ${typPillHtml}
+    ${titelHtml}
+    ${timeHtml}
+    ${kvHtml}
+    ${statusHtml}
+  `;
+}
+
+/** Bindet Live-Listener einmalig an alle Termin-Modal-Felder, damit die Preview
+ *  beim Tippen/Ändern aktualisiert wird. Idempotent via dataset-Flag. */
+function setupAppointmentPreviewListeners() {
+  const modal = document.getElementById('modal-appointment');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['t-titel','t-datum','t-uhrzeit-von','t-uhrzeit-bis','t-typ','t-status',
+               't-company','t-contact','t-project','t-ort','t-ganztag'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderAppointmentPreview);
+    el.addEventListener('change', renderAppointmentPreview);
+  });
+  modal.dataset.previewWired = '1';
 }
 
 function showPage(name) {
@@ -3484,7 +3597,7 @@ async function loadCompanyAppointments(companyId) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${terminTypDotHtml(a.typ)}${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -3891,7 +4004,7 @@ function renderAppointmentsTable(appointments) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${terminTypDotHtml(a.typ)}${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -4031,6 +4144,8 @@ async function openAppointmentModal(mode, appointmentId = null) {
   }
 
   setupAppointmentAutoFill();
+  setupAppointmentPreviewListeners();  // v1.37
+  renderAppointmentPreview();          // v1.37 — initialer Preview-Stand
 
   document.getElementById('modal-appointment').classList.add('open');
   setTimeout(() => document.getElementById('t-titel').focus(), 100);
@@ -4988,7 +5103,7 @@ async function loadProjectAppointments(projectId) {
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${terminTypDotHtml(a.typ)}${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -5353,7 +5468,7 @@ async function loadContactAppointments(contactId) {
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${terminTypDotHtml(a.typ)}${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -7429,7 +7544,7 @@ async function loadCompanyDashboard(companyId, manualAbc) {
       .eq('company_id', companyId).neq('status', 'erledigt'),
     // Letzter durchgeführter Termin
     db.from('appointments')
-      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('company_id', companyId).eq('status', 'durchgefuehrt')
       .order('datum', { ascending: false }).limit(1),
     // Letzter durchgeführter/abgerechneter Einsatz
@@ -7439,7 +7554,7 @@ async function loadCompanyDashboard(companyId, manualAbc) {
       .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
     // Bevorstehender geplanter Termin
     db.from('appointments')
-      .select('id, titel, datum, uhrzeit_von, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, uhrzeit_von, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('company_id', companyId).eq('status', 'geplant')
       .gte('datum', todayISO).order('datum', { ascending: true }).limit(2),
     // Bevorstehender geplanter Einsatz
@@ -7619,11 +7734,11 @@ async function loadContactDashboard(contactId, companyId, manualAbc, companyName
     db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
       .eq('contact_id', contactId).neq('status', 'erledigt'),
     db.from('appointments')
-      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('contact_id', contactId).eq('status', 'durchgefuehrt')
       .order('datum', { ascending: false }).limit(1),
     db.from('appointments')
-      .select('id, titel, datum, uhrzeit_von, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, uhrzeit_von, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('contact_id', contactId).eq('status', 'geplant')
       .gte('datum', todayISO).order('datum', { ascending: true }).limit(2),
     // Opportunities: Projekte wo DIESER Kontakt Hauptkontakt ist und Status Lead/Angebot
@@ -7864,7 +7979,7 @@ async function loadProjectDashboard(p) {
       .eq('project_id', p.id).neq('status', 'erledigt'),
     // Letzter durchgeführter Termin
     db.from('appointments')
-      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('project_id', p.id).eq('status', 'durchgefuehrt')
       .order('datum', { ascending: false }).limit(1),
     // Letzter durchgeführter/abgerechneter Einsatz
@@ -7874,7 +7989,7 @@ async function loadProjectDashboard(p) {
       .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
     // Bevorstehender geplanter Termin
     db.from('appointments')
-      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('project_id', p.id).eq('status', 'geplant')
       .gte('datum', todayISO).order('datum', { ascending: true }).limit(2),
     // Bevorstehender geplanter Einsatz
@@ -8231,7 +8346,7 @@ async function renderAppointmentExpandedRow(appointmentId) {
   const [relAppts, openTasksForCompanyOrContact] = await Promise.all([
     a.company_id
       ? db.from('appointments')
-          .select('id, titel, datum, status, typ:lookup_values!appointments_typ_id_fkey(wert)')
+          .select('id, titel, datum, status, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
           .is('deleted_at', null).eq('company_id', a.company_id).neq('id', appointmentId)
           .order('datum', { ascending: false }).limit(3)
       : Promise.resolve({ data: [] }),
@@ -8325,7 +8440,7 @@ async function renderAppointmentExpandedRow(appointmentId) {
          ${relAppts.data.map(r => `
            <div class="erp-related-row">
              <div class="erp-related-date">${esc(formatDateDE(r.datum))}</div>
-             <div class="erp-related-title" onclick="openAppointmentModal('edit','${esc(r.id)}')"><span class="termin-title-icon">${terminTypIcon(r.typ?.wert)}</span>${esc(r.titel || '—')}</div>
+             <div class="erp-related-title" onclick="openAppointmentModal('edit','${esc(r.id)}')">${terminTypDotHtml(r.typ)}${esc(r.titel || '—')}</div>
              <div class="erp-related-meta">${esc(r.typ?.wert || '')} · ${esc(appointmentStatusLabel(r.status))}</div>
            </div>
          `).join('')}
@@ -9169,7 +9284,7 @@ async function renderCalendarBar() {
       .eq('user_id', userId),
     // Termine: erstellt_von = user, im Monatsfenster
     db.from('appointments')
-      .select('id, titel, datum, uhrzeit_von, status, company:companies(name), typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .select('id, titel, datum, uhrzeit_von, status, company:companies(name), typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
       .eq('erstellt_von', userId)
       .gte('datum', startISO).lte('datum', endISO)
   ]);
@@ -9278,7 +9393,7 @@ function openCalendarDayPopover(iso, evt) {
         <div class="calendar-popover-section-title">Termine (${ev.termine.length})</div>
         ${ev.termine.map(a => `
           <div class="calendar-popover-item" onclick="openAppointmentModal('edit','${esc(a.id)}'); closeCalendarDayPopover()">
-            <span class="termin-title-icon">${terminTypIcon(a.typ?.wert)}</span>${a.uhrzeit_von ? esc(formatTime(a.uhrzeit_von)) + ' · ' : ''}${esc(a.titel || '—')}
+            ${terminTypDotHtml(a.typ)}${a.uhrzeit_von ? esc(formatTime(a.uhrzeit_von)) + ' · ' : ''}${esc(a.titel || '—')}
             <div class="calendar-popover-item-meta">${esc(a.company?.name || '—')} · ${esc(appointmentStatusLabel(a.status))}</div>
           </div>`).join('')}
       </div>`);

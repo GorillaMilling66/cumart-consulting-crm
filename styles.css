@@ -2540,6 +2540,163 @@ tr.expanded-row > td {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   MODAL MIT LIVE-PREVIEW (v1.37.0)
+   ═══════════════════════════════════════════════════════════
+   Drei Spalten: Preview-Card links, Stammdaten mittig,
+   Zugehörigkeiten rechts. Footer unten für Notizen/Kopplung.
+   Mobile: kollabiert zu 1 Spalte (Preview zuerst oben).
+   ─────────────────────────────────────────────────────────── */
+.modal.modal-with-preview { padding: 24px 28px; }
+
+.modal-3col {
+  display: grid;
+  grid-template-columns: 300px 1fr 1fr;
+  gap: 28px;
+  margin: 16px 0 4px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .modal-3col { grid-template-columns: 1fr; }
+}
+
+/* Preview-Card (links) */
+.modal-preview-card {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 280px;
+  position: sticky;
+  top: 0;
+}
+.preview-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+.preview-type-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,.08);
+}
+.preview-type-dot-muted { background: #e5e7eb; }
+.preview-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+.preview-title-placeholder { color: var(--muted); font-style: italic; font-weight: 400; }
+.preview-time {
+  font-size: 13px;
+  color: var(--text);
+}
+.preview-time-muted { color: var(--muted); font-style: italic; }
+.preview-kv {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.preview-kv-label { color: var(--muted); }
+.preview-kv-value { color: var(--text); word-break: break-word; }
+.preview-kv-value-muted { color: var(--muted); font-style: italic; }
+.preview-status-wrap { margin-top: auto; padding-top: 8px; }
+
+/* Sektions-Kopf (mit SVG statt Emoji) */
+.modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.modal-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  padding: 0 0 8px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-section-title svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* Footer-Bereich unterhalb der 3-Spalten (Notizen, Kopplung) */
+.modal-preview-footer {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.modal-preview-footer .modal-group-title {
+  margin-top: 12px;
+  padding: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: .06em;
+  border-bottom: 1px solid var(--border);
+}
+.modal-preview-footer .modal-group-title:first-child { margin-top: 0; }
+
+/* Einheitliche Form-Controls im 3-Spalten-Modal (analog zu .modal-kanban) */
+.modal-3col .form-group { margin-bottom: 0; }
+.modal-3col .form-group > label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.modal-3col input[type="text"],
+.modal-3col input[type="date"],
+.modal-3col input[type="time"],
+.modal-3col input[type="number"],
+.modal-3col select {
+  width: 100%;
+  height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.modal-3col textarea { width: 100%; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+.modal-3col .ganztag-wrap { font-size: 12px; color: var(--muted); }
+.modal-3col .date-shortcut-btn,
+.modal-3col .termin-typ-icon-btn { height: 26px; padding: 0 10px; font-size: 11px; }
+
+/* Termin-Typ-Icon mit farbigem Punkt statt Emoji (v1.37.0) */
+.termin-type-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,.1);
+  flex-shrink: 0;
+  vertical-align: -1px;
+  margin-right: 4px;
+}
+.termin-type-dot-muted { background: #e5e7eb; }
+
+/* ═══════════════════════════════════════════════════════════
    TERMIN-TYP-ICON-PICKER (v1.34)
    ═══════════════════════════════════════════════════════════ */
 .termin-typ-picker {
