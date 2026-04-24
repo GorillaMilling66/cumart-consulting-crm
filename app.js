@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.38.0 (Alle übrigen Modals im Preview-Stil:
+   Einsatz (1280 px, 3-col mit Footer für Techniker/Kopplung/
+   Notizen), Aufgabe (3-col), Firma (3-col: Stammdaten links,
+   Adresse+Kontakt rechts), Kontakt (3-col mit Avatar-
+   Initialen in der Preview), Projekt (3-col), Mitgliedschaft
+   (3-col). Pro Modal ein renderXxxPreview + setupXxxPreview-
+   Listeners. Programm-Modal vorerst unverändert — Benefits-
+   Liste ist strukturell anders. Keine Emojis in Sektions-
+   Headern — SVG-Icons im Sidebar-Stil.)
    Version 1.37.0 (Termin-Modal-Redesign mit Live-Preview:
    3-Spalten-Layout (Preview links, Stammdaten mittig,
    Zugehörigkeiten rechts), 1280 px breit. Linke Preview-
@@ -1194,6 +1203,473 @@ function setupAppointmentPreviewListeners() {
     if (!el) return;
     el.addEventListener('input', renderAppointmentPreview);
     el.addEventListener('change', renderAppointmentPreview);
+  });
+  modal.dataset.previewWired = '1';
+}
+
+// ── EINSATZ-PREVIEW (v1.38.0) ──
+
+/** Live-Preview im Einsatz-Modal. */
+function renderDeploymentPreview() {
+  const el = document.getElementById('d-preview');
+  if (!el) return;
+
+  const titelVal = document.getElementById('d-titel').value.trim();
+  const statusVal = document.getElementById('d-status').value;
+  const companyId = document.getElementById('d-company').value;
+  const company = companiesCache.find(c => c.id === companyId);
+  const projectSelect = document.getElementById('d-project');
+  const projectName = projectSelect.value ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || '') : '';
+  const serviceSelect = document.getElementById('d-service');
+  const serviceName = serviceSelect.value ? (serviceSelect.options[serviceSelect.selectedIndex]?.textContent.split(' (')[0] || '') : '';
+  const menge = Number(document.getElementById('d-menge').value) || 0;
+  const einzelpreis = Number(document.getElementById('d-einzelpreis').value) || 0;
+  const gesamt = menge * einzelpreis;
+  const datumVon = document.getElementById('d-datum-von').value;
+  const datumBis = document.getElementById('d-datum-bis').value;
+  const uhrzeitVon = document.getElementById('d-uhrzeit-von').value;
+  const uhrzeitBis = document.getElementById('d-uhrzeit-bis').value;
+  const ganztag = document.getElementById('d-ganztag')?.checked;
+  const ortVal = document.getElementById('d-ort').value.trim();
+  const externe = document.getElementById('d-externe-techniker').value.trim();
+
+  // Status-Pill
+  const statusColor = einsatzStatusFarbe(statusVal);
+  const statusPill = `<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(statusVal || '—')}</span>`;
+
+  // Titel (mit Auto-Generierung wenn leer)
+  const titelDisplay = titelVal || (serviceName && company?.name
+    ? `${serviceName} × ${company.name}${currentProfile?.name ? ' × ' + currentProfile.name : ''}`
+    : '');
+  const titelHtml = titelDisplay
+    ? `<div class="preview-title">${esc(titelDisplay)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neuer Einsatz</div>`;
+
+  // Datum / Zeit
+  let timeStr = '';
+  if (datumVon) {
+    timeStr = formatDateDE(datumVon);
+    if (datumBis && datumBis !== datumVon) timeStr += ' – ' + formatDateDE(datumBis);
+    if (ganztag) timeStr += ' · Ganztag';
+    else if (uhrzeitVon) timeStr += ' · ' + uhrzeitVon.substring(0, 5) + (uhrzeitBis ? '–' + uhrzeitBis.substring(0, 5) : '');
+  } else {
+    timeStr = '— Ungeplant —';
+  }
+  const timeHtml = datumVon
+    ? `<div class="preview-time">${esc(timeStr)}</div>`
+    : `<div class="preview-time preview-time-muted">${esc(timeStr)}</div>`;
+
+  // Summe (prominent)
+  const summeHtml = gesamt > 0
+    ? `<div style="font-size:20px;font-weight:600;color:var(--text);margin:4px 0">${esc(formatPreis(gesamt))}</div>
+       <div style="font-size:12px;color:var(--muted);margin-top:-4px">${menge} × ${esc(formatPreis(einzelpreis))}</div>`
+    : `<div class="preview-time-muted" style="font-size:13px">— Menge × Preis —</div>`;
+
+  // Techniker-Chips
+  const technikerNames = [...selectedTechnikerIds]
+    .map(id => userProfilesCache.find(u => u.id === id)?.name)
+    .filter(Boolean);
+  if (externe) technikerNames.push(externe + ' (extern)');
+  const technikerHtml = technikerNames.length
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">Team: ${technikerNames.map(n => esc(n)).join(' · ')}</div>`
+    : '';
+
+  // Kontext-KV
+  const kvRows = [];
+  if (company) kvRows.push(['Firma', esc(company.name)]);
+  if (serviceName) kvRows.push(['Leistung', esc(serviceName)]);
+  if (projectName && projectSelect.value) kvRows.push(['Projekt', esc(projectName)]);
+  if (ortVal) kvRows.push(['Ort', esc(ortVal)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  el.innerHTML = `
+    <div>${statusPill}</div>
+    ${titelHtml}
+    ${timeHtml}
+    ${summeHtml}
+    ${kvHtml}
+    ${technikerHtml}
+  `;
+}
+
+function setupDeploymentPreviewListeners() {
+  const modal = document.getElementById('modal-deployment');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['d-titel','d-datum-von','d-datum-bis','d-uhrzeit-von','d-uhrzeit-bis',
+               'd-status','d-company','d-project','d-service','d-menge','d-einzelpreis',
+               'd-ort','d-ganztag','d-externe-techniker'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderDeploymentPreview);
+    el.addEventListener('change', renderDeploymentPreview);
+  });
+  modal.dataset.previewWired = '1';
+}
+
+// ── AUFGABE-PREVIEW (v1.38.0) ──
+
+function renderTaskPreview() {
+  const el = document.getElementById('a-preview');
+  if (!el) return;
+
+  const titelVal = document.getElementById('a-titel').value.trim();
+  const statusVal = document.getElementById('a-status').value;
+  const faelligkeit = document.getElementById('a-faelligkeit').value;
+  const assigneeSelect = document.getElementById('a-assigned-to');
+  const assigneeName = assigneeSelect.value ? (assigneeSelect.options[assigneeSelect.selectedIndex]?.textContent || '') : '';
+  const beschreibung = document.getElementById('a-beschreibung').value.trim();
+  const companyId = document.getElementById('a-company').value;
+  const company = companiesCache.find(c => c.id === companyId);
+  const contactSelect = document.getElementById('a-contact');
+  const contactName = contactSelect.value ? (contactSelect.options[contactSelect.selectedIndex]?.textContent || '') : '';
+  const projectSelect = document.getElementById('a-project');
+  const projectName = projectSelect.value ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || '') : '';
+
+  const todayISO = toISODate(new Date());
+
+  // Status-Pill
+  const statusPill = `<span class="badge" style="background:${aufgabeStatusBg(statusVal)};color:${aufgabeStatusColor(statusVal)}">${esc(aufgabeStatusLabel(statusVal) || '—')}</span>`;
+
+  // Titel
+  const titelHtml = titelVal
+    ? `<div class="preview-title">${esc(titelVal)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neue Aufgabe</div>`;
+
+  // Fälligkeit
+  let faelligkeitStr = '';
+  if (faelligkeit) {
+    const days = Math.round((new Date(faelligkeit) - new Date(todayISO)) / 86400000);
+    faelligkeitStr = formatDateDE(faelligkeit);
+    if (statusVal !== 'erledigt') {
+      if (days < 0) faelligkeitStr += ` · ${Math.abs(days)} Tag${Math.abs(days) === 1 ? '' : 'e'} überfällig`;
+      else if (days === 0) faelligkeitStr += ' · heute';
+      else faelligkeitStr += ` · in ${days} Tag${days === 1 ? '' : 'en'}`;
+    }
+  }
+  const faelligkeitHtml = faelligkeitStr
+    ? `<div class="preview-time">${esc(faelligkeitStr)}</div>`
+    : `<div class="preview-time preview-time-muted">— Keine Fälligkeit —</div>`;
+
+  // Kontext-KV
+  const kvRows = [];
+  if (assigneeName) kvRows.push(['Zuständig', esc(assigneeName) + (assigneeSelect.value === currentProfile?.id ? ' <span style="color:var(--success);font-size:11px">(mir)</span>' : '')]);
+  if (company) kvRows.push(['Firma', esc(company.name)]);
+  if (contactName) kvRows.push(['Kontakt', esc(contactName)]);
+  if (projectName && projectSelect.value) kvRows.push(['Projekt', esc(projectName)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  // Beschreibung-Auszug
+  const beschreibungHtml = beschreibung
+    ? `<div style="font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:80px;overflow:hidden;line-height:1.4">${esc(beschreibung.slice(0, 180))}${beschreibung.length > 180 ? '…' : ''}</div>`
+    : '';
+
+  el.innerHTML = `
+    <div>${statusPill}</div>
+    ${titelHtml}
+    ${faelligkeitHtml}
+    ${kvHtml}
+    ${beschreibungHtml}
+  `;
+}
+
+function setupTaskPreviewListeners() {
+  const modal = document.getElementById('modal-aufgabe');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['a-titel','a-faelligkeit','a-status','a-assigned-to','a-beschreibung',
+               'a-company','a-contact','a-project'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderTaskPreview);
+    el.addEventListener('change', renderTaskPreview);
+  });
+  modal.dataset.previewWired = '1';
+}
+
+// ── FIRMA-PREVIEW (v1.38.0) ──
+function renderCompanyPreview() {
+  const el = document.getElementById('c-preview');
+  if (!el) return;
+
+  const name    = document.getElementById('c-name').value.trim();
+  const typ     = document.getElementById('c-typ');
+  const typName = typ.value ? (typ.options[typ.selectedIndex]?.textContent || '') : '';
+  const branche = document.getElementById('c-branche').value.trim();
+  const abc     = document.getElementById('c-abc').value;
+  const strasse = document.getElementById('c-strasse').value.trim();
+  const plz     = document.getElementById('c-plz').value.trim();
+  const stadt   = document.getElementById('c-stadt').value.trim();
+  const land    = document.getElementById('c-land').value.trim();
+  const telefon = document.getElementById('c-telefon').value.trim();
+  const email   = document.getElementById('c-email').value.trim();
+  const website = document.getElementById('c-website').value.trim();
+
+  // ABC-Badge + Typ-Pill
+  let topHtml = '';
+  if (abc) {
+    topHtml += `<span class="abc-badge abc-badge-${esc(abc)}" style="width:28px;height:28px;font-size:13px;display:inline-flex;align-items:center;justify-content:center">${esc(abc)}</span>`;
+  }
+  if (typName) {
+    topHtml += `<span class="badge" style="background:var(--bg);color:var(--text);margin-left:${abc ? '8px' : '0'}">${esc(typName)}</span>`;
+  }
+  const topWrap = topHtml
+    ? `<div style="display:flex;align-items:center">${topHtml}</div>`
+    : '';
+
+  // Name
+  const nameHtml = name
+    ? `<div class="preview-title">${esc(name)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neue Firma</div>`;
+
+  // Branche
+  const brancheHtml = branche ? `<div class="preview-time">${esc(branche)}</div>` : '';
+
+  // Adresse
+  const adrLines = [];
+  if (strasse) adrLines.push(esc(strasse));
+  const plzStadt = [plz, stadt].filter(Boolean).join(' ');
+  if (plzStadt) adrLines.push(esc(plzStadt));
+  if (land && land !== 'Deutschland') adrLines.push(esc(land));
+  const adrHtml = adrLines.length
+    ? `<div style="font-size:13px;color:var(--text);line-height:1.4">${adrLines.join('<br>')}</div>`
+    : `<div class="preview-kv-value-muted" style="font-size:12px">— Keine Adresse —</div>`;
+
+  // Kontakt-Zeilen
+  const kvRows = [];
+  if (telefon) kvRows.push(['Telefon', esc(telefon)]);
+  if (email)   kvRows.push(['E-Mail',  esc(email)]);
+  if (website) kvRows.push(['Website', esc(website)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  el.innerHTML = `
+    ${topWrap}
+    ${nameHtml}
+    ${brancheHtml}
+    ${adrHtml}
+    ${kvHtml}
+  `;
+}
+
+function setupCompanyPreviewListeners() {
+  const modal = document.getElementById('modal-company');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['c-name','c-typ','c-branche','c-abc','c-strasse','c-plz','c-stadt','c-land',
+               'c-telefon','c-email','c-website'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderCompanyPreview);
+    el.addEventListener('change', renderCompanyPreview);
+  });
+  modal.dataset.previewWired = '1';
+}
+
+// ── KONTAKT-PREVIEW (v1.38.0) ──
+function renderContactPreview() {
+  const el = document.getElementById('k-preview');
+  if (!el) return;
+
+  const vorname  = document.getElementById('k-vorname').value.trim();
+  const nachname = document.getElementById('k-nachname').value.trim();
+  const position = document.getElementById('k-position').value.trim();
+  const companySelect = document.getElementById('k-company');
+  const companyName   = companySelect.value ? (companySelect.options[companySelect.selectedIndex]?.textContent || '') : '';
+  const telefon  = document.getElementById('k-telefon').value.trim();
+  const email    = document.getElementById('k-email').value.trim();
+
+  // Avatar mit Initialen
+  const fullName = [vorname, nachname].filter(Boolean).join(' ');
+  const initials = [vorname, nachname].filter(Boolean).map(s => s.charAt(0).toUpperCase()).join('') || '?';
+  const avatarHtml = `
+    <div style="width:56px;height:56px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600">${esc(initials)}</div>`;
+
+  const nameHtml = fullName
+    ? `<div class="preview-title">${esc(fullName)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neuer Kontakt</div>`;
+
+  const positionHtml = position ? `<div class="preview-time">${esc(position)}</div>` : '';
+
+  const kvRows = [];
+  if (companyName && companySelect.value) kvRows.push(['Firma', esc(companyName)]);
+  if (telefon) kvRows.push(['Telefon', esc(telefon)]);
+  if (email)   kvRows.push(['E-Mail',  esc(email)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  el.innerHTML = `
+    ${avatarHtml}
+    ${nameHtml}
+    ${positionHtml}
+    ${kvHtml}
+  `;
+}
+
+function setupContactPreviewListeners() {
+  const modal = document.getElementById('modal-contact');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['k-vorname','k-nachname','k-position','k-company','k-telefon','k-email'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderContactPreview);
+    el.addEventListener('change', renderContactPreview);
+  });
+  modal.dataset.previewWired = '1';
+}
+
+// ── PROJEKT-PREVIEW (v1.38.0) ──
+function renderProjectPreview() {
+  const el = document.getElementById('p-preview');
+  if (!el) return;
+
+  const name       = document.getElementById('p-name').value.trim();
+  const status     = document.getElementById('p-status').value;
+  const umsatz     = Number(document.getElementById('p-umsatz').value) || 0;
+  const startdatum = document.getElementById('p-startdatum').value;
+  const enddatum   = document.getElementById('p-enddatum').value;
+  const companySelect = document.getElementById('p-company');
+  const companyName   = companySelect.value ? (companySelect.options[companySelect.selectedIndex]?.textContent || '') : '';
+  const kontaktSelect = document.getElementById('p-hauptkontakt');
+  const kontaktName   = kontaktSelect.value ? (kontaktSelect.options[kontaktSelect.selectedIndex]?.textContent || '') : '';
+  const verantwSelect = document.getElementById('p-verantwortlicher');
+  const verantwName   = verantwSelect.value ? (verantwSelect.options[verantwSelect.selectedIndex]?.textContent || '') : '';
+  const beschreibung  = document.getElementById('p-beschreibung').value.trim();
+
+  const statusColor = projektStatusFarbe(status);
+  const statusPill = status
+    ? `<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(status)}</span>`
+    : '';
+
+  const nameHtml = name
+    ? `<div class="preview-title">${esc(name)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neues Projekt</div>`;
+
+  // Zeitraum
+  let zeitStr = '';
+  if (startdatum && enddatum) zeitStr = `${formatDateDE(startdatum)} – ${formatDateDE(enddatum)}`;
+  else if (startdatum) zeitStr = `ab ${formatDateDE(startdatum)}`;
+  else if (enddatum)   zeitStr = `bis ${formatDateDE(enddatum)}`;
+  const zeitHtml = zeitStr
+    ? `<div class="preview-time">${esc(zeitStr)}</div>`
+    : '';
+
+  // Umsatz prominent
+  const umsatzHtml = umsatz > 0
+    ? `<div style="font-size:20px;font-weight:600;color:var(--text);margin:4px 0">${esc(formatPreis(umsatz))}</div>
+       <div style="font-size:11px;color:var(--muted);margin-top:-4px">Geschätzter Umsatz</div>`
+    : '';
+
+  const kvRows = [];
+  if (companyName && companySelect.value) kvRows.push(['Firma', esc(companyName)]);
+  if (kontaktName && kontaktSelect.value) kvRows.push(['Kontakt', esc(kontaktName)]);
+  if (verantwName && verantwSelect.value) kvRows.push(['Verantw.', esc(verantwName)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  const beschreibungHtml = beschreibung
+    ? `<div style="font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:80px;overflow:hidden;line-height:1.4">${esc(beschreibung.slice(0, 180))}${beschreibung.length > 180 ? '…' : ''}</div>`
+    : '';
+
+  el.innerHTML = `
+    ${statusPill ? `<div>${statusPill}</div>` : ''}
+    ${nameHtml}
+    ${zeitHtml}
+    ${umsatzHtml}
+    ${kvHtml}
+    ${beschreibungHtml}
+  `;
+}
+
+function setupProjectPreviewListeners() {
+  const modal = document.getElementById('modal-project');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['p-name','p-status','p-umsatz','p-startdatum','p-enddatum',
+               'p-company','p-hauptkontakt','p-verantwortlicher','p-beschreibung'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderProjectPreview);
+    el.addEventListener('change', renderProjectPreview);
+  });
+  modal.dataset.previewWired = '1';
+}
+
+// ── MITGLIEDSCHAFT-PREVIEW (v1.38.0) ──
+function renderMembershipPreview() {
+  const el = document.getElementById('ms-preview');
+  if (!el) return;
+
+  const programSelect = document.getElementById('ms-program');
+  const programName   = programSelect.value ? (programSelect.options[programSelect.selectedIndex]?.textContent || '') : '';
+  const start   = document.getElementById('ms-start').value;
+  const ende    = document.getElementById('ms-end').value;
+  const nummer  = document.getElementById('ms-nummer').value.trim();
+  const preis   = Number(document.getElementById('ms-preis').value) || 0;
+  const status  = document.getElementById('ms-status').value;
+  const kontaktSelect = document.getElementById('ms-hauptkontakt');
+  const kontaktName   = kontaktSelect.value ? (kontaktSelect.options[kontaktSelect.selectedIndex]?.textContent || '') : '';
+  const verantwSelect = document.getElementById('ms-verantwortlicher');
+  const verantwName   = verantwSelect.value ? (verantwSelect.options[verantwSelect.selectedIndex]?.textContent || '') : '';
+
+  const statusMap = {
+    aktiv:     { bg: '#dcfce7', color: '#166534', label: 'Aktiv' },
+    pausiert:  { bg: '#fef3c7', color: '#854d0e', label: 'Pausiert' },
+    beendet:   { bg: '#f3f4f6', color: '#6b7280', label: 'Beendet' }
+  };
+  const s = statusMap[status] || statusMap.aktiv;
+  const statusPill = `<span class="badge" style="background:${s.bg};color:${s.color}">${s.label}</span>`;
+
+  const nameHtml = programName
+    ? `<div class="preview-title">${esc(programName)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neue Mitgliedschaft</div>`;
+
+  // Laufzeit
+  let zeitStr = '';
+  if (start && ende) zeitStr = `${formatDateDE(start)} – ${formatDateDE(ende)}`;
+  else if (start)    zeitStr = `ab ${formatDateDE(start)}`;
+  const zeitHtml = zeitStr ? `<div class="preview-time">${esc(zeitStr)}</div>` : '';
+
+  // Preis prominent
+  const preisHtml = preis > 0
+    ? `<div style="font-size:20px;font-weight:600;color:var(--text);margin:4px 0">${esc(formatPreis(preis))}</div>`
+    : '';
+
+  const kvRows = [];
+  if (nummer) kvRows.push(['Nummer', esc(nummer)]);
+  if (kontaktName && kontaktSelect.value) kvRows.push(['Kontakt', esc(kontaktName)]);
+  if (verantwName && verantwSelect.value) kvRows.push(['Verantw.', esc(verantwName)]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  el.innerHTML = `
+    <div>${statusPill}</div>
+    ${nameHtml}
+    ${zeitHtml}
+    ${preisHtml}
+    ${kvHtml}
+  `;
+}
+
+function setupMembershipPreviewListeners() {
+  const modal = document.getElementById('modal-membership');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['ms-program','ms-start','ms-end','ms-nummer','ms-preis','ms-status',
+               'ms-hauptkontakt','ms-verantwortlicher'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderMembershipPreview);
+    el.addEventListener('change', renderMembershipPreview);
   });
   modal.dataset.previewWired = '1';
 }
@@ -2797,6 +3273,9 @@ async function openMembershipModal(mode, membershipId = null, companyId = null) 
     if (data.verantwortlicher_id) verantwSelect.value = data.verantwortlicher_id;
   }
 
+  setupMembershipPreviewListeners();  // v1.38
+  renderMembershipPreview();           // v1.38
+
   document.getElementById('modal-membership').classList.add('open');
 }
 
@@ -3204,6 +3683,9 @@ async function openCompanyModal(mode, companyId = null) {
     document.getElementById('c-notizen').value = data.notizen || '';
     if (data.typ_id) typSelect.value = data.typ_id;
   }
+
+  setupCompanyPreviewListeners();  // v1.38
+  renderCompanyPreview();           // v1.38
 
   document.getElementById('modal-company').classList.add('open');
   setTimeout(() => document.getElementById('c-name').focus(), 100);
@@ -3766,6 +4248,9 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-notizen').value = data.notizen || '';
     if (data.company_id) companySelect.value = data.company_id;
   }
+
+  setupContactPreviewListeners();  // v1.38
+  renderContactPreview();           // v1.38
 
   document.getElementById('modal-contact').classList.add('open');
   setTimeout(() => document.getElementById('k-vorname').focus(), 100);
@@ -4769,6 +5254,9 @@ async function openProjectModal(mode, projectId = null) {
       if (data.hauptkontakt_id) hauptkontaktSelect.value = data.hauptkontakt_id;
     }
   }
+
+  setupProjectPreviewListeners();  // v1.38
+  renderProjectPreview();           // v1.38
 
   document.getElementById('modal-project').classList.add('open');
   setTimeout(() => document.getElementById('p-name').focus(), 100);
@@ -6006,6 +6494,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
   }
 
   await refreshRedeemSection();  // v1.14.0 - lädt offene Entitlements der Firma
+
+  setupDeploymentPreviewListeners();  // v1.38
+  renderDeploymentPreview();           // v1.38
 
   document.getElementById('modal-deployment').classList.add('open');
   setTimeout(() => document.getElementById('d-titel').focus(), 100);
@@ -9812,6 +10303,9 @@ async function openTaskModal(mode, taskId = null) {
     await rebuildContactDropdownForTask(companySelect.value);
     await rebuildProjectDropdownForTask(companySelect.value);
   };
+
+  setupTaskPreviewListeners();  // v1.38
+  renderTaskPreview();           // v1.38
 
   document.getElementById('modal-aufgabe').classList.add('open');
   setTimeout(() => document.getElementById('a-titel').focus(), 100);

@@ -1832,80 +1832,105 @@
 
 <!-- MODAL: FIRMA -->
 <div class="modal-overlay" id="modal-company">
-  <div class="modal" style="width:620px">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-company-title">Neue Firma</div>
 
-    <div class="modal-group-title">Stammdaten</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Name *</label>
-        <input type="text" id="c-name" placeholder="z. B. Müller Maschinenbau GmbH">
-      </div>
-      <div class="form-group">
-        <label>Typ *</label>
-        <select id="c-typ"></select>
-      </div>
-      <div class="form-group">
-        <label>Branche</label>
-        <input type="text" id="c-branche" placeholder="z. B. Automotive">
-      </div>
-      <div class="form-group">
-        <label>ABC-Klassifizierung</label>
-        <select id="c-abc">
-          <option value="">— Nicht klassifiziert —</option>
-          <option value="A">A — Kern-/Top-Kunde</option>
-          <option value="B">B — Wichtiger Kunde</option>
-          <option value="C">C — Geringerer strategischer Wert</option>
-        </select>
-      </div>
+    <div class="modal-3col">
+      <!-- LINKS: Preview -->
+      <aside class="modal-preview-card" id="c-preview"></aside>
+
+      <!-- MITTE: Stammdaten -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+            <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+            <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+            <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+          </svg>
+          Stammdaten
+        </div>
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" id="c-name" placeholder="z. B. Müller Maschinenbau GmbH">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Typ *</label>
+            <select id="c-typ"></select>
+          </div>
+          <div class="form-group">
+            <label>ABC-Klassifizierung</label>
+            <select id="c-abc">
+              <option value="">— Nicht klassifiziert —</option>
+              <option value="A">A — Kern-/Top-Kunde</option>
+              <option value="B">B — Wichtiger Kunde</option>
+              <option value="C">C — Geringerer strategischer Wert</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Branche</label>
+          <input type="text" id="c-branche" placeholder="z. B. Automotive">
+        </div>
+      </section>
+
+      <!-- RECHTS: Adresse & Kontakt -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+          Adresse &amp; Kontakt
+        </div>
+        <div class="form-group">
+          <label>Straße &amp; Hausnummer</label>
+          <input type="text" id="c-strasse" placeholder="Hauptstraße 42">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>PLZ</label>
+            <input type="text" id="c-plz" placeholder="71034"
+                   inputmode="numeric" maxlength="10"
+                   oninput="sanitizeNumericInput(this, 10)">
+          </div>
+          <div class="form-group">
+            <label>Stadt</label>
+            <input type="text" id="c-stadt" placeholder="Böblingen">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Land</label>
+          <input type="text" id="c-land" placeholder="Deutschland" value="Deutschland">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Telefon</label>
+            <input type="tel" id="c-telefon" placeholder="+49 7031 12345"
+                   inputmode="tel"
+                   oninput="sanitizePhoneInput(this)">
+          </div>
+          <div class="form-group">
+            <label>E-Mail</label>
+            <input type="email" id="c-email" placeholder="info@firma.de"
+                   inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+                   onblur="sanitizeEmailOnBlur(this)">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Website</label>
+          <input type="text" id="c-website" placeholder="www.firma.de">
+        </div>
+      </section>
     </div>
 
-    <div class="modal-group-title">Adresse</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Straße &amp; Hausnummer</label>
-        <input type="text" id="c-strasse" placeholder="Hauptstraße 42">
-      </div>
-      <div class="form-group">
-        <label>PLZ</label>
-        <input type="text" id="c-plz" placeholder="71034"
-               inputmode="numeric" maxlength="10"
-               oninput="sanitizeNumericInput(this, 10)">
-      </div>
-      <div class="form-group">
-        <label>Stadt</label>
-        <input type="text" id="c-stadt" placeholder="Böblingen">
-      </div>
-      <div class="form-group full">
-        <label>Land</label>
-        <input type="text" id="c-land" placeholder="Deutschland" value="Deutschland">
-      </div>
-    </div>
-
-    <div class="modal-group-title">Kontakt</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Telefon</label>
-        <input type="tel" id="c-telefon" placeholder="+49 7031 12345"
-               inputmode="tel"
-               oninput="sanitizePhoneInput(this)">
-      </div>
-      <div class="form-group">
-        <label>E-Mail</label>
-        <input type="email" id="c-email" placeholder="info@firma.de"
-               inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
-               onblur="sanitizeEmailOnBlur(this)">
-      </div>
-      <div class="form-group full">
-        <label>Website</label>
-        <input type="text" id="c-website" placeholder="www.firma.de">
-      </div>
-    </div>
-
-    <div class="modal-group-title">Notizen</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <textarea id="c-notizen" rows="3" placeholder="Freitext-Notizen zur Firma ..."></textarea>
+    <div class="modal-preview-footer">
+      <div class="modal-group-title collapsed">Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <textarea id="c-notizen" rows="3" placeholder="Freitext-Notizen zur Firma ..."></textarea>
+        </div>
       </div>
     </div>
 
@@ -1920,51 +1945,75 @@
   </div>
 </div>
 
-<!-- MODAL: KONTAKT -->
+<!-- MODAL: KONTAKT (v1.38.0 3-Spalten mit Preview) -->
 <div class="modal-overlay" id="modal-contact">
-  <div class="modal" style="width:620px">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-contact-title">Neuer Kontakt</div>
 
-    <div class="modal-group-title">Stammdaten</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Vorname *</label>
-        <input type="text" id="k-vorname" placeholder="Thomas">
-      </div>
-      <div class="form-group">
-        <label>Nachname *</label>
-        <input type="text" id="k-nachname" placeholder="Müller">
-      </div>
-      <div class="form-group">
-        <label>Position</label>
-        <input type="text" id="k-position" placeholder="z. B. Fertigungsleiter">
-      </div>
-      <div class="form-group">
-        <label>Firma</label>
-        <select id="k-company"></select>
-      </div>
+    <div class="modal-3col">
+      <!-- LINKS: Preview -->
+      <aside class="modal-preview-card" id="k-preview"></aside>
+
+      <!-- MITTE: Stammdaten -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Stammdaten
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Vorname *</label>
+            <input type="text" id="k-vorname" placeholder="Thomas">
+          </div>
+          <div class="form-group">
+            <label>Nachname *</label>
+            <input type="text" id="k-nachname" placeholder="Müller">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Position</label>
+          <input type="text" id="k-position" placeholder="z. B. Fertigungsleiter">
+        </div>
+        <div class="form-group">
+          <label>Firma</label>
+          <select id="k-company"></select>
+        </div>
+      </section>
+
+      <!-- RECHTS: Kontakt -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+          </svg>
+          Kontakt
+        </div>
+        <div class="form-group">
+          <label>Telefon</label>
+          <input type="tel" id="k-telefon" placeholder="+49 7031 12345"
+                 inputmode="tel"
+                 oninput="sanitizePhoneInput(this)">
+        </div>
+        <div class="form-group">
+          <label>E-Mail</label>
+          <input type="email" id="k-email" placeholder="t.mueller@firma.de"
+                 inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+                 onblur="sanitizeEmailOnBlur(this)">
+        </div>
+      </section>
     </div>
 
-    <div class="modal-group-title">Kontakt</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Telefon</label>
-        <input type="tel" id="k-telefon" placeholder="+49 7031 12345"
-               inputmode="tel"
-               oninput="sanitizePhoneInput(this)">
-      </div>
-      <div class="form-group">
-        <label>E-Mail</label>
-        <input type="email" id="k-email" placeholder="t.mueller@firma.de"
-               inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
-               onblur="sanitizeEmailOnBlur(this)">
-      </div>
-    </div>
-
-    <div class="modal-group-title">Notizen</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <textarea id="k-notizen" rows="3" placeholder="Freitext-Notizen zum Kontakt ..."></textarea>
+    <div class="modal-preview-footer">
+      <div class="modal-group-title collapsed">Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <textarea id="k-notizen" rows="3" placeholder="Freitext-Notizen zum Kontakt ..."></textarea>
+        </div>
       </div>
     </div>
 
@@ -2092,16 +2141,23 @@
   </div>
 </div>
 
-<!-- MODAL: AUFGABE (v1.35.0 Kanban) -->
+<!-- MODAL: AUFGABE (v1.38.0 3-Spalten mit Preview) -->
 <div class="modal-overlay" id="modal-aufgabe">
-  <div class="modal" style="width:960px;max-width:calc(100vw - 40px)">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-aufgabe-title">Neue Aufgabe</div>
 
-    <div class="modal-kanban cols-3">
-      <!-- Spalte 1: Was -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">📝</span> Was
+    <div class="modal-3col">
+      <!-- LINKS: Preview -->
+      <aside class="modal-preview-card" id="a-preview"></aside>
+
+      <!-- MITTE: Stammdaten & Zeit -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="9 11 12 14 22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Stammdaten &amp; Zeit
         </div>
         <div class="form-group">
           <label>Titel *</label>
@@ -2112,17 +2168,6 @@
           <select id="a-status"></select>
         </div>
         <div class="form-group">
-          <label>Beschreibung</label>
-          <textarea id="a-beschreibung" rows="4" placeholder="Was genau ist zu tun?"></textarea>
-        </div>
-      </div>
-
-      <!-- Spalte 2: Wann & Wer -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">📅</span> Wann &amp; Wer
-        </div>
-        <div class="form-group">
           <label>Fällig am</label>
           <input type="date" id="a-faelligkeit">
           <div class="date-shortcuts" data-shortcut-target="a-faelligkeit"></div>
@@ -2131,12 +2176,20 @@
           <label>Zugewiesen an *</label>
           <select id="a-assigned-to"></select>
         </div>
-      </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="a-beschreibung" rows="5" placeholder="Was genau ist zu tun?"></textarea>
+        </div>
+      </section>
 
-      <!-- Spalte 3: Kontext -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">🔗</span> Kontext
+      <!-- RECHTS: Zugehörigkeiten -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          Zugehörigkeiten
         </div>
         <div class="form-group">
           <label>Firma</label>
@@ -2150,10 +2203,10 @@
           <label>Projekt</label>
           <select id="a-project"></select>
         </div>
-      </div>
+      </section>
     </div>
 
-    <div class="modal-kanban-footer">
+    <div class="modal-preview-footer">
       <div class="modal-group-title collapsed">Notizen</div>
       <div class="form-grid" style="display:none">
         <div class="form-group full">
@@ -2173,66 +2226,84 @@
   </div>
 </div>
 
-<!-- MODAL: PROJEKT -->
+<!-- MODAL: PROJEKT (v1.38.0 3-Spalten mit Preview) -->
 <div class="modal-overlay" id="modal-project">
-  <div class="modal" style="width:640px">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-project-title">Neues Projekt</div>
 
-    <div class="modal-group-title">Stammdaten</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Name *</label>
-        <input type="text" id="p-name" placeholder="z. B. Heidenhain Klartext Grundlagen bei Müller">
-      </div>
-      <div class="form-group">
-        <label>Status *</label>
-        <select id="p-status"></select>
-      </div>
-      <div class="form-group">
-        <label>Geschätzter Umsatz (€)</label>
-        <input type="number" id="p-umsatz" min="0" step="0.01" placeholder="0.00">
-      </div>
-      <div class="form-group">
-        <label>Firma</label>
-        <select id="p-company"></select>
-      </div>
-      <div class="form-group">
-        <label>Hauptkontakt</label>
-        <select id="p-hauptkontakt"></select>
-      </div>
-      <div class="form-group">
-        <label>Verantwortlich</label>
-        <select id="p-verantwortlicher"></select>
-      </div>
-      <div class="form-group">
-        <label>&nbsp;</label>
-        <span style="font-size:11px;color:var(--muted);line-height:1.4">
-          Ohne Firma = internes Projekt
-        </span>
-      </div>
+    <div class="modal-3col">
+      <!-- LINKS: Preview -->
+      <aside class="modal-preview-card" id="p-preview"></aside>
+
+      <!-- MITTE: Stammdaten & Zeitraum -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          Stammdaten &amp; Zeitraum
+        </div>
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" id="p-name" placeholder="z. B. Heidenhain Klartext Grundlagen bei Müller">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Status *</label>
+            <select id="p-status"></select>
+          </div>
+          <div class="form-group">
+            <label>Geschätzter Umsatz (€)</label>
+            <input type="number" id="p-umsatz" min="0" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Startdatum</label>
+            <input type="date" id="p-startdatum">
+          </div>
+          <div class="form-group">
+            <label>Enddatum (geplant)</label>
+            <input type="date" id="p-enddatum">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="p-beschreibung" rows="4" placeholder="Worum geht es bei diesem Projekt?"></textarea>
+        </div>
+      </section>
+
+      <!-- RECHTS: Zugehörigkeiten -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          Zugehörigkeiten
+        </div>
+        <div class="form-group">
+          <label>Firma</label>
+          <select id="p-company"></select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Ohne Firma = internes Projekt</div>
+        </div>
+        <div class="form-group">
+          <label>Hauptkontakt</label>
+          <select id="p-hauptkontakt"></select>
+        </div>
+        <div class="form-group">
+          <label>Verantwortlich</label>
+          <select id="p-verantwortlicher"></select>
+        </div>
+      </section>
     </div>
 
-    <div class="modal-group-title">Zeitraum</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Startdatum</label>
-        <input type="date" id="p-startdatum">
-      </div>
-      <div class="form-group">
-        <label>Enddatum (geplant)</label>
-        <input type="date" id="p-enddatum">
-      </div>
-    </div>
-
-    <div class="modal-group-title">Details</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Beschreibung</label>
-        <textarea id="p-beschreibung" rows="3" placeholder="Worum geht es bei diesem Projekt?"></textarea>
-      </div>
-      <div class="form-group full">
-        <label>Notizen</label>
-        <textarea id="p-notizen" rows="3" placeholder="Freitext-Notizen zum Projekt ..."></textarea>
+    <div class="modal-preview-footer">
+      <div class="modal-group-title collapsed">Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <textarea id="p-notizen" rows="3" placeholder="Freitext-Notizen zum Projekt ..."></textarea>
+        </div>
       </div>
     </div>
 
@@ -2247,39 +2318,26 @@
   </div>
 </div>
 
-<!-- MODAL: EINSATZ (v1.35.0 Kanban) -->
+<!-- MODAL: EINSATZ (v1.38.0 3-Spalten mit Preview) -->
 <div class="modal-overlay" id="modal-deployment">
-  <div class="modal" style="width:1140px;max-width:calc(100vw - 40px)">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-deployment-title">Neuer Einsatz</div>
 
-    <div class="modal-kanban cols-4">
-      <!-- Spalte 1: Kunde -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">🏢</span> Kunde
-        </div>
-        <div class="form-group">
-          <label>Firma *</label>
-          <select id="d-company"></select>
-        </div>
-        <div class="form-group">
-          <label>Projekt</label>
-          <select id="d-project"></select>
-        </div>
-        <div class="form-group">
-          <label>Ort</label>
-          <input type="text" id="d-ort" placeholder="Vor Ort, Zoom-Link, Raum">
-          <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
-               onclick="useCompanyAddressForDeploymentOrt()"
-               title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
-          </div>
-        </div>
-      </div>
+    <div class="modal-3col">
+      <!-- LINKS: Preview -->
+      <aside class="modal-preview-card" id="d-preview"></aside>
 
-      <!-- Spalte 2: Leistung -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">🎯</span> Leistung
+      <!-- MITTE: Stammdaten & Leistung -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/>
+          </svg>
+          Stammdaten &amp; Leistung
+        </div>
+        <div class="form-group">
+          <label>Titel</label>
+          <input type="text" id="d-titel" placeholder="Auto: Leistung × Firma × Benutzer">
         </div>
         <div class="form-group">
           <label>Leistung</label>
@@ -2300,22 +2358,34 @@
           </div>
         </div>
         <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:2px 0;min-height:14px"></div>
-      </div>
+        <div class="form-group">
+          <label>Status *</label>
+          <select id="d-status"></select>
+        </div>
+      </section>
 
-      <!-- Spalte 3: Zeitraum -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">📅</span> Zeitraum
+      <!-- RECHTS: Zeit & Zuordnung -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Zeit &amp; Zuordnung
         </div>
-        <div class="form-group">
-          <label>Datum von</label>
-          <input type="date" id="d-datum-von">
-          <div class="date-shortcuts" data-shortcut-target="d-datum-von"></div>
-        </div>
-        <div class="form-group">
-          <label>Datum bis</label>
-          <input type="date" id="d-datum-bis">
-          <div class="date-shortcuts" data-shortcut-target="d-datum-bis"></div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Datum von</label>
+            <input type="date" id="d-datum-von">
+            <div class="date-shortcuts" data-shortcut-target="d-datum-von"></div>
+          </div>
+          <div class="form-group">
+            <label>Datum bis</label>
+            <input type="date" id="d-datum-bis">
+            <div class="date-shortcuts" data-shortcut-target="d-datum-bis"></div>
+          </div>
         </div>
         <div class="form-group" id="d-datum-hint-wrap" style="display:none">
           <div style="font-size:11px;color:var(--muted);padding:2px 0">
@@ -2339,32 +2409,37 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Status *</label>
-          <select id="d-status"></select>
+          <label>Firma *</label>
+          <select id="d-company"></select>
         </div>
-      </div>
+        <div class="form-group">
+          <label>Projekt</label>
+          <select id="d-project"></select>
+        </div>
+        <div class="form-group">
+          <label>Ort</label>
+          <input type="text" id="d-ort" placeholder="Vor Ort, Zoom-Link, Raum">
+          <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+               onclick="useCompanyAddressForDeploymentOrt()"
+               title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+          </div>
+        </div>
+      </section>
+    </div>
 
-      <!-- Spalte 4: Team & Titel -->
-      <div class="modal-kanban-col">
-        <div class="modal-kanban-col-title">
-          <span class="modal-kanban-col-title-icon">👷</span> Team
-        </div>
-        <div class="form-group">
-          <label>Titel</label>
-          <input type="text" id="d-titel" placeholder="Auto: Leistung × Firma × Benutzer">
-        </div>
-        <div class="form-group">
+    <div class="modal-preview-footer">
+      <!-- Techniker -->
+      <div class="modal-group-title collapsed">Techniker</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
           <label>Interne Techniker</label>
           <div id="d-techniker-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
         </div>
-        <div class="form-group">
-          <label>Externe Techniker</label>
+        <div class="form-group full">
+          <label>Externe Techniker (Freitext)</label>
           <input type="text" id="d-externe-techniker" placeholder="z. B. Max Mustermann (extern)">
         </div>
       </div>
-    </div>
-
-    <div class="modal-kanban-footer">
       <!-- Kopplung: Termin-Sync + Bonus-Einlösung -->
       <div class="modal-group-title">Kopplung</div>
       <div class="form-grid">
@@ -2664,58 +2739,88 @@
 
 <!-- MODAL: MITGLIEDSCHAFT (v1.13.0) -->
 <div class="modal-overlay" id="modal-membership">
-  <div class="modal">
+  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-membership-title">Neue Mitgliedschaft</div>
 
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Programm *</label>
-        <select id="ms-program" onchange="onMembershipProgramChange()"></select>
-      </div>
-      <div class="form-group">
-        <label>Startdatum *</label>
-        <input type="date" id="ms-start" onchange="recalcMembershipEnd()">
-      </div>
-      <div class="form-group">
-        <label>Enddatum</label>
-        <input type="date" id="ms-end">
-        <span style="font-size:11px;color:var(--muted)">Wird aus Laufzeit berechnet, kann aber überschrieben werden.</span>
-      </div>
-      <div class="form-group">
-        <label>Mitgliedsnummer</label>
-        <input type="text" id="ms-nummer" placeholder="Auto-Vorschlag aus Präfix">
-      </div>
-      <div class="form-group">
-        <label>Preis (€)</label>
-        <input type="number" id="ms-preis" min="0" step="0.01" placeholder="0.00">
-      </div>
-      <div class="form-group">
-        <label>Hauptkontakt</label>
-        <select id="ms-hauptkontakt"></select>
-      </div>
-      <div class="form-group">
-        <label>Verantwortlicher</label>
-        <select id="ms-verantwortlicher"></select>
-      </div>
-      <div class="form-group">
-        <label>Status</label>
-        <select id="ms-status">
-          <option value="aktiv">Aktiv</option>
-          <option value="pausiert">Pausiert</option>
-          <option value="beendet">Beendet</option>
-        </select>
-      </div>
-      <div class="form-group full">
-        <label>Notizen</label>
-        <textarea id="ms-notizen" rows="2" placeholder="Optional"></textarea>
-      </div>
+    <div class="modal-3col">
+      <!-- LINKS: Preview -->
+      <aside class="modal-preview-card" id="ms-preview"></aside>
+
+      <!-- MITTE: Stammdaten & Laufzeit -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+          Stammdaten &amp; Laufzeit
+        </div>
+        <div class="form-group">
+          <label>Programm *</label>
+          <select id="ms-program" onchange="onMembershipProgramChange()"></select>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Startdatum *</label>
+            <input type="date" id="ms-start" onchange="recalcMembershipEnd()">
+          </div>
+          <div class="form-group">
+            <label>Enddatum</label>
+            <input type="date" id="ms-end">
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Mitgliedsnummer</label>
+            <input type="text" id="ms-nummer" placeholder="Auto-Vorschlag aus Präfix">
+          </div>
+          <div class="form-group">
+            <label>Preis (€)</label>
+            <input type="number" id="ms-preis" min="0" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="ms-status">
+            <option value="aktiv">Aktiv</option>
+            <option value="pausiert">Pausiert</option>
+            <option value="beendet">Beendet</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- RECHTS: Zugehörigkeiten + Benefits-Preview -->
+      <section class="modal-section">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          Zugehörigkeiten
+        </div>
+        <div class="form-group">
+          <label>Hauptkontakt</label>
+          <select id="ms-hauptkontakt"></select>
+        </div>
+        <div class="form-group">
+          <label>Verantwortlicher</label>
+          <select id="ms-verantwortlicher"></select>
+        </div>
+        <div id="ms-benefits-preview" style="margin-top:8px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;display:none">
+          <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">
+            Bonis beim Anlegen
+          </div>
+          <div id="ms-benefits-preview-list" style="font-size:12px;color:var(--muted)"></div>
+        </div>
+      </section>
     </div>
 
-    <div id="ms-benefits-preview" style="margin-top:20px;padding:12px;background:var(--bg);border-radius:8px;display:none">
-      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">
-        Folgende Bonis werden beim Anlegen automatisch erzeugt:
+    <div class="modal-preview-footer">
+      <div class="modal-group-title collapsed">Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <textarea id="ms-notizen" rows="2" placeholder="Optional"></textarea>
+        </div>
       </div>
-      <div id="ms-benefits-preview-list" style="font-size:12px;color:var(--muted)"></div>
     </div>
 
     <div class="modal-footer">
