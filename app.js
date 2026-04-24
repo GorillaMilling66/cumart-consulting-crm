@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.29.0 (Aufgabe-Inline-Expand-Dashboard — damit
+   haben alle vier Entitäten den gleichen Klick-Flow: Termin
+   (v1.27), Einsatz (v1.28), Aufgabe (v1.29) klappen das
+   Detail-Dashboard direkt unterhalb der Zeile auf, Firma/
+   Kontakt/Projekt behalten ihre eigenen Detail-Routen.
+   Aufgabe-Dashboard: Stats (Status · Fälligkeit mit Tage-
+   bis/überfällig/heute · Zuständiger), Kontext (Firma/Kontakt/
+   Projekt/Beschreibung/Notizen), verwandte offene Aufgaben
+   (selbe Firma ODER selber Zuständiger). Schnellaktionen:
+   erledigen · wieder öffnen · Fälligkeit +7 Tage · mir
+   zuweisen · Folge-Aufgabe · Vollbearbeitung.)
    Version 1.28.0 (Einsatz-Inline-Expand-Dashboard — Klick
    auf einen Einsatz-Titel klappt darunter ein Detail-
    Dashboard auf. Stats (Status, Wert, Datum, ABC, Projekt-
@@ -7577,6 +7588,7 @@ async function toggleRowExpand(entityType, entityId, rowEl) {
   if (isMobileForExpand()) {
     if (entityType === 'appointment') return openAppointmentModal('edit', entityId);
     if (entityType === 'deployment')  return openDeploymentModal('edit', entityId);
+    if (entityType === 'task')        return openTaskModal('edit', entityId);
     return;
   }
 
@@ -7601,8 +7613,9 @@ async function toggleRowExpand(entityType, entityId, rowEl) {
 
   try {
     let html = '';
-    if (entityType === 'appointment') html = await renderAppointmentExpandedRow(entityId);
-    else if (entityType === 'deployment') html = await renderDeploymentExpandedRow(entityId);
+    if (entityType === 'appointment')      html = await renderAppointmentExpandedRow(entityId);
+    else if (entityType === 'deployment')  html = await renderDeploymentExpandedRow(entityId);
+    else if (entityType === 'task')        html = await renderTaskExpandedRow(entityId);
     td.innerHTML = `<div class="expanded-row-panel-inner">${html}</div>`;
   } catch (e) {
     td.innerHTML = `<div class="expanded-row-panel-inner"><div class="info-card-empty">Fehler: ${esc(e.message)}</div></div>`;
@@ -8174,6 +8187,222 @@ async function refreshCurrentDeploymentList() {
   }
 }
 
+// ── AUFGABE-INLINE-DASHBOARD (v1.29.0) ──────────────────────
+
+/** Baut das Aufgabe-Inline-Dashboard. Zeigt Status, Fälligkeit/Tage-bis-fällig,
+ *  Zuständigen, Kontext (Firma/Kontakt/Projekt), Beschreibung/Notizen,
+ *  verwandte offene Aufgaben (selbe Firma ODER selber Zuständiger). */
+async function renderTaskExpandedRow(taskId) {
+  const taskResult = await db.from('tasks')
+    .select(`
+      *,
+      assigned:user_profiles!tasks_assigned_to_fkey(id, name, email),
+      company:companies(id, name),
+      contact:contacts(id, vorname, nachname),
+      project:projects(id, name, status)
+    `)
+    .is('deleted_at', null).eq('id', taskId).single();
+
+  if (taskResult.error || !taskResult.data) {
+    return `<div class="info-card-empty">Aufgabe konnte nicht geladen werden.</div>`;
+  }
+  const t = taskResult.data;
+  const todayISO = toISODate(new Date());
+
+  // Verwandte offene Aufgaben (selbe Firma oder selber Zuständiger, nicht diese)
+  const orParts = [];
+  if (t.company_id)   orParts.push(`company_id.eq.${t.company_id}`);
+  if (t.assigned_to)  orParts.push(`assigned_to.eq.${t.assigned_to}`);
+  const relResult = orParts.length
+    ? await db.from('tasks')
+        .select('id, titel, faelligkeit, status, company_id, assigned_to')
+        .is('deleted_at', null).neq('id', taskId).neq('status', 'erledigt')
+        .or(orParts.join(','))
+        .order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
+    : { data: [] };
+
+  // Stats-Row
+  const done = t.status === 'erledigt';
+  const overdue = t.faelligkeit && !done && t.faelligkeit < todayISO;
+  const daysUntilFael = t.faelligkeit
+    ? Math.round((new Date(t.faelligkeit) - new Date(todayISO)) / 86400000)
+    : null;
+
+  const faelligLabel = (() => {
+    if (!t.faelligkeit) return '<span class="erp-stat-muted">Keine Fälligkeit</span>';
+    if (done)           return esc(formatDateDE(t.faelligkeit));
+    if (daysUntilFael < 0)   return `<span style="color:var(--danger);font-weight:600">${esc(formatDateDE(t.faelligkeit))} · ${Math.abs(daysUntilFael)} Tag${Math.abs(daysUntilFael)===1?'':'e'} überfällig</span>`;
+    if (daysUntilFael === 0) return `<span style="color:var(--warning);font-weight:600">${esc(formatDateDE(t.faelligkeit))} · heute</span>`;
+    return `${esc(formatDateDE(t.faelligkeit))} <span style="color:var(--muted);font-size:11px">· in ${daysUntilFael} Tag${daysUntilFael===1?'':'en'}</span>`;
+  })();
+
+  const assigneeLabel = t.assigned
+    ? esc(t.assigned.name || t.assigned.email || '?')
+    : '<span class="erp-stat-muted">nicht zugewiesen</span>';
+  const assignedToMe = t.assigned_to === currentProfile?.id;
+
+  const statsHtml = `
+    <div class="erp-stats">
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Status</div>
+        <div><span class="badge" style="background:${aufgabeStatusBg(t.status)};color:${aufgabeStatusColor(t.status)}">${esc(aufgabeStatusLabel(t.status))}</span></div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Fälligkeit</div>
+        <div class="erp-stat-value">${faelligLabel}</div>
+      </div>
+      <div class="erp-stat-item">
+        <div class="erp-stat-label">Zuständig</div>
+        <div class="erp-stat-value">${assigneeLabel}${assignedToMe ? ' <span style="color:var(--success);font-size:11px">(mir)</span>' : ''}</div>
+      </div>
+    </div>`;
+
+  // Kontext-Block
+  const firmaVal = t.company
+    ? `<span class="cell-link" onclick="navigateTo('firma','${esc(t.company.id)}')">${esc(t.company.name)}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const kontaktVal = t.contact
+    ? `<span class="cell-link" onclick="navigateTo('kontakt','${esc(t.contact.id)}')">${esc([t.contact.vorname, t.contact.nachname].filter(Boolean).join(' '))}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const projektVal = t.project
+    ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(t.project.id)}')">${esc(t.project.name)}</span> <span style="color:var(--muted);font-size:11px">· ${esc(t.project.status)}</span>`
+    : '<span class="erp-kv-muted">—</span>';
+  const beschreibungVal = t.beschreibung
+    ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--text);max-height:80px;overflow:auto">${esc(t.beschreibung)}</div>`
+    : '<span class="erp-kv-muted">—</span>';
+  const notizenVal = t.notizen
+    ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:80px;overflow:auto">${esc(t.notizen)}</div>`
+    : '<span class="erp-kv-muted">—</span>';
+
+  const kontextHtml = `
+    <div>
+      <div class="erp-kv">
+        <div class="erp-kv-label">Firma</div>         <div class="erp-kv-value">${firmaVal}</div>
+        <div class="erp-kv-label">Kontakt</div>       <div class="erp-kv-value">${kontaktVal}</div>
+        <div class="erp-kv-label">Projekt</div>       <div class="erp-kv-value">${projektVal}</div>
+        <div class="erp-kv-label">Beschreibung</div>  <div class="erp-kv-value">${beschreibungVal}</div>
+        <div class="erp-kv-label">Notizen</div>       <div class="erp-kv-value">${notizenVal}</div>
+      </div>`;
+
+  // Verwandte offene Aufgaben
+  const relRows = (relResult.data || []);
+  const relHtml = relRows.length > 0
+    ? `<div class="erp-related">
+         <div class="erp-section-title">Verwandte offene Aufgaben (Firma / Zuständiger)</div>
+         ${relRows.map(r => {
+           const rOver = r.faelligkeit && r.faelligkeit < todayISO;
+           return `
+             <div class="erp-related-row">
+               <div class="erp-related-date">${r.faelligkeit ? esc(formatDateDE(r.faelligkeit)) : '<span style="color:var(--muted)">—</span>'}</div>
+               <div class="erp-related-title" onclick="openTaskModal('edit','${esc(r.id)}')">${esc(r.titel || '—')}</div>
+               <div class="erp-related-meta" ${rOver ? 'style="color:var(--danger);font-weight:600"' : ''}>${rOver ? 'überfällig' : esc(aufgabeStatusLabel(r.status))}</div>
+             </div>`;
+         }).join('')}
+       </div>`
+    : '';
+
+  // Schnellaktionen
+  const canReassignToMe = currentProfile?.id && !assignedToMe;
+  const actionsHtml = `
+    <div class="erp-actions">
+      <div class="erp-section-title" style="margin-top:0">Schnellaktionen</div>
+      ${done
+        ? `<button class="erp-action-btn" onclick="quickTaskReopen('${esc(t.id)}')">
+            <span class="erp-action-btn-icon">↺</span> Wieder öffnen
+          </button>`
+        : `<button class="erp-action-btn erp-action-primary" onclick="quickTaskComplete('${esc(t.id)}')">
+            <span class="erp-action-btn-icon">✓</span> Als erledigt markieren
+          </button>`
+      }
+      ${!done ? `<button class="erp-action-btn" onclick="quickTaskPostpone('${esc(t.id)}', 7)">
+        <span class="erp-action-btn-icon">⏭</span> Fälligkeit +7 Tage
+      </button>` : ''}
+      ${canReassignToMe ? `<button class="erp-action-btn" onclick="quickTaskAssignToMe('${esc(t.id)}')">
+        <span class="erp-action-btn-icon">→</span> Mir zuweisen
+      </button>` : ''}
+      <button class="erp-action-btn" onclick="quickTaskFollowup('${esc(t.id)}')">
+        <span class="erp-action-btn-icon">+</span> Folge-Aufgabe anlegen
+      </button>
+      <button class="erp-action-btn" onclick="openTaskModal('edit','${esc(t.id)}')">
+        <span class="erp-action-btn-icon">✎</span> Vollbearbeitung …
+      </button>
+    </div>`;
+
+  return `
+    ${statsHtml}
+    <div class="erp-body">
+      ${kontextHtml}${relHtml}</div>
+      ${actionsHtml}
+    </div>`;
+}
+
+/** Aufgabe erledigen — Status auf 'erledigt'. */
+async function quickTaskComplete(taskId) {
+  const { error } = await db.from('tasks')
+    .update({ status: 'erledigt' }).eq('id', taskId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Aufgabe erledigt.');
+  closeExpandedRow();
+  await _refreshTaskContext();
+  await updateTaskBadge();
+}
+
+/** Erledigte Aufgabe wieder öffnen — Status auf 'offen'. */
+async function quickTaskReopen(taskId) {
+  const { error } = await db.from('tasks')
+    .update({ status: 'offen' }).eq('id', taskId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Aufgabe wieder geöffnet.');
+  closeExpandedRow();
+  await _refreshTaskContext();
+  await updateTaskBadge();
+}
+
+/** Fälligkeit verschieben: +N Tage von aktuellem Fälligkeitsdatum (bzw. heute, wenn keins gesetzt). */
+async function quickTaskPostpone(taskId, days) {
+  const { data: t, error: selErr } = await db.from('tasks')
+    .select('faelligkeit').eq('id', taskId).single();
+  if (selErr || !t) { showToast('Aufgabe nicht gefunden.', true); return; }
+  const base = t.faelligkeit ? new Date(t.faelligkeit) : new Date();
+  base.setDate(base.getDate() + days);
+  const newDate = toISODate(base);
+
+  const { error } = await db.from('tasks')
+    .update({ faelligkeit: newDate }).eq('id', taskId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast(`Fälligkeit verschoben auf ${formatDateDE(newDate)}.`);
+  closeExpandedRow();
+  await _refreshTaskContext();
+  await updateTaskBadge();
+}
+
+/** Aufgabe dem eingeloggten User zuweisen. */
+async function quickTaskAssignToMe(taskId) {
+  if (!currentProfile?.id) { showToast('Kein Profil verfügbar.', true); return; }
+  const { error } = await db.from('tasks')
+    .update({ assigned_to: currentProfile.id }).eq('id', taskId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Aufgabe dir zugewiesen.');
+  closeExpandedRow();
+  await _refreshTaskContext();
+  await updateTaskBadge();
+}
+
+/** Folge-Aufgabe mit gleichem Kontext (Firma/Kontakt/Projekt/Zuständiger). */
+async function quickTaskFollowup(taskId) {
+  const { data: t, error } = await db.from('tasks')
+    .select('company_id, contact_id, project_id, titel').eq('id', taskId).single();
+  if (error || !t) { showToast('Aufgabe nicht gefunden.', true); return; }
+
+  closeExpandedRow();
+  if (t.company_id) taskModalPrefillCompanyId = t.company_id;
+  if (t.contact_id) taskModalPrefillContactId = t.contact_id;
+  if (t.project_id) taskModalPrefillProjectId = t.project_id;
+  await openTaskModal('new');
+  const titleInput = document.getElementById('a-titel');
+  if (titleInput && t.titel) titleInput.value = `Folge zu: ${t.titel}`;
+}
+
 // ═══════════════════════════════════════════════════════════
 //  AUFGABEN (TASKS) — v1.22.0
 // ═══════════════════════════════════════════════════════════
@@ -8324,6 +8553,7 @@ function filterTasks() {
 }
 
 function renderTasksTable(tasks) {
+  closeExpandedRow();
   const tbody = document.getElementById('tasks-table-body');
   const countEl = document.getElementById('tasks-count');
 
@@ -8362,7 +8592,7 @@ function renderTasksTable(tasks) {
     return `
       <tr>
         <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
-        <td><div class="cell-link" style="${titelStyle}" onclick="openTaskModal('edit','${esc(t.id)}')">${esc(t.titel || '—')}</div></td>
+        <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}</div></td>
         <td>${fael}</td>
         <td class="col-tablet" style="color:var(--muted)">${assigneeName}</td>
         <td class="col-desktop">${kontextHtml}</td>
@@ -8740,6 +8970,7 @@ async function loadProjectTasks(projectId) {
 }
 
 function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
+  closeExpandedRow();
   const total = tasks.length;
   const offen = tasks.filter(t => t.status !== 'erledigt').length;
   const erledigt = tasks.filter(t => t.status === 'erledigt').length;
@@ -8777,13 +9008,16 @@ function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
     return `
       <tr>
         <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
-        <td><div class="cell-link" style="${titelStyle}" onclick="openTaskModal('edit','${esc(t.id)}')">${esc(t.titel || '—')}</div></td>
+        <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}</div></td>
         <td>${fael}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(assigneeName)}</td>
         <td><span class="badge" style="background:${aufgabeStatusBg(t.status)};color:${aufgabeStatusColor(t.status)}">${esc(aufgabeStatusLabel(t.status))}</span></td>
         <td class="col-action" style="text-align:right">${renderActionIcons('task', t.id)}</td>
       </tr>`;
   }).join('');
+
+  // Auto-Expand wenn genau eine Aufgabe (v1.29)
+  autoExpandSingleRow(tbody, 'task', tasks.slice(0, 10));
 }
 
 async function _refreshTaskContext() {

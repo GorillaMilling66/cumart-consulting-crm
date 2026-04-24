@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.28.0
+**Version:** 1.29.0
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -61,7 +61,7 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 cumart-consulting-crm/
 ├── index.html       ~2.55k Zeilen  (alle Pages + Modals als hidden divs)
 ├── styles.css       ~1.95k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~8.97k Zeilen  (alle Module in einer Datei)
+├── app.js            ~9.20k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -581,7 +581,7 @@ Pro Firma ein zentrales Modal (`#modal-quick-actions`, `openQuickActionsModal(co
 
 Über dem `t-datum`-Input steht eine Button-Reihe `heute` · `morgen` · `+3` · `+7` · `nächster Mo`. `setAppointmentDateShortcut(key)` berechnet das Zieldatum und schreibt es via `toISODate()` in das Input. „Nächster Montag" ist immer mindestens der Montag der Folgewoche (wenn heute schon Montag ist: in 7 Tagen).
 
-### 7.18 Inline-Expand-Row-Dashboards (v1.27.0 Termin, v1.28.0 Einsatz)
+### 7.18 Inline-Expand-Row-Dashboards (v1.27 Termin, v1.28 Einsatz, v1.29 Aufgabe)
 
 **Prinzip:** Klick auf eine Listen-Zeile klappt direkt unterhalb ein Detail-Dashboard auf — Stats, Kontext, verwandte Einträge, Schnellaktionen. Nur **eine Zeile gleichzeitig app-weit**. Auf Mobile (`matchMedia('(max-width: 600px)')`) wird stattdessen das bestehende Bearbeiten-Modal geöffnet, weil eine Aufklapp-Kaskade in schmalen Spalten unübersichtlich wird.
 
@@ -620,6 +620,22 @@ Pro Firma ein zentrales Modal (`#modal-quick-actions`, `openQuickActionsModal(co
   - **Vollbearbeitung** — öffnet das bestehende Einsatz-Modal.
 
 Wirkt in allen 3 Einsatz-Listen: Haupt `#/einsaetze`, Firma-Tab (`loadCompanyDeployments`), Projekt-Tab (`loadProjectDeployments`). Kontakt-Tab existiert für Einsätze nicht, weil Einsätze fachlich nicht direkt an einen Kontakt gekoppelt sind.
+
+**Aufgabe-Dashboard-Inhalt (`renderTaskExpandedRow`, v1.29):**
+- **Stats-Row:** Status · Fälligkeit mit kalkuliertem Label — „vergangen · N Tage überfällig" (rot), „heute" (orange), „in N Tagen" (neutral), oder „Keine Fälligkeit" · Zuständiger (mit „(mir)"-Hint wenn eingeloggter User).
+- **Kontext-Block:** Firma · Kontakt · Projekt · Beschreibung · Notizen.
+- **Verwandte offene Aufgaben** via `OR(company_id.eq, assigned_to.eq)` (also selbe Firma oder selber Zuständiger), `status != 'erledigt'`, max 3, nach Fälligkeit aufsteigend.
+- **Schnellaktionen** (`quickTask*`):
+  - `quickTaskComplete` — Status → `erledigt`, ruft `updateTaskBadge()` zusätzlich auf.
+  - `quickTaskReopen` — Status → `offen` (für erledigte Aufgaben).
+  - `quickTaskPostpone(id, days=7)` — verschiebt Fälligkeit um N Tage (relativ zum aktuellen Datum oder zu heute wenn keine Fälligkeit gesetzt war).
+  - `quickTaskAssignToMe` — setzt `assigned_to` auf `currentProfile.id` (Button nur sichtbar wenn derzeit andere Person zuständig).
+  - `quickTaskFollowup` — Aufgabe-Modal `new` mit Firma/Kontakt/Projekt-Prefill, Titel = „Folge zu: …".
+  - **Vollbearbeitung** — Modal öffnen.
+
+Wirkt in allen 4 Aufgaben-Listen: Haupt `#/aufgaben` (`renderTasksTable`) und Firma/Kontakt/Projekt-Tab (gemeinsam gerendert von `renderDetailTaskRows`). Das bestehende Häkchen am Zeilenanfang („als erledigt markieren") und die Action-Icons bleiben unverändert — sie geben schnelle Toggle- und Kebab-Optionen, ohne das Dashboard öffnen zu müssen. Refresh nach Schnellaktionen läuft über `_refreshTaskContext()`, den es bereits vor dem Inline-Expand gab; keine Duplikation.
+
+**Konsistenz am Ende:** Termin/Einsatz/Aufgabe haben jetzt dieselbe Interaktion. Firma/Kontakt/Projekt behalten ihre eigenen Detail-Routen mit Dashboard, weil sie fachlich sowohl Container anderer Entitäten als auch eigenständige Karteikarten sind — für sie wäre Inline-Expansion die kleinere Information. Das Regal-Prinzip: kleine Objekte (Termine/Einsätze/Aufgaben) klappen auf, große (Firma/Kontakt/Projekt) sind eigene Seiten.
 
 **CSS:** `.expanded-row-panel-inner` mit Accordion-Animation (`expandRowIn`, 160 ms), linker blauer Akzent-Border, Light-Purple-Highlight auf der Trigger-Zeile. `.erp-stats` / `.erp-kv` / `.erp-actions` / `.erp-related` bilden die Dashboard-Sub-Komponenten. Layout wird bei `<800 px` einspaltig.
 
@@ -825,7 +841,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.26.0 | 24.04.2026  | Kontakt-Dashboard-Parität — Kontakt-Stammdaten-Tab zeigt dieselbe Dashboard-Struktur wie Firma: Umsatz-Card spiegelt den Kalenderjahr-Umsatz der zugeordneten Firma (Label „Umsatz {Firma} · {YEAR}", Klick navigiert zur Firma), ABC-Card ist klickbar und öffnet das ABC-Edit-Popover der Firma (Kontakt bleibt Readonly-Spiegel, aber Edit geht direkt über den Kontakt-Screen; `setCompanyAbc` refresht das Kontakt-Detail automatisch). Bevorstehend-Card mischt geplante Kontakt-Termine mit geplanten Einsätzen der Firma; Letzte Aktivität analog. Neues Opportunities-Widget für Projekte, in denen der Kontakt **Hauptkontakt** ist und Status Lead/Angebot haben. Schnellaktionen-Button im Quick-Create-Panel öffnet das bestehende Quick-Actions-Modal mit Firma-Kontext (bei Kontakt ohne Firma: `disabled`). ABC-Renderer generalisiert (`renderAbcBadgeIn`) — Firma + Kontakt teilen dieselbe Badge/Label/Modus-Logik. Kein Schema-Change. |
 | v1.27.0 | 24.04.2026  | Inline-Expand-Row-Dashboard für Termine — Klick auf einen Termin-Titel in einer Liste klappt direkt darunter ein Detail-Dashboard auf: Stats (Status, Typ, Datum mit vergangen/heute/kommend-Label, Uhrzeit, ABC der Firma, gekoppelter Einsatz), Kontext (Firma/Kontakt/Projekt/Ort/Notizen), letzte 3 Termine derselben Firma, offene Aufgaben im Kontext, Schnellaktionen: als durchgeführt markieren · Folge-Termin (+1 Woche, Prefill Firma/Kontakt/Typ/Ort) · Aufgabe aus Termin · Einsatz aus Termin (mit Datum/Uhrzeit/Ort-Übernahme) · Vollbearbeitung. Nur eine Zeile gleichzeitig aufklappbar app-weit; Mobile (<600 px) fällt automatisch auf das Bearbeiten-Modal zurück. Wirkt in allen 4 Termin-Listen (Haupt, Firma-Tab, Kontakt-Tab, Projekt-Tab). Shared Infrastruktur `toggleRowExpand` / `closeExpandedRow` / `renderAppointmentExpandedRow` — wiederverwendbar für Einsatz v1.28 und Aufgabe v1.29. Kein Schema-Change. |
 | v1.27.1 | 24.04.2026  | Auto-Expand bei genau einem Termin — Wenn in einem Detail-Tab (Firma/Kontakt/Projekt → Termine) nur ein einziger Termin angezeigt wird, klappt das Dashboard direkt nach dem Rendern automatisch auf. Greift nicht in der globalen Haupt-Liste und nicht auf Mobile. Helper `autoExpandSingleAppointmentRow(tbody, items)`. |
-| **v1.28.0** | **24.04.2026** | **Einsatz-Inline-Expand-Dashboard** — Klick auf einen Einsatz-Titel klappt darunter das Detail-Dashboard auf. Stats (Status, Wert bzw. Aufwand bei Projekt-Zugehörigkeit, Datum/Zeitraum, ABC der Firma, Projekt-Verknüpfung, gekoppelter Termin, Bonus-Einlösung), Kontext (Firma · Leistung · Techniker intern+extern · Uhrzeit · Menge×Preis · Ort · Notizen), Projekt-Kontext mit Soll/Ist-Marge wenn im Projekt, Historie der letzten 3 Einsätze derselben Firma. Schnellaktionen: als durchgeführt (aus Geplant) · als abgerechnet (aus Durchgeführt) · duplizieren · Folge-Einsatz (Prefill Firma/Projekt/Service/Ort/Titel, Datum leer) · Vollbearbeitung. Wirkt in allen 3 Einsatz-Listen (Haupt, Firma-Tab, Projekt-Tab). Auto-Expand bei genau einem Einsatz in den Detail-Tabs. Shared Helper `autoExpandSingleRow(tbody, entityType, items)` ersetzt die Appointment-spezifische Variante. Kein Schema-Change. |
+| v1.28.0 | 24.04.2026  | Einsatz-Inline-Expand-Dashboard — Klick auf einen Einsatz-Titel klappt darunter das Detail-Dashboard auf. Stats (Status, Wert bzw. Aufwand bei Projekt-Zugehörigkeit, Datum/Zeitraum, ABC der Firma, Projekt-Verknüpfung, gekoppelter Termin, Bonus-Einlösung), Kontext (Firma · Leistung · Techniker intern+extern · Uhrzeit · Menge×Preis · Ort · Notizen), Projekt-Kontext mit Soll/Ist-Marge wenn im Projekt, Historie der letzten 3 Einsätze derselben Firma. Schnellaktionen: als durchgeführt (aus Geplant) · als abgerechnet (aus Durchgeführt) · duplizieren · Folge-Einsatz (Prefill Firma/Projekt/Service/Ort/Titel, Datum leer) · Vollbearbeitung. Wirkt in allen 3 Einsatz-Listen (Haupt, Firma-Tab, Projekt-Tab). Auto-Expand bei genau einem Einsatz in den Detail-Tabs. Shared Helper `autoExpandSingleRow(tbody, entityType, items)` ersetzt die Appointment-spezifische Variante. Kein Schema-Change. |
+| **v1.29.0** | **24.04.2026** | **Aufgabe-Inline-Expand-Dashboard** — Damit haben Termin/Einsatz/Aufgabe app-weit dieselbe Klick-Interaktion. Aufgabe-Dashboard: Stats (Status · Fälligkeit mit Tage-bis/überfällig/heute-Label · Zuständiger mit „(mir)"-Hint), Kontext (Firma/Kontakt/Projekt/Beschreibung/Notizen), verwandte offene Aufgaben (selbe Firma ODER selber Zuständiger, max 3). Schnellaktionen: erledigen · wieder öffnen (bei erledigten) · Fälligkeit +7 Tage · mir zuweisen (wenn anderer zuständig) · Folge-Aufgabe mit gleichem Kontext · Vollbearbeitung. Wirkt in allen 4 Aufgaben-Listen (Haupt, Firma-Tab, Kontakt-Tab, Projekt-Tab, gemeinsam gerendert von `renderDetailTaskRows`). Auto-Expand bei genau einer Aufgabe in Detail-Tabs. Kein Schema-Change. |
 
 ---
 
