@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.29.0
+**Version:** 1.30.0
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -59,9 +59,9 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.55k Zeilen  (alle Pages + Modals als hidden divs)
+├── index.html       ~2.62k Zeilen  (alle Pages + Modals als hidden divs)
 ├── styles.css       ~1.95k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~9.20k Zeilen  (alle Module in einer Datei)
+├── app.js            ~9.44k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -539,7 +539,7 @@ Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizont
 - **Mobile:** Tab-Leiste horizontal scrollbar (`overflow-x:auto`), kleinere Paddings.
 - **Kein Preloading:** Tabs zeigen bereits geladene Daten an (ein `SELECT ...WHERE entity_id=...` pro Sub-Sektion beim Öffnen der Detail-Seite). Tab-Wechsel = reiner DOM-Toggle, keine zusätzlichen Queries.
 
-### 7.15 Stammdaten-Dashboard (v1.24.0, erweitert v1.25.0, Kontakt-Parität v1.26.0)
+### 7.15 Stammdaten-Dashboard (v1.24.0, erweitert v1.25.0, Kontakt-Parität v1.26.0, Projekt-Parität v1.30.0)
 
 Der Stammdaten-Tab auf Firma- und Kontakt-Detail zeigt ein Mini-Dashboard im 2-Spalten-Layout (ab 960 px Viewport-Breite):
 
@@ -572,6 +572,20 @@ Mobile (<960 px): Quick-Create-Panel rutscht unter den Main-Bereich (nicht stick
 - **Bevorstehend** dasselbe Muster: geplante Termine am Kontakt + geplante Einsätze der Firma.
 - **Opportunities** zeigen Projekte, in denen **dieser Kontakt Hauptkontakt** ist und Status `Lead`/`Angebot` haben — bewusst nicht alle Firma-Projekte, sonst hätten alle Kontakte derselben Firma dieselbe Liste.
 - **Schnellaktionen-Button** im Quick-Create-Panel öffnet das Quick-Actions-Modal mit Firma-Kontext. Bei Kontakt ohne Firma `disabled`.
+
+**Projekt-Parität (v1.30):** Der Projekt-Stammdaten-Tab hatte bis v1.29 noch das alte `detail-grid`-Layout und wurde bei der Vereinheitlichungs-Runde v1.24–v1.26 versehentlich übersprungen. v1.30 zieht ihn auf dasselbe Dashboard-Muster:
+
+- **4 Stats-Cards** (Projekt hat mehr eigenständige Kennzahlen als Firma/Kontakt, darum eine Card mehr):
+  - **Status** — Status-Badge + Subline „Start: DD.MM.YYYY" oder „Noch nicht gestartet".
+  - **Wirtschaftlichkeit** — Haupt-Wert: Marge / Überziehung (farbig: grün/rot). Subline: `Paket X € · Aufwand Y €`. Aufwand = Summe aller Einsätze im Projekt (ohne Status-Filter, reine Ist-Rechnung). Bei Paket=0 und Aufwand=0 wird „—" angezeigt.
+  - **Zeitplan** — „in N Tagen" / „heute" (orange) / „N Tage überzogen" (rot) / „Abgeschlossen" (grün, wenn Status = Abgeschlossen) / „Kein Enddatum" (wenn `enddatum IS NULL`). Subline: „Enddatum: DD.MM.YYYY".
+  - **Offene Aufgaben** analog zu Firma/Kontakt (Count + rot wenn überfällig).
+- **Aktivität 2-spaltig**: Letzte Aktivität (letzter durchgeführter Termin + letzter durchgeführter/abgerechneter Einsatz im Projekt) neben Bevorstehend (nächste geplante Termine/Einsätze).
+- **Inline-editierbare Beschreibung + Notizen** — zwei separate `<textarea>`-Felder mit auto-save on blur (`saveProjectBeschreibungInline`, `saveProjectNotizenInline`). Ersetzt die readonly-Darstellung, die vorher nur via Bearbeiten-Modal änderbar war.
+- **Quick-Create-Panel rechts**: + Termin · + Einsatz (mit Firma-Prefill aus dem Projekt) · + Aufgabe. Die bestehenden „+ hinzufügen"-Buttons in den Sub-Tab-Headern bleiben — Redundanz ist gewollt, weil sie im jeweiligen Tab-Kontext bleiben.
+- **Kein ABC-Widget, keine Opportunities** bei Projekt: ABC lebt an der Firma, und ein Projekt ist fachlich schon selbst die Opportunity.
+
+Widget-Loader: `loadProjectDashboard(p)` feuert 6 parallele Queries für Einsätze/Aufgaben/Letzte/Bevorstehende. Status- und Deadline-Card werden synchron aus den Projektdaten befüllt — sofort sichtbar, bevor die Supabase-Calls zurückkommen.
 
 ### 7.16 Schnellaktionen-Modal (v1.25.0)
 
@@ -842,7 +856,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.27.0 | 24.04.2026  | Inline-Expand-Row-Dashboard für Termine — Klick auf einen Termin-Titel in einer Liste klappt direkt darunter ein Detail-Dashboard auf: Stats (Status, Typ, Datum mit vergangen/heute/kommend-Label, Uhrzeit, ABC der Firma, gekoppelter Einsatz), Kontext (Firma/Kontakt/Projekt/Ort/Notizen), letzte 3 Termine derselben Firma, offene Aufgaben im Kontext, Schnellaktionen: als durchgeführt markieren · Folge-Termin (+1 Woche, Prefill Firma/Kontakt/Typ/Ort) · Aufgabe aus Termin · Einsatz aus Termin (mit Datum/Uhrzeit/Ort-Übernahme) · Vollbearbeitung. Nur eine Zeile gleichzeitig aufklappbar app-weit; Mobile (<600 px) fällt automatisch auf das Bearbeiten-Modal zurück. Wirkt in allen 4 Termin-Listen (Haupt, Firma-Tab, Kontakt-Tab, Projekt-Tab). Shared Infrastruktur `toggleRowExpand` / `closeExpandedRow` / `renderAppointmentExpandedRow` — wiederverwendbar für Einsatz v1.28 und Aufgabe v1.29. Kein Schema-Change. |
 | v1.27.1 | 24.04.2026  | Auto-Expand bei genau einem Termin — Wenn in einem Detail-Tab (Firma/Kontakt/Projekt → Termine) nur ein einziger Termin angezeigt wird, klappt das Dashboard direkt nach dem Rendern automatisch auf. Greift nicht in der globalen Haupt-Liste und nicht auf Mobile. Helper `autoExpandSingleAppointmentRow(tbody, items)`. |
 | v1.28.0 | 24.04.2026  | Einsatz-Inline-Expand-Dashboard — Klick auf einen Einsatz-Titel klappt darunter das Detail-Dashboard auf. Stats (Status, Wert bzw. Aufwand bei Projekt-Zugehörigkeit, Datum/Zeitraum, ABC der Firma, Projekt-Verknüpfung, gekoppelter Termin, Bonus-Einlösung), Kontext (Firma · Leistung · Techniker intern+extern · Uhrzeit · Menge×Preis · Ort · Notizen), Projekt-Kontext mit Soll/Ist-Marge wenn im Projekt, Historie der letzten 3 Einsätze derselben Firma. Schnellaktionen: als durchgeführt (aus Geplant) · als abgerechnet (aus Durchgeführt) · duplizieren · Folge-Einsatz (Prefill Firma/Projekt/Service/Ort/Titel, Datum leer) · Vollbearbeitung. Wirkt in allen 3 Einsatz-Listen (Haupt, Firma-Tab, Projekt-Tab). Auto-Expand bei genau einem Einsatz in den Detail-Tabs. Shared Helper `autoExpandSingleRow(tbody, entityType, items)` ersetzt die Appointment-spezifische Variante. Kein Schema-Change. |
-| **v1.29.0** | **24.04.2026** | **Aufgabe-Inline-Expand-Dashboard** — Damit haben Termin/Einsatz/Aufgabe app-weit dieselbe Klick-Interaktion. Aufgabe-Dashboard: Stats (Status · Fälligkeit mit Tage-bis/überfällig/heute-Label · Zuständiger mit „(mir)"-Hint), Kontext (Firma/Kontakt/Projekt/Beschreibung/Notizen), verwandte offene Aufgaben (selbe Firma ODER selber Zuständiger, max 3). Schnellaktionen: erledigen · wieder öffnen (bei erledigten) · Fälligkeit +7 Tage · mir zuweisen (wenn anderer zuständig) · Folge-Aufgabe mit gleichem Kontext · Vollbearbeitung. Wirkt in allen 4 Aufgaben-Listen (Haupt, Firma-Tab, Kontakt-Tab, Projekt-Tab, gemeinsam gerendert von `renderDetailTaskRows`). Auto-Expand bei genau einer Aufgabe in Detail-Tabs. Kein Schema-Change. |
+| v1.29.0 | 24.04.2026  | Aufgabe-Inline-Expand-Dashboard — Damit haben Termin/Einsatz/Aufgabe app-weit dieselbe Klick-Interaktion. Aufgabe-Dashboard: Stats (Status · Fälligkeit mit Tage-bis/überfällig/heute-Label · Zuständiger mit „(mir)"-Hint), Kontext (Firma/Kontakt/Projekt/Beschreibung/Notizen), verwandte offene Aufgaben (selbe Firma ODER selber Zuständiger, max 3). Schnellaktionen: erledigen · wieder öffnen · Fälligkeit +7 Tage · mir zuweisen · Folge-Aufgabe · Vollbearbeitung. Wirkt in allen 4 Aufgaben-Listen. Kein Schema-Change. |
+| **v1.30.0** | **24.04.2026** | **Projekt-Dashboard-Parität** — Schließt die letzte Lücke in der Dashboard-Vereinheitlichung. Projekt-Stammdaten-Tab bekommt dasselbe Layout wie Firma/Kontakt: 4 Stats-Cards (Status · Wirtschaftlichkeit mit Marge/Überziehung farbig · Zeitplan mit Tage-bis/überzogen/abgeschlossen · Offene Aufgaben mit rot bei überfällig), 2-spaltige Aktivitäts-Zeile „Letzte Aktivität" neben „Bevorstehend", inline-editierbare Beschreibung + Notizen (auto-save on blur), Quick-Create-Panel rechts für + Termin · + Einsatz · + Aufgabe. Kein ABC und keine Opportunities — ABC lebt an der Firma, ein Projekt ist fachlich schon selbst die Opportunity. Neue Funktionen `loadProjectDashboard(p)`, `saveProjectBeschreibungInline`, `saveProjectNotizenInline`. Kein Schema-Change. |
 
 ---
 

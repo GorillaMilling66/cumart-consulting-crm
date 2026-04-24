@@ -1157,20 +1157,85 @@
         <button class="detail-tab" data-tab="einsaetze" onclick="switchDetailTab('project','einsaetze')">Einsätze <span class="tab-count" id="tab-count-project-einsaetze" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten -->
+      <!-- PANEL: Stammdaten (Dashboard v1.30.0 — an Firma-Dashboard angeglichen) -->
       <div class="detail-tab-panel active" data-tab="stammdaten">
-        <div class="card">
-          <div class="detail-grid" id="project-detail-info"></div>
+        <div class="detail-dashboard">
+          <div class="dashboard-main">
+            <div class="dashboard-stats">
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Status</div>
+                  <div class="stat-value" id="project-status-value">—</div>
+                  <div class="stat-subline" id="project-status-subline">&nbsp;</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label" id="project-finance-label">Wirtschaftlichkeit</div>
+                  <div class="stat-value" id="project-finance-margin">—</div>
+                  <div class="stat-subline" id="project-finance-subline">&nbsp;</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Zeitplan</div>
+                  <div class="stat-value" id="project-deadline-value">—</div>
+                  <div class="stat-subline" id="project-deadline-subline">&nbsp;</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-body">
+                  <div class="stat-label">Offene Aufgaben</div>
+                  <div class="stat-value" id="project-open-tasks">—</div>
+                </div>
+              </div>
+            </div>
 
-          <div id="project-detail-beschreibung-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <div class="detail-label">Beschreibung</div>
-            <div id="project-detail-beschreibung" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
+            <div class="dashboard-row-2col">
+              <div class="info-card">
+                <div class="info-card-title">Letzte Aktivität</div>
+                <div id="project-last-activity"><div class="info-card-empty">Lade ...</div></div>
+              </div>
+              <div class="info-card">
+                <div class="info-card-title">Bevorstehend</div>
+                <div id="project-upcoming-activity"><div class="info-card-empty">Lade ...</div></div>
+              </div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Projektdaten</div>
+              <div class="detail-grid" id="project-detail-info"></div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Beschreibung</div>
+              <textarea class="notes-edit-area" id="project-beschreibung-inline"
+                        placeholder="Kurzbeschreibung des Projekts ..."
+                        onblur="saveProjectBeschreibungInline()"></textarea>
+              <div id="project-beschreibung-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Notizen</div>
+              <textarea class="notes-edit-area" id="project-notizen-inline"
+                        placeholder="Freitext-Notizen zum Projekt ..."
+                        onblur="saveProjectNotizenInline()"></textarea>
+              <div id="project-notizen-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
+            </div>
           </div>
 
-          <div id="project-detail-notizen-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <div class="detail-label">Notizen</div>
-            <div id="project-detail-notizen" style="font-size:13px;white-space:pre-wrap;color:var(--text);margin-top:4px"></div>
-          </div>
+          <aside class="quick-create-panel">
+            <div class="quick-create-title">Schnell anlegen</div>
+            <button class="quick-create-btn" id="project-quick-appointment">
+              <span class="plus-icon">+</span> Termin
+            </button>
+            <button class="quick-create-btn" id="project-quick-deployment">
+              <span class="plus-icon">+</span> Einsatz
+            </button>
+            <button class="quick-create-btn" id="project-quick-task">
+              <span class="plus-icon">+</span> Aufgabe
+            </button>
+          </aside>
         </div>
       </div>
 

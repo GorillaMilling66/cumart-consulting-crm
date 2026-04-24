@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.30.0 (Projekt-Dashboard-Parität — Projekt-
+   Stammdaten-Tab bekommt dasselbe Dashboard-Layout wie
+   Firma/Kontakt: 4 Stats-Cards (Status · Wirtschaftlichkeit
+   mit Marge/Überziehung · Zeitplan mit Tage-bis/überzogen ·
+   Offene Aufgaben), 2-col „Letzte Aktivität" + „Bevorstehend",
+   Inline-editierbare Beschreibung + Notizen, Quick-Create-
+   Panel rechts (Termin/Einsatz/Aufgabe). Schließt die letzte
+   Lücke in der Dashboard-Vereinheitlichung.)
    Version 1.29.0 (Aufgabe-Inline-Expand-Dashboard — damit
    haben alle vier Entitäten den gleichen Klick-Flow: Termin
    (v1.27), Einsatz (v1.28), Aufgabe (v1.29) klappen das
@@ -4594,19 +4602,36 @@ function renderProjectDetail(p) {
     </div>
   `;
 
-  if (p.beschreibung) {
-    document.getElementById('project-detail-beschreibung-wrap').style.display = '';
-    document.getElementById('project-detail-beschreibung').textContent = p.beschreibung;
-  } else {
-    document.getElementById('project-detail-beschreibung-wrap').style.display = 'none';
+  // Inline-Beschreibung + Notizen (v1.30)
+  const beschreibungArea = document.getElementById('project-beschreibung-inline');
+  if (beschreibungArea) {
+    beschreibungArea.value = p.beschreibung || '';
+    beschreibungArea.dataset.savedValue = p.beschreibung || '';
+    beschreibungArea.dataset.projectId = p.id;
+    document.getElementById('project-beschreibung-save-status').textContent = '';
+  }
+  const notizenArea = document.getElementById('project-notizen-inline');
+  if (notizenArea) {
+    notizenArea.value = p.notizen || '';
+    notizenArea.dataset.savedValue = p.notizen || '';
+    notizenArea.dataset.projectId = p.id;
+    document.getElementById('project-notizen-save-status').textContent = '';
   }
 
-  if (p.notizen) {
-    document.getElementById('project-detail-notizen-wrap').style.display = '';
-    document.getElementById('project-detail-notizen').textContent = p.notizen;
-  } else {
-    document.getElementById('project-detail-notizen-wrap').style.display = 'none';
-  }
+  // Quick-Create-Panel (v1.30) — ersetzt die Einzelbuttons im Header der Sub-Tabs
+  const qcAppt = document.getElementById('project-quick-appointment');
+  if (qcAppt) qcAppt.onclick = () => { appointmentModalPrefillProjectId = p.id; openAppointmentModal('new'); };
+  const qcDep = document.getElementById('project-quick-deployment');
+  if (qcDep) qcDep.onclick = () => {
+    deploymentModalPrefillProjectId = p.id;
+    deploymentModalPrefillCompanyId = p.company?.id || null;
+    openDeploymentModal('new');
+  };
+  const qcTask = document.getElementById('project-quick-task');
+  if (qcTask) qcTask.onclick = () => { taskModalPrefillProjectId = p.id; openTaskModal('new'); };
+
+  // Dashboard-Stats asynchron laden (v1.30)
+  loadProjectDashboard(p);
 }
 
 async function loadProjectAppointments(projectId) {
@@ -7445,6 +7470,211 @@ async function saveContactNotesInline() {
   statusEl.textContent = 'Speichere ...';
   const { error } = await db.from('contacts')
     .update({ notizen: newValue || null }).eq('id', contactId);
+  if (error) {
+    statusEl.textContent = 'Fehler beim Speichern: ' + error.message;
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  area.dataset.savedValue = newValue;
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = 'Gespeichert ✓';
+  setTimeout(() => { if (statusEl.textContent === 'Gespeichert ✓') statusEl.textContent = ''; }, 2000);
+}
+
+/** Lädt Projekt-Dashboard-Stats (v1.30): Wirtschaftlichkeit + Offene Aufgaben +
+ *  Letzte/Bevorstehende Aktivität. Die Status- und Deadline-Cards werden direkt
+ *  aus den Projektdaten befüllt (synchron), die restlichen parallel. */
+async function loadProjectDashboard(p) {
+  const now = new Date();
+  const todayISO = toISODate(now);
+
+  // ── STATUS-CARD (synchron aus den Projektdaten) ─────────────
+  const statusEl = document.getElementById('project-status-value');
+  const statusSublineEl = document.getElementById('project-status-subline');
+  if (statusEl) {
+    const color = projektStatusFarbe(p.status);
+    statusEl.innerHTML = `<span class="badge" style="background:${esc(color)}22;color:${esc(color)}">${esc(p.status)}</span>`;
+  }
+  if (statusSublineEl) {
+    if (p.startdatum) statusSublineEl.textContent = `Start: ${formatDateDE(p.startdatum)}`;
+    else              statusSublineEl.textContent = 'Noch nicht gestartet';
+  }
+
+  // ── DEADLINE-CARD ───────────────────────────────────────────
+  const deadlineEl = document.getElementById('project-deadline-value');
+  const deadlineSublineEl = document.getElementById('project-deadline-subline');
+  if (deadlineEl) {
+    if (!p.enddatum) {
+      deadlineEl.innerHTML = '<span class="stat-value-muted">Kein Enddatum</span>';
+      if (deadlineSublineEl) deadlineSublineEl.textContent = '';
+    } else {
+      const days = Math.round((new Date(p.enddatum) - new Date(todayISO)) / 86400000);
+      const isClosed = p.status === 'Abgeschlossen';
+      if (isClosed) {
+        deadlineEl.innerHTML = '<span style="color:var(--success);font-weight:600">Abgeschlossen</span>';
+      } else if (days < 0) {
+        deadlineEl.innerHTML = `<span style="color:var(--danger);font-weight:600">${Math.abs(days)} Tag${Math.abs(days)===1?'':'e'} überzogen</span>`;
+      } else if (days === 0) {
+        deadlineEl.innerHTML = `<span style="color:var(--warning);font-weight:600">heute</span>`;
+      } else {
+        deadlineEl.innerHTML = `in ${days} Tag${days===1?'':'en'}`;
+      }
+      if (deadlineSublineEl) deadlineSublineEl.textContent = `Enddatum: ${formatDateDE(p.enddatum)}`;
+    }
+  }
+
+  // ── PARALLEL: Finanz-Queries + Aktivität + Aufgaben ─────────
+  const [
+    depsResult,
+    openTasksResult,
+    lastApptResult, lastDepResult,
+    upcomingApptResult, upcomingDepResult
+  ] = await Promise.all([
+    // Projekt-Einsätze für Soll/Ist
+    db.from('deployments').select('menge, einzelpreis').is('deleted_at', null).eq('project_id', p.id),
+    // Offene Aufgaben
+    db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
+      .eq('project_id', p.id).neq('status', 'erledigt'),
+    // Letzter durchgeführter Termin
+    db.from('appointments')
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .eq('project_id', p.id).eq('status', 'durchgefuehrt')
+      .order('datum', { ascending: false }).limit(1),
+    // Letzter durchgeführter/abgerechneter Einsatz
+    db.from('deployments')
+      .select('id, titel, datum_von').is('deleted_at', null)
+      .eq('project_id', p.id).in('status', ['Durchgeführt', 'Abgerechnet'])
+      .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
+    // Bevorstehender geplanter Termin
+    db.from('appointments')
+      .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .eq('project_id', p.id).eq('status', 'geplant')
+      .gte('datum', todayISO).order('datum', { ascending: true }).limit(2),
+    // Bevorstehender geplanter Einsatz
+    db.from('deployments')
+      .select('id, titel, datum_von').is('deleted_at', null)
+      .eq('project_id', p.id).eq('status', 'Geplant')
+      .gte('datum_von', todayISO).order('datum_von', { ascending: true }).limit(2)
+  ]);
+
+  // ── FINANCE-CARD: Soll vs. Ist + Marge ─────────────────────
+  const aufwand = (depsResult.data || [])
+    .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  const paket = Number(p.geschaetzter_umsatz) || 0;
+  const marge = paket - aufwand;
+
+  const financeMarginEl = document.getElementById('project-finance-margin');
+  const financeSublineEl = document.getElementById('project-finance-subline');
+  if (financeMarginEl) {
+    if (paket === 0 && aufwand === 0) {
+      financeMarginEl.innerHTML = '<span class="stat-value-muted">—</span>';
+    } else {
+      const color = marge >= 0 ? 'var(--success)' : 'var(--danger)';
+      const label = marge >= 0 ? 'Marge' : 'Überziehung';
+      financeMarginEl.innerHTML = `<span style="color:${color};font-weight:600">${esc(formatPreis(Math.abs(marge)))}</span> <span style="color:var(--muted);font-size:11px">${esc(label)}</span>`;
+    }
+  }
+  if (financeSublineEl) {
+    financeSublineEl.textContent = `Paket ${formatPreis(paket)} · Aufwand ${formatPreis(aufwand)}`;
+  }
+
+  // ── AUFGABEN-CARD ─────────────────────────────────────────
+  const openTasks = openTasksResult.data || [];
+  const offenCount = openTasks.length;
+  const ueberfaellig = openTasks.filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
+  const tasksEl = document.getElementById('project-open-tasks');
+  if (tasksEl) {
+    tasksEl.textContent = String(offenCount);
+    tasksEl.classList.toggle('stat-value-muted', offenCount === 0);
+    tasksEl.classList.toggle('stat-value-overdue', ueberfaellig > 0);
+    tasksEl.title = ueberfaellig > 0 ? `${offenCount} offen, davon ${ueberfaellig} überfällig` : `${offenCount} offen`;
+  }
+
+  // ── LETZTE AKTIVITÄT (Termin + Einsatz im Projekt) ────────
+  const lastAppt = (lastApptResult.data || [])[0] || null;
+  const lastDep  = (lastDepResult.data || [])[0] || null;
+  const lastEl   = document.getElementById('project-last-activity');
+  if (lastEl) {
+    const items = [];
+    if (lastAppt) items.push({
+      datum: lastAppt.datum, titel: lastAppt.titel, type: 'Termin',
+      typWert: lastAppt.typ?.wert,
+      onClick: `openAppointmentModal('edit','${esc(lastAppt.id)}')`
+    });
+    if (lastDep?.datum_von) items.push({
+      datum: lastDep.datum_von, titel: lastDep.titel, type: 'Einsatz',
+      onClick: `openDeploymentModal('edit','${esc(lastDep.id)}')`
+    });
+    items.sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
+    lastEl.innerHTML = items.length === 0
+      ? '<div class="info-card-empty">Noch nichts durchgeführt.</div>'
+      : items.slice(0, 2).map(i => `
+        <div class="last-activity-item" style="cursor:pointer" onclick="${i.onClick}">
+          <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
+          <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+        </div>
+      `).join('');
+  }
+
+  // ── BEVORSTEHEND ─────────────────────────────────────────
+  const upcomingEl = document.getElementById('project-upcoming-activity');
+  if (upcomingEl) {
+    const items = [];
+    (upcomingApptResult.data || []).forEach(a => items.push({
+      datum: a.datum, titel: a.titel, type: 'Termin', typWert: a.typ?.wert,
+      onClick: `openAppointmentModal('edit','${esc(a.id)}')`
+    }));
+    (upcomingDepResult.data || []).forEach(dd => items.push({
+      datum: dd.datum_von, titel: dd.titel, type: 'Einsatz',
+      onClick: `openDeploymentModal('edit','${esc(dd.id)}')`
+    }));
+    items.sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+    upcomingEl.innerHTML = items.length === 0
+      ? '<div class="info-card-empty">Nichts geplant.</div>'
+      : items.slice(0, 2).map(i => `
+        <div class="last-activity-item" style="cursor:pointer" onclick="${i.onClick}">
+          <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
+          <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+        </div>
+      `).join('');
+  }
+}
+
+/** Inline-Save Projekt-Beschreibung (v1.30). */
+async function saveProjectBeschreibungInline() {
+  const area = document.getElementById('project-beschreibung-inline');
+  const statusEl = document.getElementById('project-beschreibung-save-status');
+  const newValue = area.value;
+  const oldValue = area.dataset.savedValue || '';
+  const projectId = area.dataset.projectId;
+  if (!projectId || newValue === oldValue) return;
+
+  statusEl.textContent = 'Speichere ...';
+  const { error } = await db.from('projects')
+    .update({ beschreibung: newValue || null }).eq('id', projectId);
+  if (error) {
+    statusEl.textContent = 'Fehler beim Speichern: ' + error.message;
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  area.dataset.savedValue = newValue;
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = 'Gespeichert ✓';
+  setTimeout(() => { if (statusEl.textContent === 'Gespeichert ✓') statusEl.textContent = ''; }, 2000);
+}
+
+/** Inline-Save Projekt-Notizen (v1.30). */
+async function saveProjectNotizenInline() {
+  const area = document.getElementById('project-notizen-inline');
+  const statusEl = document.getElementById('project-notizen-save-status');
+  const newValue = area.value;
+  const oldValue = area.dataset.savedValue || '';
+  const projectId = area.dataset.projectId;
+  if (!projectId || newValue === oldValue) return;
+
+  statusEl.textContent = 'Speichere ...';
+  const { error } = await db.from('projects')
+    .update({ notizen: newValue || null }).eq('id', projectId);
   if (error) {
     statusEl.textContent = 'Fehler beim Speichern: ' + error.message;
     statusEl.style.color = 'var(--danger)';
