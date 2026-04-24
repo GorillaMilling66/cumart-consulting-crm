@@ -1954,19 +1954,37 @@ tr.expanded-row > td {
   .erp-body { grid-template-columns: 1fr; }
 }
 
-/* Linker Kontext-Wrapper als Card (v1.35.3) */
+/* Kontext-Card — 2-spaltig: links Primär-Infos, rechts Verwandtes (v1.36.2) */
 .erp-context-block {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 14px 16px;
+  padding: 18px 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.erp-context-block.erp-context-block-single {
+  grid-template-columns: 1fr;
+}
+.erp-context-main { min-width: 0; }
+.erp-context-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .erp-context-block {
+    grid-template-columns: 1fr;
+  }
 }
 
 .erp-kv {
   display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 6px 14px;
-  font-size: 13px;
+  grid-template-columns: 100px 1fr;
+  gap: 8px 16px;
+  font-size: 14px;
 }
 .erp-kv-label { color: var(--muted); }
 .erp-kv-value { color: var(--text); word-break: break-word; }
@@ -1976,9 +1994,12 @@ tr.expanded-row > td {
   font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .03em;
-  margin-top: 14px;
-  margin-bottom: 8px;
+  letter-spacing: .05em;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .erp-actions {
@@ -2028,22 +2049,24 @@ tr.expanded-row > td {
 }
 
 .erp-related {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  /* in Aside gestapelt — kein top-border mehr, stattdessen durch Gap getrennt (v1.36.2) */
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 .erp-related-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 6px 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 .erp-related-row + .erp-related-row { border-top: 1px dashed var(--border); }
-.erp-related-date { color: var(--muted); min-width: 90px; }
-.erp-related-title { flex: 1; color: var(--text); cursor: pointer; }
+.erp-related-date { color: var(--muted); min-width: 100px; flex-shrink: 0; }
+.erp-related-title { flex: 1; color: var(--text); cursor: pointer; min-width: 0; }
 .erp-related-title:hover { color: var(--link); }
-.erp-related-meta { color: var(--muted); font-size: 11px; }
+.erp-related-meta { color: var(--muted); font-size: 12px; flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════════════════
    KALENDER-BAR (v1.32.0)

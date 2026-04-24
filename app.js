@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.36.2 (Kontext-Card im Inline-Expand-Dashboard nutzt
+   jetzt die volle Breite: 2-Spalten-Layout mit Primär-Infos
+   links (Firma/Leistung/Techniker/Menge/Ort/Notizen) und
+   Verwandtem rechts (Projekt-Kontext, Historie, verwandte
+   Aufgaben). Schriftgrößen leicht erhöht: erp-kv 13→14 px,
+   erp-related 12→13 px.)
+   Version 1.36.1 (Stats-Items im Expand-Dashboard strecken
+   sich gleichmäßig über die volle Breite — flex: 1 1 130px.)
    Version 1.36.0 (Sidebar-Branding + globale Top-Header-Suche:
    Sidebar-Kopf zeigt jetzt das Cumart-Logo (SVG), darunter
    „Cumart Consulting" (klein, uppercase) und „Cumart CRM",
@@ -8299,15 +8307,16 @@ async function renderAppointmentExpandedRow(appointmentId) {
     ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:80px;overflow:auto">${esc(a.notizen)}</div>`
     : '<span class="erp-kv-muted">—</span>';
 
-  const kontextHtml = `
-    <div class="erp-context-block">
+  const mainHtml = `
+    <div class="erp-context-main">
       <div class="erp-kv">
         <div class="erp-kv-label">Firma</div>      <div class="erp-kv-value">${firmaVal}</div>
         <div class="erp-kv-label">Kontakt</div>    <div class="erp-kv-value">${kontaktVal}</div>
         <div class="erp-kv-label">Projekt</div>    <div class="erp-kv-value">${projektVal}</div>
         <div class="erp-kv-label">Ort</div>        <div class="erp-kv-value">${ortVal}</div>
         <div class="erp-kv-label">Notizen</div>    <div class="erp-kv-value">${notizenVal}</div>
-      </div>`;
+      </div>
+    </div>`;
 
   // Verwandte Termine derselben Firma
   const relHtml = (relAppts.data || []).length > 0
@@ -8367,10 +8376,13 @@ async function renderAppointmentExpandedRow(appointmentId) {
       </button>
     </div>`;
 
+  const asideContent = relHtml + tasksHtml;
+  const contextClass = asideContent ? 'erp-context-block' : 'erp-context-block erp-context-block-single';
+  const asideWrap = asideContent ? `<div class="erp-context-aside">${asideContent}</div>` : '';
   return `
     ${statsHtml}
     <div class="erp-body">
-      ${kontextHtml}${relHtml}${tasksHtml}</div>
+      <div class="${contextClass}">${mainHtml}${asideWrap}</div>
       ${actionsHtml}
     </div>`;
 }
@@ -8608,8 +8620,8 @@ async function renderDeploymentExpandedRow(deploymentId) {
     ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:80px;overflow:auto">${esc(d.notizen)}</div>`
     : '<span class="erp-kv-muted">—</span>';
 
-  const kontextHtml = `
-    <div class="erp-context-block">
+  const mainHtml = `
+    <div class="erp-context-main">
       <div class="erp-kv">
         <div class="erp-kv-label">Firma</div>     <div class="erp-kv-value">${firmaVal}</div>
         <div class="erp-kv-label">Leistung</div>  <div class="erp-kv-value">${serviceVal}</div>
@@ -8618,7 +8630,8 @@ async function renderDeploymentExpandedRow(deploymentId) {
         <div class="erp-kv-label">Menge × €</div> <div class="erp-kv-value">${mengeVal}</div>
         <div class="erp-kv-label">Ort</div>       <div class="erp-kv-value">${ortVal}</div>
         <div class="erp-kv-label">Notizen</div>   <div class="erp-kv-value">${notizenVal}</div>
-      </div>`;
+      </div>
+    </div>`;
 
   // Projekt-Kontext (Soll/Ist) wenn im Projekt
   let projektKontextHtml = '';
@@ -8683,10 +8696,13 @@ async function renderDeploymentExpandedRow(deploymentId) {
       </button>
     </div>`;
 
+  const asideContent = projektKontextHtml + relHtml;
+  const contextClass = asideContent ? 'erp-context-block' : 'erp-context-block erp-context-block-single';
+  const asideWrap = asideContent ? `<div class="erp-context-aside">${asideContent}</div>` : '';
   return `
     ${statsHtml}
     <div class="erp-body">
-      ${kontextHtml}${projektKontextHtml}${relHtml}</div>
+      <div class="${contextClass}">${mainHtml}${asideWrap}</div>
       ${actionsHtml}
     </div>`;
 }
@@ -8859,15 +8875,16 @@ async function renderTaskExpandedRow(taskId) {
     ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:80px;overflow:auto">${esc(t.notizen)}</div>`
     : '<span class="erp-kv-muted">—</span>';
 
-  const kontextHtml = `
-    <div class="erp-context-block">
+  const mainHtml = `
+    <div class="erp-context-main">
       <div class="erp-kv">
         <div class="erp-kv-label">Firma</div>         <div class="erp-kv-value">${firmaVal}</div>
         <div class="erp-kv-label">Kontakt</div>       <div class="erp-kv-value">${kontaktVal}</div>
         <div class="erp-kv-label">Projekt</div>       <div class="erp-kv-value">${projektVal}</div>
         <div class="erp-kv-label">Beschreibung</div>  <div class="erp-kv-value">${beschreibungVal}</div>
         <div class="erp-kv-label">Notizen</div>       <div class="erp-kv-value">${notizenVal}</div>
-      </div>`;
+      </div>
+    </div>`;
 
   // Verwandte offene Aufgaben — vor dem Status-Label steht der Kunden-Kontext (Firma, sonst Kontakt).
   const relRows = (relResult.data || []);
@@ -8919,10 +8936,13 @@ async function renderTaskExpandedRow(taskId) {
       </button>
     </div>`;
 
+  const asideContent = relHtml;
+  const contextClass = asideContent ? 'erp-context-block' : 'erp-context-block erp-context-block-single';
+  const asideWrap = asideContent ? `<div class="erp-context-aside">${asideContent}</div>` : '';
   return `
     ${statsHtml}
     <div class="erp-body">
-      ${kontextHtml}${relHtml}</div>
+      <div class="${contextClass}">${mainHtml}${asideWrap}</div>
       ${actionsHtml}
     </div>`;
 }
