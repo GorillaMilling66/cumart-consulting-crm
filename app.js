@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.33.0 (Fünferpack: 1) Kontakt hat Vorrang vor Firma
+   im Kunden-Label der Verwandten-Aufgaben. 2) Plus-Button im
+   Kalender-Popover öffnet Mini-Menü (+Termin/+Einsatz/+Aufgabe)
+   mit Datum-Prefill auf den geklickten Tag. 3) Einsatz-Menge
+   wird automatisch aus den Werktagen des Datumsbereichs
+   berechnet; manuelle Edit überschreibt Auto-Wert, Reset-Icon
+   ↻ neben d-menge setzt zurück. 4) Datum-Schnellauswahl auf
+   Werktage umgestellt (Heute / Nächster WT / +3 WT / +7 WT /
+   Nächster Mo) + drei dynamisch benannte Monats-Buttons;
+   generischer setDateShortcut-Helper, eingesetzt in Termin-,
+   Einsatz- und Aufgabe-Modal. 5) Ganztags-Checkbox in Termin-
+   und Einsatz-Modal setzt 08:00–16:00 und sperrt die Zeit-
+   Inputs.)
    Version 1.32.0 (Kalender-Bar — permanenter Monats-Zeitstrahl
    am unteren Rand (Desktop ab 900 px). Farbcode pro Tag: weiß
    frei, gelb Termin, grün Einsatz, rot Feiertag (Baden-
@@ -116,6 +129,7 @@ let deploymentModalPrefillCompanyId = null;
 let deploymentModalPrefillProjectId = null;
 let editingProjectId = null;
 let editingDeploymentId = null;
+let _deploymentMengeManuallyEdited = false;  // v1.33: verhindert, dass Auto-Menge manuelle Eingabe überschreibt
 let editingTaskId = null;
 let taskModalPrefillCompanyId = null;
 let taskModalPrefillProjectId = null;
@@ -3765,6 +3779,7 @@ function renderAppointmentsTable(appointments) {
 async function openAppointmentModal(mode, appointmentId = null) {
   editingAppointmentId = appointmentId;
   lastAutoFilledOrt = '';
+  renderDateShortcuts();  // v1.33: aktuelle Monats-Buttons
 
   // Firmen laden
   if (companiesCache.length === 0) {
@@ -3792,6 +3807,9 @@ async function openAppointmentModal(mode, appointmentId = null) {
   document.getElementById('t-datum').value = toISODate(new Date());
   document.getElementById('t-uhrzeit-von').value = '';
   document.getElementById('t-uhrzeit-bis').value = '';
+  document.getElementById('t-uhrzeit-von').disabled = false;
+  document.getElementById('t-uhrzeit-bis').disabled = false;
+  const tGanz = document.getElementById('t-ganztag'); if (tGanz) tGanz.checked = false;
   document.getElementById('t-status').value = 'geplant';
   document.getElementById('t-ort').value = '';
   document.getElementById('t-notizen').value = '';
@@ -3963,28 +3981,144 @@ function autoFillOrtIfAppropriate() {
   lastAutoFilledOrt = address;
 }
 
-/** Setzt das Datum im Termin-Modal über die Schnellauswahl-Buttons (v1.25). */
-function setAppointmentDateShortcut(key) {
+// ═══════════════════════════════════════════════════════════
+//  DATUM-SCHNELLAUSWAHL (v1.25 → v1.33 generalisiert auf Werktage + Monate)
+// ═══════════════════════════════════════════════════════════
+//
+// Generischer Helper für alle Datums-Inputs. Jedes Container-Div mit
+// `class="date-shortcuts" data-shortcut-target="<input-id>"` wird beim
+// Modal-Öffnen via renderDateShortcuts() befüllt. Alle „+N Tage"-Buttons
+// rechnen in Werktagen (Mo–Fr, ohne BW-Feiertage). Zusätzlich die drei
+// folgenden Monatsnamen als Direkt-Sprung auf den 1. Werktag des Monats.
+
+function isWorkday(date, holidaysByYear) {
+  const dow = date.getDay();
+  if (dow === 0 || dow === 6) return false;
+  const year = date.getFullYear();
+  if (!holidaysByYear.has(year)) holidaysByYear.set(year, computeBwHolidays(year));
+  return !holidaysByYear.get(year).has(toISODate(date));
+}
+
+function nextWorkdayAfter(date, holidaysByYear) {
+  const x = new Date(date);
+  do { x.setDate(x.getDate() + 1); } while (!isWorkday(x, holidaysByYear));
+  return x;
+}
+
+function addWorkdays(date, n, holidaysByYear) {
+  const x = new Date(date);
+  let added = 0;
+  while (added < n) {
+    x.setDate(x.getDate() + 1);
+    if (isWorkday(x, holidaysByYear)) added++;
+  }
+  return x;
+}
+
+/** Zählt Werktage zwischen from und to inklusive (Mo–Fr, ohne BW-Feiertage). */
+function countWorkdaysInclusive(fromISO, toISO) {
+  if (!fromISO || !toISO) return 0;
+  if (fromISO > toISO) return 0;
+  const holidaysByYear = new Map();
+  let count = 0;
+  const x = new Date(fromISO);
+  const end = new Date(toISO);
+  while (x <= end) {
+    if (isWorkday(x, holidaysByYear)) count++;
+    x.setDate(x.getDate() + 1);
+  }
+  return count;
+}
+
+const MONTH_NAMES_DE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+
+/** Befüllt alle `.date-shortcuts`-Container mit Buttons für ihren target-Input (v1.33). */
+function renderDateShortcuts() {
+  const now = new Date();
+  const m1Name = MONTH_NAMES_DE[(now.getMonth() + 1) % 12];
+  const m2Name = MONTH_NAMES_DE[(now.getMonth() + 2) % 12];
+  const m3Name = MONTH_NAMES_DE[(now.getMonth() + 3) % 12];
+  document.querySelectorAll('.date-shortcuts[data-shortcut-target]').forEach(container => {
+    const targetId = container.dataset.shortcutTarget;
+    container.innerHTML = `
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','today')">Heute</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','nextWorkday')">Nächster WT</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','plus3wt')">+3 WT</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','plus7wt')">+7 WT</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','nextMonday')">Nächster Mo</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','m1')">${esc(m1Name)}</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','m2')">${esc(m2Name)}</button>
+      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','m3')">${esc(m3Name)}</button>
+    `;
+  });
+}
+
+/** Setzt das Datum eines Inputs auf den Shortcut-Wert und feuert ein change-Event,
+ *  damit abhängige Felder (z. B. d-menge bei Einsatz) reagieren können. */
+function setDateShortcut(inputId, key) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const holidaysByYear = new Map();
   let target = new Date(today);
+
   switch (key) {
-    case 'today':      break;
-    case 'tomorrow':   target.setDate(today.getDate() + 1); break;
-    case 'plus3':      target.setDate(today.getDate() + 3); break;
-    case 'plus7':      target.setDate(today.getDate() + 7); break;
+    case 'today':
+      break;
+    case 'nextWorkday':
+      target = nextWorkdayAfter(today, holidaysByYear);
+      break;
+    case 'plus3wt':
+      target = addWorkdays(today, 3, holidaysByYear);
+      break;
+    case 'plus7wt':
+      target = addWorkdays(today, 7, holidaysByYear);
+      break;
     case 'nextMonday': {
-      // Nächster Montag = Mo der nächsten Woche, immer mindestens +1 Tag voraus.
-      // getDay(): 0=So, 1=Mo, ..., 6=Sa
-      const dow = today.getDay();
+      const dow = today.getDay();  // 0=So, 1=Mo, ..., 6=Sa
       const offset = dow === 1 ? 7 : ((8 - dow) % 7 || 7);
       target.setDate(today.getDate() + offset);
       break;
     }
-    default: return;
+    case 'm1':
+    case 'm2':
+    case 'm3': {
+      const delta = parseInt(key.substring(1), 10);
+      const firstOfMonth = new Date(today.getFullYear(), today.getMonth() + delta, 1);
+      target = isWorkday(firstOfMonth, holidaysByYear) ? firstOfMonth : nextWorkdayAfter(firstOfMonth, holidaysByYear);
+      break;
+    }
+    default:
+      return;
   }
-  const input = document.getElementById('t-datum');
-  if (input) input.value = toISODate(target);
+  input.value = toISODate(target);
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/** @deprecated v1.33 — Alias für alte Aufrufer. Neue Buttons nutzen setDateShortcut. */
+function setAppointmentDateShortcut(key) {
+  const mapping = { today: 'today', tomorrow: 'nextWorkday', plus3: 'plus3wt', plus7: 'plus7wt', nextMonday: 'nextMonday' };
+  setDateShortcut('t-datum', mapping[key] || key);
+}
+
+/** Ganztags-Checkbox im Termin-/Einsatz-Modal (v1.33).
+ *  prefix = 't' (Termin) oder 'd' (Einsatz). Wenn aktiv: 08:00–16:00 setzen + Inputs sperren. */
+function applyGanztag(prefix) {
+  const cb  = document.getElementById(`${prefix}-ganztag`);
+  const von = document.getElementById(`${prefix}-uhrzeit-von`);
+  const bis = document.getElementById(`${prefix}-uhrzeit-bis`);
+  if (!cb || !von || !bis) return;
+  if (cb.checked) {
+    von.value = '08:00';
+    bis.value = '16:00';
+    von.disabled = true;
+    bis.disabled = true;
+  } else {
+    von.disabled = false;
+    bis.disabled = false;
+  }
 }
 
 function setupAppointmentAutoFill() {
@@ -5464,6 +5598,8 @@ function generateDeploymentAutoDescription() {
 async function openDeploymentModal(mode, deploymentId = null) {
   editingDeploymentId = deploymentId;
   selectedTechnikerIds = new Set();
+  _deploymentMengeManuallyEdited = false;  // v1.33: Auto-Menge-Flag zurücksetzen
+  renderDateShortcuts();                    // v1.33: aktuelle Monats-Buttons
 
   // Caches sicherstellen
   await Promise.all([loadEinsatzStatus(), loadServicesCache(), loadUserProfilesCache()]);
@@ -5507,6 +5643,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-datum-bis').value = '';
   document.getElementById('d-uhrzeit-von').value = '';
   document.getElementById('d-uhrzeit-bis').value = '';
+  document.getElementById('d-uhrzeit-von').disabled = false;
+  document.getElementById('d-uhrzeit-bis').disabled = false;
+  const dGanz = document.getElementById('d-ganztag'); if (dGanz) dGanz.checked = false;
   document.getElementById('d-ort').value = '';
   document.getElementById('d-ort-hint').style.display = 'none';
   document.getElementById('d-menge').value = '1';
@@ -5578,6 +5717,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     document.getElementById('d-status').value = data.status || 'Geplant';
     document.getElementById('d-ort').value = data.ort || '';
     document.getElementById('d-menge').value = data.menge ?? 1;
+    _deploymentMengeManuallyEdited = true;  // v1.33: existierende Menge nicht durch Auto-Berechnung ersetzen
     document.getElementById('d-einzelpreis').value = data.einzelpreis ?? '';
     document.getElementById('d-beschreibung').value = data.beschreibung || '';
     document.getElementById('d-notizen').value = data.notizen || '';
@@ -5678,16 +5818,47 @@ function setupDeploymentModalListeners() {
     updateDeploymentPriceHint();
   };
 
-  datumVon.onchange = () => {
+  // Gemeinsamer Handler für Datums-Änderungen — v1.33 auto-Menge nach Werktagen.
+  const onDatumChange = () => {
     // datum_bis mit-anpassen wenn vorher = datum_von oder leer
-    if (!datumBis.value || datumBis.value < datumVon.value) {
+    if (datumVon.value && (!datumBis.value || datumBis.value < datumVon.value)) {
       datumBis.value = datumVon.value;
     }
+    recomputeDeploymentMengeFromDates();
   };
+  datumVon.onchange = onDatumChange;
+  datumBis.onchange = onDatumChange;
 
-  [menge, einzelpreis].forEach(el => {
-    el.oninput = updateDeploymentPriceHint;
+  // User-Edit auf Menge setzt den Manual-Override-Flag, damit die Auto-Berechnung
+  // die manuelle Eingabe nicht überschreibt.
+  menge.addEventListener('input', (e) => {
+    if (e.isTrusted) _deploymentMengeManuallyEdited = true;
+    updateDeploymentPriceHint();
   });
+  einzelpreis.oninput = updateDeploymentPriceHint;
+
+  // Reset-Icon neben Menge
+  const resetBtn = document.getElementById('d-menge-reset');
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      _deploymentMengeManuallyEdited = false;
+      recomputeDeploymentMengeFromDates(true);
+    };
+  }
+}
+
+/** Werktags-Menge aus datum_von/bis berechnen (v1.33). Überschreibt Menge nicht,
+ *  wenn der User bereits manuell editiert hat — außer `force=true` (Reset-Icon). */
+function recomputeDeploymentMengeFromDates(force = false) {
+  if (!force && _deploymentMengeManuallyEdited) return;
+  const von = document.getElementById('d-datum-von').value;
+  const bis = document.getElementById('d-datum-bis').value || von;
+  if (!von) return;
+  const workdays = countWorkdaysInclusive(von, bis);
+  if (workdays < 1) return;
+  const mengeInput = document.getElementById('d-menge');
+  mengeInput.value = String(workdays);
+  updateDeploymentPriceHint();
 }
 
 function updateDeploymentOrtHint() {
@@ -8575,8 +8746,11 @@ async function renderTaskExpandedRow(taskId) {
          <div class="erp-section-title">Verwandte offene Aufgaben (Firma / Kontakt)</div>
          ${relRows.map(r => {
            const rOver = r.faelligkeit && r.faelligkeit < todayISO;
-           const customerLabel = r.company?.name
-             || (r.contact ? [r.contact.vorname, r.contact.nachname].filter(Boolean).join(' ') : '');
+           // Kontakt hat Vorrang vor Firma (v1.33): wenn eine Aufgabe an einen Kontakt gekoppelt ist,
+           // ist das die präzisere Zuordnung; Firma-Fallback nur wenn kein Kontakt gesetzt.
+           const customerLabel = (r.contact ? [r.contact.vorname, r.contact.nachname].filter(Boolean).join(' ') : '')
+             || r.company?.name
+             || '';
            const statusText = rOver ? 'überfällig' : aufgabeStatusLabel(r.status);
            return `
              <div class="erp-related-row">
@@ -8923,7 +9097,10 @@ function openCalendarDayPopover(iso, evt) {
   parts.push(`
     <div class="calendar-popover-title">
       <span>${esc(title)}</span>
-      <button class="calendar-popover-close" onclick="closeCalendarDayPopover()" aria-label="Schließen">×</button>
+      <span class="calendar-popover-title-actions">
+        <button class="calendar-popover-plus" onclick="toggleCalendarQuickMenu('${esc(iso)}', event)" aria-label="Schnell anlegen" title="Schnell anlegen für diesen Tag">+</button>
+        <button class="calendar-popover-close" onclick="closeCalendarDayPopover()" aria-label="Schließen">×</button>
+      </span>
     </div>`);
 
   if (holiday) {
@@ -8981,6 +9158,63 @@ function openCalendarDayPopover(iso, evt) {
 function closeCalendarDayPopover() {
   const pop = document.getElementById('calendar-popover');
   if (pop) pop.style.display = 'none';
+  closeCalendarQuickMenu();
+}
+
+/** Mini-Schnellanlege-Menü (v1.33): zeigt + Termin / + Einsatz / + Aufgabe
+ *  mit dem ISO-Datum der aktuell geklickten Kalender-Box als Prefill. */
+function toggleCalendarQuickMenu(iso, evt) {
+  if (evt) evt.stopPropagation();
+  const existing = document.getElementById('calendar-quickmenu');
+  if (existing) { existing.remove(); return; }
+
+  const menu = document.createElement('div');
+  menu.className = 'calendar-popover-quickmenu';
+  menu.id = 'calendar-quickmenu';
+  menu.innerHTML = `
+    <button onclick="calendarQuickCreateAppointment('${esc(iso)}')">+ Termin</button>
+    <button onclick="calendarQuickCreateDeployment('${esc(iso)}')">+ Einsatz</button>
+    <button onclick="calendarQuickCreateTask('${esc(iso)}')">+ Aufgabe</button>
+  `;
+  // Relativ zum Plus-Button positionieren
+  document.body.appendChild(menu);
+  const plusBtn = evt?.currentTarget;
+  if (plusBtn) {
+    const rect = plusBtn.getBoundingClientRect();
+    menu.style.top  = `${rect.bottom + 4}px`;
+    menu.style.left = `${Math.max(10, rect.right - 180)}px`;
+  }
+}
+
+function closeCalendarQuickMenu() {
+  const m = document.getElementById('calendar-quickmenu');
+  if (m) m.remove();
+}
+
+async function calendarQuickCreateAppointment(iso) {
+  closeCalendarQuickMenu();
+  closeCalendarDayPopover();
+  await openAppointmentModal('new');
+  const datum = document.getElementById('t-datum');
+  if (datum) { datum.value = iso; datum.dispatchEvent(new Event('change', { bubbles: true })); }
+}
+
+async function calendarQuickCreateDeployment(iso) {
+  closeCalendarQuickMenu();
+  closeCalendarDayPopover();
+  await openDeploymentModal('new');
+  const von = document.getElementById('d-datum-von');
+  const bis = document.getElementById('d-datum-bis');
+  if (von) { von.value = iso; von.dispatchEvent(new Event('change', { bubbles: true })); }
+  if (bis && !bis.value) bis.value = iso;
+}
+
+async function calendarQuickCreateTask(iso) {
+  closeCalendarQuickMenu();
+  closeCalendarDayPopover();
+  await openTaskModal('new');
+  const fael = document.getElementById('a-faelligkeit');
+  if (fael) fael.value = iso;
 }
 
 /** Refresh-Hook — wird nach Termin-/Einsatz-Writes aufgerufen. Keine Queries wenn die Bar
@@ -9195,6 +9429,7 @@ function renderTasksTable(tasks) {
 
 async function openTaskModal(mode, taskId = null) {
   editingTaskId = taskId;
+  renderDateShortcuts();  // v1.33: aktuelle Monats-Buttons
 
   await Promise.all([
     loadAufgabeStatus(),
