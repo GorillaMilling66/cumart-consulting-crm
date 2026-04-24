@@ -1731,7 +1731,7 @@ tbody tr:focus-within .action-icons,
 
 .fab {
   position: fixed;
-  bottom: 24px;
+  bottom: 130px;                     /* über der Kalender-Bar (~100 px) — v1.32.1 */
   right: 24px;
   width: 52px;
   height: 52px;
@@ -1752,7 +1752,7 @@ tbody tr:focus-within .action-icons,
 .fab:active { transform: translateY(0); }
 .fab svg { width: 22px; height: 22px; }
 
-/* Mobile: FAB höher, damit er nicht mit Bottom-Nav kollidiert */
+/* Mobile: keine Kalender-Bar, FAB nur über Bottom-Nav */
 @media (max-width: 900px) {
   .fab {
     bottom: calc(var(--mobile-nav-height) + 16px);
@@ -1762,7 +1762,7 @@ tbody tr:focus-within .action-icons,
 
 .fab-menu {
   position: fixed;
-  bottom: 86px;
+  bottom: 192px;                     /* 130 (FAB) + 62 — v1.32.1 */
   right: 24px;
   background: var(--surface);
   border: 1px solid var(--border);
