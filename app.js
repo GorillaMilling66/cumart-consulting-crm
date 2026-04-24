@@ -1,5 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.30.1 (Fix: loadProjectDetail crashte beim Init,
+   weil es noch die in v1.30.0 entfernten HTML-Elemente
+   project-detail-beschreibung-wrap / -notizen-wrap zu
+   verstecken versuchte. Die Render-Kette brach dadurch ab,
+   und die Stammdaten-Seite blieb im „Lade …"-Zustand.)
    Version 1.30.0 (Projekt-Dashboard-Parität — Projekt-
    Stammdaten-Tab bekommt dasselbe Dashboard-Layout wie
    Firma/Kontakt: 4 Stats-Cards (Status · Wirtschaftlichkeit
@@ -4500,8 +4505,6 @@ async function loadProjectDetail(projectId) {
   document.getElementById('project-detail-title').textContent = '…';
   document.getElementById('project-detail-subline').innerHTML = '';
   document.getElementById('project-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Projekt ...</div>';
-  document.getElementById('project-detail-beschreibung-wrap').style.display = 'none';
-  document.getElementById('project-detail-notizen-wrap').style.display = 'none';
   document.getElementById('project-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
   const pTasksBody = document.getElementById('project-tasks-body');
   if (pTasksBody) pTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>';
