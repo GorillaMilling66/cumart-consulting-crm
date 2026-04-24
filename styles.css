@@ -34,7 +34,7 @@ body {
 /* ── LAYOUT ── */
 .app { display: flex; min-height: 100vh; }
 
-/* ── DESKTOP-SIDEBAR ── */
+/* ── DESKTOP-SIDEBAR (v1.36.0 neu: Logo + Branding + Trennlinie) ── */
 .sidebar {
   width: 220px;
   background: var(--surface);
@@ -48,22 +48,45 @@ body {
   height: 100vh;
   z-index: 100;
 }
-.sidebar-logo {
-  padding: 20px 20px 16px;
-  font-size: 16px;
+.sidebar-brand {
+  padding: 18px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.sidebar-brand-logo {
+  width: 100%;
+  max-width: 140px;
+  height: auto;
+  display: block;
+}
+.sidebar-brand-labels {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  gap: 2px;
+}
+.sidebar-brand-company {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.sidebar-brand-app {
+  font-size: 13px;
   font-weight: 600;
-  border-bottom: 1px solid var(--border);
   color: var(--text);
 }
-.sidebar-logo span {
-  display: block;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--muted);
-  margin-top: 2px;
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 14px;
 }
 .sidebar-user {
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -279,11 +302,66 @@ body {
 .more-item-danger { color: var(--danger); }
 .more-item-danger svg { color: var(--danger); }
 
+/* ── GLOBALER APP-HEADER (v1.36.0) ── */
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 220px;
+  right: 0;
+  height: 64px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32px;
+  z-index: 95;
+}
+.app-header-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 720px;
+  height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--muted);
+  transition: border-color .12s, background .12s;
+}
+.app-header-search:hover {
+  border-color: var(--link);
+  background: var(--surface);
+}
+.app-header-search svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.app-header-search-placeholder {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+}
+.app-header-search .kbd {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Mobile: kein Top-Header, bestehender Mobile-Header bleibt */
+@media (max-width: 900px) {
+  .app-header { display: none; }
+}
+
 /* ── MAIN CONTENT ── */
 .main {
   flex: 1;
   margin-left: 220px;
-  padding: 32px;
+  padding: 96px 32px 32px;            /* 96px top = 64px Header + 32px Abstand */
   min-height: 100vh;
 }
 .page { display: none; }

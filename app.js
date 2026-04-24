@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.36.0 (Sidebar-Branding + globale Top-Header-Suche:
+   Sidebar-Kopf zeigt jetzt das Cumart-Logo (SVG), darunter
+   „Cumart Consulting" (klein, uppercase) und „Cumart CRM",
+   getrennt durch eine Trennlinie vom User-Block. Die globale
+   Suche wandert aus der Sidebar in einen neuen fixed Top-
+   Header, der sich über die volle Breite rechts der Sidebar
+   erstreckt — 42 px hohe Suchleiste mit Lupen-Icon, zentriert,
+   max 720 px breit, Placeholder „Firmen, Kontakte, Projekte,
+   Termine, Einsätze suchen …". Main-Content top-padding auf
+   96 px. Mobile unverändert (eigener mobile-header).)
    Version 1.35.3 (Zwei visuelle Fixes: 1) Heute-Ring im
    Kalender wird nicht mehr vom overflow-x des Containers
    abgeschnitten — inset box-shadow statt outset. 2) Inline-
