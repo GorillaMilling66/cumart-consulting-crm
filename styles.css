@@ -1826,7 +1826,7 @@ tr.expanded-row > td {
 }
 .expanded-row-panel-inner {
   padding: 16px 20px 20px;
-  background: #ffffff;
+  background: #f1f5f9;                       /* leicht blau-grauer Panel-Hintergrund (v1.35.3) */
   border-left: 3px solid var(--link);
   margin: 0 0 6px 0;
   animation: expandRowIn 160ms ease-out;
@@ -1836,14 +1836,16 @@ tr.expanded-row > td {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Dashboard-Inhalt innerhalb des Expand-Panels */
+/* Dashboard-Inhalt innerhalb des Expand-Panels — Stats-Card abgesetzt (v1.35.3) */
 .erp-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 20px;
   margin-bottom: 14px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 .erp-stat-item {
   display: flex;
@@ -1866,11 +1868,19 @@ tr.expanded-row > td {
 
 .erp-body {
   display: grid;
-  grid-template-columns: 1fr 220px;
-  gap: 20px;
+  grid-template-columns: 1fr 240px;
+  gap: 16px;
 }
 @media (max-width: 800px) {
   .erp-body { grid-template-columns: 1fr; }
+}
+
+/* Linker Kontext-Wrapper als Card (v1.35.3) */
+.erp-context-block {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
 }
 
 .erp-kv {
@@ -1896,6 +1906,11 @@ tr.expanded-row > td {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  align-self: flex-start;
 }
 .erp-action-btn {
   display: flex;
@@ -2114,9 +2129,10 @@ tr.expanded-row > td {
   color: var(--muted);
 }
 
-/* Heute-Ring */
+/* Heute-Ring — inset, damit er innerhalb der Box bleibt und nicht vom overflow-x:auto
+   des Containers abgeschnitten wird (v1.35.3). */
 .calendar-day.cal-day-today {
-  box-shadow: 0 0 0 2px var(--link);
+  box-shadow: inset 0 0 0 2px var(--link);
 }
 
 .calendar-day-num {

@@ -1,5 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.35.3 (Zwei visuelle Fixes: 1) Heute-Ring im
+   Kalender wird nicht mehr vom overflow-x des Containers
+   abgeschnitten — inset box-shadow statt outset. 2) Inline-
+   Expand-Dashboards haben jetzt sauber abgesetzte Cards:
+   Panel-Hintergrund leicht grau, Stats/Kontext/Schnell-
+   aktionen je in eigener weißer Card mit Border-Radius —
+   das wirkte vorher wie „nicht sauber geladen".)
    Version 1.35.2 (Fix: Im Termin-Dashboard „Offene Aufgaben
    (Firma / Kontakt)" wird jetzt auch der Kunden-Name vor
    dem Status angezeigt — vorher nur Status. Kontakt hat
@@ -8283,7 +8290,7 @@ async function renderAppointmentExpandedRow(appointmentId) {
     : '<span class="erp-kv-muted">—</span>';
 
   const kontextHtml = `
-    <div>
+    <div class="erp-context-block">
       <div class="erp-kv">
         <div class="erp-kv-label">Firma</div>      <div class="erp-kv-value">${firmaVal}</div>
         <div class="erp-kv-label">Kontakt</div>    <div class="erp-kv-value">${kontaktVal}</div>
@@ -8592,7 +8599,7 @@ async function renderDeploymentExpandedRow(deploymentId) {
     : '<span class="erp-kv-muted">—</span>';
 
   const kontextHtml = `
-    <div>
+    <div class="erp-context-block">
       <div class="erp-kv">
         <div class="erp-kv-label">Firma</div>     <div class="erp-kv-value">${firmaVal}</div>
         <div class="erp-kv-label">Leistung</div>  <div class="erp-kv-value">${serviceVal}</div>
@@ -8843,7 +8850,7 @@ async function renderTaskExpandedRow(taskId) {
     : '<span class="erp-kv-muted">—</span>';
 
   const kontextHtml = `
-    <div>
+    <div class="erp-context-block">
       <div class="erp-kv">
         <div class="erp-kv-label">Firma</div>         <div class="erp-kv-value">${firmaVal}</div>
         <div class="erp-kv-label">Kontakt</div>       <div class="erp-kv-value">${kontaktVal}</div>
