@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.24.0
+**Version:** 1.25.0
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -59,9 +59,9 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.46k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~1.68k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~7.87k Zeilen  (alle Module in einer Datei)
+├── index.html       ~2.54k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css       ~1.81k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~8.13k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -539,25 +539,38 @@ Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizont
 - **Mobile:** Tab-Leiste horizontal scrollbar (`overflow-x:auto`), kleinere Paddings.
 - **Kein Preloading:** Tabs zeigen bereits geladene Daten an (ein `SELECT ...WHERE entity_id=...` pro Sub-Sektion beim Öffnen der Detail-Seite). Tab-Wechsel = reiner DOM-Toggle, keine zusätzlichen Queries.
 
-### 7.15 Stammdaten-Dashboard (v1.24.0)
+### 7.15 Stammdaten-Dashboard (v1.24.0, erweitert v1.25.0)
 
 Der Stammdaten-Tab auf Firma- und Kontakt-Detail zeigt ein Mini-Dashboard im 2-Spalten-Layout (ab 960 px Viewport-Breite):
 
 - **Links (Main):**
   - **Stats-Row** mit 3 Widgets:
-    - **ABC-Badge** (groß, farbig) — `A` grün (Top-Kunde) · `B` gelb (wichtig) · `C` grau (niedrige Prio) · leer/dashed (nicht klassifiziert). Bei Kontakt wird die ABC der zugeordneten Firma geerbt (readonly).
-    - **Gesamtumsatz** (nur Firma): `SUM(menge × einzelpreis)` aus direkten Einsätzen mit Status „Abgerechnet" + `SUM(geschaetzter_umsatz)` aus abgeschlossenen Projekten
+    - **ABC-Badge** (groß, farbig, **klickbar seit v1.25**) — `A` grün (Top-Kunde) · `B` gelb (wichtig) · `C` grau (niedrige Prio) · leer/dashed (nicht klassifiziert). Bei Kontakt wird die ABC der zugeordneten Firma geerbt (readonly). Bei Firma öffnet ein Klick auf die Card das **ABC-Edit-Popover** (`#modal-abc-edit`) mit vier Buttons „A / B / C / Auto". „Auto" setzt `abc_klassifizierung = NULL`, dann greift der Auto-Wert (siehe unten). Label unter dem Badge zeigt „ABC · manuell" vs. „ABC · auto".
+    - **Umsatz (Kalenderjahr, v1.25)** — Hauptzahl: `SUM(menge × einzelpreis)` aus direkten abgerechneten Einsätzen des laufenden Jahres + `SUM(geschaetzter_umsatz)` aus abgeschlossenen Projekten des laufenden Jahres. Subline „Historie: X €" zeigt den Gesamt-Lifetime-Umsatz. Label dynamisch „Umsatz {YEAR}". Kalenderjahr-Zuordnung: Einsatz nach `datum_von` (Fallback `created_at`), Projekt nach `enddatum` (Fallback `created_at`).
     - **Offene Aufgaben** (Count `tasks` wo `company_id`/`contact_id = X` und `status ≠ 'erledigt'`). Rot gefärbt, wenn mindestens eine überfällig. Kontakt zeigt zusätzlich **Projekte (als Hauptkontakt)**.
-  - **Letzte Aktivität** — picked aus `appointments` + `deployments` (Firma) bzw. `appointments` + `tasks` (Kontakt), sortiert nach Datum desc, Top 2.
+  - **Aktivität 2-spaltig (v1.25)** — zwei Cards nebeneinander:
+    - **Letzte Aktivität** — letzter durchgeführter Termin + letzter Einsatz mit Status `Durchgeführt`/`Abgerechnet`, je Top-1, sortiert desc.
+    - **Bevorstehend** — nächste geplanten Termine (`status='geplant'`, `datum >= heute`, Top-2) und Einsätze (`status='Geplant'`, `datum_von >= heute`, Top-2).
+  - **Opportunities (v1.25)** — Liste aller Projekte mit Status `Lead` oder `Angebot`, nach `enddatum` aufsteigend. Jede Zeile: Projektname, Status-Pill, Summe, optionales Deadline-Datum. Klick navigiert zum Projekt-Detail.
   - **Kontaktdaten** — das bestehende `detail-grid` (Adresse/Website/Telefon/E-Mail bei Firma, Telefon/E-Mail/Position/Firma bei Kontakt).
   - **Notizen (inline-editierbar)** — `<textarea>` mit auto-save on blur (`saveCompanyNotesInline()` / `saveContactNotesInline()`), Status-Feedback „Gespeichert ✓".
 - **Rechts (Quick-Create-Panel):** Sticky vertikale Button-Liste zum direkten Anlegen mit Kontext-Prefill:
-  - Firma: + Kontakt · + Termin · + Aufgabe · + Einsatz · + Projekt · + Mitgliedschaft
+  - Firma: + Kontakt · + Termin · + Aufgabe · + Einsatz · + Projekt · + Mitgliedschaft · **⚡ Schnellaktionen (v1.25)**
   - Kontakt: + Termin · + Aufgabe · + Projekt (als Hauptkontakt)
 
 Mobile (<960 px): Quick-Create-Panel rutscht unter den Main-Bereich (nicht sticky). Stats-Row wird einspaltig (<600 px).
 
-**Widget-Loader:** `loadCompanyDashboard(id)` / `loadContactDashboard(id)` feuern 4–5 parallele Supabase-Queries (`Promise.all`) und rendern sofort, sobald alles da ist. Das passiert parallel zum normalen Detail-Laden und blockiert den Rest nicht.
+**Widget-Loader:** `loadCompanyDashboard(id, manualAbc)` / `loadContactDashboard(id)` feuern ~10 parallele Supabase-Queries (`Promise.all`) und rendern sofort, sobald alles da ist. Das passiert parallel zum normalen Detail-Laden und blockiert den Rest nicht.
+
+**Auto-ABC (v1.25):** `computeAutoAbc(yearRevenue)` mit Schwellen `≥10.000 € = A`, `≥2.000 € = B`, sonst `C`. Wirkt nur, wenn `companies.abc_klassifizierung IS NULL`. Das Setzen eines expliziten A/B/C über das Edit-Popover hat immer Vorrang. `renderCompanyAbcBadge(manualAbc, autoAbc)` mischt beide und beschriftet den Modus.
+
+### 7.16 Schnellaktionen-Modal (v1.25.0)
+
+Pro Firma ein zentrales Modal (`#modal-quick-actions`, `openQuickActionsModal(companyId, companyName)`) mit kachelartigen Einträgen für die häufigsten Folgeaktionen eines Kundenkontakts. Jede Kachel öffnet das passende Entitäts-Modal mit `companyId`-Prefill; Kacheln für konkrete Leistungen setzen zusätzlich `window._pendingDeploymentPrefillServiceId`, das beim nächsten `openDeploymentModal('new')` die Leistung vorauswählt und dann ein synthetisches `change`-Event auf das Service-`<select>` feuert, damit die bestehende Auto-Fill-Kette (Preis/Uhrzeit/Titel) greift. Ziel: Ein-Klick-Eintrag für „Wiederkehrende Leistung für diesen Kunden".
+
+### 7.17 Datum-Schnellauswahl im Termin-Modal (v1.25.0)
+
+Über dem `t-datum`-Input steht eine Button-Reihe `heute` · `morgen` · `+3` · `+7` · `nächster Mo`. `setAppointmentDateShortcut(key)` berechnet das Zieldatum und schreibt es via `toISODate()` in das Input. „Nächster Montag" ist immer mindestens der Montag der Folgewoche (wenn heute schon Montag ist: in 7 Tagen).
 
 ---
 
@@ -579,6 +592,7 @@ Mobile (<960 px): Quick-Create-Panel rutscht unter den Main-Bereich (nicht stick
 | Projekt-Detail    | + Einsatz       | Firma + Projekt                         |
 | Projekt-Detail    | + Aufgabe       | Firma + Projekt                         |
 | Firma-Detail      | + Aufgabe       | Firma                                   |
+| Firma-Detail      | ⚡ Schnellaktion → + Einsatz | Firma + Leistung (über `_pendingDeploymentPrefillServiceId`, v1.25) |
 
 ### 8.2 Auto-Fill im Einsatz-Modal (v1.10.0)
 
@@ -755,7 +769,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.21.0 | 22.04.2026  | FAB Quick-Add — schwebender `+`-Button unten rechts mit Popover-Menü (Neue Firma / Kontakt / Termin / Einsatz / Projekt). Kontext-Aware Prefill aus Firmen-/Projekt-/Kontakt-Detail. Shortcut `n` wenn kein Input fokussiert. |
 | v1.22.0 | 23.04.2026  | Aufgaben — neue Entität `tasks` mit eigener Liste, Modal, Sub-Sektionen auf Firma/Kontakt/Projekt. Zuweisbar an `user_profiles.id` (self oder anderer Nutzer). Fälligkeit + überfällig-Badge. Checkbox-Toggle in Liste (→ erledigt). Sidebar-Badge „meine offenen" mit Rotfärbung bei Überfälligkeit. FAB-Eintrag + Soft-Delete + Undo-Toast. Status via `lookup_values.aufgabe_status`. |
 | v1.23.0 | 24.04.2026  | Nav-Restruktur (3 Gruppen Kunden/Aktivität/Projekte) + Detail-Tabs. In v1.24 teilweise zurückgenommen: Sidebar wieder flach, Detail-Tabs bleiben. |
-| **v1.24.0** | **24.04.2026** | **Stammdaten-Dashboard + ABC-Klassifizierung** — Sidebar zurück auf flach (User-Feedback: Gruppen waren ein extra Klick). Neues Feld `companies.abc_klassifizierung` (A/B/C, CHECK) mit farbigen Badges (grün/gelb/grau). Firma-Stammdaten-Tab komplett neu als Dashboard-Layout: Stats-Row (ABC · Gesamtumsatz · Offene Aufgaben, rot bei überfällig), Letzte Aktivität, Kontaktdaten, Inline-editierbare Notizen (auto-save on blur). Rechts ein sticky Quick-Create-Panel mit allen „+"-Aktionen für diesen Kunden direkt. Kontakt-Stammdaten analog mit geerbter ABC und reduziertem Quick-Create. |
+| v1.24.0 | 24.04.2026  | Stammdaten-Dashboard + ABC-Klassifizierung — Sidebar zurück auf flach (User-Feedback: Gruppen waren ein extra Klick). Neues Feld `companies.abc_klassifizierung` (A/B/C, CHECK) mit farbigen Badges (grün/gelb/grau). Firma-Stammdaten-Tab komplett neu als Dashboard-Layout: Stats-Row (ABC · Gesamtumsatz · Offene Aufgaben, rot bei überfällig), Letzte Aktivität, Kontaktdaten, Inline-editierbare Notizen (auto-save on blur). Rechts ein sticky Quick-Create-Panel mit allen „+"-Aktionen für diesen Kunden direkt. Kontakt-Stammdaten analog mit geerbter ABC und reduziertem Quick-Create. |
+| **v1.25.0** | **24.04.2026** | **Stammdaten-Dashboard v2** — Umsatz-Card zeigt Kalenderjahr-Umsatz (Hauptzahl) + Historie-Subline statt eines einzigen Gesamtbetrags. **Auto-ABC** nach Kalenderjahr-Umsatz (≥10k=A · ≥2k=B · sonst C); manuelle Klassifizierung bleibt Vorrang; ABC-Card ist jetzt klickbar und öffnet ein kompaktes Edit-Popover (A/B/C/Auto). Aktivitäts-Zeile 2-spaltig: „Letzte Aktivität" neben neuer Card „Bevorstehend" (nächste geplante Termine + Einsätze). Neues Widget **Opportunities** (Projekte in Status Lead/Angebot, nach Enddatum aufsteigend). Neues **Schnellaktionen-Modal** pro Firma mit Ein-Klick-Prefill-Kacheln für häufige Folgeleistungen (setzt `_pendingDeploymentPrefillServiceId` für Einsatz-Modal). Im Termin-Modal Datum-Schnellauswahl (heute/morgen/+3/+7/nächster Montag). Kein Schema-Change. |
 
 ---
 

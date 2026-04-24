@@ -393,23 +393,24 @@
         <button class="detail-tab" data-tab="mitgliedschaften" onclick="switchDetailTab('company','mitgliedschaften')">Mitgliedschaften <span class="tab-count" id="tab-count-company-mitgliedschaften" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten (Dashboard-Layout v1.24.0) -->
+      <!-- PANEL: Stammdaten (Dashboard-Layout v1.25.0) -->
       <div class="detail-tab-panel active" data-tab="stammdaten">
         <div class="detail-dashboard">
           <div class="dashboard-main">
             <!-- Stats-Row: ABC · Umsatz · Offene Aufgaben -->
             <div class="dashboard-stats">
-              <div class="stat-card">
+              <div class="stat-card stat-card-clickable" id="company-abc-card" title="Klick zum Bearbeiten">
                 <div id="company-abc-badge" class="abc-badge abc-badge-lg abc-badge-unknown">—</div>
                 <div class="stat-card-body">
-                  <div class="stat-label">ABC</div>
+                  <div class="stat-label" id="company-abc-mode-label">ABC</div>
                   <div class="stat-value stat-value-muted" id="company-abc-label">Nicht klassifiziert</div>
                 </div>
               </div>
               <div class="stat-card">
                 <div class="stat-card-body">
-                  <div class="stat-label">Gesamtumsatz</div>
+                  <div class="stat-label" id="company-revenue-year-label">Umsatz</div>
                   <div class="stat-value" id="company-total-revenue">—</div>
+                  <div class="stat-subline" id="company-revenue-history">&nbsp;</div>
                 </div>
               </div>
               <div class="stat-card">
@@ -420,10 +421,22 @@
               </div>
             </div>
 
-            <!-- Letzte Aktivität -->
+            <!-- Letzte + Bevorstehende Aktivität nebeneinander -->
+            <div class="dashboard-row-2col">
+              <div class="info-card">
+                <div class="info-card-title">Letzte Aktivität</div>
+                <div id="company-last-activity"><div class="info-card-empty">Lade ...</div></div>
+              </div>
+              <div class="info-card">
+                <div class="info-card-title">Bevorstehend</div>
+                <div id="company-upcoming-activity"><div class="info-card-empty">Lade ...</div></div>
+              </div>
+            </div>
+
+            <!-- Opportunities (Projekte mit Lead/Angebot) -->
             <div class="info-card">
-              <div class="info-card-title">Letzte Aktivität</div>
-              <div id="company-last-activity"><div class="info-card-empty">Lade ...</div></div>
+              <div class="info-card-title">Opportunities</div>
+              <div id="company-opportunities"><div class="info-card-empty">Lade ...</div></div>
             </div>
 
             <!-- Kontaktdaten -->
@@ -461,6 +474,9 @@
             </button>
             <button class="quick-create-btn" id="company-quick-membership">
               <span class="plus-icon">+</span> Mitgliedschaft
+            </button>
+            <button class="quick-create-btn quick-create-btn-accent" id="company-quick-actions">
+              <span class="plus-icon plus-icon-accent">⚡</span> Schnellaktionen
             </button>
           </aside>
         </div>
@@ -735,7 +751,7 @@
         <button class="detail-tab" data-tab="projekte" onclick="switchDetailTab('contact','projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten (Dashboard v1.24.0) -->
+      <!-- PANEL: Stammdaten (Dashboard v1.25.0) -->
       <div class="detail-tab-panel active" data-tab="stammdaten">
         <div class="detail-dashboard">
           <div class="dashboard-main">
@@ -761,9 +777,15 @@
               </div>
             </div>
 
-            <div class="info-card">
-              <div class="info-card-title">Letzte Aktivität</div>
-              <div id="contact-last-activity"><div class="info-card-empty">Lade ...</div></div>
+            <div class="dashboard-row-2col">
+              <div class="info-card">
+                <div class="info-card-title">Letzte Aktivität</div>
+                <div id="contact-last-activity"><div class="info-card-empty">Lade ...</div></div>
+              </div>
+              <div class="info-card">
+                <div class="info-card-title">Bevorstehend</div>
+                <div id="contact-upcoming-activity"><div class="info-card-empty">Lade ...</div></div>
+              </div>
             </div>
 
             <div class="info-card">
@@ -1634,6 +1656,59 @@
   <button class="kebab-menu-item kebab-menu-danger" role="menuitem" onclick="handleKebabAction('delete')">Löschen</button>
 </div>
 
+<!-- SHARED: SCHNELLAKTIONEN-MODAL (v1.25.0) -->
+<div class="modal-overlay" id="modal-quick-actions">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">Schnellaktionen</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px" id="quick-actions-context">
+      Vordefinierte Workflows für diese Firma.
+    </div>
+    <div id="quick-actions-list" style="display:flex;flex-direction:column;gap:8px">
+      <button class="quick-action-tile" onclick="runQuickActionTncTag()">
+        <div class="quick-action-tile-icon" style="background:#f0fdf4;color:#16a34a">TC</div>
+        <div class="quick-action-tile-body">
+          <div class="quick-action-tile-title">TNC-Club Premiumtag anlegen</div>
+          <div class="quick-action-tile-desc">Neuer Einsatz mit Service „TNC-Club Premiumtag" (1100 €). Wenn die Firma eine aktive TNC-Club-Premium-Mitgliedschaft hat, wird der Bonus automatisch zur Einlösung angeboten.</div>
+        </div>
+      </button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeQuickActionsModal()">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARED: ABC-EDIT-POPOVER (v1.25.0) -->
+<div class="modal-overlay modal-overlay-confirm" id="modal-abc-edit">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">ABC-Klassifizierung</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="abc-edit-hint">
+      Wähle eine manuelle Einstufung oder lasse das System automatisch nach Jahresumsatz klassifizieren.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="abc-edit-btn" data-abc="" onclick="setCompanyAbc(null)">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;border:1px dashed var(--border);font-size:11px;color:var(--muted)">auto</span>
+        <span style="flex:1;text-align:left"><strong>Automatisch</strong> — nach Kalenderjahr-Umsatz<br><span style="font-size:11px;color:var(--muted)">≥10 k € → A · 2–10 k € → B · &lt;2 k € → C</span></span>
+      </button>
+      <button class="abc-edit-btn" data-abc="A" onclick="setCompanyAbc('A')">
+        <span class="abc-badge abc-badge-A">A</span>
+        <span style="flex:1;text-align:left"><strong>A</strong> — Kern-/Top-Kunde (manuell)</span>
+      </button>
+      <button class="abc-edit-btn" data-abc="B" onclick="setCompanyAbc('B')">
+        <span class="abc-badge abc-badge-B">B</span>
+        <span style="flex:1;text-align:left"><strong>B</strong> — Wichtiger Kunde (manuell)</span>
+      </button>
+      <button class="abc-edit-btn" data-abc="C" onclick="setCompanyAbc('C')">
+        <span class="abc-badge abc-badge-C">C</span>
+        <span style="flex:1;text-align:left"><strong>C</strong> — Geringere Priorität (manuell)</span>
+      </button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAbcEditModal()">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
 <!-- SHARED: CONFIRM-DIALOG (v1.20.0, Promise-basiert) -->
 <div class="modal-overlay modal-overlay-confirm" id="modal-confirm">
   <div class="modal" style="width:420px">
@@ -1811,6 +1886,13 @@
       <div class="form-group">
         <label>Datum *</label>
         <input type="date" id="t-datum">
+        <div class="date-shortcuts">
+          <button type="button" class="date-shortcut-btn" onclick="setAppointmentDateShortcut('today')">Heute</button>
+          <button type="button" class="date-shortcut-btn" onclick="setAppointmentDateShortcut('tomorrow')">Morgen</button>
+          <button type="button" class="date-shortcut-btn" onclick="setAppointmentDateShortcut('plus3')">+3 Tage</button>
+          <button type="button" class="date-shortcut-btn" onclick="setAppointmentDateShortcut('plus7')">+7 Tage</button>
+          <button type="button" class="date-shortcut-btn" onclick="setAppointmentDateShortcut('nextMonday')">Nächster Mo</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Typ *</label>
@@ -2017,6 +2099,37 @@
   <div class="modal" style="width:720px">
     <div class="modal-title" id="modal-deployment-title">Neuer Einsatz</div>
 
+    <div class="modal-group-title">Zuordnung</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Firma *</label>
+        <select id="d-company"></select>
+      </div>
+      <div class="form-group">
+        <label>Projekt</label>
+        <select id="d-project"></select>
+      </div>
+    </div>
+
+    <div class="modal-group-title">Leistung &amp; Preis</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Leistung</label>
+        <select id="d-service"></select>
+      </div>
+      <div class="form-group" id="d-menge-group">
+        <label>Menge</label>
+        <input type="number" id="d-menge" min="0" step="0.5" value="1">
+      </div>
+      <div class="form-group" id="d-einzelpreis-group">
+        <label>Einzelpreis (€)</label>
+        <input type="number" id="d-einzelpreis" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group full">
+        <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:4px 0"></div>
+      </div>
+    </div>
+
     <div class="modal-group-title">Einsatzdaten</div>
     <div class="form-grid">
       <div class="form-group full">
@@ -2055,37 +2168,6 @@
              onclick="useCompanyAddressForDeploymentOrt()"
              title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
         </div>
-      </div>
-    </div>
-
-    <div class="modal-group-title">Zuordnung</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Firma *</label>
-        <select id="d-company"></select>
-      </div>
-      <div class="form-group">
-        <label>Projekt</label>
-        <select id="d-project"></select>
-      </div>
-    </div>
-
-    <div class="modal-group-title">Leistung &amp; Preis</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Leistung</label>
-        <select id="d-service"></select>
-      </div>
-      <div class="form-group" id="d-menge-group">
-        <label>Menge</label>
-        <input type="number" id="d-menge" min="0" step="0.5" value="1">
-      </div>
-      <div class="form-group" id="d-einzelpreis-group">
-        <label>Einzelpreis (€)</label>
-        <input type="number" id="d-einzelpreis" min="0" step="0.01" placeholder="0.00">
-      </div>
-      <div class="form-group full">
-        <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:4px 0"></div>
       </div>
     </div>
 

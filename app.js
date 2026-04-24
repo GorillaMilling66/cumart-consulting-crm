@@ -1,10 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
-   Version 1.24.0 (Sidebar flat revert + Stammdaten-Dashboard:
-   ABC-Klassifizierung A/B/C (farbig), Gesamtumsatz, offene
-   Aufgaben, letzte Aktivität, Inline-Notizen, Quick-Create-
-   Panel rechts für Kontakt/Termin/Aufgabe/Einsatz/Projekt/
-   Mitgliedschaft direkt aus der Firmen-/Kontakt-Detailseite.)
+   Version 1.25.0 (Stammdaten-Dashboard v2: Auto-ABC nach
+   Kalenderjahr-Umsatz — ≥10k=A · ≥2k=B · sonst C, manuelle
+   Klassifizierung überschreibt; Umsatz-Card zeigt Kalender-
+   jahr + Historie-Subline; Dashboard-Zeile 2-spaltig
+   „Letzte Aktivität" neben „Bevorstehend"; Opportunities-
+   Widget (Projekte in Lead/Angebot); klickbare ABC-Card
+   öffnet ABC-Edit-Popover; Schnellaktionen-Modal pro Firma
+   mit Service-Prefill für Einsatz; Datum-Schnellauswahl im
+   Termin-Modal: heute/morgen/+3/+7/nächster Montag.)
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -3091,25 +3095,16 @@ function renderCompanyDetail(c) {
     openMembershipModal('new', null, c.id);
   };
 
-  // Stats-Widget: ABC
-  const abcBadge  = document.getElementById('company-abc-badge');
-  const abcLabel  = document.getElementById('company-abc-label');
-  abcBadge.classList.remove('abc-badge-A', 'abc-badge-B', 'abc-badge-C', 'abc-badge-unknown');
-  if (c.abc_klassifizierung) {
-    abcBadge.textContent = c.abc_klassifizierung;
-    abcBadge.classList.add(`abc-badge-${c.abc_klassifizierung}`);
-    abcLabel.textContent = {
-      A: 'Kern-/Top-Kunde',
-      B: 'Wichtiger Kunde',
-      C: 'Geringere Priorität'
-    }[c.abc_klassifizierung] || '';
-    abcLabel.classList.remove('stat-value-muted');
-  } else {
-    abcBadge.textContent = '—';
-    abcBadge.classList.add('abc-badge-unknown');
-    abcLabel.textContent = 'Nicht klassifiziert';
-    abcLabel.classList.add('stat-value-muted');
-  }
+  // ABC-Klick öffnet Edit-Modal (v1.25)
+  const abcCard = document.getElementById('company-abc-card');
+  if (abcCard) abcCard.onclick = () => openAbcEditModal(c.id, c.abc_klassifizierung);
+
+  // Schnellaktionen-Button (v1.25)
+  const quickActionsBtn = document.getElementById('company-quick-actions');
+  if (quickActionsBtn) quickActionsBtn.onclick = () => openQuickActionsModal(c.id, c.name);
+
+  // ABC initial setzen (Auto-Wert wird gleich von loadCompanyDashboard nachgereicht)
+  renderCompanyAbcBadge(c.abc_klassifizierung, null);
 
   // Notizen inline-editierbar
   const notesArea = document.getElementById('company-notes-inline');
@@ -3119,7 +3114,7 @@ function renderCompanyDetail(c) {
   document.getElementById('company-notes-save-status').textContent = '';
 
   // Stats-Widgets asynchron laden
-  loadCompanyDashboard(c.id);
+  loadCompanyDashboard(c.id, c.abc_klassifizierung);
 
   const info = document.getElementById('company-detail-info');
   const adrLines = [];
@@ -3898,6 +3893,30 @@ function autoFillOrtIfAppropriate() {
   const address = parts.join(', ');
   ortInput.value = address;
   lastAutoFilledOrt = address;
+}
+
+/** Setzt das Datum im Termin-Modal über die Schnellauswahl-Buttons (v1.25). */
+function setAppointmentDateShortcut(key) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let target = new Date(today);
+  switch (key) {
+    case 'today':      break;
+    case 'tomorrow':   target.setDate(today.getDate() + 1); break;
+    case 'plus3':      target.setDate(today.getDate() + 3); break;
+    case 'plus7':      target.setDate(today.getDate() + 7); break;
+    case 'nextMonday': {
+      // Nächster Montag = Mo der nächsten Woche, immer mindestens +1 Tag voraus.
+      // getDay(): 0=So, 1=Mo, ..., 6=Sa
+      const dow = today.getDay();
+      const offset = dow === 1 ? 7 : ((8 - dow) % 7 || 7);
+      target.setDate(today.getDate() + offset);
+      break;
+    }
+    default: return;
+  }
+  const input = document.getElementById('t-datum');
+  if (input) input.value = toISODate(target);
 }
 
 function setupAppointmentAutoFill() {
@@ -5424,6 +5443,13 @@ async function openDeploymentModal(mode, deploymentId = null) {
       }
       deploymentModalPrefillProjectId = null;
     }
+    // Service-Prefill (Schnellaktionen, v1.25)
+    if (window._pendingDeploymentPrefillServiceId) {
+      serviceSelect.value = window._pendingDeploymentPrefillServiceId;
+      window._pendingDeploymentPrefillServiceId = null;
+      // Auto-Fill von Preis/Uhrzeit/Titel anstoßen (wie wenn der User selbst klickt)
+      serviceSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     updateDeploymentPriceHint();
   } else {
     document.getElementById('modal-deployment-title').textContent = 'Einsatz bearbeiten';
@@ -6873,114 +6899,262 @@ function setTabCount(entityType, tabKey, count) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  DASHBOARD-WIDGETS (v1.24.0)
+//  DASHBOARD-WIDGETS (v1.24.0, erweitert v1.25.0)
 // ═══════════════════════════════════════════════════════════
-//
-// Firma-Stammdaten und Kontakt-Stammdaten zeigen ein Mini-Dashboard
-// mit Stats (ABC, Umsatz, Offene Aufgaben) + Letzte Aktivität.
-// Diese Funktionen laden die zugehörigen Daten und rendern sie.
 
-/** Lädt Umsatz + Offene Aufgaben + Letzte Aktivität für die Firma-Detail-Seite. */
-async function loadCompanyDashboard(companyId) {
-  // Parallel alle Queries anstoßen
-  const [depResult, projResult, openTasksResult, lastApptResult, lastDepResult] = await Promise.all([
-    // Umsatz aus direkten Einsätzen (Status Abgerechnet, ohne Projekt)
+/** Auto-ABC nach Kalenderjahr-Umsatz (v1.25): ≥10k=A · ≥2k=B · sonst C. */
+function computeAutoAbc(yearRevenue) {
+  if (yearRevenue >= 10000) return 'A';
+  if (yearRevenue >= 2000)  return 'B';
+  return 'C';
+}
+
+/** Setzt das ABC-Badge auf der Firma-Detail-Seite (manuell vs. auto).
+ *  manualAbc: 'A'|'B'|'C'|null  ·  autoAbc: 'A'|'B'|'C'|null (errechnet) */
+function renderCompanyAbcBadge(manualAbc, autoAbc) {
+  const badge   = document.getElementById('company-abc-badge');
+  const label   = document.getElementById('company-abc-label');
+  const modeEl  = document.getElementById('company-abc-mode-label');
+  if (!badge || !label) return;
+
+  const effective = manualAbc || autoAbc;
+  badge.classList.remove('abc-badge-A', 'abc-badge-B', 'abc-badge-C', 'abc-badge-unknown');
+
+  if (effective) {
+    badge.textContent = effective;
+    badge.classList.add(`abc-badge-${effective}`);
+    label.textContent = {
+      A: 'Kern-/Top-Kunde',
+      B: 'Wichtiger Kunde',
+      C: 'Geringere Priorität'
+    }[effective] || '';
+    label.classList.remove('stat-value-muted');
+  } else {
+    badge.textContent = '—';
+    badge.classList.add('abc-badge-unknown');
+    label.textContent = 'Nicht klassifiziert';
+    label.classList.add('stat-value-muted');
+  }
+
+  if (modeEl) {
+    if (manualAbc) modeEl.textContent = 'ABC · manuell';
+    else if (autoAbc) modeEl.textContent = 'ABC · auto';
+    else modeEl.textContent = 'ABC';
+  }
+}
+
+/** Lädt alle Dashboard-Daten der Firma-Detail-Seite. */
+async function loadCompanyDashboard(companyId, manualAbc) {
+  const now = new Date();
+  const yearStart = `${now.getFullYear()}-01-01`;
+  const yearEnd   = `${now.getFullYear()}-12-31`;
+  const todayISO  = toISODate(now);
+
+  // Parallel alle Queries
+  const [
+    depYearResult, depAllResult,
+    projYearResult, projAllResult,
+    openTasksResult,
+    lastApptResult, lastDepResult,
+    upcomingApptResult, upcomingDepResult,
+    opportunitiesResult
+  ] = await Promise.all([
+    // Einsätze (direkt) im aktuellen Kalenderjahr, abgerechnet (datum_von in YYYY oder created_at falls kein datum)
     db.from('deployments')
-      .select('menge, einzelpreis, status, project_id').is('deleted_at', null)
+      .select('menge, einzelpreis, status, project_id, datum_von, created_at').is('deleted_at', null)
       .eq('company_id', companyId).eq('status', 'Abgerechnet').is('project_id', null),
-    // Umsatz aus abgeschlossenen Projekten (Paketpreis)
+    // Alle abgerechneten Einsätze (für Historie seit Erstkontakt)
+    db.from('deployments')
+      .select('menge, einzelpreis, datum_von, created_at').is('deleted_at', null)
+      .eq('company_id', companyId).eq('status', 'Abgerechnet').is('project_id', null),
+    // Projekte abgeschlossen — wir brauchen enddatum (sonst created_at) für Kalenderjahr-Zuordnung
+    db.from('projects')
+      .select('geschaetzter_umsatz, enddatum, created_at').is('deleted_at', null)
+      .eq('company_id', companyId).eq('status', 'Abgeschlossen'),
     db.from('projects')
       .select('geschaetzter_umsatz').is('deleted_at', null)
       .eq('company_id', companyId).eq('status', 'Abgeschlossen'),
     // Offene Aufgaben
-    db.from('tasks').select('id, faelligkeit', { count: 'exact' }).is('deleted_at', null)
+    db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
       .eq('company_id', companyId).neq('status', 'erledigt'),
-    // Letzter Termin
+    // Letzter durchgeführter Termin
     db.from('appointments')
       .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
-      .eq('company_id', companyId).order('datum', { ascending: false }).limit(1),
-    // Letzter Einsatz (datum_von desc)
+      .eq('company_id', companyId).eq('status', 'durchgefuehrt')
+      .order('datum', { ascending: false }).limit(1),
+    // Letzter durchgeführter/abgerechneter Einsatz
     db.from('deployments')
-      .select('id, titel, datum_von, datum_bis').is('deleted_at', null)
-      .eq('company_id', companyId).not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1)
+      .select('id, titel, datum_von').is('deleted_at', null)
+      .eq('company_id', companyId).in('status', ['Durchgeführt', 'Abgerechnet'])
+      .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
+    // Bevorstehender geplanter Termin
+    db.from('appointments')
+      .select('id, titel, datum, uhrzeit_von, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .eq('company_id', companyId).eq('status', 'geplant')
+      .gte('datum', todayISO).order('datum', { ascending: true }).limit(2),
+    // Bevorstehender geplanter Einsatz
+    db.from('deployments')
+      .select('id, titel, datum_von').is('deleted_at', null)
+      .eq('company_id', companyId).eq('status', 'Geplant')
+      .gte('datum_von', todayISO).order('datum_von', { ascending: true }).limit(2),
+    // Opportunities (Projekte mit Status Lead/Angebot)
+    db.from('projects')
+      .select('id, name, status, geschaetzter_umsatz, enddatum').is('deleted_at', null)
+      .eq('company_id', companyId).in('status', ['Lead', 'Angebot'])
+      .order('enddatum', { ascending: true, nullsFirst: false })
   ]);
 
-  // Umsatz berechnen
-  const umsatzDirekt = (depResult.data || []).reduce(
-    (s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
-  const umsatzProjekte = (projResult.data || []).reduce(
-    (s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
-  const umsatzTotal = umsatzDirekt + umsatzProjekte;
+  // ── UMSATZ KALENDERJAHR ───────────────────────────────────
+  const inYear = (dateStr) => dateStr && dateStr >= yearStart && dateStr <= yearEnd;
+  const refDate = (d) => d.datum_von || (d.created_at || '').substring(0, 10) || null;
+
+  const umsatzYearDep = (depYearResult.data || [])
+    .filter(d => inYear(refDate(d)))
+    .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  const umsatzYearProj = (projYearResult.data || [])
+    .filter(p => inYear(p.enddatum || (p.created_at || '').substring(0, 10)))
+    .reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+  const umsatzYear = umsatzYearDep + umsatzYearProj;
+
+  // ── UMSATZ HISTORIE GESAMT ────────────────────────────────
+  const umsatzAllDep = (depAllResult.data || [])
+    .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  const umsatzAllProj = (projAllResult.data || [])
+    .reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+  const umsatzAll = umsatzAllDep + umsatzAllProj;
+
+  // ── RENDERN: Umsatz-Card + Auto-ABC ───────────────────────
+  const yearLabel = document.getElementById('company-revenue-year-label');
+  if (yearLabel) yearLabel.textContent = `Umsatz ${now.getFullYear()}`;
 
   const revEl = document.getElementById('company-total-revenue');
   if (revEl) {
-    revEl.textContent = umsatzTotal > 0 ? formatPreis(umsatzTotal) : '0,00 €';
-    revEl.classList.toggle('stat-value-muted', umsatzTotal === 0);
+    revEl.textContent = formatPreis(umsatzYear);
+    revEl.classList.toggle('stat-value-muted', umsatzYear === 0);
+  }
+  const histEl = document.getElementById('company-revenue-history');
+  if (histEl) {
+    histEl.textContent = umsatzAll > 0
+      ? `Historie seit Erstkontakt: ${formatPreis(umsatzAll)}`
+      : ' ';
   }
 
-  // Offene Aufgaben: count + überfällig-Färbung
-  const todayISO = toISODate(new Date());
+  // Auto-ABC + Display
+  const autoAbc = computeAutoAbc(umsatzYear);
+  renderCompanyAbcBadge(manualAbc, autoAbc);
+
+  // ── OFFENE AUFGABEN ──────────────────────────────────────
   const openTasks = openTasksResult.data || [];
   const offenCount = openTasks.length;
   const ueberfaellig = openTasks.filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
   const tasksEl = document.getElementById('company-open-tasks');
   if (tasksEl) {
-    tasksEl.textContent = offenCount === 0 ? '0' : String(offenCount);
+    tasksEl.textContent = String(offenCount);
     tasksEl.classList.toggle('stat-value-muted', offenCount === 0);
     tasksEl.classList.toggle('stat-value-overdue', ueberfaellig > 0);
     tasksEl.title = ueberfaellig > 0 ? `${offenCount} offen, davon ${ueberfaellig} überfällig` : `${offenCount} offen`;
   }
 
-  // Letzte Aktivität: pick latest across appointments + deployments
+  // ── LETZTE AKTIVITÄT (nur durchgeführt/abgerechnet) ──────
   const lastAppt = (lastApptResult.data || [])[0] || null;
-  const lastDep = (lastDepResult.data || [])[0] || null;
-  const lastActEl = document.getElementById('company-last-activity');
-  if (lastActEl) {
+  const lastDep  = (lastDepResult.data || [])[0] || null;
+  const lastEl   = document.getElementById('company-last-activity');
+  if (lastEl) {
     const items = [];
     if (lastAppt) items.push({
       datum: lastAppt.datum, titel: lastAppt.titel, type: 'Termin',
-      typWert: lastAppt.typ?.wert
+      typWert: lastAppt.typ?.wert,
+      onClick: `openAppointmentModal('edit','${esc(lastAppt.id)}')`
     });
     if (lastDep?.datum_von) items.push({
-      datum: lastDep.datum_von, titel: lastDep.titel, type: 'Einsatz'
+      datum: lastDep.datum_von, titel: lastDep.titel, type: 'Einsatz',
+      onClick: `openDeploymentModal('edit','${esc(lastDep.id)}')`
     });
     items.sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
-    if (items.length === 0) {
-      lastActEl.innerHTML = '<div class="info-card-empty">Noch keine Aktivität erfasst.</div>';
-    } else {
-      lastActEl.innerHTML = items.slice(0, 2).map(i => `
-        <div class="last-activity-item">
+    lastEl.innerHTML = items.length === 0
+      ? '<div class="info-card-empty">Noch nichts durchgeführt.</div>'
+      : items.slice(0, 2).map(i => `
+        <div class="last-activity-item" style="cursor:pointer" onclick="${i.onClick}">
           <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
           <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+        </div>
+      `).join('');
+  }
+
+  // ── BEVORSTEHENDE AKTIVITÄT (geplante zukünftige) ────────
+  const upcomingEl = document.getElementById('company-upcoming-activity');
+  if (upcomingEl) {
+    const items = [];
+    (upcomingApptResult.data || []).forEach(a => items.push({
+      datum: a.datum, titel: a.titel, type: 'Termin', typWert: a.typ?.wert,
+      onClick: `openAppointmentModal('edit','${esc(a.id)}')`
+    }));
+    (upcomingDepResult.data || []).forEach(d => items.push({
+      datum: d.datum_von, titel: d.titel, type: 'Einsatz',
+      onClick: `openDeploymentModal('edit','${esc(d.id)}')`
+    }));
+    items.sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+    upcomingEl.innerHTML = items.length === 0
+      ? '<div class="info-card-empty">Nichts geplant.</div>'
+      : items.slice(0, 2).map(i => `
+        <div class="last-activity-item" style="cursor:pointer" onclick="${i.onClick}">
+          <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
+          <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+        </div>
+      `).join('');
+  }
+
+  // ── OPPORTUNITIES (Projekte mit Lead/Angebot) ─────────────
+  const oppEl = document.getElementById('company-opportunities');
+  if (oppEl) {
+    const opps = opportunitiesResult.data || [];
+    if (opps.length === 0) {
+      oppEl.innerHTML = '<div class="info-card-empty">Keine offenen Opportunities.</div>';
+    } else {
+      oppEl.innerHTML = opps.map(p => `
+        <div class="opportunity-row">
+          <div style="min-width:0;flex:1">
+            <div class="opportunity-name cell-link" onclick="navigateTo('projekt','${esc(p.id)}')">${esc(p.name)}</div>
+            <div class="opportunity-meta">${esc(p.status)}${p.enddatum ? ' · Zieldatum ' + esc(formatDateDE(p.enddatum)) : ''}</div>
+          </div>
+          <div class="opportunity-value">${esc(formatPreis(p.geschaetzter_umsatz || 0))}</div>
         </div>
       `).join('');
     }
   }
 }
 
-/** Lädt Offene Aufgaben + Projekte + Letzte Aktivität für die Kontakt-Detail-Seite. */
+/** Lädt Offene Aufgaben + Projekte + Letzte/Bevorstehende Aktivität für die Kontakt-Detail-Seite. */
 async function loadContactDashboard(contactId) {
-  const [openTasksResult, projCountResult, lastApptResult, lastTaskResult] = await Promise.all([
+  const todayISO = toISODate(new Date());
+
+  const [
+    openTasksResult, projCountResult,
+    lastApptResult, upcomingApptResult
+  ] = await Promise.all([
     db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
       .eq('contact_id', contactId).neq('status', 'erledigt'),
     db.from('projects').select('id', { count: 'exact', head: true }).is('deleted_at', null)
       .eq('hauptkontakt_id', contactId),
+    // Letzter durchgeführter Termin
     db.from('appointments')
       .select('id, titel, datum, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
-      .eq('contact_id', contactId).order('datum', { ascending: false }).limit(1),
-    db.from('tasks')
-      .select('id, titel, created_at, status').is('deleted_at', null)
-      .eq('contact_id', contactId).order('created_at', { ascending: false }).limit(1)
+      .eq('contact_id', contactId).eq('status', 'durchgefuehrt')
+      .order('datum', { ascending: false }).limit(1),
+    // Bevorstehender geplanter Termin
+    db.from('appointments')
+      .select('id, titel, datum, uhrzeit_von, typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
+      .eq('contact_id', contactId).eq('status', 'geplant')
+      .gte('datum', todayISO).order('datum', { ascending: true }).limit(2)
   ]);
 
   // Offene Aufgaben
-  const todayISO = toISODate(new Date());
   const openTasks = openTasksResult.data || [];
   const offenCount = openTasks.length;
   const ueberfaellig = openTasks.filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
   const tasksEl = document.getElementById('contact-open-tasks');
   if (tasksEl) {
-    tasksEl.textContent = offenCount === 0 ? '0' : String(offenCount);
+    tasksEl.textContent = String(offenCount);
     tasksEl.classList.toggle('stat-value-muted', offenCount === 0);
     tasksEl.classList.toggle('stat-value-overdue', ueberfaellig > 0);
     tasksEl.title = ueberfaellig > 0 ? `${offenCount} offen, davon ${ueberfaellig} überfällig` : `${offenCount} offen`;
@@ -6994,31 +7168,33 @@ async function loadContactDashboard(contactId) {
     projEl.classList.toggle('stat-value-muted', cnt === 0);
   }
 
-  // Letzte Aktivität
+  // Letzte Aktivität (durchgeführter Termin)
   const lastAppt = (lastApptResult.data || [])[0] || null;
-  const lastTask = (lastTaskResult.data || [])[0] || null;
-  const lastActEl = document.getElementById('contact-last-activity');
-  if (lastActEl) {
-    const items = [];
-    if (lastAppt) items.push({
-      datum: lastAppt.datum, titel: lastAppt.titel, type: 'Termin',
-      typWert: lastAppt.typ?.wert
-    });
-    if (lastTask) items.push({
-      datum: (lastTask.created_at || '').substring(0, 10),
-      titel: lastTask.titel, type: 'Aufgabe'
-    });
-    items.sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
-    if (items.length === 0) {
-      lastActEl.innerHTML = '<div class="info-card-empty">Noch keine Aktivität erfasst.</div>';
+  const lastEl = document.getElementById('contact-last-activity');
+  if (lastEl) {
+    if (!lastAppt) {
+      lastEl.innerHTML = '<div class="info-card-empty">Noch nichts durchgeführt.</div>';
     } else {
-      lastActEl.innerHTML = items.slice(0, 2).map(i => `
-        <div class="last-activity-item">
-          <div class="last-activity-date">${esc(formatDateDE(i.datum))}</div>
-          <div class="last-activity-title">${esc(i.titel || '—')}<span class="last-activity-type">${esc(i.type)}${i.typWert ? ' · ' + esc(i.typWert) : ''}</span></div>
+      lastEl.innerHTML = `
+        <div class="last-activity-item" style="cursor:pointer" onclick="openAppointmentModal('edit','${esc(lastAppt.id)}')">
+          <div class="last-activity-date">${esc(formatDateDE(lastAppt.datum))}</div>
+          <div class="last-activity-title">${esc(lastAppt.titel || '—')}<span class="last-activity-type">Termin${lastAppt.typ?.wert ? ' · ' + esc(lastAppt.typ.wert) : ''}</span></div>
+        </div>`;
+    }
+  }
+
+  // Bevorstehende Aktivität (geplante Termine)
+  const upcomingEl = document.getElementById('contact-upcoming-activity');
+  if (upcomingEl) {
+    const items = upcomingApptResult.data || [];
+    upcomingEl.innerHTML = items.length === 0
+      ? '<div class="info-card-empty">Nichts geplant.</div>'
+      : items.map(a => `
+        <div class="last-activity-item" style="cursor:pointer" onclick="openAppointmentModal('edit','${esc(a.id)}')">
+          <div class="last-activity-date">${esc(formatDateDE(a.datum))}</div>
+          <div class="last-activity-title">${esc(a.titel || '—')}<span class="last-activity-type">Termin${a.typ?.wert ? ' · ' + esc(a.typ.wert) : ''}</span></div>
         </div>
       `).join('');
-    }
   }
 }
 
@@ -7067,6 +7243,92 @@ async function saveContactNotesInline() {
   statusEl.style.color = 'var(--muted)';
   statusEl.textContent = 'Gespeichert ✓';
   setTimeout(() => { if (statusEl.textContent === 'Gespeichert ✓') statusEl.textContent = ''; }, 2000);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ABC-EDIT-MODAL (v1.25.0)
+// ═══════════════════════════════════════════════════════════
+
+let _abcEditCompanyId = null;
+
+function openAbcEditModal(companyId, currentManualAbc) {
+  _abcEditCompanyId = companyId;
+  // Aktive Markierung im Picker
+  document.querySelectorAll('#modal-abc-edit .abc-edit-btn').forEach(btn => {
+    const v = btn.dataset.abc || '';
+    btn.style.borderColor = (v === (currentManualAbc || '')) ? 'var(--primary)' : '';
+    btn.style.background  = (v === (currentManualAbc || '')) ? 'var(--bg)' : '';
+  });
+  document.getElementById('modal-abc-edit').classList.add('open');
+}
+
+function closeAbcEditModal() {
+  document.getElementById('modal-abc-edit').classList.remove('open');
+  _abcEditCompanyId = null;
+}
+
+async function setCompanyAbc(value) {
+  if (!_abcEditCompanyId) return;
+  const id = _abcEditCompanyId;
+  closeAbcEditModal();
+
+  const { error } = await db.from('companies')
+    .update({ abc_klassifizierung: value }).eq('id', id);
+  if (error) { showToast('Fehler beim Speichern: ' + error.message, true); return; }
+
+  showToast(value
+    ? `ABC manuell auf „${value}" gesetzt.`
+    : 'ABC zurück auf „automatisch" gesetzt.');
+
+  // Detail-Page reload (refetch + re-render)
+  if (currentCompanyDetailId === id) {
+    await loadCompanyDetail(id);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SCHNELLAKTIONEN-MODAL (v1.25.0)
+// ═══════════════════════════════════════════════════════════
+
+let _quickActionsCompanyId = null;
+let _quickActionsCompanyName = null;
+
+function openQuickActionsModal(companyId, companyName) {
+  _quickActionsCompanyId = companyId;
+  _quickActionsCompanyName = companyName;
+  const ctx = document.getElementById('quick-actions-context');
+  if (ctx) ctx.textContent = `Vordefinierte Workflows für „${companyName || '(ohne Name)'}".`;
+  document.getElementById('modal-quick-actions').classList.add('open');
+}
+
+function closeQuickActionsModal() {
+  document.getElementById('modal-quick-actions').classList.remove('open');
+  _quickActionsCompanyId = null;
+  _quickActionsCompanyName = null;
+}
+
+/** Schnellaktion: TNC-Club Premiumtag — Einsatz mit dem TNC-Club-Premium-Service vorbefüllen.
+ *  Wenn die Firma eine aktive TNC-Club-Premium-Mitgliedschaft hat, wird die
+ *  Bonus-Einlösung im Einsatz-Modal automatisch angeboten (v1.14-Logik). */
+async function runQuickActionTncTag() {
+  if (!_quickActionsCompanyId) return;
+  const companyId = _quickActionsCompanyId;
+  closeQuickActionsModal();
+
+  // Service-ID per Name-Lookup (robust gegen UUID-Wechsel)
+  const { data: svc, error } = await db.from('services')
+    .select('id').eq('name', 'TNC-Club Premiumtag').eq('ist_aktiv', true).limit(1).single();
+  if (error || !svc) {
+    showToast('Service „TNC-Club Premiumtag" nicht gefunden — bitte unter Stammdaten anlegen.', true);
+    return;
+  }
+
+  // Modal mit Prefill öffnen — Service-Selection + Auto-Fill (Titel, Uhrzeit, Preis) zieht
+  // im Einsatz-Modal automatisch (v1.10), Entitlement-Sektion zeigt sich, falls Firma die
+  // passende Mitgliedschaft hat (v1.14).
+  deploymentModalPrefillCompanyId = companyId;
+  window._pendingDeploymentPrefillServiceId = svc.id;
+  await openDeploymentModal('new');
 }
 
 // ═══════════════════════════════════════════════════════════

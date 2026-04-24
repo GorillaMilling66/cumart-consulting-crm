@@ -403,6 +403,25 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* ── DATE-SHORTCUTS (v1.25.0) ── */
+.date-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.date-shortcut-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.date-shortcut-btn:hover { background: var(--surface); color: var(--text); }
+
 /* ── ABC-KLASSIFIZIERUNG BADGE (v1.24.0) ── */
 .abc-badge {
   display: inline-flex;
@@ -431,6 +450,110 @@ body {
   font-size: 10px;
 }
 .abc-badge-unknown.abc-badge-lg { font-size: 11px; }
+
+/* ── DASHBOARD-ROW 2-COL für Aktivitäten (v1.25.0) ── */
+.dashboard-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 768px) {
+  .dashboard-row-2col { grid-template-columns: 1fr; }
+}
+
+/* ── STAT-CARD CLICKABLE (v1.25.0) — z. B. ABC-Edit ── */
+.stat-card-clickable {
+  cursor: pointer;
+  transition: background .1s, border-color .1s;
+}
+.stat-card-clickable:hover {
+  background: var(--bg);
+  border-color: var(--primary);
+}
+
+/* ── STAT-SUBLINE (v1.25.0) — kleinere Zusatzinfo unter Stat-Value ── */
+.stat-subline {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  min-height: 13px;
+}
+
+/* ── ABC-EDIT-MODAL Buttons ── */
+.abc-edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.abc-edit-btn:hover { background: var(--bg); border-color: var(--primary); }
+
+/* ── QUICK-ACTION-TILE (Schnellaktionen-Modal) ── */
+.quick-action-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .1s, background .1s;
+}
+.quick-action-tile:hover { border-color: var(--primary); background: var(--bg); }
+.quick-action-tile-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.quick-action-tile-body { flex: 1; min-width: 0; }
+.quick-action-tile-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.quick-action-tile-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── QUICK-CREATE-BTN ACCENT (Schnellaktionen-Eintrag) ── */
+.quick-create-btn-accent {
+  margin-top: 8px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.plus-icon-accent { background: #f59e0b !important; color: #fff !important; }
+
+/* ── OPPORTUNITIES-LIST ── */
+.opportunity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.opportunity-row:last-child { border-bottom: none; }
+.opportunity-name { font-size: 13px; color: var(--text); }
+.opportunity-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.opportunity-value { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
 
 /* ── DETAIL-DASHBOARD (v1.24.0) ── */
 .detail-dashboard {
