@@ -1,5 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.27.1 (Auto-Expand bei genau einem Termin in
+   Detail-Tabs — spart den manuellen Klick, wenn ohnehin
+   nur eine Zeile da ist. Greift in Firma/Kontakt/Projekt-
+   Termin-Tabs, nicht in der globalen Haupt-Liste und nicht
+   auf Mobile.)
    Version 1.27.0 (Termin-Inline-Expand-Dashboard: Klick auf
    einen Termin-Titel in einer Liste klappt darunter ein
    Detail-Dashboard auf — Stats (Status, Typ, Datum, ABC der
@@ -3305,6 +3310,9 @@ async function loadCompanyAppointments(companyId) {
   } else {
     showAllWrap.style.display = 'none';
   }
+
+  // Auto-Expand wenn genau ein Termin — spart den manuellen Klick (v1.27.1)
+  autoExpandSingleAppointmentRow(tbody, toShow);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4663,6 +4671,9 @@ async function loadProjectAppointments(projectId) {
 
   // Show-All-Link immer ausblenden (wir zeigen hier ohnehin alle)
   document.getElementById('project-appointments-show-all').style.display = 'none';
+
+  // Auto-Expand wenn genau ein Termin (v1.27.1)
+  autoExpandSingleAppointmentRow(tbody, sorted);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5022,6 +5033,9 @@ async function loadContactAppointments(contactId) {
         </td>
       </tr>`;
   }).join('');
+
+  // Auto-Expand wenn genau ein Termin (v1.27.1)
+  autoExpandSingleAppointmentRow(tbody, sorted);
 }
 
 async function loadContactProjects(contactId) {
@@ -7522,6 +7536,18 @@ function closeExpandedRow() {
   if (_expandedRow.rowEl) _expandedRow.rowEl.classList.remove('row-expanded');
   if (_expandedRow.panelRow) _expandedRow.panelRow.remove();
   _expandedRow = { type: null, id: null, rowEl: null, panelRow: null };
+}
+
+/** Auto-Expand (v1.27.1): Wenn in einem Sub-Tab genau ein Termin angezeigt wird,
+ *  klappt die einzige Zeile automatisch auf — spart den manuellen Klick.
+ *  Greift nicht auf Mobile (dort würde das Klick→Modal-Verhalten ungewöhnlich brechen). */
+function autoExpandSingleAppointmentRow(tbody, items) {
+  if (!tbody || !Array.isArray(items) || items.length !== 1) return;
+  if (isMobileForExpand()) return;
+  const firstRow = tbody.querySelector('tr');
+  if (!firstRow) return;
+  // Fire-and-forget: toggleRowExpand ist async (lädt Details nach), aber wir warten nicht
+  toggleRowExpand('appointment', items[0].id, firstRow);
 }
 
 /** Öffnet oder schließt das Inline-Dashboard für eine Listen-Zeile.
