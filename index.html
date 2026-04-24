@@ -751,28 +751,29 @@
         <button class="detail-tab" data-tab="projekte" onclick="switchDetailTab('contact','projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten (Dashboard v1.25.0) -->
+      <!-- PANEL: Stammdaten (Dashboard v1.26.0 — an Firma-Dashboard angeglichen) -->
       <div class="detail-tab-panel active" data-tab="stammdaten">
         <div class="detail-dashboard">
           <div class="dashboard-main">
             <div class="dashboard-stats">
-              <div class="stat-card">
+              <div class="stat-card stat-card-clickable" id="contact-abc-card" title="Klick öffnet ABC-Bearbeitung der Firma">
                 <div id="contact-abc-badge" class="abc-badge abc-badge-lg abc-badge-unknown">—</div>
                 <div class="stat-card-body">
-                  <div class="stat-label">ABC (Firma)</div>
+                  <div class="stat-label" id="contact-abc-mode-label">ABC (Firma)</div>
                   <div class="stat-value stat-value-muted" id="contact-abc-label">Nicht klassifiziert</div>
+                </div>
+              </div>
+              <div class="stat-card stat-card-clickable" id="contact-revenue-card" title="Klick öffnet die Firma">
+                <div class="stat-card-body">
+                  <div class="stat-label" id="contact-revenue-year-label">Umsatz Firma</div>
+                  <div class="stat-value" id="contact-revenue-year">—</div>
+                  <div class="stat-subline" id="contact-revenue-history">&nbsp;</div>
                 </div>
               </div>
               <div class="stat-card">
                 <div class="stat-card-body">
                   <div class="stat-label">Offene Aufgaben</div>
                   <div class="stat-value" id="contact-open-tasks">—</div>
-                </div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-card-body">
-                  <div class="stat-label">Projekte (Hauptkontakt)</div>
-                  <div class="stat-value" id="contact-project-count">—</div>
                 </div>
               </div>
             </div>
@@ -786,6 +787,11 @@
                 <div class="info-card-title">Bevorstehend</div>
                 <div id="contact-upcoming-activity"><div class="info-card-empty">Lade ...</div></div>
               </div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-title">Opportunities (Hauptkontakt)</div>
+              <div id="contact-opportunities"><div class="info-card-empty">Lade ...</div></div>
             </div>
 
             <div class="info-card">
@@ -812,6 +818,9 @@
             </button>
             <button class="quick-create-btn" id="contact-quick-project">
               <span class="plus-icon">+</span> Projekt
+            </button>
+            <button class="quick-create-btn quick-create-btn-accent" id="contact-quick-actions" title="Benötigt zugeordnete Firma">
+              <span class="plus-icon plus-icon-accent">⚡</span> Schnellaktionen
             </button>
           </aside>
         </div>

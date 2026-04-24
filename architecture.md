@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.25.0
+**Version:** 1.26.0
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -59,9 +59,9 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.54k Zeilen  (alle Pages + Modals als hidden divs)
+├── index.html       ~2.55k Zeilen  (alle Pages + Modals als hidden divs)
 ├── styles.css       ~1.81k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~8.13k Zeilen  (alle Module in einer Datei)
+├── app.js            ~8.29k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -539,7 +539,7 @@ Firma-, Projekt- und Kontakt-Detail zeigen statt gestapelter Cards eine horizont
 - **Mobile:** Tab-Leiste horizontal scrollbar (`overflow-x:auto`), kleinere Paddings.
 - **Kein Preloading:** Tabs zeigen bereits geladene Daten an (ein `SELECT ...WHERE entity_id=...` pro Sub-Sektion beim Öffnen der Detail-Seite). Tab-Wechsel = reiner DOM-Toggle, keine zusätzlichen Queries.
 
-### 7.15 Stammdaten-Dashboard (v1.24.0, erweitert v1.25.0)
+### 7.15 Stammdaten-Dashboard (v1.24.0, erweitert v1.25.0, Kontakt-Parität v1.26.0)
 
 Der Stammdaten-Tab auf Firma- und Kontakt-Detail zeigt ein Mini-Dashboard im 2-Spalten-Layout (ab 960 px Viewport-Breite):
 
@@ -560,9 +560,18 @@ Der Stammdaten-Tab auf Firma- und Kontakt-Detail zeigt ein Mini-Dashboard im 2-S
 
 Mobile (<960 px): Quick-Create-Panel rutscht unter den Main-Bereich (nicht sticky). Stats-Row wird einspaltig (<600 px).
 
-**Widget-Loader:** `loadCompanyDashboard(id, manualAbc)` / `loadContactDashboard(id)` feuern ~10 parallele Supabase-Queries (`Promise.all`) und rendern sofort, sobald alles da ist. Das passiert parallel zum normalen Detail-Laden und blockiert den Rest nicht.
+**Widget-Loader:** `loadCompanyDashboard(id, manualAbc)` / `loadContactDashboard(id, companyId, manualAbc, companyName)` feuern ~10 parallele Supabase-Queries (`Promise.all`) und rendern sofort, sobald alles da ist. Das passiert parallel zum normalen Detail-Laden und blockiert den Rest nicht.
 
-**Auto-ABC (v1.25):** `computeAutoAbc(yearRevenue)` mit Schwellen `≥10.000 € = A`, `≥2.000 € = B`, sonst `C`. Wirkt nur, wenn `companies.abc_klassifizierung IS NULL`. Das Setzen eines expliziten A/B/C über das Edit-Popover hat immer Vorrang. `renderCompanyAbcBadge(manualAbc, autoAbc)` mischt beide und beschriftet den Modus.
+**Auto-ABC (v1.25):** `computeAutoAbc(yearRevenue)` mit Schwellen `≥10.000 € = A`, `≥2.000 € = B`, sonst `C`. Wirkt nur, wenn `companies.abc_klassifizierung IS NULL`. Das Setzen eines expliziten A/B/C über das Edit-Popover hat immer Vorrang. `renderAbcBadgeIn({badge, label, mode}, manualAbc, autoAbc, opts)` (v1.26) ist der generische Renderer; `renderCompanyAbcBadge` und `renderContactAbcBadge` sind dünne Wrapper mit den jeweiligen Element-IDs + Mode-Präfix.
+
+**Kontakt-Parität (v1.26):** Das Kontakt-Stammdaten-Dashboard spiegelt fachlich sauber die Firma-Daten, wo Kontakt keinen eigenen Wert hat:
+
+- **ABC-Card** ist klickbar und öffnet das ABC-Edit-Popover **mit der Firma-ID**. ABC lebt nur an der Firma, der Kontakt zeigt sie readonly-gespiegelt — Klick von der Kontakt-Seite aus ändert sie direkt an der Firma (und refresht den Kontakt-Screen automatisch über `setCompanyAbc` → `loadContactDetail`). Label „ABC · Firma · manuell/auto", bei Kontakt ohne Firma: „Keine Firma zugeordnet".
+- **Umsatz-Card** zeigt den Kalenderjahr-Umsatz der zugeordneten Firma (kein Kontakt-eigener Umsatz). Label „Umsatz {Firma-Name} · {YEAR}", Subline Historie. Klick navigiert zur Firma. Bei Kontakt ohne Firma: „—" + Hinweis.
+- **Letzte Aktivität** mischt Termine am Kontakt (via `contact_id`) mit Einsätzen der Firma (gekennzeichnet als „Einsatz (Firma)").
+- **Bevorstehend** dasselbe Muster: geplante Termine am Kontakt + geplante Einsätze der Firma.
+- **Opportunities** zeigen Projekte, in denen **dieser Kontakt Hauptkontakt** ist und Status `Lead`/`Angebot` haben — bewusst nicht alle Firma-Projekte, sonst hätten alle Kontakte derselben Firma dieselbe Liste.
+- **Schnellaktionen-Button** im Quick-Create-Panel öffnet das Quick-Actions-Modal mit Firma-Kontext. Bei Kontakt ohne Firma `disabled`.
 
 ### 7.16 Schnellaktionen-Modal (v1.25.0)
 
@@ -770,7 +779,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.22.0 | 23.04.2026  | Aufgaben — neue Entität `tasks` mit eigener Liste, Modal, Sub-Sektionen auf Firma/Kontakt/Projekt. Zuweisbar an `user_profiles.id` (self oder anderer Nutzer). Fälligkeit + überfällig-Badge. Checkbox-Toggle in Liste (→ erledigt). Sidebar-Badge „meine offenen" mit Rotfärbung bei Überfälligkeit. FAB-Eintrag + Soft-Delete + Undo-Toast. Status via `lookup_values.aufgabe_status`. |
 | v1.23.0 | 24.04.2026  | Nav-Restruktur (3 Gruppen Kunden/Aktivität/Projekte) + Detail-Tabs. In v1.24 teilweise zurückgenommen: Sidebar wieder flach, Detail-Tabs bleiben. |
 | v1.24.0 | 24.04.2026  | Stammdaten-Dashboard + ABC-Klassifizierung — Sidebar zurück auf flach (User-Feedback: Gruppen waren ein extra Klick). Neues Feld `companies.abc_klassifizierung` (A/B/C, CHECK) mit farbigen Badges (grün/gelb/grau). Firma-Stammdaten-Tab komplett neu als Dashboard-Layout: Stats-Row (ABC · Gesamtumsatz · Offene Aufgaben, rot bei überfällig), Letzte Aktivität, Kontaktdaten, Inline-editierbare Notizen (auto-save on blur). Rechts ein sticky Quick-Create-Panel mit allen „+"-Aktionen für diesen Kunden direkt. Kontakt-Stammdaten analog mit geerbter ABC und reduziertem Quick-Create. |
-| **v1.25.0** | **24.04.2026** | **Stammdaten-Dashboard v2** — Umsatz-Card zeigt Kalenderjahr-Umsatz (Hauptzahl) + Historie-Subline statt eines einzigen Gesamtbetrags. **Auto-ABC** nach Kalenderjahr-Umsatz (≥10k=A · ≥2k=B · sonst C); manuelle Klassifizierung bleibt Vorrang; ABC-Card ist jetzt klickbar und öffnet ein kompaktes Edit-Popover (A/B/C/Auto). Aktivitäts-Zeile 2-spaltig: „Letzte Aktivität" neben neuer Card „Bevorstehend" (nächste geplante Termine + Einsätze). Neues Widget **Opportunities** (Projekte in Status Lead/Angebot, nach Enddatum aufsteigend). Neues **Schnellaktionen-Modal** pro Firma mit Ein-Klick-Prefill-Kacheln für häufige Folgeleistungen (setzt `_pendingDeploymentPrefillServiceId` für Einsatz-Modal). Im Termin-Modal Datum-Schnellauswahl (heute/morgen/+3/+7/nächster Montag). Kein Schema-Change. |
+| v1.25.0 | 24.04.2026  | Stammdaten-Dashboard v2 — Umsatz-Card zeigt Kalenderjahr-Umsatz (Hauptzahl) + Historie-Subline statt eines einzigen Gesamtbetrags. Auto-ABC nach Kalenderjahr-Umsatz (≥10k=A · ≥2k=B · sonst C); manuelle Klassifizierung bleibt Vorrang; ABC-Card ist jetzt klickbar und öffnet ein kompaktes Edit-Popover (A/B/C/Auto). Aktivitäts-Zeile 2-spaltig: „Letzte Aktivität" neben neuer Card „Bevorstehend" (nächste geplante Termine + Einsätze). Neues Widget Opportunities (Projekte in Status Lead/Angebot, nach Enddatum aufsteigend). Neues Schnellaktionen-Modal pro Firma mit Ein-Klick-Prefill-Kacheln für häufige Folgeleistungen (setzt `_pendingDeploymentPrefillServiceId` für Einsatz-Modal). Im Termin-Modal Datum-Schnellauswahl (heute/morgen/+3/+7/nächster Montag). Kein Schema-Change. |
+| **v1.26.0** | **24.04.2026** | **Kontakt-Dashboard-Parität** — Kontakt-Stammdaten-Tab zeigt dieselbe Dashboard-Struktur wie Firma: Umsatz-Card spiegelt den Kalenderjahr-Umsatz der zugeordneten Firma (Label „Umsatz {Firma} · {YEAR}", Klick navigiert zur Firma), ABC-Card ist klickbar und öffnet das ABC-Edit-Popover der Firma (Kontakt bleibt Readonly-Spiegel, aber Edit geht direkt über den Kontakt-Screen; `setCompanyAbc` refresht das Kontakt-Detail automatisch). Bevorstehend-Card mischt geplante Kontakt-Termine mit geplanten Einsätzen der Firma; Letzte Aktivität analog. Neues Opportunities-Widget für Projekte, in denen der Kontakt **Hauptkontakt** ist und Status Lead/Angebot haben. Schnellaktionen-Button im Quick-Create-Panel öffnet das bestehende Quick-Actions-Modal mit Firma-Kontext (bei Kontakt ohne Firma: `disabled`). ABC-Renderer generalisiert (`renderAbcBadgeIn`) — Firma + Kontakt teilen dieselbe Badge/Label/Modus-Logik. Kein Schema-Change. |
 
 ---
 
