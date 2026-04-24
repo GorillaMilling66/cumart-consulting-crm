@@ -2280,6 +2280,53 @@ tr.expanded-row > td {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   TERMIN-TYP-ICON-PICKER (v1.34)
+   ═══════════════════════════════════════════════════════════ */
+.termin-typ-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.termin-typ-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .08s, border-color .08s;
+}
+.termin-typ-icon-btn:hover { background: var(--bg); border-color: var(--link); }
+.termin-typ-icon-btn.selected {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.termin-typ-icon-emoji { font-size: 14px; line-height: 1; }
+
+/* Dropdown darunter als dezenter Fallback */
+select.typ-select-secondary {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+
+/* Termin-Titel-Icon in Listen + Dashboards */
+.termin-title-icon {
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 13px;
+  line-height: 1;
+  vertical-align: -1px;
+}
+
+/* ═══════════════════════════════════════════════════════════
    KALENDER-POPOVER-HEADER PLUS-BUTTON (v1.33)
    ═══════════════════════════════════════════════════════════ */
 .calendar-popover-title-actions {

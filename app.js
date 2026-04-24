@@ -1,5 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.34.0 (Punkte 6 + 9: Termin-Typ-Icons und Modal-
+   Redesign. Termin-Modal hat jetzt einen Icon-Picker neben
+   dem Typ-Dropdown — jeder Typ bekommt ein Emoji via Fuzzy-
+   Match auf den Lookup-Wert (Call 📞, Meeting 🤝, Training 🎓,
+   usw., Fallback 📅). Die Icons erscheinen auch vor Termin-
+   Titeln in allen Listen, im Kalender-Popover und im Termin-
+   Dashboard, damit man auf einen Blick den Termin-Typ sieht.
+   Modal-Redesign: Optional-Sektionen in Termin-/Einsatz-/
+   Aufgabe-Modal sind standardmäßig kollabiert — Einsatz-
+   Modal zeigt „Beschreibung & Notizen" und „Techniker" zu-
+   geklappt (per Klick aufklappbar), Termin-Modal „Notizen"
+   zugeklappt, Aufgabe-Modal „Zuordnung (optional)" und
+   „Notizen" zugeklappt. Fachliche Pflichtfelder bleiben
+   oben sichtbar. Einsatz-Modal hat zusätzlich eine eigene
+   „Kopplung"-Sektion (Termin-Sync + Bonus-Einlösung)
+   getrennt von den Notizen.)
    Version 1.33.0 (Fünferpack: 1) Kontakt hat Vorrang vor Firma
    im Kunden-Label der Verwandten-Aufgaben. 2) Plus-Button im
    Kalender-Popover öffnet Mini-Menü (+Termin/+Einsatz/+Aufgabe)
@@ -954,6 +970,75 @@ function formatTime(timeStr) {
 function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fdf4'; }
 function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
 function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
+
+/** Termin-Typ-Icons (v1.34). Fuzzy-Match auf den Lookup-Wert — unbekannte Typen
+ *  fallen auf 📅 zurück. Reihenfolge in der Map ist bewusst: längere Begriffe
+ *  vor kürzeren, damit z. B. „Follow-up" nicht von „up" verschluckt wird. */
+const TERMIN_TYPE_ICON_MAP = [
+  ['kickoff',       '🚀'],
+  ['kick-off',      '🚀'],
+  ['workshop',      '🛠️'],
+  ['präsentation',  '📊'],
+  ['praesentation', '📊'],
+  ['schulung',      '🎓'],
+  ['training',      '🎓'],
+  ['follow',        '🔁'],
+  ['beratung',      '💬'],
+  ['abstimmung',    '📋'],
+  ['akquise',       '🎯'],
+  ['meeting',       '🤝'],
+  ['vor ort',       '📍'],
+  ['online',        '💻'],
+  ['call',          '📞'],
+  ['telefonat',     '📞'],
+  ['videocall',     '🎥'],
+  ['demo',          '🎬'],
+  ['messe',         '🏢']
+];
+
+function terminTypIcon(wert) {
+  if (!wert) return '📅';
+  const lower = String(wert).toLowerCase();
+  for (const [key, icon] of TERMIN_TYPE_ICON_MAP) {
+    if (lower.includes(key)) return icon;
+  }
+  return '📅';
+}
+
+/** Füllt den Icon-Picker im Termin-Modal mit Buttons pro Typ. Der Dropdown bleibt
+ *  als Fallback und als „Source of Truth" für den Wert (v1.34). */
+function renderTerminTypIconsPicker() {
+  const container = document.getElementById('t-typ-icons');
+  const select = document.getElementById('t-typ');
+  if (!container || !select) return;
+  container.innerHTML = [...select.options]
+    .filter(o => o.value)
+    .map(o => `
+      <button type="button" class="termin-typ-icon-btn" data-typ-id="${esc(o.value)}"
+              onclick="selectTerminTypIcon('${esc(o.value)}')">
+        <span class="termin-typ-icon-emoji">${terminTypIcon(o.textContent)}</span>
+        ${esc(o.textContent)}
+      </button>`).join('');
+  updateTerminTypIconSelection();
+  select.onchange = updateTerminTypIconSelection;
+}
+
+function selectTerminTypIcon(typId) {
+  const select = document.getElementById('t-typ');
+  if (!select) return;
+  select.value = typId;
+  updateTerminTypIconSelection();
+}
+
+function updateTerminTypIconSelection() {
+  const select = document.getElementById('t-typ');
+  const container = document.getElementById('t-typ-icons');
+  if (!select || !container) return;
+  const currentId = select.value;
+  container.querySelectorAll('.termin-typ-icon-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.typId === currentId);
+  });
+}
 
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -3354,7 +3439,7 @@ async function loadCompanyAppointments(companyId) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -3761,7 +3846,7 @@ function renderAppointmentsTable(appointments) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -3802,6 +3887,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
   } else {
     typSelect.innerHTML = typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
+  renderTerminTypIconsPicker();  // v1.34: klickbare Icon-Reihe aus den geladenen Typen
 
   document.getElementById('t-titel').value = '';
   document.getElementById('t-datum').value = toISODate(new Date());
@@ -4857,7 +4943,7 @@ async function loadProjectAppointments(projectId) {
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -5222,7 +5308,7 @@ async function loadContactAppointments(contactId) {
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))">${esc(a.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('appointment','${esc(a.id)}',this.closest('tr'))"><span class="termin-title-icon" title="${esc(a.typ?.wert || '')}">${terminTypIcon(a.typ?.wert)}</span>${esc(a.titel || '—')}</div>
         </td>
         <td class="col-tablet">
           <span class="badge" style="background:${esc(typFarbe)}22;color:${esc(typFarbe)}">${esc(typWert)}</span>
@@ -8191,7 +8277,7 @@ async function renderAppointmentExpandedRow(appointmentId) {
          ${relAppts.data.map(r => `
            <div class="erp-related-row">
              <div class="erp-related-date">${esc(formatDateDE(r.datum))}</div>
-             <div class="erp-related-title" onclick="openAppointmentModal('edit','${esc(r.id)}')">${esc(r.titel || '—')}</div>
+             <div class="erp-related-title" onclick="openAppointmentModal('edit','${esc(r.id)}')"><span class="termin-title-icon">${terminTypIcon(r.typ?.wert)}</span>${esc(r.titel || '—')}</div>
              <div class="erp-related-meta">${esc(r.typ?.wert || '')} · ${esc(appointmentStatusLabel(r.status))}</div>
            </div>
          `).join('')}
@@ -9019,7 +9105,7 @@ async function renderCalendarBar() {
       .eq('user_id', userId),
     // Termine: erstellt_von = user, im Monatsfenster
     db.from('appointments')
-      .select('id, titel, datum, uhrzeit_von, status, company:companies(name)').is('deleted_at', null)
+      .select('id, titel, datum, uhrzeit_von, status, company:companies(name), typ:lookup_values!appointments_typ_id_fkey(wert)').is('deleted_at', null)
       .eq('erstellt_von', userId)
       .gte('datum', startISO).lte('datum', endISO)
   ]);
@@ -9128,7 +9214,7 @@ function openCalendarDayPopover(iso, evt) {
         <div class="calendar-popover-section-title">Termine (${ev.termine.length})</div>
         ${ev.termine.map(a => `
           <div class="calendar-popover-item" onclick="openAppointmentModal('edit','${esc(a.id)}'); closeCalendarDayPopover()">
-            ${a.uhrzeit_von ? esc(formatTime(a.uhrzeit_von)) + ' · ' : ''}${esc(a.titel || '—')}
+            <span class="termin-title-icon">${terminTypIcon(a.typ?.wert)}</span>${a.uhrzeit_von ? esc(formatTime(a.uhrzeit_von)) + ' · ' : ''}${esc(a.titel || '—')}
             <div class="calendar-popover-item-meta">${esc(a.company?.name || '—')} · ${esc(appointmentStatusLabel(a.status))}</div>
           </div>`).join('')}
       </div>`);

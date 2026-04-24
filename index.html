@@ -1989,7 +1989,8 @@
       </div>
       <div class="form-group">
         <label>Typ *</label>
-        <select id="t-typ"></select>
+        <div class="termin-typ-picker" id="t-typ-icons"></div>
+        <select id="t-typ" class="typ-select-secondary"></select>
       </div>
       <div class="form-group">
         <label>Uhrzeit von</label>
@@ -2036,8 +2037,8 @@
       </div>
     </div>
 
-    <div class="modal-group-title">Notizen</div>
-    <div class="form-grid">
+    <div class="modal-group-title collapsed">Notizen</div>
+    <div class="form-grid" style="display:none">
       <div class="form-group full">
         <textarea id="t-notizen" rows="3" placeholder="Freitext-Notizen zum Termin ..."></textarea>
       </div>
@@ -2084,8 +2085,8 @@
       </div>
     </div>
 
-    <div class="modal-group-title">Zuordnung (optional)</div>
-    <div class="form-grid">
+    <div class="modal-group-title collapsed">Zuordnung (optional)</div>
+    <div class="form-grid" style="display:none">
       <div class="form-group">
         <label>Firma</label>
         <select id="a-company"></select>
@@ -2100,8 +2101,8 @@
       </div>
     </div>
 
-    <div class="modal-group-title">Notizen</div>
-    <div class="form-grid">
+    <div class="modal-group-title collapsed">Notizen</div>
+    <div class="form-grid" style="display:none">
       <div class="form-group full">
         <textarea id="a-notizen" rows="2" placeholder="Interne Notizen zur Aufgabe ..."></textarea>
       </div>
@@ -2279,8 +2280,8 @@
       </div>
     </div>
 
-    <div class="modal-group-title">Techniker</div>
-    <div class="form-grid">
+    <div class="modal-group-title collapsed">Techniker</div>
+    <div class="form-grid" style="display:none">
       <div class="form-group full">
         <label>Interne Techniker</label>
         <div id="d-techniker-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
@@ -2291,8 +2292,8 @@
       </div>
     </div>
 
-    <div class="modal-group-title">Details</div>
-    <div class="form-grid">
+    <div class="modal-group-title collapsed">Beschreibung &amp; Notizen</div>
+    <div class="form-grid" style="display:none">
       <div class="form-group full">
         <label>Beschreibung</label>
         <textarea id="d-beschreibung" rows="2" placeholder="Worum geht es bei diesem Einsatz?"></textarea>
@@ -2301,6 +2302,10 @@
         <label>Notizen</label>
         <textarea id="d-notizen" rows="2" placeholder="Freitext-Notizen ..."></textarea>
       </div>
+    </div>
+
+    <div class="modal-group-title">Kopplung</div>
+    <div class="form-grid">
       <div class="form-group full" id="d-appointment-sync-wrap">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
           <input type="checkbox" id="d-create-appointment" style="width:auto;margin:0">
