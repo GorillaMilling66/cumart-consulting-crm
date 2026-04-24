@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Styles
-   Version 1.27.0 (Inline-Expand-Row-Dashboard für Termine)
+   Version 1.32.0 (Kalender-Bar — fixed Footer mit Mitarbeiter-
+   Zeitstrahl, Farbcode frei/Termin/Einsatz/Feiertag, Popover)
    ═══════════════════════════════════════════════════════════ */
 
 /* ── RESET & BASIS ── */
@@ -1949,3 +1950,282 @@ tr.expanded-row > td {
 .erp-related-title { flex: 1; color: var(--text); cursor: pointer; }
 .erp-related-title:hover { color: var(--link); }
 .erp-related-meta { color: var(--muted); font-size: 11px; }
+
+/* ═══════════════════════════════════════════════════════════
+   KALENDER-BAR (v1.32.0)
+   ═══════════════════════════════════════════════════════════
+   Fixed-Footer mit Monats-Zeitstrahl des ausgewählten Mitarbeiters.
+   Farbcode pro Tag: frei (weiß), Termin (gelb), Einsatz (grün),
+   Feiertag (rot). Warn-Icon ⚠ bei Einsatz an Feiertag.
+   ─────────────────────────────────────────────────────────── */
+
+.calendar-bar {
+  position: fixed;
+  bottom: 0;
+  left: 220px;               /* rechts neben der Sidebar */
+  right: 0;
+  z-index: 90;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 16px 10px;
+  box-shadow: 0 -1px 3px rgba(0,0,0,.04);
+}
+
+.calendar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.calendar-nav-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.calendar-nav-btn:hover { background: var(--bg); }
+
+.calendar-today-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+}
+.calendar-today-btn:hover { background: var(--bg); }
+
+.calendar-month-label {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 120px;
+  text-align: center;
+}
+
+.calendar-user-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+.calendar-user-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.calendar-user-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  font-family: inherit;
+  max-width: 200px;
+}
+
+.calendar-legend {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+.calendar-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.calendar-legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,.06);
+}
+.calendar-legend-warn {
+  font-size: 13px;
+  color: var(--danger);
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+}
+
+/* Farben zentral definiert */
+.cal-dot-free     { background: #ffffff; border-color: var(--border); }
+.cal-dot-termin   { background: #fef3c7; border-color: #fcd34d; }
+.cal-dot-einsatz  { background: #bbf7d0; border-color: #4ade80; }
+.cal-dot-feiertag { background: #fecaca; border-color: #f87171; }
+
+.calendar-days {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.calendar-day {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 30px;
+  max-width: 60px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 2px;
+  font-size: 11px;
+  color: var(--text);
+  transition: transform .08s, box-shadow .08s;
+}
+.calendar-day:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+
+/* Tag-Farbe nach Priorität: feiertag > einsatz > termin > free */
+.calendar-day.cal-day-termin    { background: #fef3c7; border-color: #fcd34d; }
+.calendar-day.cal-day-einsatz   { background: #bbf7d0; border-color: #4ade80; }
+.calendar-day.cal-day-feiertag  { background: #fecaca; border-color: #f87171; }
+
+/* Wochenend-Tag ohne Events bekommt dezenten Grauschleier */
+.calendar-day.cal-day-weekend:not(.cal-day-termin):not(.cal-day-einsatz):not(.cal-day-feiertag) {
+  background: #f9fafb;
+  color: var(--muted);
+}
+
+/* Heute-Ring */
+.calendar-day.cal-day-today {
+  box-shadow: 0 0 0 2px var(--link);
+}
+
+.calendar-day-num {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.1;
+}
+.calendar-day-dow {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-top: 1px;
+}
+.calendar-day.cal-day-feiertag .calendar-day-dow,
+.calendar-day.cal-day-einsatz  .calendar-day-dow,
+.calendar-day.cal-day-termin   .calendar-day-dow { color: rgba(0,0,0,.55); }
+
+/* Warn-Icon (Feiertag + Einsatz) */
+.calendar-day-warn {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--danger);
+  font-weight: 700;
+  text-shadow: 0 0 2px #fff;
+}
+
+/* Popover beim Klick auf einen Tag */
+.calendar-popover {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
+  padding: 12px;
+  min-width: 280px;
+  max-width: 360px;
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+.calendar-popover-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.calendar-popover-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+}
+.calendar-popover-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.calendar-popover-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.calendar-popover-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.calendar-popover-item {
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.calendar-popover-item:hover { color: var(--link); }
+.calendar-popover-item-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.calendar-popover-holiday {
+  padding: 6px 8px;
+  background: #fecaca;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #7f1d1d;
+  font-weight: 600;
+}
+.calendar-popover-warn {
+  padding: 6px 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #9a3412;
+  margin-top: 8px;
+}
+
+/* Main-Content bekommt padding-bottom, damit der letzte Inhalt nicht unter der Kalender-Bar verschwindet */
+.main { padding-bottom: 160px; }
+
+@media (max-width: 900px) {
+  .calendar-bar,
+  .calendar-popover { display: none !important; }
+  .main { padding-bottom: 80px; }
+}

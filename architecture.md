@@ -1,6 +1,6 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 1.31.0
+**Version:** 1.32.0
 **Stand:** 24. April 2026
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
@@ -59,9 +59,9 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.62k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~1.95k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~9.44k Zeilen  (alle Module in einer Datei)
+├── index.html       ~2.64k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css       ~2.23k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js            ~9.79k Zeilen  (alle Module in einer Datei)
 ├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
 ├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
@@ -638,7 +638,7 @@ Wirkt in allen 3 Einsatz-Listen: Haupt `#/einsaetze`, Firma-Tab (`loadCompanyDep
 **Aufgabe-Dashboard-Inhalt (`renderTaskExpandedRow`, v1.29):**
 - **Stats-Row:** Status · Fälligkeit mit kalkuliertem Label — „vergangen · N Tage überfällig" (rot), „heute" (orange), „in N Tagen" (neutral), oder „Keine Fälligkeit" · Zuständiger (mit „(mir)"-Hint wenn eingeloggter User).
 - **Kontext-Block:** Firma · Kontakt · Projekt · Beschreibung · Notizen.
-- **Verwandte offene Aufgaben** via `OR(company_id.eq, assigned_to.eq)` (also selbe Firma oder selber Zuständiger), `status != 'erledigt'`, max 3, nach Fälligkeit aufsteigend.
+- **Verwandte offene Aufgaben** (v1.31 auf Kunden-Kontext umgestellt): `OR(company_id.eq, contact_id.eq)` — selbe Firma oder selber Kontakt, `status != 'erledigt'`, max 3, nach Fälligkeit aufsteigend. Vor dem Status-Label steht der Firmen- bzw. Kontaktname, damit auf einen Blick klar ist, zu welchem Kunden eine verwandte Aufgabe gehört.
 - **Schnellaktionen** (`quickTask*`):
   - `quickTaskComplete` — Status → `erledigt`, ruft `updateTaskBadge()` zusätzlich auf.
   - `quickTaskReopen` — Status → `offen` (für erledigte Aufgaben).
@@ -652,6 +652,42 @@ Wirkt in allen 4 Aufgaben-Listen: Haupt `#/aufgaben` (`renderTasksTable`) und Fi
 **Konsistenz am Ende:** Termin/Einsatz/Aufgabe haben jetzt dieselbe Interaktion. Firma/Kontakt/Projekt behalten ihre eigenen Detail-Routen mit Dashboard, weil sie fachlich sowohl Container anderer Entitäten als auch eigenständige Karteikarten sind — für sie wäre Inline-Expansion die kleinere Information. Das Regal-Prinzip: kleine Objekte (Termine/Einsätze/Aufgaben) klappen auf, große (Firma/Kontakt/Projekt) sind eigene Seiten.
 
 **CSS:** `.expanded-row-panel-inner` mit Accordion-Animation (`expandRowIn`, 160 ms), linker blauer Akzent-Border, Light-Purple-Highlight auf der Trigger-Zeile. `.erp-stats` / `.erp-kv` / `.erp-actions` / `.erp-related` bilden die Dashboard-Sub-Komponenten. Layout wird bei `<800 px` einspaltig.
+
+### 7.19 Kalender-Bar (v1.32.0)
+
+Permanenter Footer mit Monats-Zeitstrahl des gewählten Mitarbeiters, fixed am unteren Rand (Desktop ab 900 px, auf Mobile via CSS ausgeblendet). Zweck: auf einen Blick sehen, wer an welchen Tagen belegt/frei ist, und Feiertags-Konflikte erkennen, bevor eine Fehlplanung live geht.
+
+**Layout:**
+- Kopfzeile mit `‹` Prev-Monat · Monatsname · `›` Next-Monat · „Heute"-Button · Mitarbeiter-Dropdown (default: eingeloggter User) · Legende.
+- Tages-Zeitstrahl: Eine Box pro Kalendertag (Tag-Nummer + Wochentag-Kürzel). Breite flex-verteilt, horizontal scrollbar wenn's eng wird.
+
+**Farbcode pro Tag (Priorität von oben: höher > niedriger):**
+- **Rot** — Feiertag (Baden-Württemberg, siehe unten)
+- **Grün** — Einsatz eingeplant
+- **Gelb** — nur Termin(e) eingeplant
+- **Weiß** — frei
+- Wochenend-Tage ohne Event haben einen dezenten Grauschleier, damit sie visuell vom Werktag unterscheidbar sind.
+- Heute-Tag bekommt einen blauen Ring.
+
+**Kollisions-Warnung:** Wenn an einem Feiertag ein Einsatz eingeplant ist, erscheint zusätzlich ein ⚠-Symbol oben rechts in der Tages-Box. Im Popover (Klick auf den Tag) steht der Warnhinweis „An diesem Feiertag ist ein Einsatz eingeplant. Falls das nicht beabsichtigt ist, bitte umplanen." — bewusst als weiche Warnung, nicht als Block, weil manche Kunden bewusst an Feiertagen arbeiten.
+
+**Zuordnung Event → Mitarbeiter:**
+- **Einsatz**: User steht in `deployment_technicians.user_id` (Join-Tabelle). Mehrtagige Einsätze (`datum_von` – `datum_bis`) markieren alle Tage im Bereich grün.
+- **Termin**: `appointments.erstellt_von = user_id`. Termine werden nicht explizit jemandem „zugewiesen" — der Ersteller ist die beste verfügbare Heuristik.
+
+**Feiertage (`computeBwHolidays(year)`):** Feste Feiertage (Neujahr, Heilige Drei Könige, Tag der Arbeit, Tag der Deutschen Einheit, Allerheiligen, 1./2. Weihnachtstag) sind hartkodiert. Bewegliche (Karfreitag, Ostermontag, Christi Himmelfahrt, Pfingstmontag, Fronleichnam) werden via Gauß'scher Osterformel (`computeEasterSunday(year)`) berechnet — keine externe API, keine Netzabhängigkeit. Gilt für Baden-Württemberg. Andere Bundesländer bräuchten ein konfigurierbares Feld in `user_profiles` (nicht in v1.32).
+
+**Popover auf Klick:**
+- Langform-Datum (Wochentag, Datum, Jahr).
+- Rote Feiertags-Karte, wenn zutreffend.
+- Kollisions-Warnung, wenn Feiertag + Einsatz.
+- Sektion „Einsätze" mit Firma + Status — Klick öffnet das Einsatz-Modal.
+- Sektion „Termine" mit Uhrzeit + Firma + Status — Klick öffnet das Termin-Modal.
+- „Frei — nichts eingeplant." wenn leer und kein Feiertag.
+
+**Refresh-Hook** (`refreshCalendarBar()`): Wird automatisch nach jedem Termin- und Einsatz-Write aufgerufen (via `refreshCurrentAppointmentList` / `refreshCurrentDeploymentList` + direkt am Ende von `saveAppointment` / `saveDeployment`). So ist der Kalender immer konsistent mit dem, was der User gerade gespeichert hat, ohne manuellen Reload.
+
+**State:** `_calendarState = { userId, year, month, eventsByDay, holidays }`. Wird beim Login via `initCalendarBar()` initialisiert (Default: aktueller User, aktueller Monat) und bei `showLoginScreen()` ausgeblendet.
 
 ---
 
@@ -859,7 +895,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 | v1.29.0 | 24.04.2026  | Aufgabe-Inline-Expand-Dashboard — Damit haben Termin/Einsatz/Aufgabe app-weit dieselbe Klick-Interaktion. Aufgabe-Dashboard: Stats (Status · Fälligkeit mit Tage-bis/überfällig/heute-Label · Zuständiger mit „(mir)"-Hint), Kontext (Firma/Kontakt/Projekt/Beschreibung/Notizen), verwandte offene Aufgaben (selbe Firma ODER selber Zuständiger, max 3). Schnellaktionen: erledigen · wieder öffnen · Fälligkeit +7 Tage · mir zuweisen · Folge-Aufgabe · Vollbearbeitung. Wirkt in allen 4 Aufgaben-Listen. Kein Schema-Change. |
 | v1.30.0 | 24.04.2026  | Projekt-Dashboard-Parität — Schließt die letzte Lücke in der Dashboard-Vereinheitlichung. Projekt-Stammdaten-Tab bekommt dasselbe Layout wie Firma/Kontakt: 4 Stats-Cards (Status · Wirtschaftlichkeit mit Marge/Überziehung farbig · Zeitplan mit Tage-bis/überzogen/abgeschlossen · Offene Aufgaben mit rot bei überfällig), 2-spaltige Aktivitäts-Zeile „Letzte Aktivität" neben „Bevorstehend", inline-editierbare Beschreibung + Notizen (auto-save on blur), Quick-Create-Panel rechts für + Termin · + Einsatz · + Aufgabe. Kein ABC und keine Opportunities — ABC lebt an der Firma, ein Projekt ist fachlich schon selbst die Opportunity. Neue Funktionen `loadProjectDashboard(p)`, `saveProjectBeschreibungInline`, `saveProjectNotizenInline`. Kein Schema-Change. |
 | v1.30.1 | 24.04.2026  | Fix v1.30.0 — `loadProjectDetail` referenzierte beim Init noch die in v1.30.0 entfernten HTML-Elemente `project-detail-beschreibung-wrap` / `-notizen-wrap` und warf TypeError, wodurch die Render-Kette abbrach. Zwei tote Zeilen entfernt. |
-| **v1.31.0** | **24.04.2026** | **Dreifach-Paket**: (1) **Sidebar-Reihenfolge** auf Firmen · Kontakte · Projekte · Termine · Einsätze · Aufgaben umsortiert (Desktop). Mobile-Bottom-Nav bleibt häufigkeitsgesteuert. (2) **Einsatz-Dashboard bleibt offen** bei „als durchgeführt markieren" und „als abgerechnet markieren" — neuer Helper `preserveExpandedRowAcross(fn)` merkt sich vor dem Liste-Refresh die aufgeklappte Zeile (via `data-dep-id` auf `<tr>`) und klappt sie danach wieder auf. So kann der User Geplant → Durchgeführt → Abgerechnet durchziehen, ohne dreimal klicken zu müssen. (3) **Verwandte offene Aufgaben** im Aufgabe-Inline-Dashboard: Filter von `OR(company_id, assigned_to)` auf `OR(company_id, contact_id)` umgestellt (Kunden-Kontext statt Zuständiger-Kontext), und vor dem Status-Label wird jetzt der Firmen- bzw. Kontaktname angezeigt („Firma X · offen" / „Max Mustermann · überfällig"). Neuer Helper `findRowForEntity(type, id)` für generisches Tr-Lookup über data-Attribute. Keine Schema-Änderung. |
+| v1.31.0 | 24.04.2026  | Dreifach-Paket: Sidebar-Reihenfolge umsortiert (Firmen · Kontakte · Projekte · Termine · Einsätze · Aufgaben), Einsatz-Dashboard bleibt offen bei „durchgeführt"/„abgerechnet" via `preserveExpandedRowAcross(fn)`, Verwandte Aufgaben im Dashboard auf Firma/Kontakt umgestellt mit Kunden-Label vor dem Status. |
+| **v1.32.0** | **24.04.2026** | **Kalender-Bar** — Permanenter Monats-Zeitstrahl am unteren Rand (Desktop ab 900 px), zeigt den gewählten Mitarbeiter. Farbcode pro Tag: weiß frei · gelb Termin · grün Einsatz · rot Feiertag (Baden-Württemberg, lokal berechnet via Gauß-Osterformel — keine externe API). **Kollisions-Warnung** (⚠) bei Einsatz an Feiertag, als weicher Hinweis gegen Fehlplanung. Mitarbeiter-Dropdown (alle aktiven User wählbar, Default: eingeloggter User), Prev/Next-Monat, Heute-Button. Klick auf Tag öffnet Popover mit Termin-/Einsatz-Liste + optionaler Warnung; Klick auf einen Eintrag öffnet das jeweilige Bearbeiten-Modal. Zuordnung: Einsatz via `deployment_technicians.user_id`, Termin via `appointments.erstellt_von`. Mehrtagige Einsätze markieren alle Tage im Zeitraum. Refresh-Hook `refreshCalendarBar()` wird nach jedem Termin-/Einsatz-Write ausgelöst, sodass der Strich immer konsistent ist. Kein Schema-Change. |
 
 ---
 

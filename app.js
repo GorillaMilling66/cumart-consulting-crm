@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.32.0 (Kalender-Bar — permanenter Monats-Zeitstrahl
+   am unteren Rand (Desktop ab 900 px). Farbcode pro Tag: weiß
+   frei, gelb Termin, grün Einsatz, rot Feiertag (Baden-
+   Württemberg, via Gauß'scher Osterformel berechnet, keine
+   externe API). Warn-Symbol ⚠ bei Einsatz an Feiertag, damit
+   versehentliche Fehlplanungen sofort auffallen. Mitarbeiter-
+   Dropdown (alle aktiven User wählbar, Default: eingeloggter
+   User) · Prev/Next-Monat · Heute-Button · Klick auf Tag öffnet
+   Popover mit Termin-/Einsatz-Details und Kollisions-Warnung.
+   Refresh nach jedem Termin-/Einsatz-Write.)
    Version 1.31.0 (Dreifach-Paket: 1) Sidebar-Reihenfolge auf
    Firmen · Kontakte · Projekte · Termine · Einsätze · Aufgaben
    umsortiert. 2) Einsatz-Dashboard bleibt bei „durchgeführt"
@@ -1134,7 +1144,7 @@ function hideAllScreens() {
   document.getElementById('app').style.display = 'none';
 }
 
-function showLoginScreen()    { hideAllScreens(); document.getElementById('auth-screen').style.display = 'flex'; }
+function showLoginScreen()    { hideAllScreens(); document.getElementById('auth-screen').style.display = 'flex'; hideCalendarBar(); }
 function showResetScreen()    { hideAllScreens(); document.getElementById('reset-screen').style.display = 'flex'; }
 function showRecoveryScreen() { hideAllScreens(); document.getElementById('recovery-screen').style.display = 'flex'; setTimeout(() => document.getElementById('recovery-1').focus(), 100); }
 function showMustChangeScreen() { hideAllScreens(); document.getElementById('mustchange-screen').style.display = 'flex'; setTimeout(() => document.getElementById('mustchange-1').focus(), 100); }
@@ -1217,6 +1227,7 @@ async function onLogin(user) {
 
   await loadRoles();
   updateTaskBadge();
+  initCalendarBar();  // v1.32: Kalender-Bar nach Login initialisieren
 
   if (window.location.hash && window.location.hash !== '#') {
     handleHashChange();
@@ -4057,6 +4068,7 @@ async function saveAppointment() {
     } else {
       await loadAppointments();
     }
+    refreshCalendarBar();  // v1.32
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -5900,6 +5912,7 @@ async function saveDeployment() {
     } else {
       await loadDeployments();
     }
+    refreshCalendarBar();  // v1.32
   } catch (e) {
     showToast(e.message, true);
   } finally {
@@ -8149,6 +8162,7 @@ async function refreshCurrentAppointmentList() {
   } else {
     await loadAppointments();
   }
+  refreshCalendarBar();  // v1.32: Kalender mitziehen
 }
 
 // ── EINSATZ-INLINE-DASHBOARD (v1.28.0) ──────────────────────
@@ -8452,6 +8466,7 @@ async function refreshCurrentDeploymentList() {
   } else {
     await loadDeployments();
   }
+  refreshCalendarBar();  // v1.32: Kalender mitziehen
 }
 
 // ── AUFGABE-INLINE-DASHBOARD (v1.29.0) ──────────────────────
@@ -8673,6 +8688,308 @@ async function quickTaskFollowup(taskId) {
   await openTaskModal('new');
   const titleInput = document.getElementById('a-titel');
   if (titleInput && t.titel) titleInput.value = `Folge zu: ${t.titel}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  KALENDER-BAR (v1.32.0) — Mitarbeiter-Zeitstrahl am unteren Rand
+// ═══════════════════════════════════════════════════════════
+//
+// Permanenter Footer mit Tages-Zeitstrahl des gewählten Mitarbeiters.
+// Farbcode pro Tag: frei (weiß), Termin (gelb), Einsatz (grün),
+// Feiertag (rot, Baden-Württemberg). Warn-Icon ⚠ bei Einsatz an
+// Feiertag, damit versehentliche Fehlplanungen auffallen.
+//
+// Zuordnung:
+//   - „Einsatz des Users" = User steht in `deployment_technicians`
+//   - „Termin des Users"  = `appointments.erstellt_von = user_id`
+//
+// Desktop-Feature: auf Mobile (<900 px) via CSS ausgeblendet.
+
+let _calendarState = {
+  userId: null,
+  year: null,
+  month: null,    // 0–11 wie bei Date
+  eventsByDay: new Map(),
+  holidays: new Map()
+};
+
+/** Gauß-Osterformel — gibt das Datum des Ostersonntag eines Jahres zurück. */
+function computeEasterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const L = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * L) / 451);
+  const month = Math.floor((h + L - 7 * m + 114) / 31);
+  const day = ((h + L - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+/** Berechnet die gesetzlichen Feiertage für Baden-Württemberg eines Jahres.
+ *  Gibt eine Map {ISO-Datum → Feiertagsname} zurück. */
+function computeBwHolidays(year) {
+  const holidays = new Map();
+  const addFixed = (m, d, name) => {
+    const iso = `${year}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    holidays.set(iso, name);
+  };
+  const easter = computeEasterSunday(year);
+  const addFromEaster = (offsetDays, name) => {
+    const dt = new Date(easter);
+    dt.setDate(dt.getDate() + offsetDays);
+    holidays.set(toISODate(dt), name);
+  };
+  addFixed(1, 1, 'Neujahr');
+  addFixed(1, 6, 'Heilige Drei Könige');
+  addFromEaster(-2, 'Karfreitag');
+  addFromEaster(1, 'Ostermontag');
+  addFixed(5, 1, 'Tag der Arbeit');
+  addFromEaster(39, 'Christi Himmelfahrt');
+  addFromEaster(50, 'Pfingstmontag');
+  addFromEaster(60, 'Fronleichnam');
+  addFixed(10, 3, 'Tag der Deutschen Einheit');
+  addFixed(11, 1, 'Allerheiligen');
+  addFixed(12, 25, '1. Weihnachtstag');
+  addFixed(12, 26, '2. Weihnachtstag');
+  return holidays;
+}
+
+/** Initialisiert die Kalender-Bar nach dem Login. */
+async function initCalendarBar() {
+  const bar = document.getElementById('calendar-bar');
+  if (!bar) return;
+  bar.style.display = '';
+
+  await loadUserProfilesCache();
+  const select = document.getElementById('calendar-user-select');
+  select.innerHTML = userProfilesCache
+    .map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
+  if (currentProfile?.id) select.value = currentProfile.id;
+
+  if (!bar.dataset.wired) {
+    document.getElementById('calendar-prev').onclick  = () => calendarShift(-1);
+    document.getElementById('calendar-next').onclick  = () => calendarShift(1);
+    document.getElementById('calendar-today').onclick = () => calendarGoToToday();
+    select.onchange = () => {
+      _calendarState.userId = select.value;
+      renderCalendarBar();
+    };
+    // Klicks außerhalb des Popovers (und nicht auf einem Tag) schließen es
+    document.addEventListener('click', (e) => {
+      const popover = document.getElementById('calendar-popover');
+      if (popover && popover.style.display !== 'none'
+          && !popover.contains(e.target)
+          && !e.target.closest('.calendar-day')) {
+        popover.style.display = 'none';
+      }
+    });
+    bar.dataset.wired = '1';
+  }
+
+  _calendarState.userId = currentProfile?.id || userProfilesCache[0]?.id || null;
+  const now = new Date();
+  _calendarState.year  = now.getFullYear();
+  _calendarState.month = now.getMonth();
+  await renderCalendarBar();
+}
+
+function hideCalendarBar() {
+  const bar = document.getElementById('calendar-bar');
+  if (bar) bar.style.display = 'none';
+  const pop = document.getElementById('calendar-popover');
+  if (pop) pop.style.display = 'none';
+}
+
+async function calendarShift(delta) {
+  const d = new Date(_calendarState.year, _calendarState.month + delta, 1);
+  _calendarState.year  = d.getFullYear();
+  _calendarState.month = d.getMonth();
+  await renderCalendarBar();
+}
+
+async function calendarGoToToday() {
+  const now = new Date();
+  _calendarState.year  = now.getFullYear();
+  _calendarState.month = now.getMonth();
+  await renderCalendarBar();
+}
+
+/** Haupt-Render: lädt Events des Users im Monat, baut die Tages-Boxen. */
+async function renderCalendarBar() {
+  const { userId, year, month } = _calendarState;
+  if (!userId || year == null || month == null) return;
+
+  const monthLabel = new Date(year, month, 1)
+    .toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  document.getElementById('calendar-month-label').textContent = monthLabel;
+
+  const monthStart = new Date(year, month, 1);
+  const monthEnd   = new Date(year, month + 1, 0);
+  const startISO = toISODate(monthStart);
+  const endISO   = toISODate(monthEnd);
+
+  _calendarState.holidays = computeBwHolidays(year);
+
+  // Events parallel laden
+  const [depRes, apptRes] = await Promise.all([
+    // Einsätze: über deployment_technicians → deployments
+    db.from('deployment_technicians')
+      .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, company:companies(name))')
+      .eq('user_id', userId),
+    // Termine: erstellt_von = user, im Monatsfenster
+    db.from('appointments')
+      .select('id, titel, datum, uhrzeit_von, status, company:companies(name)').is('deleted_at', null)
+      .eq('erstellt_von', userId)
+      .gte('datum', startISO).lte('datum', endISO)
+  ]);
+
+  const deployments = (depRes.data || [])
+    .map(r => r.deployment)
+    .filter(d => d && !d.deleted_at && d.datum_von);
+  const apptsInMonth = apptRes.data || [];
+
+  // Event-Map pro Tag befüllen
+  const eventsByDay = new Map();
+  const getDay = (iso) => {
+    if (!eventsByDay.has(iso)) eventsByDay.set(iso, { termine: [], einsatze: [] });
+    return eventsByDay.get(iso);
+  };
+
+  for (const a of apptsInMonth) getDay(a.datum).termine.push(a);
+
+  for (const d of deployments) {
+    const from = new Date(d.datum_von);
+    const to   = d.datum_bis ? new Date(d.datum_bis) : from;
+    if (from > monthEnd || to < monthStart) continue;
+    const iterStart = from < monthStart ? new Date(monthStart) : new Date(from);
+    const iterEnd   = to > monthEnd ? new Date(monthEnd) : new Date(to);
+    for (let x = new Date(iterStart); x <= iterEnd; x.setDate(x.getDate() + 1)) {
+      getDay(toISODate(x)).einsatze.push(d);
+    }
+  }
+  _calendarState.eventsByDay = eventsByDay;
+
+  // Tages-Boxen rendern
+  const container = document.getElementById('calendar-days');
+  const todayISO = toISODate(new Date());
+  const daysInMonth = monthEnd.getDate();
+  const DOW = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+  const parts = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dt = new Date(year, month, day);
+    const iso = toISODate(dt);
+    const dow = dt.getDay();
+    const ev = eventsByDay.get(iso);
+    const hasTermin  = !!ev?.termine?.length;
+    const hasEinsatz = !!ev?.einsatze?.length;
+    const isHoliday  = _calendarState.holidays.has(iso);
+    const conflict   = isHoliday && hasEinsatz;
+
+    const classes = ['calendar-day'];
+    if (dow === 0 || dow === 6) classes.push('cal-day-weekend');
+    if (iso === todayISO)       classes.push('cal-day-today');
+    if (isHoliday)              classes.push('cal-day-feiertag');
+    else if (hasEinsatz)        classes.push('cal-day-einsatz');
+    else if (hasTermin)         classes.push('cal-day-termin');
+
+    parts.push(`
+      <div class="${classes.join(' ')}" data-day="${iso}" onclick="openCalendarDayPopover('${iso}', event)">
+        ${conflict ? '<span class="calendar-day-warn" title="Einsatz an Feiertag">⚠</span>' : ''}
+        <div class="calendar-day-num">${day}</div>
+        <div class="calendar-day-dow">${DOW[dow]}</div>
+      </div>`);
+  }
+  container.innerHTML = parts.join('');
+}
+
+/** Popover auf Tages-Klick — zeigt Feiertag, Einsätze, Termine + Kollisions-Warnung. */
+function openCalendarDayPopover(iso, evt) {
+  if (evt) evt.stopPropagation();
+  const popover = document.getElementById('calendar-popover');
+  if (!popover) return;
+  const ev = _calendarState.eventsByDay.get(iso) || { termine: [], einsatze: [] };
+  const holiday = _calendarState.holidays.get(iso);
+  const dt = new Date(iso);
+  const title = dt.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+
+  const parts = [];
+  parts.push(`
+    <div class="calendar-popover-title">
+      <span>${esc(title)}</span>
+      <button class="calendar-popover-close" onclick="closeCalendarDayPopover()" aria-label="Schließen">×</button>
+    </div>`);
+
+  if (holiday) {
+    parts.push(`<div class="calendar-popover-holiday">Feiertag: ${esc(holiday)}</div>`);
+  }
+  if (holiday && ev.einsatze.length > 0) {
+    parts.push('<div class="calendar-popover-warn">⚠ An diesem Feiertag ist ein Einsatz eingeplant. Falls das nicht beabsichtigt ist, bitte umplanen.</div>');
+  }
+
+  if (ev.einsatze.length > 0) {
+    parts.push(`
+      <div class="calendar-popover-section">
+        <div class="calendar-popover-section-title">Einsätze (${ev.einsatze.length})</div>
+        ${ev.einsatze.map(d => `
+          <div class="calendar-popover-item" onclick="openDeploymentModal('edit','${esc(d.id)}'); closeCalendarDayPopover()">
+            ${esc(d.titel || '—')}
+            <div class="calendar-popover-item-meta">${esc(d.company?.name || '—')} · ${esc(d.status)}</div>
+          </div>`).join('')}
+      </div>`);
+  }
+
+  if (ev.termine.length > 0) {
+    parts.push(`
+      <div class="calendar-popover-section">
+        <div class="calendar-popover-section-title">Termine (${ev.termine.length})</div>
+        ${ev.termine.map(a => `
+          <div class="calendar-popover-item" onclick="openAppointmentModal('edit','${esc(a.id)}'); closeCalendarDayPopover()">
+            ${a.uhrzeit_von ? esc(formatTime(a.uhrzeit_von)) + ' · ' : ''}${esc(a.titel || '—')}
+            <div class="calendar-popover-item-meta">${esc(a.company?.name || '—')} · ${esc(appointmentStatusLabel(a.status))}</div>
+          </div>`).join('')}
+      </div>`);
+  }
+
+  if (!holiday && ev.termine.length === 0 && ev.einsatze.length === 0) {
+    parts.push('<div style="padding:8px 0;color:var(--muted);font-size:12px">Frei — nichts eingeplant.</div>');
+  }
+
+  popover.innerHTML = parts.join('');
+  popover.style.display = '';
+
+  // Positionieren — bevorzugt oberhalb des Tages, sonst darunter.
+  const dayEl = document.querySelector(`.calendar-day[data-day="${iso}"]`);
+  if (dayEl) {
+    const rect = dayEl.getBoundingClientRect();
+    const popW = popover.offsetWidth || 320;
+    const popH = popover.offsetHeight || 200;
+    let left = rect.left + rect.width / 2 - popW / 2;
+    left = Math.max(10, Math.min(left, window.innerWidth - popW - 10));
+    const top = rect.top - popH - 8;
+    popover.style.left = `${left}px`;
+    popover.style.top  = `${top < 10 ? rect.bottom + 8 : top}px`;
+  }
+}
+
+function closeCalendarDayPopover() {
+  const pop = document.getElementById('calendar-popover');
+  if (pop) pop.style.display = 'none';
+}
+
+/** Refresh-Hook — wird nach Termin-/Einsatz-Writes aufgerufen. Keine Queries wenn die Bar
+ *  nicht initialisiert ist (noch kein Login oder User ist ausgeloggt). */
+async function refreshCalendarBar() {
+  if (!_calendarState.userId) return;
+  const bar = document.getElementById('calendar-bar');
+  if (!bar || bar.style.display === 'none') return;
+  await renderCalendarBar();
 }
 
 // ═══════════════════════════════════════════════════════════

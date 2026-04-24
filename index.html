@@ -1553,6 +1553,31 @@
 
   </main>
 
+  <!-- KALENDER-BAR (v1.32.0) — fixed footer mit Monats-Zeitstrahl pro Mitarbeiter -->
+  <div class="calendar-bar" id="calendar-bar" style="display:none">
+    <div class="calendar-head">
+      <button class="calendar-nav-btn" id="calendar-prev" aria-label="Vorheriger Monat" title="Vorheriger Monat">‹</button>
+      <div class="calendar-month-label" id="calendar-month-label">—</div>
+      <button class="calendar-nav-btn" id="calendar-next" aria-label="Nächster Monat" title="Nächster Monat">›</button>
+      <button class="calendar-today-btn" id="calendar-today" title="Zum aktuellen Monat">Heute</button>
+      <label class="calendar-user-wrap">
+        <span class="calendar-user-label">Mitarbeiter</span>
+        <select class="calendar-user-select" id="calendar-user-select" title="Mitarbeiter"></select>
+      </label>
+      <div class="calendar-legend">
+        <span class="calendar-legend-item"><span class="calendar-legend-dot cal-dot-free"></span>frei</span>
+        <span class="calendar-legend-item"><span class="calendar-legend-dot cal-dot-termin"></span>Termin</span>
+        <span class="calendar-legend-item"><span class="calendar-legend-dot cal-dot-einsatz"></span>Einsatz</span>
+        <span class="calendar-legend-item"><span class="calendar-legend-dot cal-dot-feiertag"></span>Feiertag</span>
+        <span class="calendar-legend-item"><span class="calendar-legend-warn">⚠</span>Kollision Feiertag+Einsatz</span>
+      </div>
+    </div>
+    <div class="calendar-days" id="calendar-days"></div>
+  </div>
+
+  <!-- KALENDER-POPOVER (v1.32.0) — zeigt Tages-Details auf Klick -->
+  <div class="calendar-popover" id="calendar-popover" style="display:none"></div>
+
   <!-- MOBILE BOTTOM NAV -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
     <button class="mobile-nav-item" id="m-nav-companies"
