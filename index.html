@@ -1973,74 +1973,95 @@
 
 <!-- MODAL: TERMIN -->
 <div class="modal-overlay" id="modal-appointment">
-  <div class="modal" style="width:680px">
+  <div class="modal" style="width:960px;max-width:calc(100vw - 40px)">
     <div class="modal-title" id="modal-appointment-title">Neuer Termin</div>
 
-    <div class="modal-group-title">Termindaten</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Titel *</label>
-        <input type="text" id="t-titel" placeholder="z. B. Erstberatung Heidenhain-Schulung">
+    <div class="modal-kanban cols-3">
+      <!-- Spalte 1: Was -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">📝</span> Was
+        </div>
+        <div class="form-group">
+          <label>Titel *</label>
+          <input type="text" id="t-titel" placeholder="z. B. Erstberatung Heidenhain-Schulung">
+        </div>
+        <div class="form-group">
+          <label>Typ *</label>
+          <div class="termin-typ-picker" id="t-typ-icons"></div>
+          <select id="t-typ" class="typ-select-secondary"></select>
+        </div>
+        <div class="form-group">
+          <label>Status *</label>
+          <select id="t-status">
+            <option value="geplant">Geplant</option>
+            <option value="durchgefuehrt">Durchgeführt</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Datum *</label>
-        <input type="date" id="t-datum">
-        <div class="date-shortcuts" data-shortcut-target="t-datum"></div>
-      </div>
-      <div class="form-group">
-        <label>Typ *</label>
-        <div class="termin-typ-picker" id="t-typ-icons"></div>
-        <select id="t-typ" class="typ-select-secondary"></select>
-      </div>
-      <div class="form-group">
-        <label>Uhrzeit von</label>
-        <label class="ganztag-wrap">
-          <input type="checkbox" id="t-ganztag" onchange="applyGanztag('t')">
-          Ganztag (08:00–16:00)
-        </label>
-        <input type="time" id="t-uhrzeit-von">
-      </div>
-      <div class="form-group">
-        <label>Uhrzeit bis</label>
-        <input type="time" id="t-uhrzeit-bis">
-      </div>
-      <div class="form-group">
-        <label>Status *</label>
-        <select id="t-status">
-          <option value="geplant">Geplant</option>
-          <option value="durchgefuehrt">Durchgeführt</option>
-        </select>
-      </div>
-    </div>
 
-    <div class="modal-group-title">Zuordnung</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Firma</label>
-        <select id="t-company"></select>
+      <!-- Spalte 2: Wann -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">📅</span> Wann
+        </div>
+        <div class="form-group">
+          <label>Datum *</label>
+          <input type="date" id="t-datum">
+          <div class="date-shortcuts" data-shortcut-target="t-datum"></div>
+        </div>
+        <div class="form-group">
+          <label class="ganztag-wrap" style="margin-bottom:0">
+            <input type="checkbox" id="t-ganztag" onchange="applyGanztag('t')">
+            Ganztag (08:00–16:00)
+          </label>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Uhrzeit von</label>
+            <input type="time" id="t-uhrzeit-von">
+          </div>
+          <div class="form-group">
+            <label>Uhrzeit bis</label>
+            <input type="time" id="t-uhrzeit-bis">
+          </div>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Kontakt</label>
-        <select id="t-contact"></select>
-      </div>
-      <div class="form-group full">
-        <label>Projekt</label>
-        <select id="t-project"></select>
-      </div>
-      <div class="form-group full">
-        <label>Ort</label>
-        <input type="text" id="t-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
-        <div id="t-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
-             onclick="useCompanyAddressForOrt()"
-             title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+
+      <!-- Spalte 3: Wer & Wo -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">👥</span> Wer &amp; Wo
+        </div>
+        <div class="form-group">
+          <label>Firma</label>
+          <select id="t-company"></select>
+        </div>
+        <div class="form-group">
+          <label>Kontakt</label>
+          <select id="t-contact"></select>
+        </div>
+        <div class="form-group">
+          <label>Projekt</label>
+          <select id="t-project"></select>
+        </div>
+        <div class="form-group">
+          <label>Ort</label>
+          <input type="text" id="t-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
+          <div id="t-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+               onclick="useCompanyAddressForOrt()"
+               title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="modal-group-title collapsed">Notizen</div>
-    <div class="form-grid" style="display:none">
-      <div class="form-group full">
-        <textarea id="t-notizen" rows="3" placeholder="Freitext-Notizen zum Termin ..."></textarea>
+    <div class="modal-kanban-footer">
+      <div class="modal-group-title collapsed">Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <textarea id="t-notizen" rows="3" placeholder="Freitext-Notizen zum Termin ..."></textarea>
+        </div>
       </div>
     </div>
 
@@ -2055,56 +2076,73 @@
   </div>
 </div>
 
-<!-- MODAL: AUFGABE -->
+<!-- MODAL: AUFGABE (v1.35.0 Kanban) -->
 <div class="modal-overlay" id="modal-aufgabe">
-  <div class="modal" style="width:640px">
+  <div class="modal" style="width:960px;max-width:calc(100vw - 40px)">
     <div class="modal-title" id="modal-aufgabe-title">Neue Aufgabe</div>
 
-    <div class="modal-group-title">Aufgaben-Daten</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Titel *</label>
-        <input type="text" id="a-titel" placeholder="z. B. Angebot für TNC-Schulung nachfassen">
+    <div class="modal-kanban cols-3">
+      <!-- Spalte 1: Was -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">📝</span> Was
+        </div>
+        <div class="form-group">
+          <label>Titel *</label>
+          <input type="text" id="a-titel" placeholder="z. B. Angebot für TNC-Schulung nachfassen">
+        </div>
+        <div class="form-group">
+          <label>Status *</label>
+          <select id="a-status"></select>
+        </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="a-beschreibung" rows="4" placeholder="Was genau ist zu tun?"></textarea>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Fällig am</label>
-        <input type="date" id="a-faelligkeit">
-        <div class="date-shortcuts" data-shortcut-target="a-faelligkeit"></div>
+
+      <!-- Spalte 2: Wann & Wer -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">📅</span> Wann &amp; Wer
+        </div>
+        <div class="form-group">
+          <label>Fällig am</label>
+          <input type="date" id="a-faelligkeit">
+          <div class="date-shortcuts" data-shortcut-target="a-faelligkeit"></div>
+        </div>
+        <div class="form-group">
+          <label>Zugewiesen an *</label>
+          <select id="a-assigned-to"></select>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Status *</label>
-        <select id="a-status"></select>
-      </div>
-      <div class="form-group full">
-        <label>Zugewiesen an *</label>
-        <select id="a-assigned-to"></select>
-      </div>
-      <div class="form-group full">
-        <label>Beschreibung</label>
-        <textarea id="a-beschreibung" rows="3" placeholder="Was genau ist zu tun?"></textarea>
+
+      <!-- Spalte 3: Kontext -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">🔗</span> Kontext
+        </div>
+        <div class="form-group">
+          <label>Firma</label>
+          <select id="a-company"></select>
+        </div>
+        <div class="form-group">
+          <label>Kontakt</label>
+          <select id="a-contact"></select>
+        </div>
+        <div class="form-group">
+          <label>Projekt</label>
+          <select id="a-project"></select>
+        </div>
       </div>
     </div>
 
-    <div class="modal-group-title collapsed">Zuordnung (optional)</div>
-    <div class="form-grid" style="display:none">
-      <div class="form-group">
-        <label>Firma</label>
-        <select id="a-company"></select>
-      </div>
-      <div class="form-group">
-        <label>Kontakt</label>
-        <select id="a-contact"></select>
-      </div>
-      <div class="form-group full">
-        <label>Projekt</label>
-        <select id="a-project"></select>
-      </div>
-    </div>
-
-    <div class="modal-group-title collapsed">Notizen</div>
-    <div class="form-grid" style="display:none">
-      <div class="form-group full">
-        <textarea id="a-notizen" rows="2" placeholder="Interne Notizen zur Aufgabe ..."></textarea>
+    <div class="modal-kanban-footer">
+      <div class="modal-group-title collapsed">Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <textarea id="a-notizen" rows="2" placeholder="Interne Notizen zur Aufgabe ..."></textarea>
+        </div>
       </div>
     </div>
 
@@ -2193,149 +2231,171 @@
   </div>
 </div>
 
-<!-- MODAL: EINSATZ -->
+<!-- MODAL: EINSATZ (v1.35.0 Kanban) -->
 <div class="modal-overlay" id="modal-deployment">
-  <div class="modal" style="width:720px">
+  <div class="modal" style="width:1140px;max-width:calc(100vw - 40px)">
     <div class="modal-title" id="modal-deployment-title">Neuer Einsatz</div>
 
-    <div class="modal-group-title">Zuordnung</div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Firma *</label>
-        <select id="d-company"></select>
-      </div>
-      <div class="form-group">
-        <label>Projekt</label>
-        <select id="d-project"></select>
-      </div>
-    </div>
-
-    <div class="modal-group-title">Leistung &amp; Preis</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Leistung</label>
-        <select id="d-service"></select>
-      </div>
-      <div class="form-group" id="d-menge-group">
-        <label>Menge</label>
-        <div class="input-with-action">
-          <input type="number" id="d-menge" min="0" step="0.5" value="1">
-          <button type="button" class="input-action-btn" id="d-menge-reset"
-                  title="Menge aus Datumsbereich neu berechnen (Werktage)">↻</button>
+    <div class="modal-kanban cols-4">
+      <!-- Spalte 1: Kunde -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">🏢</span> Kunde
         </div>
-      </div>
-      <div class="form-group" id="d-einzelpreis-group">
-        <label>Einzelpreis (€)</label>
-        <input type="number" id="d-einzelpreis" min="0" step="0.01" placeholder="0.00">
-      </div>
-      <div class="form-group full">
-        <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:4px 0"></div>
-      </div>
-    </div>
-
-    <div class="modal-group-title">Einsatzdaten</div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Titel</label>
-        <input type="text" id="d-titel" placeholder="Leer lassen für Auto-Titel: Leistung × Firma × Benutzer">
-      </div>
-      <div class="form-group">
-        <label>Datum von</label>
-        <input type="date" id="d-datum-von">
-        <div class="date-shortcuts" data-shortcut-target="d-datum-von"></div>
-      </div>
-      <div class="form-group">
-        <label>Datum bis</label>
-        <input type="date" id="d-datum-bis">
-        <div class="date-shortcuts" data-shortcut-target="d-datum-bis"></div>
-      </div>
-      <div class="form-group full" id="d-datum-hint-wrap" style="display:none">
-        <div style="font-size:11px;color:var(--muted);padding:2px 0">
-          Leer lassen für „Ungeplant". Ideal für Paket-Einsätze, die noch nicht terminiert sind.
+        <div class="form-group">
+          <label>Firma *</label>
+          <select id="d-company"></select>
         </div>
-      </div>
-      <div class="form-group">
-        <label>Uhrzeit von</label>
-        <label class="ganztag-wrap">
-          <input type="checkbox" id="d-ganztag" onchange="applyGanztag('d')">
-          Ganztag (08:00–16:00)
-        </label>
-        <input type="time" id="d-uhrzeit-von">
-      </div>
-      <div class="form-group">
-        <label>Uhrzeit bis</label>
-        <input type="time" id="d-uhrzeit-bis">
-      </div>
-      <div class="form-group">
-        <label>Status *</label>
-        <select id="d-status"></select>
-      </div>
-      <div class="form-group full">
-        <label>Ort</label>
-        <input type="text" id="d-ort" placeholder="z. B. Vor Ort, Zoom-Link, Raum">
-        <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
-             onclick="useCompanyAddressForDeploymentOrt()"
-             title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+        <div class="form-group">
+          <label>Projekt</label>
+          <select id="d-project"></select>
         </div>
-      </div>
-    </div>
-
-    <div class="modal-group-title collapsed">Techniker</div>
-    <div class="form-grid" style="display:none">
-      <div class="form-group full">
-        <label>Interne Techniker</label>
-        <div id="d-techniker-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
-      </div>
-      <div class="form-group full">
-        <label>Externe Techniker (Freitext)</label>
-        <input type="text" id="d-externe-techniker" placeholder="z. B. Max Mustermann (extern)">
-      </div>
-    </div>
-
-    <div class="modal-group-title collapsed">Beschreibung &amp; Notizen</div>
-    <div class="form-grid" style="display:none">
-      <div class="form-group full">
-        <label>Beschreibung</label>
-        <textarea id="d-beschreibung" rows="2" placeholder="Worum geht es bei diesem Einsatz?"></textarea>
-      </div>
-      <div class="form-group full">
-        <label>Notizen</label>
-        <textarea id="d-notizen" rows="2" placeholder="Freitext-Notizen ..."></textarea>
-      </div>
-    </div>
-
-    <div class="modal-group-title">Kopplung</div>
-    <div class="form-grid">
-      <div class="form-group full" id="d-appointment-sync-wrap">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
-          <input type="checkbox" id="d-create-appointment" style="width:auto;margin:0">
-          <span>Auch als Termin im Kalender eintragen</span>
-        </label>
-        <span style="font-size:11px;color:var(--muted);padding-left:24px">
-          Legt parallel einen Termin mit gleichen Daten an. Beim Deaktivieren wird der verknüpfte Termin gelöscht.
-        </span>
-      </div>
-
-      <!-- Einlöse-Sektion (v1.14.0) -->
-      <div class="form-group full" id="d-redeem-wrap" style="display:none">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
-          <input type="checkbox" id="d-redeem-check" style="width:auto;margin:0" onchange="onRedeemCheckToggle()">
-          <span>Als Bonus-Einlösung verbuchen</span>
-        </label>
-        <span style="font-size:11px;color:var(--muted);padding-left:24px" id="d-redeem-hint">
-          Wähle einen offenen Bonus aus den Mitgliedschaften/Projekten dieser Firma.
-        </span>
-
-        <div id="d-redeem-details" style="display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px">
-          <div class="form-group full" style="margin-bottom:10px">
-            <label>Bonus auswählen *</label>
-            <select id="d-redeem-entitlement" onchange="onRedeemEntitlementChange()"></select>
+        <div class="form-group">
+          <label>Ort</label>
+          <input type="text" id="d-ort" placeholder="Vor Ort, Zoom-Link, Raum">
+          <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+               onclick="useCompanyAddressForDeploymentOrt()"
+               title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
           </div>
-          <div class="form-group full" style="margin-bottom:0">
-            <label>Einlöse-Menge</label>
-            <input type="number" id="d-redeem-menge" min="0.01" step="0.01" value="1">
-            <span style="font-size:11px;color:var(--muted)" id="d-redeem-menge-hint"></span>
+        </div>
+      </div>
+
+      <!-- Spalte 2: Leistung -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">🎯</span> Leistung
+        </div>
+        <div class="form-group">
+          <label>Leistung</label>
+          <select id="d-service"></select>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group" id="d-menge-group">
+            <label>Menge</label>
+            <div class="input-with-action">
+              <input type="number" id="d-menge" min="0" step="0.5" value="1">
+              <button type="button" class="input-action-btn" id="d-menge-reset"
+                      title="Menge aus Datumsbereich neu berechnen (Werktage)">↻</button>
+            </div>
           </div>
+          <div class="form-group" id="d-einzelpreis-group">
+            <label>Einzelpreis (€)</label>
+            <input type="number" id="d-einzelpreis" min="0" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+        <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:2px 0;min-height:14px"></div>
+      </div>
+
+      <!-- Spalte 3: Zeitraum -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">📅</span> Zeitraum
+        </div>
+        <div class="form-group">
+          <label>Datum von</label>
+          <input type="date" id="d-datum-von">
+          <div class="date-shortcuts" data-shortcut-target="d-datum-von"></div>
+        </div>
+        <div class="form-group">
+          <label>Datum bis</label>
+          <input type="date" id="d-datum-bis">
+          <div class="date-shortcuts" data-shortcut-target="d-datum-bis"></div>
+        </div>
+        <div class="form-group" id="d-datum-hint-wrap" style="display:none">
+          <div style="font-size:11px;color:var(--muted);padding:2px 0">
+            Leer lassen für „Ungeplant". Ideal für Paket-Einsätze, die noch nicht terminiert sind.
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="ganztag-wrap" style="margin-bottom:0">
+            <input type="checkbox" id="d-ganztag" onchange="applyGanztag('d')">
+            Ganztag (08:00–16:00)
+          </label>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Uhrzeit von</label>
+            <input type="time" id="d-uhrzeit-von">
+          </div>
+          <div class="form-group">
+            <label>Uhrzeit bis</label>
+            <input type="time" id="d-uhrzeit-bis">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Status *</label>
+          <select id="d-status"></select>
+        </div>
+      </div>
+
+      <!-- Spalte 4: Team & Titel -->
+      <div class="modal-kanban-col">
+        <div class="modal-kanban-col-title">
+          <span class="modal-kanban-col-title-icon">👷</span> Team
+        </div>
+        <div class="form-group">
+          <label>Titel</label>
+          <input type="text" id="d-titel" placeholder="Auto: Leistung × Firma × Benutzer">
+        </div>
+        <div class="form-group">
+          <label>Interne Techniker</label>
+          <div id="d-techniker-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
+        </div>
+        <div class="form-group">
+          <label>Externe Techniker</label>
+          <input type="text" id="d-externe-techniker" placeholder="z. B. Max Mustermann (extern)">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-kanban-footer">
+      <!-- Kopplung: Termin-Sync + Bonus-Einlösung -->
+      <div class="modal-group-title">Kopplung</div>
+      <div class="form-grid">
+        <div class="form-group full" id="d-appointment-sync-wrap">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="checkbox" id="d-create-appointment" style="width:auto;margin:0">
+            <span>Auch als Termin im Kalender eintragen</span>
+          </label>
+          <span style="font-size:11px;color:var(--muted);padding-left:24px">
+            Legt parallel einen Termin mit gleichen Daten an. Beim Deaktivieren wird der verknüpfte Termin gelöscht.
+          </span>
+        </div>
+
+        <!-- Einlöse-Sektion (v1.14.0) -->
+        <div class="form-group full" id="d-redeem-wrap" style="display:none">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="checkbox" id="d-redeem-check" style="width:auto;margin:0" onchange="onRedeemCheckToggle()">
+            <span>Als Bonus-Einlösung verbuchen</span>
+          </label>
+          <span style="font-size:11px;color:var(--muted);padding-left:24px" id="d-redeem-hint">
+            Wähle einen offenen Bonus aus den Mitgliedschaften/Projekten dieser Firma.
+          </span>
+
+          <div id="d-redeem-details" style="display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px">
+            <div class="form-group full" style="margin-bottom:10px">
+              <label>Bonus auswählen *</label>
+              <select id="d-redeem-entitlement" onchange="onRedeemEntitlementChange()"></select>
+            </div>
+            <div class="form-group full" style="margin-bottom:0">
+              <label>Einlöse-Menge</label>
+              <input type="number" id="d-redeem-menge" min="0.01" step="0.01" value="1">
+              <span style="font-size:11px;color:var(--muted)" id="d-redeem-menge-hint"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Beschreibung & Notizen (kollabiert) -->
+      <div class="modal-group-title collapsed">Beschreibung &amp; Notizen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <label>Beschreibung</label>
+          <textarea id="d-beschreibung" rows="2" placeholder="Worum geht es bei diesem Einsatz?"></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Notizen</label>
+          <textarea id="d-notizen" rows="2" placeholder="Freitext-Notizen ..."></textarea>
         </div>
       </div>
     </div>

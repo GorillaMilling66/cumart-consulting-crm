@@ -2280,6 +2280,104 @@ tr.expanded-row > td {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   MODAL-KANBAN-LAYOUT (v1.35.0)
+   ═══════════════════════════════════════════════════════════
+   Horizontale Spalten-Aufteilung innerhalb eines Modals.
+   Links nach rechts durch den Formularfluss, statt endlose
+   vertikale Stapel. Mobile: Spalten kollabieren zu einer.
+   ─────────────────────────────────────────────────────────── */
+.modal-kanban {
+  display: grid;
+  gap: 18px;
+  margin: 18px 0 8px;
+}
+.modal-kanban.cols-2 { grid-template-columns: 1fr 1fr; }
+.modal-kanban.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.modal-kanban.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+.modal-kanban-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 14px;
+  border-right: 1px solid var(--border);
+  min-width: 0;  /* damit select/input schrumpfen können */
+}
+.modal-kanban-col:first-child { padding-left: 0; }
+.modal-kanban-col:last-child { padding-right: 0; border-right: none; }
+
+.modal-kanban-col-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  font-weight: 700;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.modal-kanban-col-title-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Form-Groups in Kanban bekommen etwas engeres Layout */
+.modal-kanban .form-group { margin-bottom: 0; }
+.modal-kanban .form-group > label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+.modal-kanban input[type="text"],
+.modal-kanban input[type="date"],
+.modal-kanban input[type="time"],
+.modal-kanban input[type="number"],
+.modal-kanban select,
+.modal-kanban textarea {
+  width: 100%;
+}
+
+/* 2-Spalten-Mini-Grid innerhalb einer Kanban-Spalte (z. B. Uhrzeit von/bis) */
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Footer-Bereich unter dem Kanban (z. B. Notizen, Kopplung) */
+.modal-kanban-footer {
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.modal-kanban-footer .modal-group-title:first-of-type {
+  margin-top: 12px;
+}
+
+/* Responsive: Auf schmalen Viewports stapeln die Spalten vertikal */
+@media (max-width: 900px) {
+  .modal-kanban.cols-2,
+  .modal-kanban.cols-3,
+  .modal-kanban.cols-4 {
+    grid-template-columns: 1fr;
+  }
+  .modal-kanban-col {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 14px 0;
+  }
+  .modal-kanban-col:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    TERMIN-TYP-ICON-PICKER (v1.34)
    ═══════════════════════════════════════════════════════════ */
 .termin-typ-picker {

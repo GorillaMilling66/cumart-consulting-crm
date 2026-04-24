@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.35.0 (Modal-Redesign im Kanban-Stil: Termin-,
+   Einsatz- und Aufgabe-Modals sind jetzt breite Mehr-Spalten-
+   Layouts (links nach rechts durch den Formularfluss) mit
+   Icon-Headern pro Spalte. Termin 3 Spalten (Was/Wann/Wer&Wo),
+   Aufgabe 3 Spalten (Was/Wann&Wer/Kontext), Einsatz 4 Spalten
+   (Kunde/Leistung/Zeitraum/Team). Modal-Breiten auf 960 bzw.
+   1140 px erhöht. Sekundäre Bereiche (Notizen, Kopplung,
+   Beschreibung) wandern in einen Footer-Bereich unter dem
+   Kanban — Kopplung bleibt offen, Notizen/Beschreibung
+   standardmäßig kollabiert. Mobile: Spalten stapeln vertikal.
+   Alle Feld-IDs und Handler unverändert.)
    Version 1.34.0 (Punkte 6 + 9: Termin-Typ-Icons und Modal-
    Redesign. Termin-Modal hat jetzt einen Icon-Picker neben
    dem Typ-Dropdown — jeder Typ bekommt ein Emoji via Fuzzy-
