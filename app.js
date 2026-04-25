@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.40.0 (Aufgabe↔Termin-Kopplung + Kalender-Icon
+   in Listen-Zeilen.
+   Migration: appointments.task_id (FK + Index). Aufgabe-Modal
+   bekommt im Footer eine Kopplung-Sektion mit Checkbox „Auch
+   als Termin im Kalender eintragen". Sync-Logik analog zur
+   Einsatz-Termin-Kopplung: anlegen/aktualisieren/soft-löschen,
+   Aufgabe-Status `erledigt` mappt auf Termin-Status
+   `durchgefuehrt`. Beim Löschen einer Aufgabe folgt der
+   Termin (mit Undo).
+   Kalender-Icon: kleines blaues Kalender-Symbol rechts neben
+   Titel in allen Aufgaben-Listen (wenn Termin gekoppelt) und
+   allen Einsatz-Listen (wenn datum_von gesetzt). Map-Lookup
+   task_id → appointment_id pro Listen-Render in einem Query.)
    Version 1.39.0 (Code-Hygiene-Pass: Leichen aus den letzten
    Releases entfernt. Tote Funktionen: terminTypIcon + Emoji-
    Map (ersetzt durch farbige Punkte in v1.37), die zwei
@@ -1062,6 +1075,23 @@ function formatTime(timeStr) {
 function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fdf4'; }
 function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
 function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
+
+/** Kleines Kalender-Indikator-Icon (v1.40) für Listen-Zeilen — zeigt an, dass
+ *  der Eintrag im Mitarbeiter-Kalender erscheint. */
+const ROW_CAL_ICON = `<span class="row-calendar-indicator" title="Im Kalender sichtbar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>`;
+
+/** Lädt eine Map task_id → appointment_id für eine Liste von task-IDs (v1.40).
+ *  Wird vor dem Render von Aufgaben-Listen aufgerufen, damit das Kalender-Icon
+ *  in jeder Zeile gezeigt werden kann. */
+async function loadLinkedAppointmentMap(taskIds) {
+  if (!Array.isArray(taskIds) || taskIds.length === 0) return new Map();
+  const { data } = await db.from('appointments')
+    .select('id, task_id').is('deleted_at', null)
+    .in('task_id', taskIds).not('task_id', 'is', null);
+  const map = new Map();
+  (data || []).forEach(a => { if (a.task_id) map.set(a.task_id, a.id); });
+  return map;
+}
 
 /** Gibt das HTML-Snippet für einen Termin-Typ-Dot zurück (farbig aus lookup_values.farbe).
  *  Ersetzt die v1.34-Emoji-Implementierung ab v1.37. */
@@ -6215,7 +6245,7 @@ function renderDeploymentsTable(deployments) {
       <tr data-dep-id="${esc(d.id)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}${d.datum_von ? ROW_CAL_ICON : ''}</div>
         </td>
         <td class="col-tablet">${firmaHtml}</td>
         <td class="col-desktop">${projektHtml}</td>
@@ -7203,7 +7233,7 @@ async function loadCompanyDeployments(companyId) {
       <tr data-dep-id="${esc(d.id)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}${d.datum_von ? ROW_CAL_ICON : ''}</div>
         </td>
         <td class="col-tablet">${projektHtml}</td>
         <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
@@ -7299,7 +7329,7 @@ async function loadProjectDeployments(projectId) {
         </td>
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
-          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
+          <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}${d.datum_von ? ROW_CAL_ICON : ''}</div>
         </td>
         <td class="col-tablet" style="color:var(--muted)">${leistungHtml}</td>
         <td class="dep-status-cell"><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
@@ -10259,7 +10289,7 @@ function filterTasks() {
   renderTasksTable(filtered);
 }
 
-function renderTasksTable(tasks) {
+async function renderTasksTable(tasks) {
   closeExpandedRow();
   const tbody = document.getElementById('tasks-table-body');
   const countEl = document.getElementById('tasks-count');
@@ -10278,6 +10308,8 @@ function renderTasksTable(tasks) {
     return;
   }
 
+  // v1.40: Map task_id → appointment_id für das Kalender-Icon in der Zeile
+  const linkedMap = await loadLinkedAppointmentMap(tasks.map(t => t.id));
   const todayISO = toISODate(new Date());
 
   tbody.innerHTML = tasks.map(t => {
@@ -10296,10 +10328,11 @@ function renderTasksTable(tasks) {
 
     const titelStyle = done ? 'text-decoration:line-through;color:var(--muted)' : '';
 
+    const calIcon = linkedMap.has(t.id) ? ROW_CAL_ICON : '';
     return `
       <tr data-task-id="${esc(t.id)}" data-company-id="${esc(t.company_id || '')}" data-contact-id="${esc(t.contact_id || '')}" data-project-id="${esc(t.project_id || '')}">
         <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
-        <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}</div></td>
+        <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}${calIcon}</div></td>
         <td>${fael}</td>
         <td class="col-tablet" style="color:var(--muted)">${assigneeName}</td>
         <td class="col-desktop">${kontextHtml}</td>
@@ -10344,6 +10377,7 @@ async function openTaskModal(mode, taskId = null) {
   document.getElementById('a-faelligkeit').value = '';
   document.getElementById('a-beschreibung').value = '';
   document.getElementById('a-notizen').value = '';
+  document.getElementById('a-create-appointment').checked = false;  // v1.40
   statusSelect.value = 'offen';
   if (currentProfile?.id) assigneeSelect.value = currentProfile.id;
   companySelect.value = '';
@@ -10424,6 +10458,13 @@ async function openTaskModal(mode, taskId = null) {
       const projSel = document.getElementById('a-project');
       if (projSel) projSel.value = data.project_id;
     }
+
+    // v1.40: Checkbox-Stand aus existierendem gekoppelten Termin
+    const { data: linkedAppt } = await db.from('appointments')
+      .select('id').is('deleted_at', null).eq('task_id', editingTaskId).limit(1);
+    if (linkedAppt && linkedAppt.length > 0) {
+      document.getElementById('a-create-appointment').checked = true;
+    }
   }
 
   // Firma-Change-Handler für Kontakt/Projekt-Nachladen
@@ -10483,12 +10524,17 @@ async function saveTask() {
   const contact_id   = document.getElementById('a-contact').value || null;
   const project_id   = document.getElementById('a-project')?.value || null;
   const notizen      = document.getElementById('a-notizen').value.trim();
+  const createAppt   = document.getElementById('a-create-appointment').checked;  // v1.40
   const btn          = document.getElementById('a-save-btn');
 
   if (!titel) { showToast('Bitte Titel eingeben.', true); return; }
   if (!assigned_to) { showToast('Bitte eine Person zuweisen.', true); return; }
   const gueltigeStatus = aufgabeStatusCache.map(s => s.wert);
   if (gueltigeStatus.length && !gueltigeStatus.includes(status)) { showToast('Status ungültig.', true); return; }
+  if (createAppt && !faelligkeit) {
+    showToast('Für die Termin-Kopplung muss ein Fälligkeitsdatum gesetzt sein.', true);
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = editingTaskId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
@@ -10516,20 +10562,81 @@ async function saveTask() {
     };
     if (!editingTaskId) payload.erstellt_von = currentProfile?.id || null;
 
-    let error;
-    if (editingTaskId) { ({ error } = await db.from('tasks').update(payload).eq('id', editingTaskId)); }
-    else { ({ error } = await db.from('tasks').insert(payload)); }
-    if (error) throw new Error(error.message);
+    let savedTaskId = editingTaskId;
+    if (editingTaskId) {
+      const { error } = await db.from('tasks').update(payload).eq('id', editingTaskId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { data: ins, error } = await db.from('tasks').insert(payload).select('id').single();
+      if (error) throw new Error(error.message);
+      savedTaskId = ins?.id;
+    }
+
+    // v1.40 — Termin synchronisieren (anlegen/aktualisieren/löschen)
+    if (savedTaskId) {
+      await syncTaskAppointment(savedTaskId, { ...payload, id: savedTaskId }, createAppt);
+    }
 
     closeTaskModal();
     showToast(editingTaskId ? 'Aufgabe aktualisiert.' : 'Aufgabe angelegt.');
     await _refreshTaskContext();
+    refreshCalendarBar();   // v1.40 — Termin könnte neu sichtbar sein
     updateTaskBadge();
   } catch (e) {
     showToast(e.message, true);
   } finally {
     btn.disabled = false;
     btn.textContent = editingTaskId ? 'Speichern' : 'Anlegen';
+  }
+}
+
+/** Synchronisiert einen Termin zur Aufgabe basierend auf Checkbox-Status (v1.40).
+ *  Analog zur Termin-Einsatz-Kopplung (siehe syncDeploymentAppointment, §8.4):
+ *  - Checkbox an  + kein Termin           → Termin anlegen
+ *  - Checkbox an  + Termin existiert      → Termin aktualisieren
+ *  - Checkbox aus + Termin existiert      → Termin soft-löschen
+ *  - Aufgabe ohne Fälligkeit              → bereits oben blockiert
+ *  Aufgabe-Status `erledigt` wird auf Termin-Status `durchgefuehrt` gemappt. */
+async function syncTaskAppointment(taskId, taskData, shouldExist) {
+  const { data: existing } = await db.from('appointments')
+    .select('id').is('deleted_at', null).eq('task_id', taskId).limit(1);
+  const existingId = existing && existing.length > 0 ? existing[0].id : null;
+
+  if (!shouldExist) {
+    if (existingId) {
+      await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
+    }
+    return;
+  }
+
+  // Default-Termin-Typ: erster aktiver aus dem Cache
+  if (terminTypenCache.length === 0) await loadTerminTypen();
+  const defaultTypId = terminTypenCache[0]?.id || null;
+  if (!defaultTypId) {
+    showToast('Kein Termin-Typ verfügbar — Termin-Kopplung übersprungen.', true);
+    return;
+  }
+
+  const apptStatus = taskData.status === 'erledigt' ? 'durchgefuehrt' : 'geplant';
+  const apptPayload = {
+    titel:       taskData.titel,
+    datum:       taskData.faelligkeit,
+    uhrzeit_von: '08:00',
+    uhrzeit_bis: '16:00',
+    typ_id:      defaultTypId,
+    status:      apptStatus,
+    company_id:  taskData.company_id,
+    contact_id:  taskData.contact_id,
+    project_id:  taskData.project_id,
+    notizen:     taskData.beschreibung || null,
+    task_id:     taskId
+  };
+
+  if (existingId) {
+    await db.from('appointments').update(apptPayload).eq('id', existingId);
+  } else {
+    apptPayload.erstellt_von = currentProfile?.id || null;
+    await db.from('appointments').insert(apptPayload);
   }
 }
 
@@ -10548,8 +10655,12 @@ async function deleteTask() {
     const { error } = await db.from('tasks').update({ deleted_at: deletedAt }).eq('id', id);
     if (error) throw new Error(error.message);
 
+    // v1.40: gekoppelten Termin (falls vorhanden) ebenfalls soft-löschen
+    await db.from('appointments').update({ deleted_at: deletedAt }).eq('task_id', id).is('deleted_at', null);
+
     closeTaskModal();
     await _refreshTaskContext();
+    refreshCalendarBar();   // v1.40
     updateTaskBadge();
 
     showToast('Aufgabe gelöscht.', false, {
@@ -10558,7 +10669,10 @@ async function deleteTask() {
       onAction: async () => {
         try {
           await db.from('tasks').update({ deleted_at: null }).eq('id', id);
+          // v1.40: gekoppelten Termin ebenfalls wiederherstellen
+          await db.from('appointments').update({ deleted_at: null }).eq('task_id', id).eq('deleted_at', deletedAt);
           await _refreshTaskContext();
+          refreshCalendarBar();
           updateTaskBadge();
           showToast('Aufgabe wiederhergestellt.');
         } catch (err) {
@@ -10645,7 +10759,7 @@ async function loadCompanyTasks(companyId) {
     countEl.textContent = 'Aufgaben';
     return;
   }
-  renderDetailTaskRows(tbody, countEl, data || [], 'company');
+  await renderDetailTaskRows(tbody, countEl, data || [], 'company');
 }
 
 async function loadContactTasks(contactId) {
@@ -10661,7 +10775,7 @@ async function loadContactTasks(contactId) {
     countEl.textContent = 'Aufgaben';
     return;
   }
-  renderDetailTaskRows(tbody, countEl, data || [], 'contact');
+  await renderDetailTaskRows(tbody, countEl, data || [], 'contact');
 }
 
 async function loadProjectTasks(projectId) {
@@ -10677,10 +10791,10 @@ async function loadProjectTasks(projectId) {
     countEl.textContent = 'Aufgaben';
     return;
   }
-  renderDetailTaskRows(tbody, countEl, data || [], 'project');
+  await renderDetailTaskRows(tbody, countEl, data || [], 'project');
 }
 
-function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
+async function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
   closeExpandedRow();
   const total = tasks.length;
   const offen = tasks.filter(t => t.status !== 'erledigt').length;
@@ -10707,7 +10821,11 @@ function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
     return (b.created_at || '').localeCompare(a.created_at || '');
   });
 
-  tbody.innerHTML = tasks.slice(0, 10).map(t => {
+  // v1.40: Map task_id → appointment_id für Kalender-Icon
+  const visibleTasks = tasks.slice(0, 10);
+  const linkedMap = await loadLinkedAppointmentMap(visibleTasks.map(t => t.id));
+
+  tbody.innerHTML = visibleTasks.map(t => {
     const done = t.status === 'erledigt';
     const overdue = isTaskOverdue(t, todayISO);
     const assigneeName = t.assigned ? (t.assigned.name || t.assigned.email || '?') : '—';
@@ -10715,11 +10833,12 @@ function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
       ? `<span ${overdue ? 'style="color:#dc2626;font-weight:600"' : ''}>${esc(formatDateDE(t.faelligkeit))}</span>`
       : '<span style="color:var(--muted)">—</span>';
     const titelStyle = done ? 'text-decoration:line-through;color:var(--muted)' : '';
+    const calIcon = linkedMap.has(t.id) ? ROW_CAL_ICON : '';
 
     return `
       <tr data-task-id="${esc(t.id)}" data-company-id="${esc(t.company_id || '')}" data-contact-id="${esc(t.contact_id || '')}" data-project-id="${esc(t.project_id || '')}">
         <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
-        <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}</div></td>
+        <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}${calIcon}</div></td>
         <td>${fael}</td>
         <td class="col-tablet" style="color:var(--muted)">${esc(assigneeName)}</td>
         <td><span class="badge" style="background:${aufgabeStatusBg(t.status)};color:${aufgabeStatusColor(t.status)}">${esc(aufgabeStatusLabel(t.status))}</span></td>

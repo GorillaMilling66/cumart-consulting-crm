@@ -2207,6 +2207,20 @@
     </div>
 
     <div class="modal-preview-footer">
+      <!-- Kopplung: Aufgabe→Termin (v1.40.0) -->
+      <div class="modal-group-title">Kopplung</div>
+      <div class="form-grid">
+        <div class="form-group full" id="a-appointment-sync-wrap">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="checkbox" id="a-create-appointment" style="width:auto;margin:0">
+            <span>Auch als Termin im Kalender eintragen</span>
+          </label>
+          <span style="font-size:11px;color:var(--muted);padding-left:24px" id="a-create-appointment-hint">
+            Erstellt parallel einen Termin am Fälligkeitsdatum (Ganztag, Typ wird automatisch gewählt). Beim Deaktivieren wird der verknüpfte Termin gelöscht.
+          </span>
+        </div>
+      </div>
+
       <div class="modal-group-title collapsed">Notizen</div>
       <div class="form-grid" style="display:none">
         <div class="form-group full">

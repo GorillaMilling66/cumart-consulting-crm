@@ -2637,3 +2637,23 @@ select.typ-select-secondary {
   font-family: inherit;
 }
 .calendar-popover-quickmenu button:hover { background: var(--bg); }
+
+/* ═══════════════════════════════════════════════════════════
+   ZEILEN-KALENDER-INDIKATOR (v1.40.0)
+   ═══════════════════════════════════════════════════════════
+   Kleines Kalender-Icon in Listen-Zeilen, das anzeigt: Eintrag
+   ist im Kalender sichtbar (Aufgabe via Termin-Kopplung,
+   Einsatz via gesetztem Datum_von).
+   ─────────────────────────────────────────────────────────── */
+.row-calendar-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--link);
+  vertical-align: -2px;
+  cursor: help;
+}
+.row-calendar-indicator svg {
+  width: 13px;
+  height: 13px;
+}
