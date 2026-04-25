@@ -1468,11 +1468,6 @@ tr:hover td { background: var(--bg); }
   grid-template-columns: 1fr;
   gap: 4px;
 }
-.benefit-row-titel .benefit-service-hint {
-  font-size: 11px;
-  color: var(--muted);
-}
-
 /* ── MITGLIEDSCHAFTS-DARSTELLUNG (v1.13.0) ── */
 .membership-card {
   border: 1px solid var(--border);
@@ -2397,146 +2392,12 @@ tr.expanded-row > td {
   cursor: pointer;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   MODAL-KANBAN-LAYOUT (v1.35.0, harmonisiert v1.35.1)
-   ═══════════════════════════════════════════════════════════
-   Horizontale Spalten-Aufteilung innerhalb eines Modals.
-   Alle Sektions-Header (Kanban-Spalten wie Footer-Gruppen)
-   teilen jetzt dieselbe Typo + Größe, damit das Design durch-
-   gängig wirkt.
-   ─────────────────────────────────────────────────────────── */
-.modal-kanban {
-  display: grid;
-  gap: 20px;
-  margin: 18px 0 8px;
-}
-.modal-kanban.cols-2 { grid-template-columns: 1fr 1fr; }
-.modal-kanban.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
-.modal-kanban.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
-
-.modal-kanban-col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 0 16px;
-  border-right: 1px solid var(--border);
-  min-width: 0;
-}
-.modal-kanban-col:first-child { padding-left: 0; }
-.modal-kanban-col:last-child { padding-right: 0; border-right: none; }
-
-/* VEREINHEITLICHTE SEKTIONS-HEADER (v1.35.1) — Kanban-Col + Footer-Group teilen Styling */
-.modal-kanban-col-title,
-.modal-kanban-footer .modal-group-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--muted);
-  padding: 0 0 8px 0;
-  margin: 0 0 4px 0;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-}
-.modal-kanban-footer .modal-group-title {
-  margin-top: 16px;
-  cursor: pointer;
-  user-select: none;
-  justify-content: space-between;  /* Collapse-Pfeil rechts */
-}
-.modal-kanban-footer .modal-group-title:first-child { margin-top: 0; }
-
-.modal-kanban-col-title-icon {
-  font-size: 14px;
-  line-height: 1;
-}
-
-/* Form-Groups in Kanban: konsistente Label-Größe und Abstände */
-.modal-kanban .form-group { margin-bottom: 0; }
-.modal-kanban .form-group > label,
-.modal-kanban-footer .form-group > label {
-  display: block;
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 500;
-  margin-bottom: 4px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-/* Inputs + Selects + Textareas: einheitliche Höhe und Rahmen innerhalb Kanban */
-.modal-kanban input[type="text"],
-.modal-kanban input[type="date"],
-.modal-kanban input[type="time"],
-.modal-kanban input[type="number"],
-.modal-kanban select {
-  width: 100%;
-  height: 36px;
-  padding: 6px 10px;
-  font-size: 13px;
-  font-family: inherit;
-}
-.modal-kanban textarea {
-  width: 100%;
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: inherit;
-  line-height: 1.45;
-}
-
-/* 2-Spalten-Mini-Grid innerhalb einer Kanban-Spalte (z. B. Uhrzeit von/bis) */
+/* 2-Spalten-Mini-Grid innerhalb eines Form-Bereichs (z. B. Uhrzeit von/bis,
+   Datum von/bis, Menge/Einzelpreis). Wird vom 3-col-Preview-Modal genutzt. */
 .form-row-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-}
-
-/* Footer-Bereich unter dem Kanban (Kopplung, Notizen) */
-.modal-kanban-footer {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-.modal-kanban-footer .form-grid {
-  margin-top: 10px;
-}
-
-/* Einheitliche Button-Heights: Date-Shortcuts + Termin-Typ-Icon-Chips */
-.modal-kanban .date-shortcut-btn,
-.modal-kanban .termin-typ-icon-btn {
-  height: 26px;
-  padding: 0 10px;
-  font-size: 11px;
-}
-.modal-kanban .termin-typ-icon-emoji { font-size: 13px; }
-.modal-kanban .input-action-btn { height: 36px; width: 36px; font-size: 14px; }
-
-/* Ganztag-Checkbox-Wrapper: gleiche Schrift wie Labels */
-.modal-kanban .ganztag-wrap {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 0;
-}
-
-/* Responsive: Auf schmalen Viewports stapeln die Spalten vertikal */
-@media (max-width: 900px) {
-  .modal-kanban.cols-2,
-  .modal-kanban.cols-3,
-  .modal-kanban.cols-4 {
-    grid-template-columns: 1fr;
-  }
-  .modal-kanban-col {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 0 0 16px 0;
-  }
-  .modal-kanban-col:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2658,7 +2519,7 @@ tr.expanded-row > td {
 }
 .modal-preview-footer .modal-group-title:first-child { margin-top: 0; }
 
-/* Einheitliche Form-Controls im 3-Spalten-Modal (analog zu .modal-kanban) */
+/* Einheitliche Form-Controls im 3-Spalten-Modal */
 .modal-3col .form-group { margin-bottom: 0; }
 .modal-3col .form-group > label {
   display: block;
@@ -2725,22 +2586,11 @@ tr.expanded-row > td {
   color: #fff;
   border-color: var(--primary);
 }
-.termin-typ-icon-emoji { font-size: 14px; line-height: 1; }
-
 /* Dropdown darunter als dezenter Fallback */
 select.typ-select-secondary {
   font-size: 12px;
   color: var(--muted);
   padding: 4px 8px;
-}
-
-/* Termin-Titel-Icon in Listen + Dashboards */
-.termin-title-icon {
-  display: inline-block;
-  margin-right: 4px;
-  font-size: 13px;
-  line-height: 1;
-  vertical-align: -1px;
 }
 
 /* ═══════════════════════════════════════════════════════════

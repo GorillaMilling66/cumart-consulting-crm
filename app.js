@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.39.0 (Code-Hygiene-Pass: Leichen aus den letzten
+   Releases entfernt. Tote Funktionen: terminTypIcon + Emoji-
+   Map (ersetzt durch farbige Punkte in v1.37), die zwei
+   deprecated Wrapper setAppointmentDateShortcut und
+   autoExpandSingleAppointmentRow. Toter CSS-Block: kompletter
+   modal-kanban-Bereich (~135 Zeilen), .termin-typ-icon-emoji,
+   .termin-title-icon, .benefit-service-hint. Plus drei
+   versteckte Aufrufstellen von autoExpandSingleAppointmentRow
+   auf die generische autoExpandSingleRow umgestellt. Insgesamt
+   ~150 Zeilen toten Code entfernt — keine Funktionsänderung.)
    Version 1.38.2 (Performance-Schritt 2: Hint-Lookup arbeitet
    jetzt auch in Sub-Tabs. data-company-id/contact-id/project-id
    auf allen <tr> der Sub-Tab-Listen (Firma/Kontakt/Projekt-
@@ -248,7 +258,8 @@ let userProfilesCache = [];
 // Map: companyId → contacts[] (für synchronen Copy-Zugriff)
 let companyContactsMap = {};
 
-// Selected Techniker IDs im Einsatz-Modal (temporär)
+// Selected Techniker IDs im Einsatz-Modal — Set wird beim Modal-Open neu befüllt
+// und beim saveDeployment ausgewertet (Persistierung in deployment_technicians-Tabelle).
 let selectedTechnikerIds = new Set();
 
 // Map: companyId → { next: {datum, titel, id} | null, last: {datum, titel, id} | null }
@@ -1051,40 +1062,6 @@ function formatTime(timeStr) {
 function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fdf4'; }
 function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
 function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
-
-/** Termin-Typ-Icons (v1.34). Fuzzy-Match auf den Lookup-Wert — unbekannte Typen
- *  fallen auf 📅 zurück. Reihenfolge in der Map ist bewusst: längere Begriffe
- *  vor kürzeren, damit z. B. „Follow-up" nicht von „up" verschluckt wird. */
-const TERMIN_TYPE_ICON_MAP = [
-  ['kickoff',       '🚀'],
-  ['kick-off',      '🚀'],
-  ['workshop',      '🛠️'],
-  ['präsentation',  '📊'],
-  ['praesentation', '📊'],
-  ['schulung',      '🎓'],
-  ['training',      '🎓'],
-  ['follow',        '🔁'],
-  ['beratung',      '💬'],
-  ['abstimmung',    '📋'],
-  ['akquise',       '🎯'],
-  ['meeting',       '🤝'],
-  ['vor ort',       '📍'],
-  ['online',        '💻'],
-  ['call',          '📞'],
-  ['telefonat',     '📞'],
-  ['videocall',     '🎥'],
-  ['demo',          '🎬'],
-  ['messe',         '🏢']
-];
-
-function terminTypIcon(wert) {
-  if (!wert) return '📅';
-  const lower = String(wert).toLowerCase();
-  for (const [key, icon] of TERMIN_TYPE_ICON_MAP) {
-    if (lower.includes(key)) return icon;
-  }
-  return '📅';
-}
 
 /** Gibt das HTML-Snippet für einen Termin-Typ-Dot zurück (farbig aus lookup_values.farbe).
  *  Ersetzt die v1.34-Emoji-Implementierung ab v1.37. */
@@ -4121,7 +4098,7 @@ async function loadCompanyAppointments(companyId) {
   }
 
   // Auto-Expand wenn genau ein Termin — spart den manuellen Klick (v1.27.1)
-  autoExpandSingleAppointmentRow(tbody, toShow);
+  autoExpandSingleRow(tbody, 'appointment', toShow);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4844,12 +4821,6 @@ function setDateShortcut(inputId, key) {
   }
   input.value = toISODate(target);
   input.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-/** @deprecated v1.33 — Alias für alte Aufrufer. Neue Buttons nutzen setDateShortcut. */
-function setAppointmentDateShortcut(key) {
-  const mapping = { today: 'today', tomorrow: 'nextWorkday', plus3: 'plus3wt', plus7: 'plus7wt', nextMonday: 'nextMonday' };
-  setDateShortcut('t-datum', mapping[key] || key);
 }
 
 /** Ganztags-Checkbox im Termin-/Einsatz-Modal (v1.33).
@@ -5627,7 +5598,7 @@ async function loadProjectAppointments(projectId) {
   document.getElementById('project-appointments-show-all').style.display = 'none';
 
   // Auto-Expand wenn genau ein Termin (v1.27.1)
-  autoExpandSingleAppointmentRow(tbody, sorted);
+  autoExpandSingleRow(tbody, 'appointment', sorted);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5989,7 +5960,7 @@ async function loadContactAppointments(contactId) {
   }).join('');
 
   // Auto-Expand wenn genau ein Termin (v1.27.1)
-  autoExpandSingleAppointmentRow(tbody, sorted);
+  autoExpandSingleRow(tbody, 'appointment', sorted);
 }
 
 async function loadContactProjects(contactId) {
@@ -8782,13 +8753,6 @@ function autoExpandSingleRow(tbody, entityType, items) {
   toggleRowExpand(entityType, items[0].id, firstRow);
 }
 
-/** @deprecated Wrapper-Kompat — verwende autoExpandSingleRow(tbody, 'appointment', items). */
-function autoExpandSingleAppointmentRow(tbody, items) {
-  autoExpandSingleRow(tbody, 'appointment', items);
-}
-
-/** Öffnet oder schließt das Inline-Dashboard für eine Listen-Zeile.
- *  Auf Mobile: Fallback zum bestehenden Bearbeiten-Modal. */
 // In-Memory-Cache für die gerenderte Detail-HTML der Inline-Expand-Dashboards (v1.38.1).
 // TTL 30 s — bei Status-Wechseln/Refreshes invalidieren wir gezielt.
 const _expandedDetailCache = new Map();   // key: `${type}:${id}` → { html, ts }
