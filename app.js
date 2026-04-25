@@ -10684,15 +10684,23 @@ async function saveTask() {
  *  - Checkbox an  + Termin existiert      → Termin aktualisieren
  *  - Checkbox aus + Termin existiert      → Termin soft-löschen
  *  - Aufgabe ohne Fälligkeit              → bereits oben blockiert
- *  Aufgabe-Status `erledigt` wird auf Termin-Status `durchgefuehrt` gemappt. */
+ *  Aufgabe-Status `erledigt` wird auf Termin-Status `durchgefuehrt` gemappt.
+ *  v1.40.1: Wirft jetzt explizit Errors, damit Migration-/Schema-Probleme sichtbar werden. */
 async function syncTaskAppointment(taskId, taskData, shouldExist) {
-  const { data: existing } = await db.from('appointments')
+  const { data: existing, error: selErr } = await db.from('appointments')
     .select('id').is('deleted_at', null).eq('task_id', taskId).limit(1);
+  if (selErr) {
+    if (/task_id/i.test(selErr.message || '')) {
+      throw new Error('Termin-Kopplung nicht möglich: Migration v1.40.0 noch nicht in Supabase ausgeführt (Spalte appointments.task_id fehlt).');
+    }
+    throw new Error('Termin-Lookup fehlgeschlagen: ' + selErr.message);
+  }
   const existingId = existing && existing.length > 0 ? existing[0].id : null;
 
   if (!shouldExist) {
     if (existingId) {
-      await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
+      const { error } = await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
+      if (error) throw new Error('Termin-Löschung fehlgeschlagen: ' + error.message);
     }
     return;
   }
@@ -10701,8 +10709,7 @@ async function syncTaskAppointment(taskId, taskData, shouldExist) {
   if (terminTypenCache.length === 0) await loadTerminTypen();
   const defaultTypId = terminTypenCache[0]?.id || null;
   if (!defaultTypId) {
-    showToast('Kein Termin-Typ verfügbar — Termin-Kopplung übersprungen.', true);
-    return;
+    throw new Error('Kein Termin-Typ verfügbar — Termin-Kopplung nicht möglich. Bitte unter Stammdaten einen Termin-Typ anlegen.');
   }
 
   const apptStatus = taskData.status === 'erledigt' ? 'durchgefuehrt' : 'geplant';
@@ -10720,11 +10727,18 @@ async function syncTaskAppointment(taskId, taskData, shouldExist) {
     task_id:     taskId
   };
 
+  let error;
   if (existingId) {
-    await db.from('appointments').update(apptPayload).eq('id', existingId);
+    ({ error } = await db.from('appointments').update(apptPayload).eq('id', existingId));
   } else {
     apptPayload.erstellt_von = currentProfile?.id || null;
-    await db.from('appointments').insert(apptPayload);
+    ({ error } = await db.from('appointments').insert(apptPayload));
+  }
+  if (error) {
+    if (/task_id/i.test(error.message || '')) {
+      throw new Error('Termin-Kopplung nicht möglich: Migration v1.40.0 noch nicht in Supabase ausgeführt (Spalte appointments.task_id fehlt).');
+    }
+    throw new Error('Termin-Sync fehlgeschlagen: ' + error.message);
   }
 }
 
