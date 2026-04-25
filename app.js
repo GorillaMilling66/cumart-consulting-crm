@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.38.1 (Performance: Inline-Expand-Dashboards laden
+   spürbar schneller. (1) Skeleton-Card erscheint sofort beim
+   Klick statt „Lade …" — gefühlt instant. (2) In-Memory-
+   Cache mit 30 s TTL: zweites Aufklappen derselben Zeile ist
+   instant; bei Status-Wechseln/Refreshes wird der Cache
+   invalidiert. (3) Welle 1 (Hauptobjekt) und Welle 2 (Histo-
+   rie / verwandte) feuern jetzt parallel — Hint mit company_id/
+   project_id/contact_id kommt aus den bestehenden Listen-
+   Caches. Spart bei Einsatz (vorher 6 Roundtrips, davon 5
+   sequenziell hinter Welle 1) ca. 30–50 % der Wartezeit beim
+   ersten Aufklappen.)
    Version 1.38.0 (Alle übrigen Modals im Preview-Stil:
    Einsatz (1280 px, 3-col mit Footer für Techniker/Kopplung/
    Notizen), Aufgabe (3-col), Firma (3-col: Stammdaten links,
@@ -8771,6 +8782,61 @@ function autoExpandSingleAppointmentRow(tbody, items) {
 
 /** Öffnet oder schließt das Inline-Dashboard für eine Listen-Zeile.
  *  Auf Mobile: Fallback zum bestehenden Bearbeiten-Modal. */
+// In-Memory-Cache für die gerenderte Detail-HTML der Inline-Expand-Dashboards (v1.38.1).
+// TTL 30 s — bei Status-Wechseln/Refreshes invalidieren wir gezielt.
+const _expandedDetailCache = new Map();   // key: `${type}:${id}` → { html, ts }
+const _EXPANDED_CACHE_TTL_MS = 30 * 1000;
+
+function getExpandedDetailCached(type, id) {
+  const key = `${type}:${id}`;
+  const entry = _expandedDetailCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > _EXPANDED_CACHE_TTL_MS) {
+    _expandedDetailCache.delete(key);
+    return null;
+  }
+  return entry.html;
+}
+function setExpandedDetailCache(type, id, html) {
+  _expandedDetailCache.set(`${type}:${id}`, { html, ts: Date.now() });
+}
+function invalidateExpandedDetailCache(type, id) {
+  if (id) _expandedDetailCache.delete(`${type}:${id}`);
+  else _expandedDetailCache.clear();
+}
+
+/** Skeleton-Stand-In, der sofort beim Klick gerendert wird, während die Queries laufen.
+ *  Zeigt Platzhalter-Stats und einen dezenten Lade-Hinweis. */
+function renderExpandedSkeleton() {
+  const greyPill = `<span class="badge" style="background:#f3f4f6;color:transparent">———</span>`;
+  const stats = Array.from({ length: 5 }).map(() => `
+    <div class="erp-stat-item">
+      <div class="erp-stat-label" style="background:#f3f4f6;color:transparent;width:60%;border-radius:3px">—</div>
+      <div class="erp-stat-value" style="background:#f3f4f6;color:transparent;width:80%;border-radius:3px;margin-top:4px">—</div>
+    </div>`).join('');
+  return `
+    <div class="erp-stats">${stats}</div>
+    <div style="padding:14px 18px;color:var(--muted);font-size:13px;text-align:center">Lade Details …</div>`;
+}
+
+/** Hint-Lookup: liest aus den Listen-Caches die FK-IDs, damit die Render-Funktionen
+ *  Welle 1 und Welle 2 der DB-Queries parallel feuern können (v1.38.1). */
+function lookupExpandHint(type, id) {
+  if (type === 'appointment') {
+    const a = appointmentsCache.find(x => x.id === id);
+    return a ? { company_id: a.company_id || null, contact_id: a.contact_id || null } : null;
+  }
+  if (type === 'deployment') {
+    const d = deploymentsCache.find(x => x.id === id);
+    return d ? { company_id: d.company_id || null, project_id: d.project_id || null } : null;
+  }
+  if (type === 'task') {
+    const t = tasksCache.find(x => x.id === id);
+    return t ? { company_id: t.company_id || null, contact_id: t.contact_id || null } : null;
+  }
+  return null;
+}
+
 async function toggleRowExpand(entityType, entityId, rowEl) {
   if (isMobileForExpand()) {
     if (entityType === 'appointment') return openAppointmentModal('edit', entityId);
@@ -8785,25 +8851,40 @@ async function toggleRowExpand(entityType, entityId, rowEl) {
   closeExpandedRow();
   if (sameOpen) return;
 
-  // Neue Expand-Row einfügen
+  // Neue Expand-Row einfügen — sofort mit Skeleton (v1.38.1)
   const panelRow = document.createElement('tr');
   panelRow.className = 'expanded-row';
   const colCount = rowEl.querySelectorAll('td').length || 1;
   const td = document.createElement('td');
   td.colSpan = colCount;
-  td.innerHTML = '<div class="expanded-row-panel-inner"><div class="info-card-empty">Lade ...</div></div>';
   panelRow.appendChild(td);
   rowEl.parentNode.insertBefore(panelRow, rowEl.nextSibling);
   rowEl.classList.add('row-expanded');
 
   _expandedRow = { type: entityType, id: entityId, rowEl, panelRow };
 
+  // Cache-Hit? → direkt aus Cache rendern, keine DB-Query
+  const cachedHtml = getExpandedDetailCached(entityType, entityId);
+  if (cachedHtml) {
+    td.innerHTML = `<div class="expanded-row-panel-inner">${cachedHtml}</div>`;
+    return;
+  }
+
+  // Cache-Miss → Skeleton sofort + Daten laden
+  td.innerHTML = `<div class="expanded-row-panel-inner">${renderExpandedSkeleton()}</div>`;
+  const hint = lookupExpandHint(entityType, entityId);
+
   try {
     let html = '';
-    if (entityType === 'appointment')      html = await renderAppointmentExpandedRow(entityId);
-    else if (entityType === 'deployment')  html = await renderDeploymentExpandedRow(entityId);
-    else if (entityType === 'task')        html = await renderTaskExpandedRow(entityId);
-    td.innerHTML = `<div class="expanded-row-panel-inner">${html}</div>`;
+    if (entityType === 'appointment')      html = await renderAppointmentExpandedRow(entityId, hint);
+    else if (entityType === 'deployment')  html = await renderDeploymentExpandedRow(entityId, hint);
+    else if (entityType === 'task')        html = await renderTaskExpandedRow(entityId, hint);
+
+    // Nur in den DOM schreiben, wenn die Zeile noch geöffnet ist (User hat nicht zwischenzeitlich woanders geklickt)
+    if (_expandedRow.id === entityId && _expandedRow.type === entityType) {
+      td.innerHTML = `<div class="expanded-row-panel-inner">${html}</div>`;
+      setExpandedDetailCache(entityType, entityId, html);
+    }
   } catch (e) {
     td.innerHTML = `<div class="expanded-row-panel-inner"><div class="info-card-empty">Fehler: ${esc(e.message)}</div></div>`;
   }
@@ -8811,42 +8892,66 @@ async function toggleRowExpand(entityType, entityId, rowEl) {
 
 /** Baut das Termin-Inline-Dashboard (v1.27).
  *  Lädt den Termin + Kontextdaten + 3 verwandte Termine + offene Aufgaben. */
-async function renderAppointmentExpandedRow(appointmentId) {
-  const [apptResult, relatedResult] = await Promise.all([
-    db.from('appointments')
-      .select(`
-        *,
-        typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe),
-        company:companies(id, name, abc_klassifizierung),
-        contact:contacts(id, vorname, nachname, telefon, email),
-        project:projects(id, name, status),
-        deployment:deployments(id, titel, status)
-      `)
-      .is('deleted_at', null).eq('id', appointmentId).single(),
-    // Platzhalter — echte „verwandte" Query kommt unten, sobald wir company_id kennen
-    Promise.resolve({ data: [] })
-  ]);
+async function renderAppointmentExpandedRow(appointmentId, hint) {
+  const todayISO = toISODate(new Date());
+  const placeholderUuid = '00000000-0000-0000-0000-000000000000';
+
+  // Wenn ein hint mit company_id/contact_id da ist: Welle 1 + 2 parallel feuern (v1.38.1).
+  // Sonst sequentiell wie vorher.
+  let apptResult, relAppts, openTasksForCompanyOrContact;
+
+  const apptPromise = db.from('appointments')
+    .select(`
+      *,
+      typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe),
+      company:companies(id, name, abc_klassifizierung),
+      contact:contacts(id, vorname, nachname, telefon, email),
+      project:projects(id, name, status),
+      deployment:deployments(id, titel, status)
+    `)
+    .is('deleted_at', null).eq('id', appointmentId).single();
+
+  if (hint) {
+    const relApptsPromise = hint.company_id
+      ? db.from('appointments')
+          .select('id, titel, datum, status, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
+          .is('deleted_at', null).eq('company_id', hint.company_id).neq('id', appointmentId)
+          .order('datum', { ascending: false }).limit(3)
+      : Promise.resolve({ data: [] });
+    const tasksPromise = (hint.company_id || hint.contact_id)
+      ? db.from('tasks')
+          .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
+          .is('deleted_at', null)
+          .or(`company_id.eq.${hint.company_id || placeholderUuid},contact_id.eq.${hint.contact_id || placeholderUuid}`)
+          .neq('status', 'erledigt').order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
+      : Promise.resolve({ data: [] });
+
+    [apptResult, relAppts, openTasksForCompanyOrContact] = await Promise.all([apptPromise, relApptsPromise, tasksPromise]);
+  } else {
+    apptResult = await apptPromise;
+  }
 
   if (apptResult.error || !apptResult.data) {
     return `<div class="info-card-empty">Termin konnte nicht geladen werden.</div>`;
   }
   const a = apptResult.data;
 
-  // Zweite Runde: verwandte Daten basierend auf company_id / contact_id
-  const todayISO = toISODate(new Date());
-  const [relAppts, openTasksForCompanyOrContact] = await Promise.all([
-    a.company_id
-      ? db.from('appointments')
-          .select('id, titel, datum, status, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
-          .is('deleted_at', null).eq('company_id', a.company_id).neq('id', appointmentId)
-          .order('datum', { ascending: false }).limit(3)
-      : Promise.resolve({ data: [] }),
-    db.from('tasks')
-      .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
-      .is('deleted_at', null)
-      .or(`company_id.eq.${a.company_id || '00000000-0000-0000-0000-000000000000'},contact_id.eq.${a.contact_id || '00000000-0000-0000-0000-000000000000'}`)
-      .neq('status', 'erledigt').order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
-  ]);
+  // Wenn kein Hint: Welle 2 jetzt nachholen
+  if (!hint) {
+    [relAppts, openTasksForCompanyOrContact] = await Promise.all([
+      a.company_id
+        ? db.from('appointments')
+            .select('id, titel, datum, status, typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
+            .is('deleted_at', null).eq('company_id', a.company_id).neq('id', appointmentId)
+            .order('datum', { ascending: false }).limit(3)
+        : Promise.resolve({ data: [] }),
+      db.from('tasks')
+        .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
+        .is('deleted_at', null)
+        .or(`company_id.eq.${a.company_id || placeholderUuid},contact_id.eq.${a.contact_id || placeholderUuid}`)
+        .neq('status', 'erledigt').order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
+    ]);
+  }
 
   // Stats-Row
   const statusBg  = appointmentStatusBg(a.status);
@@ -9072,6 +9177,7 @@ async function quickAppointmentCreateDeployment(appointmentId) {
 
 /** Hilfs-Refresh: lädt die aktuell sichtbare Termine-Liste neu (Haupt-Seite / Firma / Kontakt / Projekt). */
 async function refreshCurrentAppointmentList() {
+  invalidateExpandedDetailCache();  // v1.38.1: Detail-Cache leeren, damit frische Daten beim nächsten Aufklappen kommen
   if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
     await loadContactAppointments(currentContactDetailId);
   } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
@@ -9090,8 +9196,10 @@ async function refreshCurrentAppointmentList() {
  *  Lädt Einsatz + Firma/Service/Projekt + Techniker + gekoppelter Termin +
  *  Entitlement-Einlösung (wenn vorhanden) + letzte 3 Einsätze derselben Firma.
  *  Wenn Einsatz Teil eines Projekts ist, wird zusätzlich Soll-vs-Ist gegen den Paketpreis gezeigt. */
-async function renderDeploymentExpandedRow(deploymentId) {
-  const depResult = await db.from('deployments')
+async function renderDeploymentExpandedRow(deploymentId, hint) {
+  // Welle 1 (Hauptobjekt) und Welle 2 (Techniker/gekoppelter Termin/Bonus/Historie/Projekt-Einsätze)
+  // parallel feuern, wenn ein Hint mit company_id/project_id da ist (v1.38.1).
+  const depPromise = db.from('deployments')
     .select(`
       *,
       company:companies(id, name, abc_klassifizierung),
@@ -9100,43 +9208,57 @@ async function renderDeploymentExpandedRow(deploymentId) {
     `)
     .is('deleted_at', null).eq('id', deploymentId).single();
 
+  // Diese drei brauchen nur die deploymentId — sofort starten
+  const technikerPromise = db.from('deployment_technicians')
+    .select('user_id, user:user_profiles!deployment_technicians_user_id_fkey(id, name)')
+    .eq('deployment_id', deploymentId);
+  const linkedApptPromise = db.from('appointments')
+    .select('id, titel, datum, status')
+    .is('deleted_at', null).eq('deployment_id', deploymentId).limit(1);
+  const redemptionPromise = db.from('entitlement_redemptions')
+    .select('id, menge_eingeloest')
+    .eq('deployment_id', deploymentId).limit(1);
+
+  // Diese zwei brauchen company_id / project_id — aus Hint, sonst null und nachholen
+  const buildRelPromise = (cid) => cid
+    ? db.from('deployments')
+        .select('id, titel, datum_von, status, menge, einzelpreis')
+        .is('deleted_at', null).eq('company_id', cid).neq('id', deploymentId)
+        .order('datum_von', { ascending: false, nullsFirst: false }).limit(3)
+    : Promise.resolve({ data: [] });
+  const buildProjDepsPromise = (pid) => pid
+    ? db.from('deployments')
+        .select('menge, einzelpreis').is('deleted_at', null).eq('project_id', pid)
+    : Promise.resolve({ data: [] });
+
+  let depResult, technikerResult, linkedApptResult, redemptionResult, relResult, projectDepsResult;
+
+  if (hint) {
+    [depResult, technikerResult, linkedApptResult, redemptionResult, relResult, projectDepsResult] =
+      await Promise.all([
+        depPromise, technikerPromise, linkedApptPromise, redemptionPromise,
+        buildRelPromise(hint.company_id), buildProjDepsPromise(hint.project_id)
+      ]);
+  } else {
+    // Ohne Hint: Hauptobjekt zuerst, damit wir company_id/project_id für Welle 2 haben
+    [depResult, technikerResult, linkedApptResult, redemptionResult] = await Promise.all([
+      depPromise, technikerPromise, linkedApptPromise, redemptionPromise
+    ]);
+    if (!depResult.error && depResult.data) {
+      [relResult, projectDepsResult] = await Promise.all([
+        buildRelPromise(depResult.data.company_id),
+        buildProjDepsPromise(depResult.data.project_id)
+      ]);
+    } else {
+      relResult = { data: [] };
+      projectDepsResult = { data: [] };
+    }
+  }
+
   if (depResult.error || !depResult.data) {
     return `<div class="info-card-empty">Einsatz konnte nicht geladen werden.</div>`;
   }
   const d = depResult.data;
-
-  const [
-    technikerResult,
-    linkedApptResult,
-    redemptionResult,
-    relResult,
-    projectDepsResult
-  ] = await Promise.all([
-    // Techniker (intern) via Join-Tabelle
-    db.from('deployment_technicians')
-      .select('user_id, user:user_profiles!deployment_technicians_user_id_fkey(id, name)')
-      .eq('deployment_id', deploymentId),
-    // Gekoppelter Termin
-    db.from('appointments')
-      .select('id, titel, datum, status')
-      .is('deleted_at', null).eq('deployment_id', deploymentId).limit(1),
-    // Entitlement-Einlösung (nur Menge — Detail-Info lebt am Entitlement selbst)
-    db.from('entitlement_redemptions')
-      .select('id, menge_eingeloest')
-      .eq('deployment_id', deploymentId).limit(1),
-    // Letzte 3 Einsätze derselben Firma (ohne diesen)
-    d.company_id
-      ? db.from('deployments')
-          .select('id, titel, datum_von, status, menge, einzelpreis')
-          .is('deleted_at', null).eq('company_id', d.company_id).neq('id', deploymentId)
-          .order('datum_von', { ascending: false, nullsFirst: false }).limit(3)
-      : Promise.resolve({ data: [] }),
-    // Projekt-Einsätze (für Soll/Ist)
-    d.project_id
-      ? db.from('deployments')
-          .select('menge, einzelpreis').is('deleted_at', null).eq('project_id', d.project_id)
-      : Promise.resolve({ data: [] })
-  ]);
 
   const todayISO = toISODate(new Date());
 
@@ -9382,6 +9504,7 @@ async function quickDeploymentFollowup(deploymentId) {
 
 /** Hilfs-Refresh: lädt die aktuell sichtbare Einsatz-Liste neu. */
 async function refreshCurrentDeploymentList() {
+  invalidateExpandedDetailCache();  // v1.38.1
   if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
     await loadProjectDeployments(currentProjectDetailId);
   } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
@@ -9397,8 +9520,9 @@ async function refreshCurrentDeploymentList() {
 /** Baut das Aufgabe-Inline-Dashboard. Zeigt Status, Fälligkeit/Tage-bis-fällig,
  *  Zuständigen, Kontext (Firma/Kontakt/Projekt), Beschreibung/Notizen,
  *  verwandte offene Aufgaben (selbe Firma ODER selber Zuständiger). */
-async function renderTaskExpandedRow(taskId) {
-  const taskResult = await db.from('tasks')
+async function renderTaskExpandedRow(taskId, hint) {
+  // Welle 1 + 2 parallel feuern, wenn Hint da ist (v1.38.1).
+  const taskPromise = db.from('tasks')
     .select(`
       *,
       assigned:user_profiles!tasks_assigned_to_fkey(id, name, email),
@@ -9408,25 +9532,35 @@ async function renderTaskExpandedRow(taskId) {
     `)
     .is('deleted_at', null).eq('id', taskId).single();
 
+  const buildRelPromise = (cid, kid) => {
+    const orParts = [];
+    if (cid) orParts.push(`company_id.eq.${cid}`);
+    if (kid) orParts.push(`contact_id.eq.${kid}`);
+    return orParts.length
+      ? db.from('tasks')
+          .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
+          .is('deleted_at', null).neq('id', taskId).neq('status', 'erledigt')
+          .or(orParts.join(','))
+          .order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
+      : Promise.resolve({ data: [] });
+  };
+
+  let taskResult, relResult;
+  if (hint) {
+    [taskResult, relResult] = await Promise.all([taskPromise, buildRelPromise(hint.company_id, hint.contact_id)]);
+  } else {
+    taskResult = await taskPromise;
+  }
+
   if (taskResult.error || !taskResult.data) {
     return `<div class="info-card-empty">Aufgabe konnte nicht geladen werden.</div>`;
   }
   const t = taskResult.data;
   const todayISO = toISODate(new Date());
 
-  // Verwandte offene Aufgaben — selbe Firma ODER selber Kontakt (nicht: selber Zuständiger).
-  // Fachlicher Grund: wir wollen „was steht sonst noch bei diesem Kunden an", nicht
-  // „was hat dieselbe Person sonst noch zu tun". Selber Zuständiger wurde nie gebraucht.
-  const orParts = [];
-  if (t.company_id)  orParts.push(`company_id.eq.${t.company_id}`);
-  if (t.contact_id)  orParts.push(`contact_id.eq.${t.contact_id}`);
-  const relResult = orParts.length
-    ? await db.from('tasks')
-        .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
-        .is('deleted_at', null).neq('id', taskId).neq('status', 'erledigt')
-        .or(orParts.join(','))
-        .order('faelligkeit', { ascending: true, nullsFirst: false }).limit(3)
-    : { data: [] };
+  if (!hint) {
+    relResult = await buildRelPromise(t.company_id, t.contact_id);
+  }
 
   // Stats-Row
   const done = t.status === 'erledigt';
@@ -10604,6 +10738,7 @@ function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
 }
 
 async function _refreshTaskContext() {
+  invalidateExpandedDetailCache();  // v1.38.1
   const hash = location.hash || '';
   if (hash.startsWith('#/aufgaben')) {
     await loadTasks();
