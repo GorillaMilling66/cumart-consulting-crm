@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.41.0 (Programm-Modal Redesign — letzter Modal im
+   Preview-Stil. 3-Spalten-Layout: Preview links (Status, Name,
+   Preis prominent, Laufzeit, Präfix, Bonis-Anzahl, Beschreibung),
+   Stammdaten mittig, Bonis & Kontingente rechts. Live-Update
+   der Preview beim Tippen UND beim Hinzufügen/Entfernen von
+   Bonus-Zeilen via MutationObserver auf den Benefits-Container.
+   Damit ist die Modal-Vereinheitlichung abgeschlossen — alle
+   acht Anlege-Modals folgen demselben Layout.)
    Version 1.40.0 (Aufgabe↔Termin-Kopplung + Kalender-Icon
    in Listen-Zeilen.
    Migration: appointments.task_id (FK + Index). Aufgabe-Modal
@@ -1699,6 +1707,83 @@ function setupMembershipPreviewListeners() {
   modal.dataset.previewWired = '1';
 }
 
+// ── PROGRAMM-PREVIEW (v1.41.0) ──
+function renderProgramPreview() {
+  const el = document.getElementById('pr-preview');
+  if (!el) return;
+
+  const name        = document.getElementById('pr-name').value.trim();
+  const laufzeit    = Number(document.getElementById('pr-laufzeit').value) || 0;
+  const preis       = Number(document.getElementById('pr-preis').value) || 0;
+  const praefix     = document.getElementById('pr-praefix').value.trim();
+  const aktiv       = document.getElementById('pr-aktiv').value === 'true';
+  const beschreibung = document.getElementById('pr-beschreibung').value.trim();
+
+  // Bonis aus dem dynamischen Container zählen
+  const benefitsContainer = document.getElementById('pr-benefits-container');
+  const benefitRows = benefitsContainer ? benefitsContainer.querySelectorAll('.benefit-row') : [];
+  const benefitCount = benefitRows.length;
+
+  // Status-Pill
+  const statusPill = aktiv
+    ? `<span class="badge" style="background:#dcfce7;color:#166534">Aktiv</span>`
+    : `<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>`;
+
+  // Name
+  const nameHtml = name
+    ? `<div class="preview-title">${esc(name)}</div>`
+    : `<div class="preview-title preview-title-placeholder">Neues Programm</div>`;
+
+  // Preis prominent
+  const preisHtml = preis > 0
+    ? `<div style="font-size:20px;font-weight:600;color:var(--text);margin:4px 0">${esc(formatPreis(preis))}</div>
+       <div style="font-size:11px;color:var(--muted);margin-top:-4px">pro Laufzeit</div>`
+    : '';
+
+  // Kontext-KV
+  const kvRows = [];
+  if (laufzeit > 0) kvRows.push(['Laufzeit', `${laufzeit} Monat${laufzeit === 1 ? '' : 'e'}`]);
+  if (praefix) kvRows.push(['Präfix', esc(praefix)]);
+  kvRows.push(['Bonis', `${benefitCount} hinterlegt`]);
+  const kvHtml = kvRows.length
+    ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
+    : '';
+
+  const beschreibungHtml = beschreibung
+    ? `<div style="font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:80px;overflow:hidden;line-height:1.4">${esc(beschreibung.slice(0, 180))}${beschreibung.length > 180 ? '…' : ''}</div>`
+    : '';
+
+  el.innerHTML = `
+    <div>${statusPill}</div>
+    ${nameHtml}
+    ${preisHtml}
+    ${kvHtml}
+    ${beschreibungHtml}
+  `;
+}
+
+function setupProgramPreviewListeners() {
+  const modal = document.getElementById('modal-program');
+  if (!modal || modal.dataset.previewWired === '1') return;
+  const ids = ['pr-name','pr-laufzeit','pr-preis','pr-praefix','pr-aktiv','pr-beschreibung'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', renderProgramPreview);
+    el.addEventListener('change', renderProgramPreview);
+  });
+  // Benefits-Container: bei Änderungen (Add/Remove/Edit) Preview aktualisieren
+  const benefitsContainer = document.getElementById('pr-benefits-container');
+  if (benefitsContainer) {
+    benefitsContainer.addEventListener('input', renderProgramPreview);
+    benefitsContainer.addEventListener('change', renderProgramPreview);
+    // MutationObserver für Add/Remove von Bonus-Zeilen
+    const obs = new MutationObserver(renderProgramPreview);
+    obs.observe(benefitsContainer, { childList: true });
+  }
+  modal.dataset.previewWired = '1';
+}
+
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
@@ -2876,6 +2961,9 @@ async function openProgramModal(mode, programId = null) {
       benefits.forEach(b => addBenefitRow(b));
     }
   }
+
+  setupProgramPreviewListeners();  // v1.41
+  renderProgramPreview();           // v1.41
 
   document.getElementById('modal-program').classList.add('open');
   setTimeout(() => document.getElementById('pr-name').focus(), 100);
