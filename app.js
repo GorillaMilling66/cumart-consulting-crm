@@ -1,5 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.38.2 (Performance-Schritt 2: Hint-Lookup arbeitet
+   jetzt auch in Sub-Tabs. data-company-id/contact-id/project-id
+   auf allen <tr> der Sub-Tab-Listen (Firma/Kontakt/Projekt-
+   Termine, -Einsätze, -Aufgaben). Drei-stufiger Hint-Lookup:
+   Listen-Cache → rowEl.dataset → App-State (current*DetailId).
+   Dadurch klappen auch Sub-Tab-Inline-Expands auf parallele
+   Welle 1 + 2.)
    Version 1.38.1 (Performance: Inline-Expand-Dashboards laden
    spürbar schneller. (1) Skeleton-Card erscheint sofort beim
    Klick statt „Lade …" — gefühlt instant. (2) In-Memory-
@@ -4084,7 +4091,7 @@ async function loadCompanyAppointments(companyId) {
       : '';
 
     return `
-      <tr>
+      <tr data-appt-id="${esc(a.id)}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}">
         <td>
           <div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div>
         </td>
@@ -5591,7 +5598,7 @@ async function loadProjectAppointments(projectId) {
     const checkboxTitle = isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren';
 
     return `
-      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(a.status)}">
+      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(a.status)}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}" data-project-id="${esc(a.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="appointment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -5963,7 +5970,7 @@ async function loadContactAppointments(contactId) {
       : '';
 
     return `
-      <tr>
+      <tr data-appt-id="${esc(a.id)}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}">
         <td><div class="date-cell${isPast ? ' past' : ''}">${esc(formatDateDE(a.datum))}</div></td>
         <td class="col-tablet" style="color:var(--muted)">${esc(uhrzeit || '—')}</td>
         <td>
@@ -6234,7 +6241,7 @@ function renderDeploymentsTable(deployments) {
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
 
     return `
-      <tr data-dep-id="${esc(d.id)}">
+      <tr data-dep-id="${esc(d.id)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
@@ -7222,7 +7229,7 @@ async function loadCompanyDeployments(companyId) {
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
 
     return `
-      <tr data-dep-id="${esc(d.id)}">
+      <tr data-dep-id="${esc(d.id)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td>${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
         <td>
           <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}</div>
@@ -7310,7 +7317,7 @@ async function loadProjectDeployments(projectId) {
       : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
 
     return `
-      <tr data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status)}">
+      <tr data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="deployment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -8820,21 +8827,44 @@ function renderExpandedSkeleton() {
 }
 
 /** Hint-Lookup: liest aus den Listen-Caches die FK-IDs, damit die Render-Funktionen
- *  Welle 1 und Welle 2 der DB-Queries parallel feuern können (v1.38.1). */
-function lookupExpandHint(type, id) {
-  if (type === 'appointment') {
-    const a = appointmentsCache.find(x => x.id === id);
-    return a ? { company_id: a.company_id || null, contact_id: a.contact_id || null } : null;
+ *  Welle 1 und Welle 2 der DB-Queries parallel feuern können (v1.38.1).
+ *  v1.38.2: Fallback auf rowEl.dataset (für Sub-Tabs, deren Daten nicht im Haupt-Cache sind).
+ *  Zusätzlicher Fallback (v1.38.2): Aus dem App-State (currentCompanyDetailId etc.), denn
+ *  in einem Firma-/Projekt-Sub-Tab haben alle Zeilen denselben FK-Bezug. */
+function lookupExpandHint(type, id, rowEl) {
+  // 1. Listen-Cache (Hauptliste)
+  let cacheHit = null;
+  if (type === 'appointment') cacheHit = appointmentsCache.find(x => x.id === id);
+  else if (type === 'deployment') cacheHit = deploymentsCache.find(x => x.id === id);
+  else if (type === 'task') cacheHit = tasksCache.find(x => x.id === id);
+
+  if (cacheHit) {
+    return {
+      company_id: cacheHit.company_id || null,
+      contact_id: cacheHit.contact_id || null,
+      project_id: cacheHit.project_id || null
+    };
   }
-  if (type === 'deployment') {
-    const d = deploymentsCache.find(x => x.id === id);
-    return d ? { company_id: d.company_id || null, project_id: d.project_id || null } : null;
-  }
-  if (type === 'task') {
-    const t = tasksCache.find(x => x.id === id);
-    return t ? { company_id: t.company_id || null, contact_id: t.contact_id || null } : null;
-  }
-  return null;
+
+  // 2. data-Attribute auf der <tr> (Sub-Tab-Listen)
+  const ds = rowEl?.dataset || {};
+  const fromRow = {
+    company_id: ds.companyId || null,
+    contact_id: ds.contactId || null,
+    project_id: ds.projectId || null
+  };
+
+  // 3. App-State-Fallback: in Sub-Tabs ist der FK-Bezug oft implizit klar
+  const onCompanyTab = currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active');
+  const onContactTab = currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active');
+  const onProjectTab = currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active');
+
+  if (onCompanyTab && !fromRow.company_id) fromRow.company_id = currentCompanyDetailId;
+  if (onProjectTab && !fromRow.project_id) fromRow.project_id = currentProjectDetailId;
+  if (onContactTab && type === 'task' && !fromRow.contact_id) fromRow.contact_id = currentContactDetailId;
+
+  // Nur einen Hint zurückgeben, wenn mindestens eine FK-ID bekannt ist
+  return (fromRow.company_id || fromRow.contact_id || fromRow.project_id) ? fromRow : null;
 }
 
 async function toggleRowExpand(entityType, entityId, rowEl) {
@@ -8872,7 +8902,7 @@ async function toggleRowExpand(entityType, entityId, rowEl) {
 
   // Cache-Miss → Skeleton sofort + Daten laden
   td.innerHTML = `<div class="expanded-row-panel-inner">${renderExpandedSkeleton()}</div>`;
-  const hint = lookupExpandHint(entityType, entityId);
+  const hint = lookupExpandHint(entityType, entityId, rowEl);
 
   try {
     let html = '';
@@ -10303,7 +10333,7 @@ function renderTasksTable(tasks) {
     const titelStyle = done ? 'text-decoration:line-through;color:var(--muted)' : '';
 
     return `
-      <tr>
+      <tr data-task-id="${esc(t.id)}" data-company-id="${esc(t.company_id || '')}" data-contact-id="${esc(t.contact_id || '')}" data-project-id="${esc(t.project_id || '')}">
         <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
         <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}</div></td>
         <td>${fael}</td>
@@ -10723,7 +10753,7 @@ function renderDetailTaskRows(tbody, countEl, tasks, entityType) {
     const titelStyle = done ? 'text-decoration:line-through;color:var(--muted)' : '';
 
     return `
-      <tr>
+      <tr data-task-id="${esc(t.id)}" data-company-id="${esc(t.company_id || '')}" data-contact-id="${esc(t.contact_id || '')}" data-project-id="${esc(t.project_id || '')}">
         <td><input type="checkbox" ${done ? 'checked' : ''} onclick="event.stopPropagation();toggleTaskDone('${esc(t.id)}', this.checked)" aria-label="Als erledigt markieren"></td>
         <td><div class="cell-link" style="${titelStyle}" onclick="toggleRowExpand('task','${esc(t.id)}',this.closest('tr'))">${esc(t.titel || '—')}</div></td>
         <td>${fael}</td>
