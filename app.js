@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.46.0 (Monat-Tab Rollen-Schärfung — Technik bekommt
+   Restmonat-Liste + Pflegerückstand-KPI statt nackt-Geplant;
+   Vertrieb bekommt Forecast-KPI (Realisiert + Geplant + gewichtete
+   Pipeline 10/30/70/90), Akquise-KPI und neue Mitgliedschaften-
+   Sektion (ablaufend ≤60T oder Kontingent ≥80%). Beides-Sicht
+   spiegelt Forecast + Mitgliedschaften. Bottom-Grid optional
+   3-spaltig via .is-three. Drei neue Queries in loadBriefingData:
+   memberships/entitlements/redemptions, plus Pflegerückstand und
+   Restmonat clientside aggregiert.)
    Version 1.45.6 (Monat-Tab rollenbasiert: Technik / Vertrieb /
    Beides als Toggle oben rechts. Default je nach Rolle aus
    user_profiles.roles, persistiert in localStorage.
@@ -11139,6 +11148,9 @@ async function loadBriefingData(userId, scope) {
   let conversionRate           = null;
   let tasksDoneInMonth         = 0;
   let topCustomerDays          = []; // pro Kunde Tage-Zahl (Technik)
+  let overdueGeplant           = []; // v1.46.0: Geplant-Einsätze mit Datum < heute
+  let restmonatGeplant         = []; // v1.46.0: Geplant-Einsätze ab heute bis Monatsende
+  let membershipAttention      = []; // v1.46.0: ablaufend / Kontingent ≥ 80 %
   if (scope === 'monat') {
     const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
     const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
@@ -11148,16 +11160,21 @@ async function loadBriefingData(userId, scope) {
     const monthStartISO = toISODate(monthStart);
     const monthEndISO   = toISODate(monthEnd);
 
+    // v1.46.0: 60-Tage-Horizont für ablaufende Mitgliedschaften.
+    const horizon60 = new Date(todayISO + 'T00:00:00'); horizon60.setDate(horizon60.getDate() + 60);
+    const horizon60ISO = toISODate(horizon60);
+
     const [pipelineRes, recentDepsRes, prev3DepsRes,
-           createdApptsRes, createdDepsRes, conversionRes, tasksDoneRes] = await Promise.all([
+           createdApptsRes, createdDepsRes, conversionRes, tasksDoneRes,
+           membershipsRes, entitlementsRes, redemptionsRes] = await Promise.all([
       // Pipeline: Projekte aus den relevanten Stages
       db.from('projects')
         .select('id, name, status, geschaetzter_umsatz, company:companies(id, name)')
         .is('deleted_at', null)
         .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase']),
-      // Letzte 30 Tage Einsätze für Sparkline + Top-Kunden
+      // v1.46.0: titel/ort/service ergänzt für Restmonat-Liste & Pflegerückstand
       db.from('deployment_technicians')
-        .select('deployment:deployments!inner(id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, company:companies(id, name))')
+        .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name))')
         .eq('user_id', userId),
       // Vorige 3 Monate für Ziel-Berechnung
       db.from('deployment_technicians')
@@ -11184,7 +11201,18 @@ async function loadBriefingData(userId, scope) {
         .select('id', { count: 'exact', head: true })
         .is('deleted_at', null).eq('assigned_to', userId)
         .eq('status', 'erledigt')
-        .gte('erledigt_am', monthStartISO).lte('erledigt_am', monthEndISO + 'T23:59:59')
+        .gte('erledigt_am', monthStartISO).lte('erledigt_am', monthEndISO + 'T23:59:59'),
+      // v1.46.0: Aktive Mitgliedschaften (für Ablauf-Sektion + Kontingent-Stand)
+      db.from('memberships')
+        .select('id, mitgliedsnummer, status, start_datum, end_datum, company:companies(id, name), program:membership_programs(name)')
+        .is('deleted_at', null)
+        .eq('status', 'aktiv'),
+      // v1.46.0: Aktive Entitlements (verfall_datum >= heute oder NULL)
+      db.from('entitlements')
+        .select('id, titel, gesamt_menge, verfall_datum, membership_id, company_id'),
+      // v1.46.0: Alle Redemptions (Aggregation pro entitlement_id clientside)
+      db.from('entitlement_redemptions')
+        .select('entitlement_id, menge_eingeloest')
     ]);
 
     const allDepsBroad = (recentDepsRes.data || [])
@@ -11284,6 +11312,53 @@ async function loadBriefingData(userId, scope) {
     // Pipeline-Projekte
     pipelineProjects = pipelineRes.data || [];
 
+    // v1.46.0: Pflegerückstand & Restmonat (Technik) — aus dem breiten Einsatz-Pool
+    overdueGeplant = allDepsBroad
+      .filter(d => d.status === 'Geplant' && (d.datum_bis || d.datum_von) < todayISO)
+      .sort((a, b) => (b.datum_bis || b.datum_von).localeCompare(a.datum_bis || a.datum_von));
+    restmonatGeplant = allDepsBroad
+      .filter(d => d.status === 'Geplant'
+                && (d.datum_bis || d.datum_von) >= todayISO
+                && d.datum_von <= monthEndISO)
+      .sort((a, b) => (a.datum_von || '').localeCompare(b.datum_von || ''));
+
+    // v1.46.0: Mitgliedschafts-Aufmerksamkeit — Ablauf in 60 Tagen oder Kontingent ≥ 80 % verbraucht.
+    const allMemberships = membershipsRes.data || [];
+    const allEntitlements = entitlementsRes.data || [];
+    const allRedemptions = redemptionsRes.data || [];
+    const redeemedByEntId = new Map();
+    allRedemptions.forEach(r => {
+      redeemedByEntId.set(r.entitlement_id,
+        (redeemedByEntId.get(r.entitlement_id) || 0) + (Number(r.menge_eingeloest) || 0));
+    });
+    const entByMembership = new Map();
+    allEntitlements.forEach(e => {
+      if (!e.membership_id) return;
+      const arr = entByMembership.get(e.membership_id) || [];
+      arr.push(e);
+      entByMembership.set(e.membership_id, arr);
+    });
+    membershipAttention = allMemberships.map(m => {
+      const ents = entByMembership.get(m.id) || [];
+      const total = ents.reduce((s, e) => s + (Number(e.gesamt_menge) || 0), 0);
+      const used = ents.reduce((s, e) => s + (redeemedByEntId.get(e.id) || 0), 0);
+      const usagePct = total > 0 ? Math.round((used / total) * 100) : 0;
+      const daysToEnd = m.end_datum
+        ? Math.round((new Date(m.end_datum + 'T00:00:00') - new Date(todayISO + 'T00:00:00')) / 86400000)
+        : null;
+      const isExpiring = daysToEnd !== null && daysToEnd >= 0 && daysToEnd <= 60;
+      const isDepleted = total > 0 && usagePct >= 80;
+      return { ...m, usagePct, total, used, daysToEnd, isExpiring, isDepleted };
+    })
+    .filter(m => m.isExpiring || m.isDepleted)
+    .sort((a, b) => {
+      // Ablaufende zuerst (kleinster daysToEnd), dann höchste Auslastung
+      const aRank = a.isExpiring ? (a.daysToEnd ?? 999) : 1000 + (100 - a.usagePct);
+      const bRank = b.isExpiring ? (b.daysToEnd ?? 999) : 1000 + (100 - b.usagePct);
+      return aRank - bRank;
+    })
+    .slice(0, 6);
+
     // Ziel-Default: Mittel der letzten 3 abgeschlossenen Monatsumsätze
     const prev3Deps = (prev3DepsRes.data || [])
       .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von);
@@ -11329,7 +11404,10 @@ async function loadBriefingData(userId, scope) {
     createdAppointmentsCount,
     createdDeploymentsCount,
     conversionRate,
-    tasksDoneInMonth
+    tasksDoneInMonth,
+    overdueGeplant,
+    restmonatGeplant,
+    membershipAttention
   };
 }
 
@@ -11463,20 +11541,35 @@ function renderBriefingMonthDashboard(data) {
   return `<div class="month-dashboard">${toggle}${body}</div>`;
 }
 
-/** v1.45.6: Technik-Sicht — Auslastung, Einsatzleistung, Aufgaben.
+/** v1.46.0: Datum-Pille für Restmonat-/Pflegerückstand-Liste.
+ *  Einzeltag → "Mo 28.04."; Mehrtägig → "28.04. – 30.04. (3T)". */
+function restmonatDateLabel(von, bis) {
+  if (!von) return '—';
+  const v = parseLocalDate(von);
+  const dayShort = (d) => `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+  const wd = ['So','Mo','Di','Mi','Do','Fr','Sa'][v.getDay()];
+  if (!bis || bis === von) return `${wd} ${dayShort(v)}`;
+  const b = parseLocalDate(bis);
+  const days = Math.max(1, Math.round((b - v) / 86400000) + 1);
+  return `${dayShort(v)}–${dayShort(b)} (${days}T)`;
+}
+
+/** v1.46.0: Technik-Sicht — Auslastung, Restmonat-Liste, Pflegerückstand, Top-Tage.
  *  Kein Umsatz-Verlauf, keine Pipeline. */
 function renderMonthDashTechnik(data) {
   const todayISO = toISODate(new Date());
-  const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
-  const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
-  const depsAbgerechnet = data.deployments.filter(d => d.status === 'Abgerechnet');
-  const depsStorniert   = data.deployments.filter(d => d.status === 'Storniert');
+  const depsDurchgef = data.deployments.filter(d => d.status === 'Durchgeführt');
 
   // Auslastung
   const arbeitsTage = computeMonthAuslastung(data, todayISO);
   const auslastungPct = arbeitsTage.werk > 0
     ? Math.round((arbeitsTage.belegt / arbeitsTage.werk) * 100)
     : 0;
+
+  // Pflegerückstand: Geplant aber Datum < heute
+  const overdue = data.overdueGeplant || [];
+  // Restmonat: Geplant ab heute bis Monatsende
+  const restmonat = data.restmonatGeplant || [];
 
   // Aufgaben
   const tasksOpen = (data.tasks || []).length;
@@ -11489,29 +11582,49 @@ function renderMonthDashTechnik(data) {
         "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
       ${monthKpiTile('Durchgeführt', depsDurchgef.length, 'Einsätze im Monat', 'done',
         "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
-      ${monthKpiTile('Geplant', depsGeplant.length, 'Einsätze noch offen', 'plan',
-        "navigateTo('deployments',{ range:'month', status:'Geplant' })")}
+      ${monthKpiTile('Pflegerückstand', overdue.length,
+        overdue.length > 0 ? 'Geplant, Datum vorbei' : 'alle Status aktuell',
+        overdue.length > 0 ? 'overdue' : 'done',
+        "navigateTo('deployments',{ status:'Geplant' })")}
       ${monthKpiTile('Aufgaben offen', tasksOpen, tasksOverdue > 0 ? `${tasksOverdue} überfällig` : 'gesamt', tasksOverdue > 0 ? 'overdue' : 'plan',
         "navigateTo('tasks',{ scope:'mine_open' })")}
     </div>`;
 
-  // Einsatzleistung als Balken-Übersicht
-  const stats = [
-    { label: 'Geplant',      count: depsGeplant.length,     color: 'plan' },
-    { label: 'Durchgeführt', count: depsDurchgef.length,    color: 'done' },
-    { label: 'Abgerechnet',  count: depsAbgerechnet.length, color: 'billed' },
-    { label: 'Storniert',    count: depsStorniert.length,   color: 'overdue' }
-  ];
-  const maxCount = Math.max(...stats.map(s => s.count), 1);
-  const einsatzBars = stats.map(s => `
-    <button class="einsatz-stat-row" type="button" onclick="navigateTo('deployments',{ range:'month', status:'${esc(s.label)}' })">
-      <span class="einsatz-stat-label">${esc(s.label)}</span>
-      <span class="einsatz-stat-bar-wrap">
-        <span class="einsatz-stat-bar is-${s.color}" style="width:${Math.round((s.count / maxCount) * 100)}%"></span>
-      </span>
-      <span class="einsatz-stat-count">${s.count}</span>
-    </button>
-  `).join('');
+  // Restmonat-Liste der geplanten Einsätze
+  const restmonatHtml = restmonat.length === 0
+    ? '<div class="month-section-empty">Keine geplanten Einsätze mehr in diesem Monat.</div>'
+    : restmonat.slice(0, 8).map(d => {
+        const dateLabel = restmonatDateLabel(d.datum_von, d.datum_bis);
+        const titel = d.titel || d.service?.name || 'Einsatz';
+        const ort = d.ort ? ` · ${esc(d.ort)}` : '';
+        return `
+          <button class="restmonat-row" type="button" onclick="openDeploymentModal('edit','${esc(d.id)}')">
+            <span class="restmonat-date">${esc(dateLabel)}</span>
+            <span class="restmonat-body">
+              <span class="restmonat-firma">${esc(d.company?.name || '—')}</span>
+              <span class="restmonat-meta">${esc(titel)}${ort}</span>
+            </span>
+          </button>`;
+      }).join('');
+
+  // Pflegerückstand-Liste
+  const pflegeHtml = overdue.length === 0
+    ? ''
+    : `<div class="month-section month-section-overdue">
+        <div class="month-section-title">Pflegerückstand · ${overdue.length}</div>
+        <div class="restmonat-list">${overdue.slice(0, 5).map(d => {
+          const dateLabel = restmonatDateLabel(d.datum_von, d.datum_bis);
+          const titel = d.titel || d.service?.name || 'Einsatz';
+          return `
+            <button class="restmonat-row is-overdue" type="button" onclick="openDeploymentModal('edit','${esc(d.id)}')">
+              <span class="restmonat-date">${esc(dateLabel)}</span>
+              <span class="restmonat-body">
+                <span class="restmonat-firma">${esc(d.company?.name || '—')}</span>
+                <span class="restmonat-meta">${esc(titel)} — Status aktualisieren</span>
+              </span>
+            </button>`;
+        }).join('')}</div>
+      </div>`;
 
   // Top-Kunden nach Tagen
   const topDays = data.topCustomerDays || [];
@@ -11532,18 +11645,29 @@ function renderMonthDashTechnik(data) {
     ${kpiRow}
     <div class="month-bottom-grid">
       <div class="month-section">
-        <div class="month-section-title">Einsatzleistung</div>
-        <div class="einsatz-stat-list">${einsatzBars}</div>
+        <div class="month-section-title">Geplant — Restmonat</div>
+        <div class="restmonat-list">${restmonatHtml}</div>
         <div class="month-section-meta">${tasksDone} Aufgaben erledigt im Monat</div>
       </div>
       <div class="month-section">
         <div class="month-section-title">Top-Einsatztage (Kunde)</div>
         <div class="top-customers">${topDaysHtml}</div>
       </div>
-    </div>`;
+    </div>
+    ${pflegeHtml}`;
 }
 
-/** v1.45.6: Vertrieb-Sicht — Umsatz, Pipeline, Top-Kunden, Conversion. */
+/** v1.46.0: Pipeline-Forecast-Gewichtung (Wahrscheinlichkeit pro Stage). */
+const PIPELINE_FORECAST_WEIGHT = {
+  'Lead': 0.10,
+  'Angebot': 0.30,
+  'In Arbeit': 0.70,
+  'Abschlussphase': 0.90
+};
+
+/** v1.46.0: Vertrieb-Sicht — Forecast, Akquise, Mitgliedschaften.
+ *  KPI-Reihe: Abgerechnet · Forecast · Conversion · Akquise.
+ *  Bottom-Grid: Top-Kunden | Pipeline | Mitgliedschaften. */
 function renderMonthDashVertrieb(data) {
   const todayISO = toISODate(new Date());
   const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
@@ -11561,21 +11685,30 @@ function renderMonthDashVertrieb(data) {
 
   const pipelineProjects = data.pipelineProjects || [];
   const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+  const pipelineWeighted = pipelineProjects.reduce((s, p) => {
+    const w = PIPELINE_FORECAST_WEIGHT[p.status] || 0;
+    return s + ((Number(p.geschaetzter_umsatz) || 0) * w);
+  }, 0);
+  const forecast = umsatzAbgerechnet + umsatzGeplant + pipelineWeighted;
 
   const conv = data.conversionRate;
   const convText = conv === null ? '—' : `${conv}%`;
   const sparkData = data.revenueSparkline || [];
 
+  const akquiseCount = (data.createdAppointmentsCount || 0) + (data.createdDeploymentsCount || 0);
+  const akquiseSub = `${data.createdAppointmentsCount || 0} Termine · ${data.createdDeploymentsCount || 0} Einsätze`;
+
   const kpiRow = `
     <div class="month-kpi-row">
       ${monthKpiTile('Abgerechnet', formatPreis(umsatzAbgerechnet), `${depsAbgerechnet.length} Einsätze`, 'billed',
         "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })", sparkData)}
-      ${monthKpiTile('Geplant', formatPreis(umsatzGeplant), `${depsGeplant.length + depsDurchgef.length} Einsätze`, 'plan',
-        "navigateTo('deployments',{ range:'month', status:'Geplant' })", sparkData)}
-      ${monthKpiTile('Pipeline', formatPreis(pipelineSum), `${pipelineProjects.length} Projekte`, 'info',
-        "navigateTo('projects')")}
+      ${monthKpiTile('Forecast', formatPreis(forecast),
+        `inkl. ${formatPreis(pipelineWeighted)} Pipeline (gew.)`, 'plan',
+        "navigateTo('projects')", sparkData)}
       ${monthKpiTile('Conversion', convText, 'Termine → Einsatz', 'done',
         "navigateTo('appointments',{ range:'month', status:'durchgefuehrt' })")}
+      ${monthKpiTile('Akquise', akquiseCount, akquiseSub, 'info',
+        "navigateTo('appointments',{ range:'month' })")}
     </div>`;
 
   // Umsatz-Verlauf
@@ -11598,40 +11731,81 @@ function renderMonthDashVertrieb(data) {
           </button>`;
       }).join('');
 
-  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
-  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
-  const stagesHtml = stages.map(stage => {
-    const projs = pipelineProjects.filter(p => p.status === stage);
-    const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
-    return `
-      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
-        <span class="pipeline-stage-name">${esc(stage)}</span>
-        <span class="pipeline-stage-count">${projs.length}</span>
-        <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
-      </button>`;
-  }).join('');
-
-  // Akquise-Kennzahl unten als Footer-Hint
-  const akquise = `${data.createdAppointmentsCount || 0} Termine · ${data.createdDeploymentsCount || 0} Einsätze von dir erstellt`;
+  const stagesHtml = renderPipelineStages(pipelineProjects);
+  const membershipsHtml = renderMembershipAttention(data.membershipAttention || []);
 
   return `
     ${kpiRow}
     <div class="month-section-title">Umsatz-Verlauf ${esc(monthName)} · kumuliert</div>
     <div class="month-chart">${chartHtml}</div>
-    <div class="month-bottom-grid">
+    <div class="month-bottom-grid is-three">
       <div class="month-section">
         <div class="month-section-title">Top-Kunden</div>
         <div class="top-customers">${customersHtml}</div>
       </div>
       <div class="month-section">
-        <div class="month-section-title">Pipeline</div>
+        <div class="month-section-title">Pipeline · ${esc(formatPreis(pipelineSum))}</div>
         <div class="pipeline-stages">${stagesHtml}</div>
-        <div class="month-section-meta">${akquise}</div>
+      </div>
+      <div class="month-section">
+        <div class="month-section-title">Mitgliedschaften</div>
+        ${membershipsHtml}
       </div>
     </div>`;
 }
 
-/** v1.45.6: Beides-Sicht — vereint Vertrieb + Auslastung + Aufgaben. */
+/** v1.46.0: Pipeline-Stage-Liste (extrahiert für Wiederverwendung in Beides). */
+function renderPipelineStages(pipelineProjects) {
+  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
+  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
+  return stages.map(stage => {
+    const projs = pipelineProjects.filter(p => p.status === stage);
+    const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+    const weight = Math.round((PIPELINE_FORECAST_WEIGHT[stage] || 0) * 100);
+    return `
+      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
+        <span class="pipeline-stage-name">${esc(stage)} <span class="pipeline-stage-weight">${weight}%</span></span>
+        <span class="pipeline-stage-count">${projs.length}</span>
+        <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
+      </button>`;
+  }).join('');
+}
+
+/** v1.46.0: Mitgliedschafts-Aufmerksamkeit — ablaufend ≤ 60 T oder Kontingent ≥ 80 %. */
+function renderMembershipAttention(attentionList) {
+  if (attentionList.length === 0) {
+    return '<div class="month-section-empty">Keine Mitgliedschaft braucht aktuell Aufmerksamkeit.</div>';
+  }
+  return `<div class="membership-list">${attentionList.map(m => {
+    const pillParts = [];
+    if (m.isExpiring) {
+      const tone = m.daysToEnd <= 14 ? 'is-overdue' : 'is-warn';
+      const txt = m.daysToEnd <= 0
+        ? 'läuft heute'
+        : m.daysToEnd === 1 ? 'in 1 Tag' : `in ${m.daysToEnd} T`;
+      pillParts.push(`<span class="membership-pill ${tone}">${esc(txt)}</span>`);
+    }
+    if (m.isDepleted && m.total > 0) {
+      const tone = m.usagePct >= 100 ? 'is-overdue' : 'is-warn';
+      pillParts.push(`<span class="membership-pill ${tone}">${m.usagePct}% verbraucht</span>`);
+    }
+    const program = m.program?.name || 'Mitgliedschaft';
+    const usageMeta = m.total > 0
+      ? `${m.used} / ${m.total} eingelöst`
+      : 'kein Kontingent';
+    return `
+      <button class="membership-row" type="button" onclick="navigateTo('firma','${esc(m.company?.id || '')}')">
+        <span class="membership-body">
+          <span class="membership-firma">${esc(m.company?.name || '—')}</span>
+          <span class="membership-meta">${esc(program)} · ${esc(usageMeta)}</span>
+        </span>
+        <span class="membership-pills">${pillParts.join('')}</span>
+      </button>`;
+  }).join('')}</div>`;
+}
+
+/** v1.46.0: Beides-Sicht — vereint Vertrieb (Forecast/Top-Kunden/Pipeline/
+ *  Mitgliedschaften) und Technik (Auslastung). */
 function renderMonthDashBeides(data) {
   const todayISO = toISODate(new Date());
   const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
@@ -11654,14 +11828,20 @@ function renderMonthDashBeides(data) {
 
   const pipelineProjects = data.pipelineProjects || [];
   const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+  const pipelineWeighted = pipelineProjects.reduce((s, p) => {
+    const w = PIPELINE_FORECAST_WEIGHT[p.status] || 0;
+    return s + ((Number(p.geschaetzter_umsatz) || 0) * w);
+  }, 0);
+  const forecast = umsatzAbgerechnet + umsatzGeplant + pipelineWeighted;
   const sparkData = data.revenueSparkline || [];
 
   const kpiRow = `
     <div class="month-kpi-row">
       ${monthKpiTile('Abgerechnet', formatPreis(umsatzAbgerechnet), `${depsAbgerechnet.length} Einsätze`, 'billed',
         "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })", sparkData)}
-      ${monthKpiTile('Geplant', formatPreis(umsatzGeplant), `${depsGeplant.length + depsDurchgef.length} Einsätze`, 'plan',
-        "navigateTo('deployments',{ range:'month', status:'Geplant' })", sparkData)}
+      ${monthKpiTile('Forecast', formatPreis(forecast),
+        `inkl. ${formatPreis(pipelineWeighted)} Pipeline (gew.)`, 'plan',
+        "navigateTo('projects')", sparkData)}
       ${monthKpiTile('Auslastung', `${auslastungPct}%`, `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
         "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
       ${monthKpiTile('Pipeline', formatPreis(pipelineSum), `${pipelineProjects.length} Projekte`, 'info',
@@ -11686,24 +11866,14 @@ function renderMonthDashBeides(data) {
           </button>`;
       }).join('');
 
-  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
-  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
-  const stagesHtml = stages.map(stage => {
-    const projs = pipelineProjects.filter(p => p.status === stage);
-    const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
-    return `
-      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
-        <span class="pipeline-stage-name">${esc(stage)}</span>
-        <span class="pipeline-stage-count">${projs.length}</span>
-        <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
-      </button>`;
-  }).join('');
+  const stagesHtml = renderPipelineStages(pipelineProjects);
+  const membershipsHtml = renderMembershipAttention(data.membershipAttention || []);
 
   return `
     ${kpiRow}
     <div class="month-section-title">Umsatz-Verlauf ${esc(monthName)} · kumuliert</div>
     <div class="month-chart">${chartHtml}</div>
-    <div class="month-bottom-grid">
+    <div class="month-bottom-grid is-three">
       <div class="month-section">
         <div class="month-section-title">Top-Kunden</div>
         <div class="top-customers">${customersHtml}</div>
@@ -11711,6 +11881,10 @@ function renderMonthDashBeides(data) {
       <div class="month-section">
         <div class="month-section-title">Pipeline</div>
         <div class="pipeline-stages">${stagesHtml}</div>
+      </div>
+      <div class="month-section">
+        <div class="month-section-title">Mitgliedschaften</div>
+        ${membershipsHtml}
       </div>
     </div>`;
 }

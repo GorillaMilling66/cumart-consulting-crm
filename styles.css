@@ -3753,14 +3753,19 @@ select.typ-select-secondary {
   margin-bottom: 24px;
 }
 
-/* Top-Kunden + Pipeline nebeneinander */
+/* Top-Kunden + Pipeline nebeneinander; v1.46.0: optional 3-spaltig (is-three) */
 .month-bottom-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
+.month-bottom-grid.is-three { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 1100px) {
+  .month-bottom-grid.is-three { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 800px) {
-  .month-bottom-grid { grid-template-columns: 1fr; }
+  .month-bottom-grid,
+  .month-bottom-grid.is-three { grid-template-columns: 1fr; }
 }
 .month-section {
   background: var(--surface);
@@ -3844,6 +3849,105 @@ select.typ-select-secondary {
   border-radius: 999px;
 }
 .pipeline-stage-sum { font-size: 13px; font-weight: 500; }
+.pipeline-stage-weight {
+  font-size: 10px; font-weight: 500;
+  opacity: .7;
+  margin-left: 6px;
+}
+
+/* v1.46.0 — Restmonat-Liste (Technik-Sicht) */
+.restmonat-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.restmonat-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background .15s;
+}
+.restmonat-row:hover { background: var(--surface); border-color: var(--status-plan-accent); }
+.restmonat-row.is-overdue { border-color: var(--status-overdue-accent); background: var(--status-overdue-bg); }
+.restmonat-row.is-overdue:hover { filter: brightness(.97); }
+.restmonat-date {
+  font-size: 12px; font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.restmonat-row.is-overdue .restmonat-date { color: var(--status-overdue-accent); }
+.restmonat-body {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+.restmonat-firma {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.restmonat-meta {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.month-section-overdue {
+  margin-top: 16px;
+  border-color: var(--status-overdue-accent);
+}
+
+/* v1.46.0 — Mitgliedschafts-Liste (Vertrieb-Sicht) */
+.membership-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.membership-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background .15s;
+}
+.membership-row:hover { background: var(--surface); border-color: var(--status-billed-accent); }
+.membership-body {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+.membership-firma {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.membership-meta {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.membership-pills {
+  display: flex; flex-direction: column; gap: 3px;
+  align-items: flex-end;
+}
+.membership-pill {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.membership-pill.is-warn {
+  background: var(--status-plan-bg);
+  color: var(--status-plan-fg);
+}
+.membership-pill.is-overdue {
+  background: var(--status-overdue-bg);
+  color: var(--status-overdue-accent);
+}
 
 /* v1.44.12 — Monat-Tab Dashboard mit klickbaren KPI-Kacheln */
 .month-dashboard { margin-bottom: 20px; }
