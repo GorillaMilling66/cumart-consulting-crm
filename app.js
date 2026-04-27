@@ -1,5 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.2 (Neuer Aufgaben-Filter „Meine überfälligen"
+   im Scope-Dropdown. Briefing-Button „Alle überfälligen
+   ansehen" springt jetzt direkt mit gesetztem Filter auf die
+   Aufgaben-Seite — vorher wurde nur „Meine offenen" gesetzt
+   und der User musste selbst nachfiltern.)
    Version 1.44.1 (Fix Vorschau-Bereich im Heute-Tab. Bisher
    filterte er auf `data.appointments`, aber im Heute-Scope
    wird die Range nur auf heute begrenzt — Treffer für
@@ -10957,7 +10962,7 @@ function renderBriefingCards(scope, data, opts = {}) {
         </div>
         <div class="briefing-actions">
           <button class="briefing-btn is-primary" onclick="openTaskModal('edit','${esc(oldest.id)}')">Aufgabe öffnen</button>
-          <button class="briefing-btn" onclick="navigateTo('tasks',{ scope:'mine_open' })">Alle überfälligen ansehen</button>
+          <button class="briefing-btn" onclick="navigateTo('tasks',{ scope:'mine_overdue' })">Alle überfälligen ansehen</button>
         </div>
       </div>`);
   }
@@ -11297,6 +11302,13 @@ function filterTasks() {
   // Scope
   if (scopeFilter === 'mine_open') {
     filtered = filtered.filter(t => t.assigned_to === meId && t.status !== 'erledigt');
+  } else if (scopeFilter === 'mine_overdue') {
+    const todayISO = toISODate(new Date());
+    filtered = filtered.filter(t =>
+      t.assigned_to === meId &&
+      t.status !== 'erledigt' &&
+      t.faelligkeit && t.faelligkeit < todayISO
+    );
   } else if (scopeFilter === 'assigned_to_me') {
     filtered = filtered.filter(t => t.assigned_to === meId);
   } else if (scopeFilter === 'created_by_me') {
