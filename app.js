@@ -1,5 +1,22 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.0 (Heute-Tab Redesign — Datendichte rauf,
+   Scroll runter. Statt großer Hero-Blöcke pro Einsatz: 2-
+   Spalten-Grid kompakter Karten (~120 px hoch). Pro Karte
+   in 3 Zeilen: Type-Pill + Status-Pill, Firma + Untertitel,
+   Stadt + Tagessatz × Tage = Gesamt. Genau eine Karte
+   bekommt den „Jetzt"-Marker (aktive Stunde im Zeitfenster,
+   Fallback erster Geplanter). „Abgerechnet" wird auf 0,7
+   Opacity reduziert und der Firmenname durchgestrichen.
+   Letzte Zelle ist eine gestrichelte „+ Einsatz hinzufügen"-
+   Karte. Die Datenpflege-Card wandert als blaue Insight-
+   Pille in die Aufgaben-Sidebar. Vorschau · die nächsten
+   3 Tage steht jetzt in einem zugeklappten Akkordeon —
+   Header zeigt KPI „X Termine, Y Einsätze ab morgen".
+   Begrüßungszeile referenziert nur Vor-Ort-Einsätze ≠
+   Abgerechnet (sonst „Heute frei oder bereits abgerechnet").
+   Plus globale Status-Farb-Tokens als CSS-Variablen für
+   konsistente Skala über alle Tabs.)
    Version 1.44.14 (Aufgaben-Aside breiter und lesbarer:
    - Aside-Spalte 320 → 400 px (Breakpoints angepasst:
      ab 1200 px schrumpft sie auf 340 px, ab 1000 px wird das
@@ -11065,19 +11082,18 @@ function renderBriefing(scope, data) {
   if (metaEl) metaEl.innerHTML = renderBriefingKpisInline(scope, data, { heroMode });
 
   if (heroMode) {
-    // v1.44.6: alle heutigen Einsätze als eigene Hero-Blöcke rendern.
-    // v1.44.9: 2-Spalten-Layout — Hero links, Aufgaben-Aside rechts. So
-    // muss man nicht runterscrollen, um die offenen Aufgaben zu sehen.
-    const heroBlocks = todayDeps.map(d => renderBriefingHeroDeployment(d, data)).join('');
+    // v1.45.0: Heute-Tab Redesign — 2-Spalten-Grid kompakter Einsatzkarten
+    // statt großer Hero-Blöcke. Datendichte rauf, Scroll runter. Sidebar
+    // rechts zeigt Aufgaben + Datenpflege als Insight-Pille. Vorschau
+    // wandert in ein Akkordeon, standardmäßig zugeklappt.
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
       <div class="heute-grid">
-        <div class="heute-main">${heroBlocks}</div>
+        <div class="heute-main">${renderHeuteDeploymentGrid(todayDeps)}</div>
         <div class="heute-aside">${renderHeuteTasksAside(data)}</div>
       </div>
-      ${renderBriefingCards(scope, data, { skipTodayDeployment: true, skipHot: true })}
       ${renderBriefingStreak(scope, data)}
-      ${renderBriefingPreview(scope, data)}
+      ${renderHeutePreviewAccordion(data)}
     `;
   }
 
@@ -11456,6 +11472,120 @@ function renderBriefingKpisInline(scope, data, opts = {}) {
   return parts.join('<span class="kpi-inline-sep">·</span>');
 }
 
+/** v1.45.0: Heute-Tab Grid mit kompakten Einsatzkarten. Eine Karte pro
+ *  Einsatz heute + eine „+ Einsatz hinzufügen"-Karte als letzte Zelle.
+ *  Genau eine Karte bekommt den „Jetzt"-Marker (aktive Stunde im
+ *  Zeitfenster, Fallback: erster Geplanter). */
+function renderHeuteDeploymentGrid(todayDeps) {
+  const techMap = {}; // wird vom Hero-Code befüllt — hier nicht zwingend nötig
+  const nowIso = new Date();
+  const todayISO = toISODate(nowIso);
+
+  // „Jetzt"-Karte bestimmen: ein Einsatz dessen Uhrzeit-Fenster heute aktiv ist;
+  // Fallback der erste Geplante; sonst keiner.
+  const jetztId = (() => {
+    const nowHM = `${String(nowIso.getHours()).padStart(2,'0')}:${String(nowIso.getMinutes()).padStart(2,'0')}`;
+    const inWindow = todayDeps.find(d => {
+      if (d.status === 'Abgerechnet' || d.status === 'Storniert') return false;
+      if (!d.uhrzeit_von || !d.uhrzeit_bis) return false;
+      const von = d.uhrzeit_von.substring(0, 5);
+      const bis = d.uhrzeit_bis.substring(0, 5);
+      return nowHM >= von && nowHM <= bis;
+    });
+    if (inWindow) return inWindow.id;
+    const firstPlanned = todayDeps.find(d => d.status === 'Geplant');
+    return firstPlanned?.id || null;
+  })();
+
+  const cards = todayDeps.map(d => renderHeuteDeploymentCard(d, d.id === jetztId)).join('');
+  const addCard = `
+    <button class="heute-card heute-card-add" type="button" onclick="openDeploymentModal('new')">
+      <span class="heute-card-add-plus" aria-hidden="true">+</span>
+      <span>Einsatz hinzufügen</span>
+    </button>`;
+
+  return `<div class="heute-deploy-grid">${cards}${addCard}</div>`;
+}
+
+function renderHeuteDeploymentCard(d, isNow) {
+  const status = d.status || 'Geplant';
+  const isBilled = status === 'Abgerechnet';
+  const isCancel = status === 'Storniert';
+
+  const firma = d.company?.name || 'Einsatz';
+  const typeLabel = (d.ort || '').toLowerCase().includes('online') ? 'Online' : 'Vor Ort';
+  // Untertitel: Service-Name oder Titel
+  const subtitle = d.titel || d.service?.name || '';
+
+  // Standort: nur die Stadt extrahieren (heuristisch — nimm letzten PLZ-Stadt-Block)
+  const stadtMatch = (d.ort || '').match(/(\d{5})\s+([^,]+)/);
+  const stadt = stadtMatch ? stadtMatch[2].trim() : (d.ort || '').split(',').pop().trim();
+
+  // Tagessatz × Tage = Gesamt
+  const einzel = Number(d.einzelpreis) || 0;
+  const menge  = Number(d.menge) || 0;
+  const gesamt = einzel * menge;
+  const priceText = einzel > 0
+    ? `${formatPreis(einzel)}${menge > 1 ? ` × ${menge} = ${formatPreis(gesamt)}` : ''}`
+    : '';
+
+  const classes = [
+    'heute-card',
+    `is-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}`,
+    isNow   ? 'is-now'    : '',
+    isBilled ? 'is-billed' : '',
+    isCancel ? 'is-cancelled' : ''
+  ].filter(Boolean).join(' ');
+
+  return `
+    <button class="${classes}" type="button" onclick="openDeploymentModal('edit','${esc(d.id)}')">
+      <div class="heute-card-row1">
+        <span class="heute-card-type">${esc(typeLabel)}</span>
+        <span class="heute-card-status">${esc(status)}</span>
+      </div>
+      <div class="heute-card-row2">
+        <div class="heute-card-firma">${esc(firma)}</div>
+        ${subtitle ? `<div class="heute-card-sub">${esc(subtitle)}</div>` : ''}
+      </div>
+      <div class="heute-card-row3">
+        ${stadt ? `<span>${esc(stadt)}</span>` : '<span class="heute-card-meta-muted">—</span>'}
+        ${priceText ? `<span class="heute-card-price">${esc(priceText)}</span>` : ''}
+      </div>
+      ${isNow ? '<span class="heute-card-now-pill">Jetzt</span>' : ''}
+    </button>`;
+}
+
+/** Vorschau-Akkordeon (standardmäßig zugeklappt) — die nächsten 3 Tage. */
+function renderHeutePreviewAccordion(data) {
+  // Wir reusen die schon existierenden previewAppointments / previewDeployments
+  const apptCount = (data.previewAppointments || []).length;
+  const depCount  = (data.previewDeployments  || []).length;
+  if (apptCount + depCount === 0) {
+    return `
+      <details class="heute-preview-accordion">
+        <summary class="heute-preview-summary">
+          <span class="heute-preview-chevron">▸</span>
+          <span class="heute-preview-label">Vorschau · die nächsten 3 Tage</span>
+          <span class="heute-preview-count">— frei</span>
+        </summary>
+        <div class="heute-preview-body">
+          <div style="font-size:13px;color:var(--muted);padding:8px 0;font-style:italic">Keine weiteren Termine oder Einsätze in diesem Zeitraum.</div>
+        </div>
+      </details>`;
+  }
+  // Render die existierende flache Liste innerhalb des <details>-Body
+  const inner = renderBriefingPreview('heute', data); // gibt das bisherige .briefing-preview-Markup zurück
+  return `
+    <details class="heute-preview-accordion">
+      <summary class="heute-preview-summary">
+        <span class="heute-preview-chevron">▸</span>
+        <span class="heute-preview-label">Vorschau · die nächsten 3 Tage</span>
+        <span class="heute-preview-count">${apptCount} Termin${apptCount === 1 ? '' : 'e'} · ${depCount} Einsatz${depCount === 1 ? '' : 'e'} ab morgen</span>
+      </summary>
+      <div class="heute-preview-body">${inner}</div>
+    </details>`;
+}
+
 /** v1.44: Hero-Block für einen heutigen Einsatz — prominent ganz oben.
  *  Begründung: Ein Einsatz ist die einzige direkt umsatzbringende Tätigkeit;
  *  an Einsatz-Tagen muss der Vor-Ort-Termin alles andere visuell schlagen.
@@ -11598,6 +11728,31 @@ function renderHeuteTasksAside(data) {
       </div>`);
   }
 
+  // v1.45.0: Datenpflege als blaue Insight-Pille in der Sidebar
+  let dataInsightHtml = '';
+  const ic = data.incompleteStats;
+  if (ic && (ic.companies + ic.contacts) > 0) {
+    const parts = [];
+    if (ic.companies > 0) parts.push(`<strong>${ic.companies}</strong> ${ic.companies === 1 ? 'Firma' : 'Firmen'} ohne Adresse oder Kontaktdaten`);
+    if (ic.contacts  > 0) parts.push(`<strong>${ic.contacts}</strong> Kontakt${ic.contacts === 1 ? '' : 'e'} ohne Telefon, E-Mail oder Position`);
+    let actionBtn = '';
+    if (ic.sampleCompanies && ic.sampleCompanies[0]) {
+      actionBtn = `<button class="aside-insight-btn" onclick="navigateTo('firma','${esc(ic.sampleCompanies[0].id)}')">Erste Firma öffnen</button>`;
+    } else if (ic.sampleContacts && ic.sampleContacts[0]) {
+      actionBtn = `<button class="aside-insight-btn" onclick="navigateTo('kontakt','${esc(ic.sampleContacts[0].id)}')">Ersten Kontakt öffnen</button>`;
+    }
+    dataInsightHtml = `
+      <div class="aside-insight">
+        <div class="aside-insight-head">Datenpflege</div>
+        <div class="aside-insight-body">${parts.join('. ')}.</div>
+        <div class="aside-insight-actions">
+          ${actionBtn}
+          ${ic.companies > 0 ? `<button class="aside-insight-btn is-ghost" onclick="navigateTo('companies')">Alle Firmen</button>` : ''}
+          ${ic.contacts  > 0 ? `<button class="aside-insight-btn is-ghost" onclick="navigateTo('contacts')">Alle Kontakte</button>` : ''}
+        </div>
+      </div>`;
+  }
+
   return `
     <div class="aside-card">
       <div class="aside-card-title">Aufgaben</div>
@@ -11605,7 +11760,8 @@ function renderHeuteTasksAside(data) {
       <div class="aside-card-footer">
         <button class="aside-link" onclick="navigateTo('tasks',{ scope:'mine_open' })">Alle meine offenen ansehen →</button>
       </div>
-    </div>`;
+    </div>
+    ${dataInsightHtml}`;
 }
 
 /** Eine Zeile in der Aufgaben-Aside / Wochen-Liste. */
@@ -11726,14 +11882,15 @@ function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
   const todayISO = toISODate(new Date());
 
   if (scope === 'heute') {
-    // Vor-Ort-Tag erkennen
+    // v1.45.0: Begrüßung referenziert nur Vor-Ort-Einsätze ≠ Abgerechnet
     const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
     const todayAppts = data.appointments.filter(a => a.datum === todayISO);
-    if (todayDeps.length > 0) {
-      // Hero zeigt den Einsatz prominent darunter — Narrativ bleibt knapp und
-      // kontextualisiert nur, was sonst noch am Tag dranhängt.
-      const firma = todayDeps[0].company?.name || 'einem Kunden';
+    const aktiveDeps = todayDeps.filter(d => d.status !== 'Abgerechnet' && d.status !== 'Storniert');
+    if (aktiveDeps.length > 0) {
+      const firma = aktiveDeps[0].company?.name || 'einem Kunden';
       parts.push(`Heute bist du im Einsatz bei <strong>${esc(firma)}</strong> — der Tag gehört dem Kunden`);
+    } else if (todayDeps.length > 0) {
+      parts.push(`Heute frei oder bereits abgerechnet`);
     } else if (todayAppts.length > 0) {
       parts.push(`<strong>${todayAppts.length}</strong> Termin${todayAppts.length === 1 ? '' : 'e'} heute`);
     } else {

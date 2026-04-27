@@ -20,6 +20,29 @@
   --radius:   8px;
   --shadow:   0 1px 3px rgba(0,0,0,.08);
 
+  /* v1.45 — Status-Farb-Tokens (eine konsistente Skala für alle Tabs) */
+  --status-plan-bg:        #E6F1FB;
+  --status-plan-fg:        #042C53;
+  --status-plan-accent:    #1d4ed8;
+
+  --status-done-bg:        #EAF3DE;
+  --status-done-fg:        #173404;
+  --status-done-accent:    #5a8c1f;
+
+  --status-billed-bg:      #E1F5EE;
+  --status-billed-fg:      #04342C;
+  --status-billed-accent:  #047857;
+
+  --status-overdue-bg:     #FCEBEB;
+  --status-overdue-fg:     #501313;
+  --status-overdue-accent: #dc2626;
+
+  --status-holiday-bg:     #FAEEDA;
+  --status-holiday-fg:     #412402;
+  --status-holiday-accent: #b45309;
+
+  --color-info:            #1d4ed8;
+
   --mobile-header-height: 56px;
   --mobile-nav-height: 62px;
 }
@@ -2753,6 +2776,174 @@ select.typ-select-secondary {
 .briefing-narrative-text .accent-warn { color: var(--warning); font-weight: 600; }
 .briefing-narrative-text .accent-good { color: var(--success); font-weight: 600; }
 
+/* v1.45.0 — Heute-Tab Karten-Grid (kompakt, ~120 px hoch, 2 Spalten).
+   Datendichte rauf, Scroll runter. */
+.heute-deploy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 700px) {
+  .heute-deploy-grid { grid-template-columns: 1fr; }
+}
+.heute-card {
+  position: relative;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 12px;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px;
+  min-height: 116px;
+  max-height: 140px;
+  transition: transform .12s, box-shadow .12s, border-color .12s;
+}
+.heute-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.06);
+}
+.heute-card.is-now {
+  border-left: 2px solid var(--color-info);
+  box-shadow: 0 0 0 1.5px var(--color-info), 0 4px 14px rgba(29, 78, 216, .12);
+}
+.heute-card-now-pill {
+  position: absolute; top: 10px; right: 12px;
+  font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .4px;
+  background: var(--color-info); color: #fff;
+  padding: 2px 7px; border-radius: 999px;
+}
+.heute-card.is-billed {
+  opacity: .7;
+}
+.heute-card.is-billed .heute-card-firma { text-decoration: line-through; }
+.heute-card.is-cancelled {
+  opacity: .55;
+}
+.heute-card.is-cancelled .heute-card-firma { text-decoration: line-through; }
+
+/* Status-Akzent links pro Karte */
+.heute-card.is-status-geplant       { border-left-color: var(--status-plan-accent); }
+.heute-card.is-status-durchgeführt  { border-left-color: var(--status-done-accent); }
+.heute-card.is-status-abgerechnet   { border-left-color: var(--status-billed-accent); }
+.heute-card.is-status-storniert     { border-left-color: var(--status-overdue-accent); }
+.heute-card.is-now                  { border-left-color: var(--color-info); }
+
+.heute-card-row1 {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+.heute-card-type {
+  background: #f3f4f6; color: var(--muted);
+  padding: 2px 8px; border-radius: 999px;
+  font-weight: 500;
+}
+.heute-card-status {
+  padding: 2px 8px; border-radius: 999px;
+  font-weight: 500;
+  background: var(--status-plan-bg); color: var(--status-plan-fg);
+}
+.heute-card.is-status-durchgeführt .heute-card-status { background: var(--status-done-bg); color: var(--status-done-fg); }
+.heute-card.is-status-abgerechnet  .heute-card-status { background: var(--status-billed-bg); color: var(--status-billed-fg); }
+.heute-card.is-status-storniert    .heute-card-status { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
+
+.heute-card-row2 { flex: 1; min-width: 0; }
+.heute-card-firma {
+  font-size: 14px; font-weight: 500; color: var(--text);
+  line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.heute-card-sub {
+  font-size: 12px; color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.heute-card-row3 {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  font-size: 12px; color: var(--muted);
+}
+.heute-card-meta-muted { font-style: italic; }
+.heute-card-price { font-weight: 500; color: var(--text); }
+
+/* Quick-Add-Karte (gestrichelt) */
+.heute-card-add {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1.5px dashed var(--border);
+  border-left-width: 1.5px;
+  border-radius: 12px;
+  min-height: 116px;
+  max-height: 140px;
+  color: var(--muted);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  font: inherit;
+  padding: 12px;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.heute-card-add:hover {
+  border-color: var(--color-info);
+  color: var(--color-info);
+  background: var(--status-plan-bg);
+}
+.heute-card-add-plus {
+  font-size: 22px; font-weight: 400;
+  line-height: 1;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* v1.45.0 — Vorschau-Akkordeon */
+.heute-preview-accordion {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  margin-top: 16px;
+}
+.heute-preview-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  user-select: none;
+}
+.heute-preview-summary::-webkit-details-marker { display: none; }
+.heute-preview-chevron {
+  display: inline-block;
+  transition: transform .15s;
+  color: var(--muted);
+}
+.heute-preview-accordion[open] .heute-preview-chevron { transform: rotate(90deg); }
+.heute-preview-label { font-weight: 500; color: var(--text); }
+.heute-preview-count {
+  font-size: 12px; color: var(--muted);
+  margin-left: auto;
+}
+.heute-preview-body {
+  padding: 0 16px 16px;
+  border-top: 0.5px solid var(--border);
+  padding-top: 12px;
+}
+/* das innere .briefing-preview braucht im Akkordeon keine eigene Box mehr */
+.heute-preview-body .briefing-preview {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+.heute-preview-body .briefing-preview-title { display: none; }
+
 /* v1.44.9 — Heute-Tab 2-Spalten-Layout (Hero links, Aufgaben-Aside rechts).
    v1.44.14: Aside breiter (380 → mehr Inhalt sichtbar). */
 .heute-grid {
@@ -2876,6 +3067,41 @@ select.typ-select-secondary {
   font: inherit;
 }
 .aside-link:hover { text-decoration: underline; }
+
+/* v1.45.0 — Datenpflege Insight-Pille in der Sidebar */
+.aside-insight {
+  background: var(--status-plan-bg);
+  border: 0.5px solid #cfdef0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 14px;
+  color: var(--status-plan-fg);
+}
+.aside-insight-head {
+  font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+.aside-insight-body {
+  font-size: 13px; line-height: 1.4;
+  margin-bottom: 10px;
+}
+.aside-insight-actions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.aside-insight-btn {
+  background: var(--status-plan-fg); color: #fff;
+  border: none; padding: 6px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  font: inherit;
+}
+.aside-insight-btn:hover { opacity: .85; }
+.aside-insight-btn.is-ghost {
+  background: transparent;
+  color: var(--status-plan-fg);
+  border: 0.5px solid var(--status-plan-fg);
+}
 
 /* v1.44.9 — Wochen-Tab kollabierte Aufgaben-Box */
 .woche-tasks-box {
