@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.4 (Heute-Tab — nächste 3 Tage als 3 Cards
+   nebeneinander direkt unter den Einsatzkarten. Vorher waren
+   sie in einem zugeklappten Akkordeon ganz unten — jetzt sofort
+   sichtbar im Hauptbereich, links neben der Aufgaben-Aside.
+   Pro Card: Wochentag + Datum, Item-Liste mit Einsätzen (zuerst,
+   Status-Border) und Terminen (mit Uhrzeit-Pill). Wochenend-
+   Tage leicht eingegraut. Klick auf Item öffnet das jeweilige
+   Bearbeiten-Modal.)
    Version 1.45.3 (Polish & Bugs:
    - Datenpflege-Tippfehler: „Firmaen ohne Adresse" → „Firmen
      ohne Adresse" (Singular/Plural-Switch statt Suffix-Konkat).
@@ -11252,18 +11260,19 @@ function renderBriefing(scope, data) {
   if (metaEl) metaEl.innerHTML = renderBriefingKpisInline(scope, data, { heroMode });
 
   if (heroMode) {
-    // v1.45.0: Heute-Tab Redesign — 2-Spalten-Grid kompakter Einsatzkarten
-    // statt großer Hero-Blöcke. Datendichte rauf, Scroll runter. Sidebar
-    // rechts zeigt Aufgaben + Datenpflege als Insight-Pille. Vorschau
-    // wandert in ein Akkordeon, standardmäßig zugeklappt.
+    // v1.45.0: 2-Spalten-Grid kompakter Einsatzkarten + Aufgaben-Aside.
+    // v1.45.4: Nächste 3 Tage als 3 Cards nebeneinander direkt unter den
+    // Einsatzkarten (statt zugeklappter Akkordeon).
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
       <div class="heute-grid">
-        <div class="heute-main">${renderHeuteDeploymentGrid(todayDeps)}</div>
+        <div class="heute-main">
+          ${renderHeuteDeploymentGrid(todayDeps)}
+          ${renderHeuteNext3DaysGrid(data)}
+        </div>
         <div class="heute-aside">${renderHeuteTasksAside(data)}</div>
       </div>
       ${renderBriefingStreak(scope, data)}
-      ${renderHeutePreviewAccordion(data)}
     `;
   }
 
@@ -12011,6 +12020,91 @@ function renderHeuteDeploymentCard(d, isNow) {
       </div>
       ${isNow ? '<span class="heute-card-now-pill">Jetzt</span>' : ''}
     </button>`;
+}
+
+/** v1.45.4: Nächste 3 Tage als 3 Cards nebeneinander — direkt unter den
+ *  Einsatzkarten platziert. Pro Card: Wochentag + Datum + Item-Liste
+ *  (Einsätze zuerst, dann Termine nach Uhrzeit). */
+function renderHeuteNext3DaysGrid(data) {
+  const todayISO = toISODate(new Date());
+  const days = [];
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(todayISO + 'T00:00:00'); d.setDate(d.getDate() + i);
+    const iso = toISODate(d);
+    days.push({
+      iso,
+      weekday: WEEKDAYS_DE[d.getDay()],
+      day: d.getDate(),
+      month: MONTHS_DE[d.getMonth()],
+      isWeekend: d.getDay() === 0 || d.getDay() === 6,
+      items: []
+    });
+  }
+
+  // Items verteilen
+  (data.previewAppointments || []).forEach(a => {
+    const day = days.find(d => d.iso === a.datum);
+    if (day) day.items.push({ kind: 'termin', appt: a });
+  });
+  (data.previewDeployments || []).forEach(dep => {
+    const von = dep.datum_von, bis = dep.datum_bis || dep.datum_von;
+    days.forEach(day => {
+      if (day.iso >= von && day.iso <= bis) day.items.push({ kind: 'einsatz', dep });
+    });
+  });
+  // Sort: Einsätze zuerst, dann Termine nach Uhrzeit
+  days.forEach(d => {
+    d.items.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'einsatz' ? -1 : 1;
+      if (a.kind === 'termin') return ((a.appt.uhrzeit_von || '') || '').localeCompare(b.appt.uhrzeit_von || '');
+      return 0;
+    });
+  });
+
+  return `
+    <div class="heute-next3-grid">
+      ${days.map(day => renderHeuteNext3DayCard(day)).join('')}
+    </div>`;
+}
+
+function renderHeuteNext3DayCard(day) {
+  const cls = ['heute-next3-card'];
+  if (day.isWeekend) cls.push('is-weekend');
+
+  const itemsHtml = day.items.length === 0
+    ? `<div class="heute-next3-empty">— frei</div>`
+    : day.items.map(it => renderHeuteNext3Item(it)).join('');
+
+  return `
+    <div class="${cls.join(' ')}">
+      <div class="heute-next3-head">
+        <div class="heute-next3-day-name">${esc(day.weekday)}</div>
+        <div class="heute-next3-day-date">${day.day}. ${esc(day.month)}</div>
+      </div>
+      <div class="heute-next3-items">${itemsHtml}</div>
+    </div>`;
+}
+
+function renderHeuteNext3Item(it) {
+  if (it.kind === 'einsatz') {
+    const d = it.dep;
+    const status = d.status || 'Geplant';
+    const firma = d.company?.name || 'Einsatz';
+    const titel = d.titel || d.service?.name || '';
+    return `<button class="heute-next3-item is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" type="button" onclick="openDeploymentModal('edit','${esc(d.id)}')" title="${esc(firma + (titel ? ' · ' + titel : ''))}">
+      <span class="heute-next3-item-tag">Einsatz</span>
+      <span class="heute-next3-item-text">${esc(firma)}</span>
+    </button>`;
+  } else {
+    const t = it.appt;
+    const time = t.uhrzeit_von ? t.uhrzeit_von.substring(0, 5) : '';
+    const titel = t.titel || 'Termin';
+    const firma = t.company?.name || '';
+    return `<button class="heute-next3-item is-termin" type="button" onclick="openAppointmentModal('edit','${esc(t.id)}')" title="${esc((time ? time + ' · ' : '') + titel + (firma ? ' · ' + firma : ''))}">
+      ${time ? `<span class="heute-next3-item-time">${esc(time)}</span>` : '<span class="heute-next3-item-tag">Termin</span>'}
+      <span class="heute-next3-item-text">${esc(firma || titel)}</span>
+    </button>`;
+  }
 }
 
 /** Vorschau-Akkordeon (standardmäßig zugeklappt) — die nächsten 3 Tage. */

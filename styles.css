@@ -2902,6 +2902,90 @@ select.typ-select-secondary {
   display: flex; align-items: center; justify-content: center;
 }
 
+/* v1.45.4 — Nächste 3 Tage als 3 Cards nebeneinander unter den Einsätzen */
+.heute-next3-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+@media (max-width: 700px) {
+  .heute-next3-grid { grid-template-columns: 1fr; }
+}
+.heute-next3-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column;
+  min-height: 140px;
+}
+.heute-next3-card.is-weekend { background: #fafafa; }
+.heute-next3-head {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid var(--border);
+}
+.heute-next3-day-name {
+  font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted);
+}
+.heute-next3-day-date {
+  font-size: 14px; font-weight: 500; color: var(--text);
+  margin-top: 1px;
+}
+.heute-next3-items {
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 1;
+}
+.heute-next3-empty {
+  font-size: 11px; color: var(--muted); font-style: italic;
+  padding-top: 4px;
+}
+.heute-next3-item {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background .15s, border-color .15s;
+}
+.heute-next3-item:hover { background: var(--surface); }
+.heute-next3-item-tag, .heute-next3-item-time {
+  flex-shrink: 0;
+  font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f3f4f6; color: var(--muted);
+  min-width: 48px; text-align: center;
+}
+.heute-next3-item-time { font-weight: 600; letter-spacing: 0; }
+.heute-next3-item-text {
+  flex: 1; min-width: 0;
+  font-size: 12px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.heute-next3-item.is-termin { border-left-color: var(--status-plan-accent); }
+.heute-next3-item.is-termin .heute-next3-item-tag,
+.heute-next3-item.is-termin .heute-next3-item-time { background: var(--status-plan-bg); color: var(--status-plan-fg); }
+
+.heute-next3-item.is-einsatz                            { border-left-color: var(--status-plan-accent); }
+.heute-next3-item.is-einsatz.dep-status-geplant         { border-left-color: var(--status-plan-accent); }
+.heute-next3-item.is-einsatz.dep-status-durchgeführt    { border-left-color: var(--status-done-accent); }
+.heute-next3-item.is-einsatz.dep-status-abgerechnet     { border-left-color: var(--status-billed-accent); }
+.heute-next3-item.is-einsatz.dep-status-storniert       { border-left-color: var(--status-overdue-accent); }
+.heute-next3-item.is-einsatz .heute-next3-item-tag      { background: var(--status-plan-bg); color: var(--status-plan-fg); }
+.heute-next3-item.is-einsatz.dep-status-durchgeführt .heute-next3-item-tag { background: var(--status-done-bg); color: var(--status-done-fg); }
+.heute-next3-item.is-einsatz.dep-status-abgerechnet .heute-next3-item-tag  { background: var(--status-billed-bg); color: var(--status-billed-fg); }
+.heute-next3-item.is-einsatz.dep-status-storniert .heute-next3-item-tag    { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
+
 /* v1.45.0 — Vorschau-Akkordeon */
 .heute-preview-accordion {
   background: var(--surface);
