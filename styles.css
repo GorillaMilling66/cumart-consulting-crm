@@ -2747,6 +2747,114 @@ select.typ-select-secondary {
 .briefing-narrative-text .accent-warn { color: var(--warning); font-weight: 600; }
 .briefing-narrative-text .accent-good { color: var(--success); font-weight: 600; }
 
+/* v1.44.7 — Wochen-Strip „Diese Woche". 7 Spalten Mo–So, pro Tag eine
+   kompakte Spalte mit Einsatz-/Termin-Pills. Klick öffnet das Modal. */
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.week-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  min-height: 180px;
+  display: flex; flex-direction: column;
+  transition: border-color .15s, background .15s;
+}
+.week-day.is-today {
+  border-color: var(--success);
+  background: linear-gradient(180deg, #f0fdf4 0%, var(--surface) 30%);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, .08);
+}
+.week-day.is-past { opacity: .55; }
+.week-day.is-weekend { background: #fafafa; }
+.week-day.is-weekend.is-today { background: linear-gradient(180deg, #f0fdf4 0%, var(--surface) 30%); }
+.week-day-head {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.week-day.is-today .week-day-head { border-color: #bbf7d0; }
+.week-day-name {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted);
+}
+.week-day.is-today .week-day-name { color: var(--success); }
+.week-day-date {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  margin-top: 1px;
+}
+.week-day-items {
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 1;
+}
+.week-day-empty {
+  font-size: 11px; color: var(--muted); font-style: italic;
+  padding-top: 4px;
+}
+
+/* Pills — kompakt, klickbar */
+.week-pill {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 4px;
+  padding: 5px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 1px;
+  transition: background .15s, border-color .15s, transform .1s;
+  overflow: hidden;
+}
+.week-pill:hover {
+  background: var(--surface);
+  transform: translateX(1px);
+}
+.week-pill .week-pill-kind {
+  font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted);
+}
+.week-pill .week-pill-time {
+  font-size: 10px; font-weight: 700;
+  color: var(--muted);
+}
+.week-pill .week-pill-title {
+  font-size: 12px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Termin = blau */
+.week-pill.is-termin { border-left-color: var(--link); background: #eff6ff; }
+.week-pill.is-termin:hover { background: #dbeafe; }
+
+/* Einsatz — Status-Farben */
+.week-pill.is-einsatz { border-left-color: var(--success); background: #f0fdf4; }
+.week-pill.is-einsatz:hover { background: #dcfce7; }
+.week-pill.is-einsatz.dep-status-durchgeführt { border-left-color: var(--muted); background: #f9fafb; }
+.week-pill.is-einsatz.dep-status-durchgeführt:hover { background: #f3f4f6; }
+.week-pill.is-einsatz.dep-status-abgerechnet { border-left-color: var(--link); background: #eff6ff; }
+.week-pill.is-einsatz.dep-status-abgerechnet:hover { background: #dbeafe; }
+.week-pill.is-einsatz.dep-status-storniert { border-left-color: var(--danger); background: #fef2f2; opacity: .7; }
+.week-pill.is-einsatz .week-pill-kind { color: var(--success); }
+.week-pill.is-einsatz.dep-status-durchgeführt .week-pill-kind { color: var(--muted); }
+.week-pill.is-einsatz.dep-status-abgerechnet .week-pill-kind { color: var(--link); }
+.week-pill.is-einsatz.dep-status-storniert .week-pill-kind { color: var(--danger); }
+
+@media (max-width: 900px) {
+  .week-strip { grid-template-columns: repeat(7, minmax(110px, 1fr)); overflow-x: auto; padding-bottom: 8px; }
+  .week-day { min-height: 160px; }
+}
+@media (max-width: 600px) {
+  .week-strip { display: flex; flex-direction: column; }
+  .week-day { min-height: auto; }
+  .week-day-head { display: flex; justify-content: space-between; align-items: center; }
+}
+
 /* v1.44.4 — Tab-Zeile mit inline KPIs rechts.
    Tabs links, kompakte KPI-Bar rechts (Text-only, keine Icons) — der Page-
    Header bleibt frei für Titel + Datum. */

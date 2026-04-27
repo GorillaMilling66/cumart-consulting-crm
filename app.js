@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.7 (Diese-Woche-Tab als 7-Tage-Strip. Statt der
+   bisherigen Briefing-Cards bekommt der Wochen-Tab eine
+   Spaltenansicht Mo–So. Pro Tag werden alle Einsätze (zuerst,
+   umsatzrelevant) und Termine als kompakte klickbare Pills
+   angezeigt. Klick öffnet das jeweilige Bearbeiten-Modal.
+   Heute hervorgehoben mit grünem Akzent, Vergangenheit
+   abgedimmt, Wochenende leicht eingegraut. Einsatz-Pills
+   bekommen die Status-Farbe (geplant=grün, durchgeführt=grau,
+   abgerechnet=blau, storniert=rot). Überfällige Aufgaben
+   bleiben als Hot-Card oberhalb der Strip stehen, damit sie
+   nicht vergessen werden. Mobile: vertikales Stacking.)
    Version 1.44.6 (Zwei UX-Verbesserungen rund um Einsätze:
    1) Hero-Block: mehrere Einsätze am selben Tag werden jetzt
       als eigene Hero-Blöcke untereinander gerendert — vorher
@@ -10775,12 +10786,112 @@ function renderBriefing(scope, data) {
     `;
   }
 
+  // v1.44.7: Diese-Woche-Tab → 7-Tage-Strip statt Briefing-Cards. Die Woche
+  // soll auf einen Blick verständlich sein: pro Tag eine Spalte mit Einsätzen
+  // (zuerst, umsatzrelevant) und Terminen als kompakte Pills. Klick öffnet
+  // das jeweilige Bearbeiten-Modal. Heute hervorgehoben, Vergangenheit dezent.
+  if (scope === 'woche') {
+    const overdueCard = data.overdueTasks.length > 0
+      ? renderBriefingCards(scope, data, { onlyHot: true })
+      : '';
+    return `
+      ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
+      ${overdueCard}
+      ${renderBriefingWeekStrip(data)}
+      ${renderBriefingStreak(scope, data)}
+    `;
+  }
+
   return `
     ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
     ${renderBriefingCards(scope, data)}
     ${renderBriefingStreak(scope, data)}
     ${renderBriefingPreview(scope, data)}
   `;
+}
+
+/** v1.44.7: 7-Tage-Strip für „Diese Woche". Mo–So als Spalten, pro Tag
+ *  Einsätze (zuerst) und Termine als kompakte klickbare Pills. */
+function renderBriefingWeekStrip(data) {
+  const todayISO = toISODate(new Date());
+  const startISO = data.range.startISO;
+
+  const days = [];
+  const start = new Date(startISO + 'T00:00:00');
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const iso = toISODate(d);
+    days.push({
+      iso,
+      weekday: WEEKDAYS_DE[d.getDay()],
+      day: d.getDate(),
+      month: MONTHS_DE[d.getMonth()],
+      isToday: iso === todayISO,
+      isPast: iso < todayISO,
+      isWeekend: d.getDay() === 0 || d.getDay() === 6,
+      einsaetze: [],
+      termine: []
+    });
+  }
+
+  // Einsätze auf alle abgedeckten Tage verteilen (mehrtägig)
+  (data.deployments || []).forEach(dep => {
+    const von = dep.datum_von;
+    const bis = dep.datum_bis || dep.datum_von;
+    days.forEach(day => {
+      if (day.iso >= von && day.iso <= bis) day.einsaetze.push(dep);
+    });
+  });
+  // Termine auf den Tag mappen
+  (data.appointments || []).forEach(t => {
+    const day = days.find(d => d.iso === t.datum);
+    if (day) day.termine.push(t);
+  });
+  // Termine pro Tag nach Uhrzeit sortieren
+  days.forEach(d => {
+    d.termine.sort((a, b) => (a.uhrzeit_von || '').localeCompare(b.uhrzeit_von || ''));
+  });
+
+  return `
+    <div class="week-strip">
+      ${days.map(day => `
+        <div class="week-day${day.isToday ? ' is-today' : ''}${day.isPast ? ' is-past' : ''}${day.isWeekend ? ' is-weekend' : ''}">
+          <div class="week-day-head">
+            <div class="week-day-name">${esc(day.weekday)}</div>
+            <div class="week-day-date">${day.day}. ${esc(day.month)}</div>
+          </div>
+          <div class="week-day-items">
+            ${day.einsaetze.map(d => renderWeekPill('einsatz', d)).join('')}
+            ${day.termine.map(t => renderWeekPill('termin', t)).join('')}
+            ${day.einsaetze.length === 0 && day.termine.length === 0 ? '<div class="week-day-empty">— frei</div>' : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+/** Klein-Pill für die Wochen-Strip — klickbar, öffnet das Edit-Modal. */
+function renderWeekPill(kind, item) {
+  if (kind === 'einsatz') {
+    const status = item.status || 'Geplant';
+    const firma = item.company?.name || 'Einsatz';
+    const titel = item.titel || item.service?.name || 'Einsatz';
+    const wert = (Number(item.menge) || 0) * (Number(item.einzelpreis) || 0);
+    const tooltip = `${titel}${firma !== titel ? ' · ' + firma : ''}${wert > 0 ? ' · ' + formatPreis(wert) : ''} · ${status}`;
+    return `<div class="week-pill is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" onclick="openDeploymentModal('edit','${esc(item.id)}')" title="${esc(tooltip)}">
+      <span class="week-pill-kind">Einsatz</span>
+      <span class="week-pill-title">${esc(firma)}</span>
+    </div>`;
+  } else {
+    const time = item.uhrzeit_von ? item.uhrzeit_von.substring(0, 5) : '';
+    const titel = item.titel || 'Termin';
+    const firma = item.company?.name || '';
+    const tooltip = `${time ? time + ' · ' : ''}${titel}${firma ? ' · ' + firma : ''}`;
+    return `<div class="week-pill is-termin" onclick="openAppointmentModal('edit','${esc(item.id)}')" title="${esc(tooltip)}">
+      ${time ? `<span class="week-pill-time">${esc(time)}</span>` : ''}
+      <span class="week-pill-title">${esc(firma || titel)}</span>
+    </div>`;
+  }
 }
 
 /** v1.44.4: Inline-KPI-Bar oben rechts neben den Tabs.
@@ -11065,6 +11176,7 @@ function renderBriefingKpis(scope, data, opts = {}) {
 function renderBriefingCards(scope, data, opts = {}) {
   const cards = [];
   const todayISO = toISODate(new Date());
+  const onlyHot = !!opts.onlyHot;
 
   // ── HOT — überfällige Aufgaben ──
   if (data.overdueTasks.length > 0) {
@@ -11090,6 +11202,10 @@ function renderBriefingCards(scope, data, opts = {}) {
         </div>
       </div>`);
   }
+
+  // onlyHot-Modus: nur die Hot-Card (überfällige Aufgaben), Rest skippen.
+  // Wird von „Diese Woche" genutzt, wo die Wochen-Strip die Hauptansicht ist.
+  if (onlyHot) return cards.join('');
 
   // ── OPP — Heute Vor-Ort + Termine ohne Folgeschritt ──
   // v1.44: Wenn der Hero-Modus den Einsatz schon prominent zeigt, hier nicht
