@@ -2189,10 +2189,9 @@
         </div>
         <div class="form-group">
           <label>Kontakt</label>
-          <div class="select-with-add">
-            <select id="t-contact"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('t-contact','t-company')" title="Neuen Kontakt anlegen">+</button>
-          </div>
+          <input id="t-contact" list="t-contact-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <datalist id="t-contact-list"></datalist>
+          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
         <div class="form-group">
           <label>Projekt</label>
@@ -2288,10 +2287,9 @@
         </div>
         <div class="form-group">
           <label>Kontakt</label>
-          <div class="select-with-add">
-            <select id="a-contact"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('a-contact','a-company')" title="Neuen Kontakt anlegen">+</button>
-          </div>
+          <input id="a-contact" list="a-contact-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <datalist id="a-contact-list"></datalist>
+          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
         <div class="form-group">
           <label>Projekt</label>
@@ -2400,10 +2398,9 @@
         </div>
         <div class="form-group">
           <label>Hauptkontakt</label>
-          <div class="select-with-add">
-            <select id="p-hauptkontakt"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('p-hauptkontakt','p-company')" title="Neuen Kontakt anlegen">+</button>
-          </div>
+          <input id="p-hauptkontakt" list="p-hauptkontakt-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <datalist id="p-hauptkontakt-list"></datalist>
+          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
         <div class="form-group">
           <label>Verantwortlich</label>
@@ -2938,10 +2935,9 @@
         </div>
         <div class="form-group">
           <label>Hauptkontakt</label>
-          <div class="select-with-add">
-            <select id="ms-hauptkontakt"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('ms-hauptkontakt')" title="Neuen Kontakt anlegen">+</button>
-          </div>
+          <input id="ms-hauptkontakt" list="ms-hauptkontakt-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <datalist id="ms-hauptkontakt-list"></datalist>
+          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
         <div class="form-group">
           <label>Verantwortlicher</label>

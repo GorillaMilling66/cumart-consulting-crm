@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.10 (Kontakt-Combobox statt Select+Plus-Modal.
+   Bisher: Kontakt-Dropdown + Plus-Button → das Quick-Create-
+   Modal öffnete sich „hinter" dem aktiven Modal (z-index-Bug)
+   und unterbrach den Flow. Neu: Kontakt-Felder in Termin,
+   Aufgabe, Projekt und Mitgliedschaft sind <input list="…">
+   Combobox. User tippt → Datalist filtert vorhandene Kontakte
+   der gewählten Firma. Beim Speichern:
+   - Match in Liste → existierende ID
+   - Nicht-leer & nicht in Liste → neuer Kontakt mit Vor+Nach-
+     name-Split (erstes Wort = Vorname, Rest = Nachname,
+     Fallback „—")
+   - Leer → null
+   Plus-Buttons + Quick-Create-Kontakt-Modal-Aufrufe entfernt.
+   Kein extra Fenster mehr — einfach Namen tippen, Speichern.)
    Version 1.44.9 (Aufgaben-Layout-Anpassung:
    1) Heute-Tab im Hero-Modus jetzt 2-spaltig: Hero-Blöcke
       links, Aufgaben-Aside rechts (sticky). Damit muss man
@@ -1308,8 +1322,9 @@ function renderAppointmentPreview() {
   const typId = document.getElementById('t-typ').value;
   const statusVal = document.getElementById('t-status').value;
   const companyId = document.getElementById('t-company').value;
-  const contactSelect = document.getElementById('t-contact');
-  const contactName = contactSelect.value ? (contactSelect.options[contactSelect.selectedIndex]?.textContent || '') : '';
+  // t-contact ist seit v1.44.10 ein Combobox-<input>
+  const contactInput = document.getElementById('t-contact');
+  const contactName = (contactInput?.value || '').trim();
   const projectSelect = document.getElementById('t-project');
   const projectName = projectSelect.value ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || '') : '';
   const ortVal = document.getElementById('t-ort').value.trim();
@@ -1502,8 +1517,9 @@ function renderTaskPreview() {
   const beschreibung = document.getElementById('a-beschreibung').value.trim();
   const companyId = document.getElementById('a-company').value;
   const company = companiesCache.find(c => c.id === companyId);
-  const contactSelect = document.getElementById('a-contact');
-  const contactName = contactSelect.value ? (contactSelect.options[contactSelect.selectedIndex]?.textContent || '') : '';
+  // a-contact ist seit v1.44.10 ein Combobox-<input>
+  const contactInput = document.getElementById('a-contact');
+  const contactName = (contactInput?.value || '').trim();
   const projectSelect = document.getElementById('a-project');
   const projectName = projectSelect.value ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || '') : '';
 
@@ -1716,8 +1732,10 @@ function renderProjectPreview() {
   const enddatum   = document.getElementById('p-enddatum').value;
   const companySelect = document.getElementById('p-company');
   const companyName   = companySelect.value ? (companySelect.options[companySelect.selectedIndex]?.textContent || '') : '';
-  const kontaktSelect = document.getElementById('p-hauptkontakt');
-  const kontaktName   = kontaktSelect.value ? (kontaktSelect.options[kontaktSelect.selectedIndex]?.textContent || '') : '';
+  // p-hauptkontakt ist seit v1.44.10 ein Combobox-<input> — der Wert ist
+  // direkt der Anzeigename, kein Mapping über options nötig.
+  const kontaktInput = document.getElementById('p-hauptkontakt');
+  const kontaktName  = (kontaktInput?.value || '').trim();
   const verantwSelect = document.getElementById('p-verantwortlicher');
   const verantwName   = verantwSelect.value ? (verantwSelect.options[verantwSelect.selectedIndex]?.textContent || '') : '';
   const beschreibung  = document.getElementById('p-beschreibung').value.trim();
@@ -1748,7 +1766,7 @@ function renderProjectPreview() {
 
   const kvRows = [];
   if (companyName && companySelect.value) kvRows.push(['Firma', esc(companyName)]);
-  if (kontaktName && kontaktSelect.value) kvRows.push(['Kontakt', esc(kontaktName)]);
+  if (kontaktName) kvRows.push(['Kontakt', esc(kontaktName)]);
   if (verantwName && verantwSelect.value) kvRows.push(['Verantw.', esc(verantwName)]);
   const kvHtml = kvRows.length
     ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
@@ -1794,8 +1812,9 @@ function renderMembershipPreview() {
   const nummer  = document.getElementById('ms-nummer').value.trim();
   const preis   = Number(document.getElementById('ms-preis').value) || 0;
   const status  = document.getElementById('ms-status').value;
-  const kontaktSelect = document.getElementById('ms-hauptkontakt');
-  const kontaktName   = kontaktSelect.value ? (kontaktSelect.options[kontaktSelect.selectedIndex]?.textContent || '') : '';
+  // ms-hauptkontakt ist seit v1.44.10 ein Combobox-<input>
+  const kontaktInput = document.getElementById('ms-hauptkontakt');
+  const kontaktName  = (kontaktInput?.value || '').trim();
   const verantwSelect = document.getElementById('ms-verantwortlicher');
   const verantwName   = verantwSelect.value ? (verantwSelect.options[verantwSelect.selectedIndex]?.textContent || '') : '';
 
@@ -1824,7 +1843,7 @@ function renderMembershipPreview() {
 
   const kvRows = [];
   if (nummer) kvRows.push(['Nummer', esc(nummer)]);
-  if (kontaktName && kontaktSelect.value) kvRows.push(['Kontakt', esc(kontaktName)]);
+  if (kontaktName) kvRows.push(['Kontakt', esc(kontaktName)]);
   if (verantwName && verantwSelect.value) kvRows.push(['Verantw.', esc(verantwName)]);
   const kvHtml = kvRows.length
     ? `<div class="preview-kv">${kvRows.map(([l, v]) => `<div class="preview-kv-label">${l}</div><div class="preview-kv-value">${v}</div>`).join('')}</div>`
@@ -3485,18 +3504,9 @@ async function openMembershipModal(mode, membershipId = null, companyId = null) 
   programSelect.innerHTML = '<option value="">— Programm wählen —</option>'
     + programsCache.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
 
-  // Hauptkontakt-Dropdown: Kontakte der Firma laden
-  const hauptkontaktSelect = document.getElementById('ms-hauptkontakt');
-  hauptkontaktSelect.innerHTML = '<option value="">— Kein Hauptkontakt —</option>';
-  if (companyId) {
-    const { data: contacts } = await db.from('contacts')
-      .select('id, vorname, nachname').is('deleted_at', null)
-      .eq('company_id', companyId).order('nachname');
-    (contacts || []).forEach(c => {
-      const name = [c.vorname, c.nachname].filter(Boolean).join(' ') || '(ohne Name)';
-      hauptkontaktSelect.innerHTML += `<option value="${esc(c.id)}">${esc(name)}</option>`;
-    });
-  }
+  // Hauptkontakt-Combobox (v1.44.10) — Kontakte der Firma als Datalist,
+  // freier Texteingabe legt einen neuen Kontakt beim Speichern an.
+  await fillContactCombobox('ms-hauptkontakt', 'ms-hauptkontakt-list', companyId);
 
   // Verantwortlicher-Dropdown: alle aktiven User
   if (userProfilesCache.length === 0) {
@@ -3536,7 +3546,7 @@ async function openMembershipModal(mode, membershipId = null, companyId = null) 
     document.getElementById('ms-preis').value = data.preis ?? '';
     document.getElementById('ms-status').value = data.status || 'aktiv';
     document.getElementById('ms-notizen').value = data.notizen || '';
-    if (data.hauptkontakt_id) hauptkontaktSelect.value = data.hauptkontakt_id;
+    if (data.hauptkontakt_id) setContactComboboxValue('ms-hauptkontakt', 'ms-hauptkontakt-list', data.hauptkontakt_id);
     if (data.verantwortlicher_id) verantwSelect.value = data.verantwortlicher_id;
   }
 
@@ -3620,7 +3630,6 @@ async function saveMembership() {
   const end_datum    = document.getElementById('ms-end').value;
   const mitgliedsnummer = document.getElementById('ms-nummer').value.trim();
   const preisRaw     = document.getElementById('ms-preis').value;
-  const hauptkontakt_id = document.getElementById('ms-hauptkontakt').value || null;
   const verantwortlicher_id = document.getElementById('ms-verantwortlicher').value || null;
   const status       = document.getElementById('ms-status').value;
   const notizen      = document.getElementById('ms-notizen').value.trim();
@@ -3638,6 +3647,15 @@ async function saveMembership() {
   btn.textContent = editingMembershipId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // Hauptkontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
+    let hauptkontakt_id = null;
+    try {
+      hauptkontakt_id = await resolveContactComboboxValue('ms-hauptkontakt', 'ms-hauptkontakt-list', currentMembershipCompanyId);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingMembershipId ? 'Speichern' : 'Anlegen';
+      return;
+    }
+
     const payload = {
       company_id: currentMembershipCompanyId,
       program_id,
@@ -4860,7 +4878,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
           await rebuildProjectDropdownForAppointment(k.company_id);
           updateOrtHint();
         }
-        document.getElementById('t-contact').value = k.id;
+        setContactComboboxValue('t-contact', 't-contact-list', k.id);
       }
       appointmentModalPrefillContactId = null;
     }
@@ -4884,7 +4902,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
       companySelect.value = data.company_id;
       await rebuildContactDropdownForAppointment(data.company_id);
       await rebuildProjectDropdownForAppointment(data.company_id);
-      if (data.contact_id) document.getElementById('t-contact').value = data.contact_id;
+      if (data.contact_id) setContactComboboxValue('t-contact', 't-contact-list', data.contact_id);
       updateOrtHint();
     } else {
       await rebuildProjectDropdownForAppointment('');
@@ -4913,24 +4931,7 @@ function closeAppointmentModal() {
 }
 
 async function rebuildContactDropdownForAppointment(companyId) {
-  const contactSelect = document.getElementById('t-contact');
-  if (!companyId) {
-    contactSelect.innerHTML = '<option value="">— Erst Firma wählen —</option>';
-    contactSelect.disabled = true;
-    return;
-  }
-  contactSelect.disabled = false;
-  const { data, error } = await db.from('contacts')
-    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
-  if (error) { contactSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
-
-  const contacts = data || [];
-  if (contacts.length === 0) {
-    contactSelect.innerHTML = '<option value="">— Keine Kontakte bei dieser Firma —</option>';
-  } else {
-    contactSelect.innerHTML = '<option value="">— Kein Kontakt —</option>'
-      + contacts.map(k => `<option value="${esc(k.id)}">${esc([k.vorname, k.nachname].filter(Boolean).join(' '))}</option>`).join('');
-  }
+  await fillContactCombobox('t-contact', 't-contact-list', companyId);
 }
 
 function updateOrtHint() {
@@ -5137,7 +5138,6 @@ async function saveAppointment() {
   const typ_id       = document.getElementById('t-typ').value;
   const status       = document.getElementById('t-status').value;
   const company_id   = document.getElementById('t-company').value || null;
-  const contact_id   = document.getElementById('t-contact').value || null;
   const project_id   = document.getElementById('t-project')?.value || null;
   const ort          = document.getElementById('t-ort').value.trim();
   const notizen      = document.getElementById('t-notizen').value.trim();
@@ -5157,6 +5157,14 @@ async function saveAppointment() {
   btn.textContent = editingAppointmentId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // Kontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
+    let contact_id = null;
+    try {
+      contact_id = await resolveContactComboboxValue('t-contact', 't-contact-list', company_id);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingAppointmentId ? 'Speichern' : 'Anlegen';
+      return;
+    }
     const payload = {
       titel, datum,
       uhrzeit_von: uhrzeit_von || null,
@@ -5447,11 +5455,10 @@ async function openProjectModal(mode, projectId = null) {
   userSelect.innerHTML = '<option value="">— Kein Verantwortlicher —</option>'
     + userProfilesCache.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
 
-  const hauptkontaktSelect = document.getElementById('p-hauptkontakt');
-  hauptkontaktSelect.innerHTML = '<option value="">— Erst Firma wählen —</option>';
-  hauptkontaktSelect.disabled = true;
+  // Hauptkontakt-Combobox: initial leer + disabled bis Firma gewählt
+  await fillContactCombobox('p-hauptkontakt', 'p-hauptkontakt-list', '');
 
-  // Firma onchange → Hauptkontakt-Dropdown neu aufbauen
+  // Firma onchange → Hauptkontakt-Combobox neu befüllen
   companySelect.onchange = async () => {
     await rebuildHauptkontaktDropdown(companySelect.value);
   };
@@ -5489,7 +5496,7 @@ async function openProjectModal(mode, projectId = null) {
           companySelect.value = k.company_id;
           await rebuildHauptkontaktDropdown(k.company_id);
         }
-        hauptkontaktSelect.value = k.id;
+        setContactComboboxValue('p-hauptkontakt', 'p-hauptkontakt-list', k.id);
       }
       projectModalPrefillHauptkontaktId = null;
     }
@@ -5512,7 +5519,7 @@ async function openProjectModal(mode, projectId = null) {
     if (data.company_id) {
       companySelect.value = data.company_id;
       await rebuildHauptkontaktDropdown(data.company_id);
-      if (data.hauptkontakt_id) hauptkontaktSelect.value = data.hauptkontakt_id;
+      if (data.hauptkontakt_id) setContactComboboxValue('p-hauptkontakt', 'p-hauptkontakt-list', data.hauptkontakt_id);
     }
   }
 
@@ -5524,23 +5531,7 @@ async function openProjectModal(mode, projectId = null) {
 }
 
 async function rebuildHauptkontaktDropdown(companyId) {
-  const hauptkontaktSelect = document.getElementById('p-hauptkontakt');
-  if (!companyId) {
-    hauptkontaktSelect.innerHTML = '<option value="">— Erst Firma wählen —</option>';
-    hauptkontaktSelect.disabled = true;
-    return;
-  }
-  hauptkontaktSelect.disabled = false;
-  const { data, error } = await db.from('contacts')
-    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
-  if (error) { hauptkontaktSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
-  const contacts = data || [];
-  if (contacts.length === 0) {
-    hauptkontaktSelect.innerHTML = '<option value="">— Keine Kontakte bei dieser Firma —</option>';
-  } else {
-    hauptkontaktSelect.innerHTML = '<option value="">— Kein Hauptkontakt —</option>'
-      + contacts.map(k => `<option value="${esc(k.id)}">${esc([k.vorname, k.nachname].filter(Boolean).join(' '))}</option>`).join('');
-  }
+  await fillContactCombobox('p-hauptkontakt', 'p-hauptkontakt-list', companyId);
 }
 
 function closeProjectModal() {
@@ -5554,7 +5545,6 @@ async function saveProject() {
   const name              = document.getElementById('p-name').value.trim();
   const status            = document.getElementById('p-status').value;
   const company_id        = document.getElementById('p-company').value || null;
-  const hauptkontakt_id   = document.getElementById('p-hauptkontakt').value || null;
   const verantwortlicher_id = document.getElementById('p-verantwortlicher').value || null;
   const startdatum        = document.getElementById('p-startdatum').value || null;
   const enddatum          = document.getElementById('p-enddatum').value || null;
@@ -5574,9 +5564,6 @@ async function saveProject() {
   if (startdatum && enddatum && startdatum > enddatum) {
     showToast('Enddatum muss nach Startdatum liegen.', true); return;
   }
-  if (hauptkontakt_id && !company_id) {
-    showToast('Hauptkontakt ohne Firma ist nicht möglich.', true); return;
-  }
 
   const geschaetzter_umsatz = umsatzRaw === '' ? 0 : Number(umsatzRaw);
   if (Number.isNaN(geschaetzter_umsatz) || geschaetzter_umsatz < 0) {
@@ -5587,6 +5574,14 @@ async function saveProject() {
   btn.textContent = editingProjectId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // Hauptkontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
+    let hauptkontakt_id = null;
+    try {
+      hauptkontakt_id = await resolveContactComboboxValue('p-hauptkontakt', 'p-hauptkontakt-list', company_id);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingProjectId ? 'Speichern' : 'Anlegen';
+      return;
+    }
     const payload = {
       name, status,
       company_id, hauptkontakt_id, verantwortlicher_id,
@@ -10434,6 +10429,86 @@ async function saveQuickCreateCompany() {
   }
 }
 
+/* ───────────────────────────────────────────────
+   KONTAKT-COMBOBOX (v1.44.10)
+   Ersetzt das Kontakt-<select> + Plus-Button durch ein <input list="…"> mit
+   <datalist>. User kann tippen oder aus Liste wählen. Ergebnis:
+   - Match in Liste → existierende Kontakt-ID
+   - Nicht-leer & nicht in Liste → neuer Kontakt wird beim Speichern angelegt
+     (Vorname = erstes Wort, Nachname = Rest, Fallback „—")
+   - Leer → null
+   ─────────────────────────────────────────────── */
+
+async function fillContactCombobox(inputId, datalistId, companyId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input || !dl) return;
+  input.value = '';
+  input.dataset.resolvedId = '';
+  if (!companyId) {
+    dl.innerHTML = '';
+    input.placeholder = 'Erst Firma wählen …';
+    input.disabled = true;
+    return;
+  }
+  input.disabled = false;
+  input.placeholder = 'Kontakt wählen oder neuen Namen tippen …';
+  const { data, error } = await db.from('contacts')
+    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId)
+    .order('nachname').order('vorname');
+  if (error) { dl.innerHTML = ''; return; }
+  dl.innerHTML = (data || []).map(k => {
+    const name = [k.vorname, k.nachname].filter(Boolean).join(' ');
+    return `<option data-id="${esc(k.id)}" value="${esc(name)}"></option>`;
+  }).join('');
+}
+
+function setContactComboboxValue(inputId, datalistId, contactId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input) return;
+  if (!contactId) {
+    input.value = '';
+    input.dataset.resolvedId = '';
+    return;
+  }
+  const opt = dl ? Array.from(dl.options).find(o => o.dataset.id === contactId) : null;
+  if (opt) {
+    input.value = opt.value;
+    input.dataset.resolvedId = contactId;
+  }
+}
+
+async function resolveContactComboboxValue(inputId, datalistId, companyId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input) return null;
+  const value = (input.value || '').trim();
+  if (!value) return null;
+  // Match in Liste? — exakter Treffer
+  if (dl) {
+    const opt = Array.from(dl.options).find(o => o.value === value);
+    if (opt && opt.dataset.id) return opt.dataset.id;
+  }
+  // Nicht in Liste → neuer Kontakt
+  if (!companyId) {
+    showToast('Bitte zuerst eine Firma wählen, bevor ein neuer Kontakt angelegt wird.', true);
+    throw new Error('contact-without-company');
+  }
+  const parts = value.split(/\s+/);
+  const vorname = parts[0];
+  const nachname = parts.slice(1).join(' ') || '—';
+  const { data, error } = await db.from('contacts')
+    .insert({ vorname, nachname, company_id: companyId, erstellt_von: currentProfile?.id })
+    .select('id').single();
+  if (error) {
+    showToast('Fehler beim Anlegen des Kontakts: ' + error.message, true);
+    throw error;
+  }
+  showToast(`Kontakt „${value}" angelegt.`);
+  return data.id;
+}
+
 function openQuickCreateKontakt(targetSelectId, contextCompanySelectId) {
   _qcTargetSelectId = targetSelectId;
   _qcContextCompanySelectId = contextCompanySelectId || null;
@@ -11970,7 +12045,7 @@ async function openTaskModal(mode, taskId = null) {
           await rebuildContactDropdownForTask(k.company_id);
           await rebuildProjectDropdownForTask(k.company_id);
         }
-        document.getElementById('a-contact').value = k.id;
+        setContactComboboxValue('a-contact', 'a-contact-list', k.id);
       }
       taskModalPrefillContactId = null;
     }
@@ -11996,7 +12071,7 @@ async function openTaskModal(mode, taskId = null) {
       companySelect.value = data.company_id;
       await rebuildContactDropdownForTask(data.company_id);
       await rebuildProjectDropdownForTask(data.company_id);
-      if (data.contact_id) document.getElementById('a-contact').value = data.contact_id;
+      if (data.contact_id) setContactComboboxValue('a-contact', 'a-contact-list', data.contact_id);
     } else {
       await rebuildProjectDropdownForTask('');
     }
@@ -12035,17 +12110,7 @@ function closeTaskModal() {
 }
 
 async function rebuildContactDropdownForTask(companyId) {
-  const contactSelect = document.getElementById('a-contact');
-  if (!companyId) {
-    contactSelect.innerHTML = '<option value="">— Kein Kontakt —</option>';
-    return;
-  }
-  const { data, error } = await db.from('contacts')
-    .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
-  if (error) { contactSelect.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
-  const contacts = data || [];
-  contactSelect.innerHTML = '<option value="">— Kein Kontakt —</option>'
-    + contacts.map(k => `<option value="${esc(k.id)}">${esc([k.vorname, k.nachname].filter(Boolean).join(' '))}</option>`).join('');
+  await fillContactCombobox('a-contact', 'a-contact-list', companyId);
 }
 
 async function rebuildProjectDropdownForTask(companyId) {
@@ -12067,7 +12132,6 @@ async function saveTask() {
   const status       = document.getElementById('a-status').value;
   const assigned_to  = document.getElementById('a-assigned-to').value || null;
   const company_id   = document.getElementById('a-company').value || null;
-  const contact_id   = document.getElementById('a-contact').value || null;
   const project_id   = document.getElementById('a-project')?.value || null;
   const notizen      = document.getElementById('a-notizen').value.trim();
   const createAppt   = document.getElementById('a-create-appointment').checked;  // v1.40
@@ -12086,6 +12150,15 @@ async function saveTask() {
   btn.textContent = editingTaskId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // Kontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
+    let contact_id = null;
+    try {
+      contact_id = await resolveContactComboboxValue('a-contact', 'a-contact-list', company_id);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingTaskId ? 'Speichern' : 'Anlegen';
+      return;
+    }
+
     // erledigt_am mitschreiben/zurücknehmen abhängig vom Status
     let erledigt_am = null;
     if (status === 'erledigt') {

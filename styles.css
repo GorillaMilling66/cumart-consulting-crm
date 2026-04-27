@@ -944,6 +944,12 @@ body {
 .form-group select:disabled,
 .form-group textarea:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
 .form-group input[type="color"] { padding: 2px; height: 38px; cursor: pointer; }
+.field-hint {
+  display: block;
+  font-size: 11px; color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.35;
+}
 
 .modal-group-title {
   font-size: 11px;
