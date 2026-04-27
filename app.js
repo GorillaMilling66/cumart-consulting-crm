@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.3 (Polish & Bugs:
+   - Datenpflege-Tippfehler: „Firmaen ohne Adresse" → „Firmen
+     ohne Adresse" (Singular/Plural-Switch statt Suffix-Konkat).
+   - Routing-Alias: /#/mitgliedschafts-programme zeigt jetzt
+     ebenfalls die Programme-Seite (vorher 404).
+   - Aufgaben-Badge in der Sidebar: präziserer Tooltip
+     („X offen, davon Y überfällig") — dokumentiert die
+     Badge-Logik klar.)
    Version 1.45.2 (Monat-Tab Datendichte:
    - Erweiterte KPI-Reihe mit 4 Kacheln: Abgerechnet · Geplant ·
      Auslastung % · Pipeline. Pro Kachel 2 px linker Status-
@@ -2259,6 +2267,9 @@ function handleHashChange() {
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
   if (hash === '#/programme')  { showPage('programs'); return; }
+  // v1.45.3: Alias — die Sidebar trägt das Label „Mitgliedschafts-Programme",
+  // historisch wurde teils auch /#/mitgliedschafts-programme verlinkt.
+  if (hash === '#/mitgliedschafts-programme') { showPage('programs'); return; }
 
   // Unbekannte Route → 404
   const lbl = document.getElementById('page-404-hash');
@@ -12573,7 +12584,7 @@ function renderBriefingCards(scope, data, opts = {}) {
   if (data.incompleteStats && (data.incompleteStats.companies + data.incompleteStats.contacts) > 0) {
     const ic = data.incompleteStats;
     const parts = [];
-    if (ic.companies > 0) parts.push(`<strong>${ic.companies}</strong> Firma${ic.companies === 1 ? '' : 'en'} ohne Adresse oder Kontaktdaten`);
+    if (ic.companies > 0) parts.push(`<strong>${ic.companies}</strong> ${ic.companies === 1 ? 'Firma' : 'Firmen'} ohne Adresse oder Kontaktdaten`);
     if (ic.contacts  > 0) parts.push(`<strong>${ic.contacts}</strong> Kontakt${ic.contacts === 1 ? 'e' : 'e'} ohne Telefon, E-Mail oder Position`);
     const oldestSample = (ic.sampleCompanies?.[0] || ic.sampleContacts?.[0]);
     let actionBtn = '';
@@ -13509,7 +13520,13 @@ async function updateTaskBadge() {
   const ueberfaellig = (data || []).filter(t => t.faelligkeit && t.faelligkeit < todayISO).length;
 
   if (offen === 0) { badges.forEach(b => b.style.display = 'none'); return; }
-  const title = ueberfaellig > 0 ? `${offen} offen · ${ueberfaellig} überfällig` : `${offen} offen`;
+  // v1.45.3: präziser Tooltip — dokumentiert die Badge-Logik. Zahl im Badge =
+  // alle dem User zugewiesenen Aufgaben mit Status ≠ erledigt (überfällige
+  // zählen also mit). Tooltip splittet das auf, damit der Wert mit dem
+  // Heute-Header („heute fällig (X überfällig)") konsistent interpretierbar ist.
+  const title = ueberfaellig > 0
+    ? `${offen} ${offen === 1 ? 'Aufgabe' : 'Aufgaben'} offen, davon ${ueberfaellig} überfällig`
+    : `${offen} ${offen === 1 ? 'Aufgabe' : 'Aufgaben'} offen`;
   badges.forEach(badge => {
     badge.textContent = String(offen);
     badge.style.display = '';
