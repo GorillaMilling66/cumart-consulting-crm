@@ -137,6 +137,15 @@
     <div class="sidebar-user" id="sidebar-user"></div>
 
     <nav class="nav" id="nav-main">
+      <button class="nav-item" id="nav-heute"
+              onclick="navigateTo('heute')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        Dein Tag
+      </button>
+
       <button class="nav-item" id="nav-companies"
               onclick="navigateTo('companies')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -305,6 +314,26 @@
         <p style="color:var(--muted);font-size:14px">
           In Kürze findest du hier deine Arbeitsbereiche (Projekte, Einsätze).
         </p>
+      </div>
+    </div>
+
+    <!-- SEITE: DEIN TAG (BRIEFING-DASHBOARD, v1.42.0) -->
+    <div class="page" id="page-heute">
+      <div class="page-header">
+        <h1 class="page-title">
+          Dein Tag
+          <span class="page-title-sub" id="heute-date-sub" style="font-size:13px;color:var(--muted);font-weight:400;margin-left:8px"></span>
+        </h1>
+      </div>
+
+      <div class="detail-tabs" id="heute-tabs">
+        <button class="detail-tab active" data-tab="heute" onclick="switchBriefingTab('heute')">Heute</button>
+        <button class="detail-tab" data-tab="woche" onclick="switchBriefingTab('woche')">Diese Woche</button>
+        <button class="detail-tab" data-tab="monat" onclick="switchBriefingTab('monat')">Dieser Monat</button>
+      </div>
+
+      <div id="briefing-container">
+        <div style="padding:40px 0;text-align:center;color:var(--muted);font-size:13px">Lade Briefing …</div>
       </div>
     </div>
 

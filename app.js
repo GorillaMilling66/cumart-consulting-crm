@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.42.0 (Dein Tag — Briefing-Dashboard als Login-
+   Landing. Drei Tabs Heute/Woche/Monat im narrativen Stil:
+   Narrativ-Leiste mit regelbasiertem Slot-Filling, KPI-Mini-
+   Leiste (Termine/Einsätze/Aufgaben/Überfällig bzw. Umsatz
+   beim Monat), Briefing-Cards in vier Tönen (Hot/Opp/Gap/Good)
+   sortiert nach Dringlichkeit, Streak-Bar und Vorschau der
+   nächsten Tage. Login-Flow geht jetzt auf #/heute. Sidebar-
+   Eintrag „Dein Tag" oben über Firmen.
+   Phase 1 ohne AI: Briefings sind regelbasiert mit
+   Lückenfindern (Tage seit letztem Termin, alte Aufgaben).
+   Phase 2 später: Lead/Angebot-Pipeline, Ziele-Konfiguration,
+   AI-generierte Narrative.)
    Version 1.41.0 (Programm-Modal Redesign — letzter Modal im
    Preview-Stil. 3-Spalten-Layout: Preview links (Status, Name,
    Preis prominent, Laufzeit, Präfix, Bonis-Anzahl, Beschreibung),
@@ -1847,6 +1859,8 @@ function navigateTo(page, param) {
     hash = `#/termine?firma=${param.firma}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
     hash = `#/termine?projekt=${param.projekt}`;
+  } else if (page === 'heute') {
+    hash = '#/heute';
   } else if (page === 'companies') {
     hash = '#/firmen';
   } else if (page === 'contacts') {
@@ -1962,7 +1976,12 @@ function handleHashChange() {
     return;
   }
 
-  if (hash === '#/firmen' || hash === '' || hash === '#') { showPage('companies'); return; }
+  if (hash === '#/heute' || hash === '' || hash === '#') {
+    showPage('heute');
+    if (typeof loadBriefing === 'function') loadBriefing(_currentBriefingTab || 'heute');
+    return;
+  }
+  if (hash === '#/firmen') { showPage('companies'); return; }
   if (hash === '#/kontakte')   { showPage('contacts'); return; }
   if (hash === '#/projekte')   { showPage('projects'); return; }
   if (hash === '#/einsaetze')  { showPage('deployments'); return; }
@@ -2075,7 +2094,7 @@ async function onLogin(user) {
   if (window.location.hash && window.location.hash !== '#') {
     handleHashChange();
   } else {
-    navigateTo('companies');
+    navigateTo('heute');  // v1.42: Landing auf Briefing-Dashboard
   }
 }
 
@@ -2208,7 +2227,8 @@ async function doMustChangePassword() {
     if (isAdmin()) document.getElementById('nav-settings-group').classList.add('open');
     await loadRoles();
     updateTaskBadge();
-    navigateTo('companies');
+    initCalendarBar();
+    navigateTo('heute');  // v1.42: Briefing-Dashboard nach erstem Passwort-Wechsel
 
     showToast('Passwort erfolgreich geändert.');
   } catch (e) {
@@ -10226,6 +10246,516 @@ async function refreshCalendarBar() {
   const bar = document.getElementById('calendar-bar');
   if (!bar || bar.style.display === 'none') return;
   await renderCalendarBar();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEIN TAG — BRIEFING-DASHBOARD (v1.42.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Login-Landing-Page mit drei Tabs (Heute/Woche/Monat). Jeder Tab
+// erzeugt aus den realen Daten ein narratives Briefing mit:
+// - Narrativ-Leiste (regelbasierte Template-Sätze)
+// - KPI-Mini-Leiste (4 Werte)
+// - Briefing-Cards (hot/opp/gap/good — sortiert nach Dringlichkeit)
+// - Streak-Bar (Aufgaben-Streak)
+// - Vorschau (nächste 3 Werktage / Wochen)
+
+let _currentBriefingTab = 'heute';
+
+const WEEKDAYS_DE = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+const MONTHS_DE   = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+
+/** Berechnet den Datums-Bereich für „Heute" / „Diese Woche" / „Dieser Monat". */
+function briefingRangeForScope(scope) {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const todayISO = toISODate(now);
+  if (scope === 'heute') {
+    return { startISO: todayISO, endISO: todayISO, label: 'heute' };
+  }
+  if (scope === 'woche') {
+    const dow = now.getDay(); // 0=So..6=Sa
+    const monOffset = dow === 0 ? -6 : 1 - dow;
+    const monday = new Date(now); monday.setDate(now.getDate() + monOffset);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    return { startISO: toISODate(monday), endISO: toISODate(sunday), label: 'diese Woche' };
+  }
+  // Monat
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { startISO: toISODate(first), endISO: toISODate(last), label: 'diesen Monat' };
+}
+
+/** Lädt die Datenbasis für ein Briefing parallel. */
+async function loadBriefingData(userId, scope) {
+  const range = briefingRangeForScope(scope);
+  const todayISO = toISODate(new Date());
+
+  // Sehr alter Termin als Heuristik für „X Tage kein neuer Termin" — wir laden den
+  // jüngsten von uns erstellten Termin und rechnen die Tage seit dann.
+  const [
+    apptInRange,
+    depInRange,
+    tasksInRange,
+    overdueTasks,
+    oldOpenTasks,
+    lastCreatedAppt,
+    weekDoneAppts,    // für Good-Karten: durchgeführte Termine der letzten 7 Tage
+    weekDoneDeps      // dito Einsätze
+  ] = await Promise.all([
+    db.from('appointments')
+      .select('id, titel, datum, uhrzeit_von, uhrzeit_bis, status, ort, company:companies(id, name), contact:contacts(id, vorname, nachname), typ:lookup_values!appointments_typ_id_fkey(wert, farbe), deployment_id')
+      .is('deleted_at', null).eq('erstellt_von', userId)
+      .gte('datum', range.startISO).lte('datum', range.endISO)
+      .order('datum', { ascending: true }).order('uhrzeit_von', { ascending: true, nullsFirst: false }),
+    db.from('deployment_technicians')
+      .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name))')
+      .eq('user_id', userId),
+    db.from('tasks')
+      .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
+      .is('deleted_at', null).eq('assigned_to', userId)
+      .gte('faelligkeit', range.startISO).lte('faelligkeit', range.endISO)
+      .neq('status', 'erledigt'),
+    db.from('tasks')
+      .select('id, titel, faelligkeit, status, company:companies(id, name)')
+      .is('deleted_at', null).eq('assigned_to', userId)
+      .lt('faelligkeit', todayISO).neq('status', 'erledigt')
+      .order('faelligkeit', { ascending: true }),
+    db.from('tasks')
+      .select('id, titel, created_at, faelligkeit')
+      .is('deleted_at', null).eq('assigned_to', userId)
+      .neq('status', 'erledigt')
+      .lt('created_at', new Date(Date.now() - 14 * 86400000).toISOString()),
+    db.from('appointments')
+      .select('id, datum, created_at').is('deleted_at', null).eq('erstellt_von', userId)
+      .order('created_at', { ascending: false }).limit(1),
+    db.from('appointments')
+      .select('id, datum').is('deleted_at', null).eq('erstellt_von', userId)
+      .eq('status', 'durchgefuehrt')
+      .gte('datum', toISODate(new Date(Date.now() - 7 * 86400000)))
+      .lte('datum', todayISO),
+    db.from('deployment_technicians')
+      .select('deployment:deployments!inner(id, datum_von, status, deleted_at)')
+      .eq('user_id', userId)
+  ]);
+
+  // Einsätze filtern auf Range + nicht gelöscht
+  const allDeps = (depInRange.data || []).map(r => r.deployment).filter(d => d && !d.deleted_at);
+  const depsInRangeFiltered = allDeps.filter(d => {
+    if (!d.datum_von) return false;
+    const von = d.datum_von;
+    const bis = d.datum_bis || von;
+    return von <= range.endISO && bis >= range.startISO;
+  });
+  const depsThisWeekDone = (weekDoneDeps.data || [])
+    .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von)
+    .filter(d => d.datum_von >= toISODate(new Date(Date.now() - 7 * 86400000)) && d.datum_von <= todayISO)
+    .filter(d => d.status === 'Durchgeführt' || d.status === 'Abgerechnet');
+
+  return {
+    range,
+    appointments: apptInRange.data || [],
+    deployments:  depsInRangeFiltered,
+    tasks:        tasksInRange.data || [],
+    overdueTasks: overdueTasks.data || [],
+    oldOpenTasks: oldOpenTasks.data || [],
+    lastCreatedAppt: (lastCreatedAppt.data || [])[0] || null,
+    weekDoneAppts: weekDoneAppts.data || [],
+    weekDoneDeps:  depsThisWeekDone
+  };
+}
+
+/** Master: lädt Daten + rendert Briefing für aktuellen Tab. */
+async function loadBriefing(scope) {
+  const userId = currentProfile?.id;
+  if (!userId) return;
+  _currentBriefingTab = scope;
+
+  const container = document.getElementById('briefing-container');
+  if (!container) return;
+  container.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--muted);font-size:13px">Lade Briefing …</div>`;
+
+  // Date-Sub im Page-Header setzen
+  const today = new Date();
+  const dateSub = document.getElementById('heute-date-sub');
+  if (dateSub) {
+    dateSub.textContent = `${WEEKDAYS_DE[today.getDay()]}, ${today.getDate()}. ${MONTHS_DE[today.getMonth()]} ${today.getFullYear()}`;
+  }
+
+  try {
+    const data = await loadBriefingData(userId, scope);
+    container.innerHTML = renderBriefing(scope, data);
+  } catch (e) {
+    container.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--danger);font-size:13px">Fehler: ${esc(e.message)}</div>`;
+  }
+}
+
+function switchBriefingTab(scope) {
+  document.querySelectorAll('#heute-tabs .detail-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === scope);
+  });
+  loadBriefing(scope);
+}
+
+/** Baut das komplette Briefing-HTML aus Daten + Scope. */
+function renderBriefing(scope, data) {
+  const initials = ini(currentProfile?.name || currentUser?.email || '?');
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 11) return 'Guten Morgen';
+    if (h < 18) return 'Hallo';
+    return 'Guten Abend';
+  })();
+  const firstName = (currentProfile?.name || '').split(' ')[0] || '';
+
+  return `
+    ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
+    ${renderBriefingKpis(scope, data)}
+    <div class="briefing-section-head">
+      <div class="briefing-section-title">Briefing · sortiert nach Dringlichkeit</div>
+      <div class="briefing-section-meta">${esc(data.range.label)}</div>
+    </div>
+    ${renderBriefingCards(scope, data)}
+    ${renderBriefingStreak(scope, data)}
+    ${renderBriefingPreview(scope, data)}
+  `;
+}
+
+// ── NARRATIV-LEISTE (regelbasiert mit Slot-Filling) ──
+function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
+  const parts = [];
+  const todayISO = toISODate(new Date());
+
+  if (scope === 'heute') {
+    // Vor-Ort-Tag erkennen
+    const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
+    const todayAppts = data.appointments.filter(a => a.datum === todayISO);
+    if (todayDeps.length > 0) {
+      const firma = todayDeps[0].company?.name || 'einem Kunden';
+      parts.push(`Vor-Ort-Tag bei <strong>${esc(firma)}</strong>`);
+    } else if (todayAppts.length > 0) {
+      parts.push(`<strong>${todayAppts.length}</strong> Termin${todayAppts.length === 1 ? '' : 'e'} heute`);
+    } else {
+      parts.push(`Heute keine festen Termine — guter Slot für Akquise oder Aufholarbeit`);
+    }
+    if (data.overdueTasks.length > 0) {
+      parts.push(`dazu <span class="accent-hot">${data.overdueTasks.length} überfällige Aufgabe${data.overdueTasks.length === 1 ? '' : 'n'}</span>`);
+    }
+    if (data.oldOpenTasks.length >= 3) {
+      parts.push(`und <span class="accent-warn">${data.oldOpenTasks.length} alte Tasks</span>, die schon &gt; 14 Tage offen sind`);
+    }
+  } else if (scope === 'woche') {
+    parts.push(`Diese Woche: <strong>${data.appointments.length}</strong> Termine, <strong>${data.deployments.length}</strong> Einsätze`);
+    if (data.overdueTasks.length > 0) {
+      parts.push(`<span class="accent-hot">${data.overdueTasks.length} überfällig</span>`);
+    }
+    if (data.tasks.length > 0) {
+      parts.push(`<strong>${data.tasks.length}</strong> Aufgabe${data.tasks.length === 1 ? '' : 'n'} fällig`);
+    }
+  } else {
+    // Monat
+    const umsatzMonat = data.deployments
+      .filter(d => d.status === 'Durchgeführt' || d.status === 'Abgerechnet')
+      .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+    parts.push(`Diesen Monat: <strong>${data.appointments.length}</strong> Termine, <strong>${data.deployments.length}</strong> Einsätze`);
+    if (umsatzMonat > 0) {
+      parts.push(`<span class="accent-good">${esc(formatPreis(umsatzMonat))}</span> aus durchgeführten/abgerechneten Einsätzen`);
+    }
+    if (data.overdueTasks.length > 0) {
+      parts.push(`<span class="accent-hot">${data.overdueTasks.length} überfällige Aufgabe${data.overdueTasks.length === 1 ? '' : 'n'}</span>`);
+    }
+  }
+
+  const text = parts.join(', ') + '.';
+  return `
+    <div class="briefing-narrative">
+      <div class="briefing-narrative-avatar">${esc(initials)}</div>
+      <div class="briefing-narrative-body">
+        <div class="briefing-narrative-greeting">${esc(greeting)}${firstName ? ', ' + esc(firstName) : ''}</div>
+        <div class="briefing-narrative-text">${text}</div>
+      </div>
+    </div>`;
+}
+
+// ── KPI-LEISTE ──
+function renderBriefingKpis(scope, data) {
+  const todayISO = toISODate(new Date());
+  // Anzahl-Werte je nach Scope
+  let label1 = 'Termine', val1 = data.appointments.length;
+  let label2 = 'Einsätze', val2 = data.deployments.length;
+  let label3 = 'Aufgaben', val3 = data.tasks.length;
+  let label4 = 'Überfällig', val4 = data.overdueTasks.length;
+  if (scope === 'monat') {
+    const umsatz = data.deployments
+      .filter(d => d.status === 'Durchgeführt' || d.status === 'Abgerechnet')
+      .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+    label4 = 'Umsatz';
+    val4 = formatPreis(umsatz);
+  }
+
+  const tasksClass = val3 > 0 ? 'is-warn' : '';
+  const overdueClass = scope !== 'monat' && val4 > 0 ? 'is-danger' : '';
+  return `
+    <div class="briefing-kpis">
+      <div class="briefing-kpi">
+        <div class="briefing-kpi-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        </div>
+        <div class="briefing-kpi-body">
+          <div class="briefing-kpi-label">${esc(label1)}</div>
+          <div class="briefing-kpi-value">${val1}</div>
+        </div>
+      </div>
+      <div class="briefing-kpi">
+        <div class="briefing-kpi-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9 6 9-6M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7M3 7l2-2h14l2 2"/></svg>
+        </div>
+        <div class="briefing-kpi-body">
+          <div class="briefing-kpi-label">${esc(label2)}</div>
+          <div class="briefing-kpi-value">${val2}</div>
+        </div>
+      </div>
+      <div class="briefing-kpi ${tasksClass}">
+        <div class="briefing-kpi-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <div class="briefing-kpi-body">
+          <div class="briefing-kpi-label">${esc(label3)}</div>
+          <div class="briefing-kpi-value">${val3}</div>
+        </div>
+      </div>
+      <div class="briefing-kpi ${overdueClass}">
+        <div class="briefing-kpi-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        </div>
+        <div class="briefing-kpi-body">
+          <div class="briefing-kpi-label">${esc(label4)}</div>
+          <div class="briefing-kpi-value">${esc(String(val4))}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── BRIEFING-CARDS (Hot/Opp/Gap/Good — regelbasierte Erzeugung) ──
+function renderBriefingCards(scope, data) {
+  const cards = [];
+  const todayISO = toISODate(new Date());
+
+  // ── HOT — überfällige Aufgaben ──
+  if (data.overdueTasks.length > 0) {
+    const oldest = data.overdueTasks[0];
+    const daysOverdue = Math.round((new Date(todayISO) - new Date(oldest.faelligkeit)) / 86400000);
+    const restCount = data.overdueTasks.length - 1;
+    const firmaText = oldest.company?.name ? ` bei <strong>${esc(oldest.company.name)}</strong>` : '';
+    const restText = restCount > 0 ? `<br><em>+ ${restCount} weitere überfällige Aufgabe${restCount === 1 ? '' : 'n'} </em>` : '';
+    cards.push(`
+      <div class="briefing-card tone-hot">
+        <div class="briefing-card-stripe"></div>
+        <div class="briefing-card-head">
+          <span class="briefing-kicker">Dringend</span>
+          <span class="briefing-card-since">Seit ${daysOverdue} Tag${daysOverdue === 1 ? '' : 'en'} überfällig</span>
+        </div>
+        <div class="briefing-card-headline">${esc(oldest.titel || '—')}${firmaText} wartet auf dich.</div>
+        <div class="briefing-card-body">
+          Die Aufgabe sollte am <strong>${esc(formatDateDE(oldest.faelligkeit))}</strong> erledigt sein.${restText}
+        </div>
+        <div class="briefing-actions">
+          <button class="briefing-btn is-primary" onclick="openTaskModal('edit','${esc(oldest.id)}')">Aufgabe öffnen</button>
+          <button class="briefing-btn" onclick="navigateTo('tasks',{ scope:'mine_open' })">Alle überfälligen ansehen</button>
+        </div>
+      </div>`);
+  }
+
+  // ── OPP — Heute Vor-Ort + Termine ohne Folgeschritt ──
+  if (scope === 'heute') {
+    const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
+    if (todayDeps.length > 0) {
+      const dep = todayDeps[0];
+      const wert = (Number(dep.menge) || 0) * (Number(dep.einzelpreis) || 0);
+      cards.push(`
+        <div class="briefing-card tone-opp">
+          <div class="briefing-card-stripe"></div>
+          <div class="briefing-card-head">
+            <span class="briefing-kicker">Chance</span>
+            <span class="briefing-card-since">Heute vor Ort</span>
+          </div>
+          <div class="briefing-card-headline">Vor-Ort-Tag bei ${esc(dep.company?.name || '—')} — nutze den Tag.</div>
+          <div class="briefing-card-body">
+            ${esc(dep.service?.name || dep.titel || 'Einsatz')}${wert > 0 ? `, Tagessatz <strong>${esc(formatPreis(wert))}</strong>` : ''}.
+            ${dep.ort ? `Standort: ${esc(dep.ort)}.` : ''}
+          </div>
+          <div class="briefing-actions">
+            <button class="briefing-btn is-primary" onclick="openDeploymentModal('edit','${esc(dep.id)}')">Einsatz öffnen</button>
+          </div>
+        </div>`);
+    }
+  }
+  // Termine ohne gekoppelten Einsatz UND ohne Folgetermin → Opportunity-Hinweis (vereinfacht)
+  if (scope !== 'heute') {
+    const wertvolleTermine = data.appointments.filter(a => a.status === 'durchgefuehrt' && !a.deployment_id);
+    if (wertvolleTermine.length > 0) {
+      const t = wertvolleTermine[0];
+      cards.push(`
+        <div class="briefing-card tone-opp">
+          <div class="briefing-card-stripe"></div>
+          <div class="briefing-card-head">
+            <span class="briefing-kicker">Chance</span>
+            <span class="briefing-card-since">${esc(formatDateDE(t.datum))}</span>
+          </div>
+          <div class="briefing-card-headline">${esc(t.titel || 'Termin')} ohne Folgeschritt.</div>
+          <div class="briefing-card-body">
+            Termin durchgeführt${t.company?.name ? ` bei <strong>${esc(t.company.name)}</strong>` : ''}, aber bisher kein Einsatz oder Folgetermin angelegt.
+            ${wertvolleTermine.length > 1 ? `<em>+ ${wertvolleTermine.length - 1} weitere ohne Folgeschritt.</em>` : ''}
+          </div>
+          <div class="briefing-actions">
+            <button class="briefing-btn is-primary" onclick="openAppointmentModal('edit','${esc(t.id)}')">Termin öffnen</button>
+          </div>
+        </div>`);
+    }
+  }
+
+  // ── GAP — Lückenfinder ──
+  // Tage seit letztem angelegten Termin
+  if (data.lastCreatedAppt) {
+    const daysSince = Math.round((new Date(todayISO) - new Date(data.lastCreatedAppt.created_at.substring(0,10))) / 86400000);
+    if (daysSince >= 5) {
+      cards.push(`
+        <div class="briefing-card tone-gap">
+          <div class="briefing-card-stripe"></div>
+          <div class="briefing-card-head">
+            <span class="briefing-kicker">Lücke</span>
+            <span class="briefing-card-since">${daysSince} Tage</span>
+          </div>
+          <div class="briefing-card-headline">${daysSince} Tage kein neuer Termin angelegt.</div>
+          <div class="briefing-card-body">
+            Die Akquise-Pipeline läuft langsamer als üblich. Letzter angelegter Termin: <strong>${esc(formatDateDE(data.lastCreatedAppt.datum || data.lastCreatedAppt.created_at.substring(0,10)))}</strong>.
+          </div>
+          <div class="briefing-actions">
+            <button class="briefing-btn is-primary" onclick="openAppointmentModal('new')">Termin anlegen</button>
+          </div>
+        </div>`);
+    }
+  }
+  // Alte offene Aufgaben (>14 Tage)
+  if (data.oldOpenTasks.length >= 3) {
+    cards.push(`
+      <div class="briefing-card tone-gap">
+        <div class="briefing-card-stripe"></div>
+        <div class="briefing-card-head">
+          <span class="briefing-kicker">Lücke</span>
+          <span class="briefing-card-since">Älter als 14 Tage</span>
+        </div>
+        <div class="briefing-card-headline">${data.oldOpenTasks.length} Aufgaben hängen länger als 2 Wochen.</div>
+        <div class="briefing-card-body">
+          Aufgaben, die so lange offen sind, werden meist nicht mehr erledigt. Entscheide: erledigen, neu planen, oder löschen.
+        </div>
+        <div class="briefing-actions">
+          <button class="briefing-btn is-primary" onclick="navigateTo('tasks',{ scope:'mine_open' })">Aufgaben durchgehen</button>
+        </div>
+      </div>`);
+  }
+
+  // ── GOOD — was gut läuft (compact) ──
+  const goodParts = [];
+  if (data.weekDoneAppts.length > 0) {
+    goodParts.push(`<strong>${data.weekDoneAppts.length}</strong> Termine durchgeführt diese Woche`);
+  }
+  if (data.weekDoneDeps.length > 0) {
+    goodParts.push(`<strong>${data.weekDoneDeps.length}</strong> Einsätze`);
+  }
+  if (scope !== 'heute' && data.tasks.length === 0 && data.overdueTasks.length === 0) {
+    goodParts.push(`keine offenen Aufgaben in diesem Zeitraum`);
+  }
+  if (goodParts.length > 0) {
+    cards.push(`
+      <div class="briefing-card tone-good is-compact">
+        <div class="briefing-card-stripe"></div>
+        <div class="briefing-card-body">
+          <strong>Was gut läuft:</strong> ${goodParts.join(' · ')}.
+        </div>
+      </div>`);
+  }
+
+  if (cards.length === 0) {
+    return `
+      <div class="briefing-card tone-good is-compact">
+        <div class="briefing-card-stripe"></div>
+        <div class="briefing-card-body">
+          <strong>Alles im Griff.</strong> Keine dringenden Punkte, keine kritischen Lücken — der Tag ist deins.
+        </div>
+      </div>`;
+  }
+  return cards.join('');
+}
+
+// ── STREAK-BAR (Aufgaben-Erledigungs-Streak) ──
+function renderBriefingStreak(scope, data) {
+  // Heuristik: Wenn keine überfälligen Aufgaben offen → Streak aktiv
+  if (data.overdueTasks.length > 0) return '';
+  const totalDone = data.weekDoneAppts.length + data.weekDoneDeps.length;
+  if (totalDone === 0) return '';
+  return `
+    <div class="briefing-streak">
+      <div class="briefing-streak-dot"></div>
+      <div>
+        <strong>Keine überfälligen Aufgaben.</strong> ${totalDone} Aktivität${totalDone === 1 ? '' : 'en'} in der Woche durchgeführt — sauberer Stand.
+      </div>
+    </div>`;
+}
+
+// ── VORSCHAU (nächste 3 Werktage / Wochen) ──
+async function renderBriefingPreviewAsync(scope, userId) {
+  // Lädt für Heute/Woche die nächsten 3 Werktage; für Monat die nächsten 4 Wochen.
+  // Wird derzeit synchron via separater Logik in renderBriefingPreview aufgerufen — Stub.
+}
+
+function renderBriefingPreview(scope, data) {
+  // Pragmatisch: für Heute/Woche zeigen wir die nächsten 3 Tage (außer heute) aus den
+  // bereits geladenen Daten; für Monat eine Vier-Wochen-Mini-Übersicht.
+  const todayISO = toISODate(new Date());
+  const upcoming = data.appointments
+    .filter(a => a.datum > todayISO)
+    .reduce((acc, a) => {
+      acc[a.datum] = acc[a.datum] || { termine: 0, einsaetze: 0 };
+      acc[a.datum].termine++;
+      return acc;
+    }, {});
+  data.deployments.forEach(d => {
+    if (d.datum_von > todayISO) {
+      upcoming[d.datum_von] = upcoming[d.datum_von] || { termine: 0, einsaetze: 0 };
+      upcoming[d.datum_von].einsaetze++;
+    }
+  });
+  const dates = Object.keys(upcoming).sort().slice(0, 5);
+  if (dates.length === 0) {
+    return `
+      <div class="briefing-preview">
+        <div class="briefing-preview-title">Vorschau · die nächsten Tage</div>
+        <div style="font-size:13px;color:var(--muted);padding:8px 0">Keine weiteren Termine oder Einsätze in diesem Zeitraum.</div>
+      </div>`;
+  }
+  const rowsHtml = dates.map(iso => {
+    const dt = new Date(iso);
+    const day = WEEKDAYS_DE[dt.getDay()];
+    const sub = `${dt.getDate()}. ${MONTHS_DE[dt.getMonth()]}`;
+    const u = upcoming[iso];
+    const stats = [
+      u.termine > 0 ? `${u.termine} Termin${u.termine === 1 ? '' : 'e'}` : null,
+      u.einsaetze > 0 ? `${u.einsaetze} Einsatz${u.einsaetze === 1 ? '' : 'e'}` : null
+    ].filter(Boolean).join(' · ') || '—';
+    return `
+      <div class="briefing-preview-row">
+        <div>
+          <div class="briefing-preview-day">${esc(day)}</div>
+          <div class="briefing-preview-day-sub">${esc(sub)}</div>
+        </div>
+        <div class="briefing-preview-stats">${esc(stats)}</div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="briefing-preview">
+      <div class="briefing-preview-title">Vorschau · ${dates.length} kommende Tage</div>
+      ${rowsHtml}
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
