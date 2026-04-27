@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.5 (Einsatz-Hero kennt jetzt beide Status-
+   Übergänge: Geplant → „Als durchgeführt markieren",
+   Durchgeführt → „Als abgerechnet markieren". Bei Abgerechnet
+   kein Schnellweg mehr (Korrektur muss bewusst über
+   Vollbearbeitung). Beide Helfer triggern auch
+   checkAndUpdateProjectStatus, falls der Einsatz zu einem
+   Projekt gehört, damit der Auto-Projektstatus synchron
+   bleibt.)
    Version 1.44.4 (Heute-Page Aufräumarbeit:
    1) KPI-Bar wandert nach oben rechts neben die Tabs „Heute /
       Diese Woche / Dieser Monat" — Text-only, keine Icons,
@@ -10810,10 +10818,14 @@ function renderBriefingHeroDeployment(dep, allTodayDeps, data) {
     ? `<div class="briefing-hero-rest">+ ${allTodayDeps.length - 1} weitere${allTodayDeps.length - 1 === 1 ? 'r' : ''} Einsatz heute</div>`
     : '';
 
-  // Status-Toggle-Button: bietet je nach Status den nächsten logischen Schritt an
+  // Status-Toggle-Button: bietet je nach Status den nächsten logischen Schritt an.
+  // Geplant → Durchgeführt, Durchgeführt → Abgerechnet. Bei Abgerechnet kein
+  // Schnellweg mehr (Korrektur muss bewusst über Vollbearbeitung laufen).
   let toggleBtn = '';
-  if (status !== 'Durchgeführt' && status !== 'Abgerechnet') {
+  if (status === 'Geplant' || (status !== 'Durchgeführt' && status !== 'Abgerechnet')) {
     toggleBtn = `<button class="briefing-btn" onclick="markDeploymentDone('${esc(dep.id)}')">Als durchgeführt markieren</button>`;
+  } else if (status === 'Durchgeführt') {
+    toggleBtn = `<button class="briefing-btn" onclick="markDeploymentBilled('${esc(dep.id)}')">Als abgerechnet markieren</button>`;
   }
 
   return `
@@ -10854,13 +10866,42 @@ function renderBriefingHeroDeployment(dep, allTodayDeps, data) {
     </div>`;
 }
 
-/** Hilfsaktion für den Hero: Status auf „Durchgeführt" setzen ohne Modal-Umweg. */
+/** Hilfsaktion für den Hero: Status auf „Durchgeführt" setzen ohne Modal-Umweg.
+ *  Triggert auch checkAndUpdateProjectStatus, falls der Einsatz zu einem
+ *  Projekt gehört — sonst läuft der Auto-Status nicht synchron. */
 async function markDeploymentDone(id) {
   if (!confirm('Einsatz als durchgeführt markieren?')) return;
   try {
+    const { data: dep, error: selErr } = await db.from('deployments')
+      .select('id, project_id, status').eq('id', id).single();
+    if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
+    if (dep.status === 'Durchgeführt' || dep.status === 'Abgerechnet') {
+      showToast(`Einsatz ist bereits „${dep.status}".`, true); return;
+    }
     const { error } = await db.from('deployments').update({ status: 'Durchgeführt' }).eq('id', id);
     if (error) throw error;
-    showToast('Einsatz als durchgeführt markiert.');
+    showToast('Einsatz als „Durchgeführt" markiert.');
+    if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
+    if (typeof loadBriefing === 'function' && _currentBriefingTab) loadBriefing(_currentBriefingTab);
+  } catch (e) {
+    showToast('Fehler: ' + e.message, true);
+  }
+}
+
+/** Hilfsaktion für den Hero: Status von „Durchgeführt" auf „Abgerechnet" setzen. */
+async function markDeploymentBilled(id) {
+  if (!confirm('Einsatz als abgerechnet markieren?')) return;
+  try {
+    const { data: dep, error: selErr } = await db.from('deployments')
+      .select('id, project_id, status').eq('id', id).single();
+    if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
+    if (dep.status !== 'Durchgeführt') {
+      showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
+    }
+    const { error } = await db.from('deployments').update({ status: 'Abgerechnet' }).eq('id', id);
+    if (error) throw error;
+    showToast('Einsatz als „Abgerechnet" markiert.');
+    if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
     if (typeof loadBriefing === 'function' && _currentBriefingTab) loadBriefing(_currentBriefingTab);
   } catch (e) {
     showToast('Fehler: ' + e.message, true);
