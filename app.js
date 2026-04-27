@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.14 (Aufgaben-Aside breiter und lesbarer:
+   - Aside-Spalte 320 → 400 px (Breakpoints angepasst:
+     ab 1200 px schrumpft sie auf 340 px, ab 1000 px wird das
+     Layout vertikal gestackt).
+   - Task-Titel umbricht jetzt auf bis zu 2 Zeilen statt
+     abzuschneiden — komplette Aufgaben-Texte sichtbar.
+   - Pro Aufgabe größeres Padding + 13 px Schrift statt 12 px.
+   - Pro Sektion bis zu 8 Aufgaben statt 5 (mehr Inhalt im
+     Blickfeld); „weitere ansehen"-Link bleibt für Rest.)
    Version 1.44.13 (Wochen-Tab umgebaut:
    1) 2-spaltiges Layout wie Heute — Agenda links, Aufgaben-
       Aside rechts (sticky). Wegen kollabierter Aufgaben-Box
@@ -11539,7 +11548,8 @@ function renderHeuteTasksAside(data) {
   const todayISO = toISODate(new Date());
   const overdue = data.overdueTasks || [];
   const todayTasks = (data.tasks || []).filter(t => t.faelligkeit === todayISO);
-  const futureTasks = (data.tasks || []).filter(t => t.faelligkeit && t.faelligkeit > todayISO).slice(0, 5);
+  // v1.44.14: keine harte Slice mehr — der Aside zeigt selbst max 8 + "weitere ansehen"-Link
+  const futureTasks = (data.tasks || []).filter(t => t.faelligkeit && t.faelligkeit > todayISO);
 
   const sections = [];
 
@@ -11550,8 +11560,8 @@ function renderHeuteTasksAside(data) {
           <span class="aside-section-title">Überfällig</span>
           <span class="aside-section-count">${overdue.length}</span>
         </div>
-        ${overdue.slice(0, 5).map(t => renderAsideTaskRow(t, todayISO)).join('')}
-        ${overdue.length > 5 ? `<button class="aside-section-more" onclick="navigateTo('tasks',{ scope:'mine_overdue' })">+ ${overdue.length - 5} weitere ansehen</button>` : ''}
+        ${overdue.slice(0, 8).map(t => renderAsideTaskRow(t, todayISO)).join('')}
+        ${overdue.length > 8 ? `<button class="aside-section-more" onclick="navigateTo('tasks',{ scope:'mine_overdue' })">+ ${overdue.length - 8} weitere ansehen</button>` : ''}
       </div>`);
   }
 
@@ -11573,7 +11583,8 @@ function renderHeuteTasksAside(data) {
           <span class="aside-section-title">Demnächst</span>
           <span class="aside-section-count">${futureTasks.length}</span>
         </div>
-        ${futureTasks.map(t => renderAsideTaskRow(t, todayISO)).join('')}
+        ${futureTasks.slice(0, 8).map(t => renderAsideTaskRow(t, todayISO)).join('')}
+        ${futureTasks.length > 8 ? `<button class="aside-section-more" onclick="navigateTo('tasks',{ scope:'mine_open' })">+ ${futureTasks.length - 8} weitere ansehen</button>` : ''}
       </div>`);
   }
 

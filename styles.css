@@ -2753,10 +2753,11 @@ select.typ-select-secondary {
 .briefing-narrative-text .accent-warn { color: var(--warning); font-weight: 600; }
 .briefing-narrative-text .accent-good { color: var(--success); font-weight: 600; }
 
-/* v1.44.9 — Heute-Tab 2-Spalten-Layout (Hero links, Aufgaben-Aside rechts) */
+/* v1.44.9 — Heute-Tab 2-Spalten-Layout (Hero links, Aufgaben-Aside rechts).
+   v1.44.14: Aside breiter (380 → mehr Inhalt sichtbar). */
 .heute-grid {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 400px;
   gap: 20px;
   margin-bottom: 20px;
   align-items: start;
@@ -2764,7 +2765,10 @@ select.typ-select-secondary {
 .heute-main { min-width: 0; }
 .heute-aside { min-width: 0; }
 
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
+  .heute-grid { grid-template-columns: 1fr 340px; }
+}
+@media (max-width: 1000px) {
   .heute-grid { grid-template-columns: 1fr; }
 }
 
@@ -2809,9 +2813,9 @@ select.typ-select-secondary {
   display: block; width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 4px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
   cursor: pointer;
   text-align: left;
   font: inherit;
@@ -2823,14 +2827,22 @@ select.typ-select-secondary {
 }
 .aside-task-row:last-child { margin-bottom: 0; }
 .aside-task-titel {
-  font-size: 12px; color: var(--text);
+  font-size: 13px; color: var(--text);
   font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-bottom: 2px;
+  line-height: 1.35;
+  margin-bottom: 4px;
+  /* v1.44.14: bis zu 2 Zeilen statt nowrap+ellipsis — mehr Inhalt sichtbar */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 .aside-task-meta {
   font-size: 11px; color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
 }
 .aside-task-date.is-bad { color: var(--danger); font-weight: 600; }
 .aside-task-date.is-warn { color: var(--warning); font-weight: 600; }
