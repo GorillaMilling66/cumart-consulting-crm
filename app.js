@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.1 (Wochen-Tab Wochenstreifen oben:
+   - Wochenstreifen mit 7 Tageskarten Mo–So mit farbigem
+     Indikator-Balken (geplant=blau, durchgeführt=grün,
+     abgerechnet=dunkelgrün, feiertag=amber, frei=grau).
+     Pro Karte: Wochentag + Datum, „X T · Y E", Tagessumme.
+     Heute mit 1.5 px Info-Border. Sa/So-frei mit 0.5 Opacity.
+   - Klick auf Tageskarte scrollt smooth zur Tageszeile in
+     der Agenda darunter (mit Highlight-Pulse).
+   - Agenda darunter erweitert auf 7 Tage Mo–So (vorher 5).
+     Pro Tageszeile rechts oben Tagessumme (Σ €). Feiertage
+     werden mit Amber-Akzent markiert. Status-Border am
+     Listeneintrag aus den Status-Tokens.
+   - Bei < 1280 px Viewport scrollt der Streifen horizontal
+     mit Snap.)
    Version 1.45.0 (Heute-Tab Redesign — Datendichte rauf,
    Scroll runter. Statt großer Hero-Blöcke pro Einsatz: 2-
    Spalten-Grid kompakter Karten (~120 px hoch). Pro Karte
@@ -11104,9 +11118,11 @@ function renderBriefing(scope, data) {
   // v1.44.9: Aufgaben standardmäßig zugeklappt — sonst dominieren sie die
   // Woche-Übersicht. Klick auf den Toggle öffnet die Wochen-Aufgaben-Liste.
   if (scope === 'woche') {
-    // v1.44.13: 2-spaltiges Layout wie Heute — Agenda links, Aufgaben rechts.
+    // v1.45.1: Wochenstreifen Mo–So oben (kompakte Tageskarten mit Σ €)
+    // + Agenda darunter (jetzt 7 Tage statt 5) + Aufgaben-Aside.
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
+      ${renderWeekStrip(data)}
       <div class="heute-grid">
         <div class="heute-main">${renderBriefingWeekAgenda(data)}</div>
         <div class="heute-aside">${renderHeuteTasksAside(data)}</div>
@@ -11190,6 +11206,91 @@ function renderBriefingMonthDashboard(data) {
     </div>`;
 }
 
+/** v1.45.1: Wochenstreifen oben — 7 Tageskarten Mo–So mit Indikator-Balken
+ *  (geplant/durchgeführt/abgerechnet/feiertag/frei), „X T · Y E" und
+ *  Tagessumme. Klick scrollt smooth zur Tageszeile in der Agenda darunter. */
+function renderWeekStrip(data) {
+  const todayISO = toISODate(new Date());
+  const startISO = data.range.startISO;
+  const start = new Date(startISO + 'T00:00:00');
+
+  // Aggregiere pro Tag aus den existierenden Daten
+  const dayInfo = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const iso = toISODate(d);
+    dayInfo[iso] = { iso, terms: 0, deps: [], tagSumme: 0 };
+  }
+  (data.appointments || []).forEach(a => {
+    if (dayInfo[a.datum]) dayInfo[a.datum].terms++;
+  });
+  (data.deployments || []).forEach(dep => {
+    const von = dep.datum_von;
+    const bis = dep.datum_bis || dep.datum_von;
+    const einzel = Number(dep.einzelpreis) || 0;
+    Object.values(dayInfo).forEach(di => {
+      if (di.iso >= von && di.iso <= bis) {
+        di.deps.push(dep);
+        if (dep.status !== 'Storniert') di.tagSumme += einzel;
+      }
+    });
+  });
+
+  const yearHolidays = new Map();
+  const cards = Object.values(dayInfo).map(di => {
+    const d = new Date(di.iso + 'T00:00:00');
+    const dow = d.getDay();
+    const year = d.getFullYear();
+    if (!yearHolidays.has(year)) yearHolidays.set(year, computeBwHolidays(year));
+    const isHoliday = yearHolidays.get(year).has(di.iso);
+    const isToday   = di.iso === todayISO;
+    const isPast    = di.iso < todayISO;
+    const isWeekend = dow === 0 || dow === 6;
+
+    // Indikator-Balken: höchster aktiver Status bestimmt die Farbe
+    let indicator = 'free';
+    if (isHoliday) indicator = 'holiday';
+    else if (di.deps.length > 0) {
+      if (di.deps.some(d => d.status === 'Abgerechnet')) indicator = 'billed';
+      else if (di.deps.some(d => d.status === 'Durchgeführt')) indicator = 'done';
+      else if (di.deps.some(d => d.status === 'Geplant')) indicator = 'plan';
+      else if (di.deps.some(d => d.status === 'Storniert')) indicator = 'overdue';
+    }
+    else if (di.terms > 0) indicator = 'plan';
+
+    const cls = ['week-strip-card', `is-ind-${indicator}`];
+    if (isToday)   cls.push('is-today');
+    if (isPast)    cls.push('is-past');
+    if (isWeekend && indicator === 'free') cls.push('is-free-weekend');
+
+    const counts = (di.terms > 0 || di.deps.length > 0)
+      ? `${di.terms} T · ${di.deps.length} E`
+      : '— frei';
+    const summeText = di.tagSumme > 0 ? formatPreis(di.tagSumme) : '—';
+
+    return `
+      <button class="${cls.join(' ')}" type="button" onclick="scrollToWeekDay('${esc(di.iso)}')">
+        <div class="week-strip-card-bar"></div>
+        <div class="week-strip-card-day">${esc(WEEKDAYS_DE[dow].substring(0,2))}</div>
+        <div class="week-strip-card-date">${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}.</div>
+        <div class="week-strip-card-counts">${esc(counts)}</div>
+        <div class="week-strip-card-sum">${esc(summeText)}</div>
+      </button>`;
+  }).join('');
+
+  return `<div class="week-strip-row">${cards}</div>`;
+}
+
+/** Scrollt smooth zur Tageszeile in der Wochen-Agenda. */
+function scrollToWeekDay(iso) {
+  const target = document.getElementById(`week-day-${iso}`);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Kurzer Highlight-Pulse
+  target.classList.add('week-day-pulse');
+  setTimeout(() => target.classList.remove('week-day-pulse'), 1200);
+}
+
 /** v1.44.13: Wochen-Agenda für „Diese Woche". Mo–Fr als Liste mit Tag-
  *  Headern. Pro Tag: Einsätze (zuerst, umsatzrelevant) und Termine als
  *  klickbare Item-Zeilen. Lesbarer als die alte Spalten-Strip, wenn pro
@@ -11200,27 +11301,38 @@ function renderBriefingWeekAgenda(data) {
 
   const days = [];
   const start = new Date(startISO + 'T00:00:00');
-  for (let i = 0; i < 5; i++) {
+  // v1.45.1: 7 Tage Mo–So (vorher nur 5 Werktage). Plus Feiertag-Erkennung
+  // (BW) und Tagessumme aus Einsätzen pro Tag.
+  const yearHolidays = new Map();
+  for (let i = 0; i < 7; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const iso = toISODate(d);
+    const dow = d.getDay();
+    const year = d.getFullYear();
+    if (!yearHolidays.has(year)) yearHolidays.set(year, computeBwHolidays(year));
+    const isHoliday = yearHolidays.get(year).has(iso);
     days.push({
       iso,
-      weekday: WEEKDAYS_DE[d.getDay()],
+      weekday: WEEKDAYS_DE[dow],
       day: d.getDate(),
       month: MONTHS_DE[d.getMonth()],
       isToday: iso === todayISO,
       isPast: iso < todayISO,
-      items: []
+      isWeekend: dow === 0 || dow === 6,
+      isHoliday,
+      items: [],
+      tagSumme: 0
     });
   }
 
-  // Einsätze auf alle abgedeckten Tage (mehrtägig)
+  // Einsätze auf alle abgedeckten Tage (mehrtägig). Tagessumme = einzelpreis
+  // pro Tag (nicht das Gesamt × Tage — sonst doppelt gezählt).
   (data.deployments || []).forEach(dep => {
     const von = dep.datum_von;
     const bis = dep.datum_bis || dep.datum_von;
+    const einzel = Number(dep.einzelpreis) || 0;
     days.forEach(day => {
       if (day.iso >= von && day.iso <= bis) {
-        // Markiere Mehrtägige mit Tag-Position (z.B. „Tag 2 von 3")
         let tagInfo = '';
         if (von !== bis) {
           const tagN = Math.round((new Date(day.iso) - new Date(von)) / 86400000) + 1;
@@ -11228,6 +11340,7 @@ function renderBriefingWeekAgenda(data) {
           tagInfo = `Tag ${tagN}/${totalTage}`;
         }
         day.items.push({ kind: 'einsatz', dep, tagInfo });
+        if (dep.status !== 'Storniert') day.tagSumme += einzel;
       }
     });
   });
@@ -11258,16 +11371,24 @@ function renderWeekAgendaDay(day) {
   const cls = ['week-agenda-day'];
   if (day.isToday) cls.push('is-today');
   if (day.isPast)  cls.push('is-past');
+  if (day.isWeekend) cls.push('is-weekend');
+  if (day.isHoliday) cls.push('is-holiday');
 
   const itemsHtml = day.items.length === 0
     ? `<div class="week-agenda-empty">— frei</div>`
     : day.items.map(it => renderWeekAgendaItem(it)).join('');
 
+  // v1.45.1: Tagessumme rechts oben (Σ €)
+  const tagSummeText = day.tagSumme > 0 ? formatPreis(day.tagSumme) : '';
+
   return `
-    <div class="${cls.join(' ')}">
+    <div class="${cls.join(' ')}" id="week-day-${esc(day.iso)}">
       <div class="week-agenda-head">
-        <div class="week-agenda-day-name">${esc(day.weekday)}${day.isToday ? ' · Heute' : ''}</div>
-        <div class="week-agenda-day-date">${day.day}. ${esc(day.month)}</div>
+        <div class="week-agenda-head-left">
+          <div class="week-agenda-day-name">${esc(day.weekday)}${day.isToday ? ' · Heute' : ''}${day.isHoliday ? ' · Feiertag' : ''}</div>
+          <div class="week-agenda-day-date">${day.day}. ${esc(day.month)}</div>
+        </div>
+        ${tagSummeText ? `<div class="week-agenda-day-sum">${esc(tagSummeText)}</div>` : ''}
       </div>
       <div class="week-agenda-items">${itemsHtml}</div>
     </div>`;
