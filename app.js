@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.12 (Dieser-Monat-Tab als Drilldown-Dashboard.
+   Statt der bisherigen Briefing-Cards bekommt der Monat-Tab
+   ein KPI-Kachel-Grid. Pro Kachel ein klickbarer Drilldown
+   in die jeweilige Liste mit gesetztem Filter:
+   - Termine im Monat → Termine-Liste, Filter: Range=Monat
+   - Geplante/Durchgeführte/Abgerechnete Einsätze → Einsätze-
+     Liste mit Range=Monat + entsprechendem Status-Filter
+   - Stornierte Einsätze (nur wenn vorhanden)
+   - Offene Aufgaben → Aufgaben-Liste, Scope=mine_open
+   Plus zwei prominente Umsatz-Kacheln:
+   - Geplanter Umsatz (Geplant + Durchgeführt) in Grün
+   - Abgerechneter Umsatz in Blau
+   navigateTo erweitert um deployments/appointments mit Filter-
+   Object (range/status/firma/projekt). Neue Globale
+   pendingDeploymentsFilter, ausgewertet beim Listen-Init.)
    Version 1.44.11 (Firma-Combobox + unabhängige Anlage:
    1) Firma-Felder in Termin/Aufgabe/Projekt/Einsatz/Kontakt
       sind jetzt <input list="…"> Combobox — analog zur
@@ -445,6 +460,7 @@ let companyAppointmentMap = {};
 
 // Pending filter für Termine, kommt aus URL-Hash-Parametern
 let pendingAppointmentsFilter = null;
+let pendingDeploymentsFilter = null;
 
 // Pending filter für Aufgaben (z.B. #/aufgaben?firma=…&scope=all_open)
 let pendingTasksFilter = null;
@@ -2034,6 +2050,14 @@ function navigateTo(page, param) {
     hash = `#/termine?firma=${param.firma}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
     hash = `#/termine?projekt=${param.projekt}`;
+  } else if (page === 'appointments' && param && typeof param === 'object') {
+    // v1.44.12: range/status für Monat-Drilldown
+    pendingAppointmentsFilter = { ...(pendingAppointmentsFilter || {}), ...param };
+    hash = '#/termine';
+  } else if (page === 'deployments' && param && typeof param === 'object') {
+    // v1.44.12: range/status/firma/projekt für Monat-Drilldown
+    pendingDeploymentsFilter = { ...(pendingDeploymentsFilter || {}), ...param };
+    hash = '#/einsaetze';
   } else if (page === 'heute') {
     hash = '#/heute';
   } else if (page === 'companies') {
@@ -4676,9 +4700,12 @@ async function loadAppointments() {
       + typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
 
-  // Pending-Filter aus URL-Parameter anwenden
-  if (pendingAppointmentsFilter?.firma) {
-    companyFilter.value = pendingAppointmentsFilter.firma;
+  // Pending-Filter aus URL-Parameter / Drill-Down anwenden (v1.44.12)
+  if (pendingAppointmentsFilter) {
+    if (pendingAppointmentsFilter.firma)  companyFilter.value = pendingAppointmentsFilter.firma;
+    if (pendingAppointmentsFilter.range)  document.getElementById('appointments-range-filter').value  = pendingAppointmentsFilter.range;
+    if (pendingAppointmentsFilter.status) document.getElementById('appointments-status-filter').value = pendingAppointmentsFilter.status;
+    if (pendingAppointmentsFilter.typ)    document.getElementById('appointments-typ-filter').value    = pendingAppointmentsFilter.typ;
     pendingAppointmentsFilter = null;
   }
 
@@ -6418,6 +6445,15 @@ async function loadDeployments() {
   projectFilter.innerHTML = '<option value="">Alle Projekte</option><option value="__none__">Ohne Projekt (Einzelbuchung)</option>'
     + projectsCache.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   if (existingProject) projectFilter.value = existingProject;
+
+  // Pending-Filter aus Drill-Down anwenden (v1.44.12)
+  if (pendingDeploymentsFilter) {
+    if (pendingDeploymentsFilter.range)   document.getElementById('deployments-range-filter').value  = pendingDeploymentsFilter.range;
+    if (pendingDeploymentsFilter.status)  document.getElementById('deployments-status-filter').value = pendingDeploymentsFilter.status;
+    if (pendingDeploymentsFilter.firma)   companyFilter.value = pendingDeploymentsFilter.firma;
+    if (pendingDeploymentsFilter.projekt) projectFilter.value = pendingDeploymentsFilter.projekt;
+    pendingDeploymentsFilter = null;
+  }
 
   const { data, error } = await db.from('deployments')
     .select('*, company:companies(id, name), project:projects(id, name), service:services(id, name, einheit)').is('deleted_at', null)
@@ -11039,12 +11075,79 @@ function renderBriefing(scope, data) {
     `;
   }
 
+  // v1.44.12: Monat-Tab → klickbare KPI-Kacheln. Pro Kachel ein Drilldown
+  // in die jeweilige Liste mit gesetztem Filter.
+  if (scope === 'monat') {
+    return `
+      ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
+      ${renderBriefingMonthDashboard(data)}
+      ${renderBriefingStreak(scope, data)}
+    `;
+  }
+
   return `
     ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
     ${renderBriefingCards(scope, data)}
     ${renderBriefingStreak(scope, data)}
     ${renderBriefingPreview(scope, data)}
   `;
+}
+
+/** v1.44.12: KPI-Kachel-Dashboard für „Dieser Monat". Klickbare Kacheln
+ *  springen mit gesetzten Filtern in die jeweilige Liste. */
+function renderBriefingMonthDashboard(data) {
+  const apptCount = data.appointments.length;
+
+  const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
+  const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
+  const depsAbgerechnet = data.deployments.filter(d => d.status === 'Abgerechnet');
+  const depsStorniert   = data.deployments.filter(d => d.status === 'Storniert');
+
+  const depWert = arr => arr.reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  // Geplanter Umsatz = noch nicht abgerechnet (Geplant + Durchgeführt), ohne Storno
+  const umsatzGeplant     = depWert(depsGeplant) + depWert(depsDurchgef);
+  const umsatzAbgerechnet = depWert(depsAbgerechnet);
+  const umsatzGesamt      = umsatzGeplant + umsatzAbgerechnet;
+
+  const tasksOpen   = data.tasks.length + data.overdueTasks.length;
+  const tasksDone   = (data.weekDoneAppts || []).length;  // Platzhalter — keine Monats-Erledigt-Daten geladen
+
+  const tile = (kicker, value, sub, color, onclick) => `
+    <button class="month-tile is-${color}" onclick="${onclick}" type="button">
+      <div class="month-tile-kicker">${esc(kicker)}</div>
+      <div class="month-tile-value">${esc(String(value))}</div>
+      ${sub ? `<div class="month-tile-sub">${esc(sub)}</div>` : ''}
+    </button>`;
+
+  return `
+    <div class="month-dashboard">
+      <div class="month-section-title">Aktivitäten · Drilldown per Klick</div>
+      <div class="month-grid">
+        ${tile('Termine', apptCount, 'im Monat', 'neutral',
+            "navigateTo('appointments',{ range:'month' })")}
+        ${tile('Geplante Einsätze', depsGeplant.length, 'im Monat', 'plan',
+            "navigateTo('deployments',{ range:'month', status:'Geplant' })")}
+        ${tile('Durchgeführte Einsätze', depsDurchgef.length, 'im Monat', 'done',
+            "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+        ${tile('Abgerechnete Einsätze', depsAbgerechnet.length, 'im Monat', 'billed',
+            "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })")}
+        ${depsStorniert.length > 0 ? tile('Stornierte Einsätze', depsStorniert.length, 'im Monat', 'danger',
+            "navigateTo('deployments',{ range:'month', status:'Storniert' })") : ''}
+        ${tile('Offene Aufgaben', tasksOpen, data.overdueTasks.length > 0 ? `${data.overdueTasks.length} überfällig` : 'gesamt', tasksOpen > 0 ? 'warn' : 'neutral',
+            "navigateTo('tasks',{ scope:'mine_open' })")}
+      </div>
+
+      <div class="month-section-title">Umsatz · ${esc(formatPreis(umsatzGesamt))} gesamt</div>
+      <div class="month-grid month-grid-revenue">
+        ${tile('Geplanter Umsatz', formatPreis(umsatzGeplant),
+            `${depsGeplant.length + depsDurchgef.length} Einsätze (Geplant + Durchgeführt)`,
+            'plan-revenue',
+            "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+        ${tile('Abgerechneter Umsatz', formatPreis(umsatzAbgerechnet),
+            `${depsAbgerechnet.length} Einsätze`, 'billed-revenue',
+            "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })")}
+      </div>
+    </div>`;
 }
 
 /** v1.44.7: Wochen-Strip für „Diese Woche".
