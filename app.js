@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.9 (Aufgaben-Layout-Anpassung:
+   1) Heute-Tab im Hero-Modus jetzt 2-spaltig: Hero-Blöcke
+      links, Aufgaben-Aside rechts (sticky). Damit muss man
+      nicht runterscrollen, um die offenen Aufgaben zu sehen.
+      Aside zeigt Überfällig (rot), Heute fällig, Demnächst —
+      jeweils max 5, Klick öffnet das Aufgabe-Bearbeiten-Modal.
+   2) Wochen-Tab: Aufgaben-Box standardmäßig zugeklappt
+      (<details>) — sonst dominieren die Aufgaben die
+      Wochenübersicht. Toggle zeigt Anzahl + Hinweis auf
+      Überfällige. Aufgeklappt: alle Wochen-Aufgaben +
+      überfällige als kompakte Liste.
+   3) Im non-hero-Modus weiterhin die alte Hot-Card im
+      Card-Stack — keine Doppelung dank skipHot.)
    Version 1.44.8 (Diese-Woche-Strip Feinjustage:
    1) Sa/So entfernt — Wochen-Strip zeigt nur Mo–Fr (Werktage).
       Geschäftslogik: an Wochenenden finden keine Kunden-
@@ -10786,14 +10799,17 @@ function renderBriefing(scope, data) {
   if (metaEl) metaEl.innerHTML = renderBriefingKpisInline(scope, data, { heroMode });
 
   if (heroMode) {
-    // v1.44.6: alle heutigen Einsätze als eigene Hero-Blöcke rendern, statt
-    // nur den ersten + „+1 weiterer Einsatz heute" als Kommentar — der User
-    // soll beide auf einen Blick sehen und einzeln darauf agieren können.
+    // v1.44.6: alle heutigen Einsätze als eigene Hero-Blöcke rendern.
+    // v1.44.9: 2-Spalten-Layout — Hero links, Aufgaben-Aside rechts. So
+    // muss man nicht runterscrollen, um die offenen Aufgaben zu sehen.
     const heroBlocks = todayDeps.map(d => renderBriefingHeroDeployment(d, data)).join('');
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
-      ${heroBlocks}
-      ${renderBriefingCards(scope, data, { skipTodayDeployment: true })}
+      <div class="heute-grid">
+        <div class="heute-main">${heroBlocks}</div>
+        <div class="heute-aside">${renderHeuteTasksAside(data)}</div>
+      </div>
+      ${renderBriefingCards(scope, data, { skipTodayDeployment: true, skipHot: true })}
       ${renderBriefingStreak(scope, data)}
       ${renderBriefingPreview(scope, data)}
     `;
@@ -10802,15 +10818,14 @@ function renderBriefing(scope, data) {
   // v1.44.7: Diese-Woche-Tab → 7-Tage-Strip statt Briefing-Cards. Die Woche
   // soll auf einen Blick verständlich sein: pro Tag eine Spalte mit Einsätzen
   // (zuerst, umsatzrelevant) und Terminen als kompakte Pills. Klick öffnet
-  // das jeweilige Bearbeiten-Modal. Heute hervorgehoben, Vergangenheit dezent.
+  // das Inline-Dashboard unterhalb. Heute hervorgehoben, Vergangenheit dezent.
+  // v1.44.9: Aufgaben standardmäßig zugeklappt — sonst dominieren sie die
+  // Woche-Übersicht. Klick auf den Toggle öffnet die Wochen-Aufgaben-Liste.
   if (scope === 'woche') {
-    const overdueCard = data.overdueTasks.length > 0
-      ? renderBriefingCards(scope, data, { onlyHot: true })
-      : '';
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
-      ${overdueCard}
       ${renderBriefingWeekStrip(data)}
+      ${renderWocheTasksCollapsed(data)}
       ${renderBriefingStreak(scope, data)}
     `;
   }
@@ -11071,6 +11086,141 @@ function renderBriefingHeroDeployment(dep, data) {
     </div>`;
 }
 
+/** v1.44.9: Aufgaben-Sidebar im Heute-Tab. Zeigt überfällige (rot) zuerst,
+ *  dann heute fällige, dann zukünftige offene. Kompakt, klickbar — Klick
+ *  öffnet das Aufgabe-Bearbeiten-Modal direkt. */
+function renderHeuteTasksAside(data) {
+  const todayISO = toISODate(new Date());
+  const overdue = data.overdueTasks || [];
+  const todayTasks = (data.tasks || []).filter(t => t.faelligkeit === todayISO);
+  const futureTasks = (data.tasks || []).filter(t => t.faelligkeit && t.faelligkeit > todayISO).slice(0, 5);
+
+  const sections = [];
+
+  if (overdue.length > 0) {
+    sections.push(`
+      <div class="aside-section">
+        <div class="aside-section-head is-danger">
+          <span class="aside-section-title">Überfällig</span>
+          <span class="aside-section-count">${overdue.length}</span>
+        </div>
+        ${overdue.slice(0, 5).map(t => renderAsideTaskRow(t, todayISO)).join('')}
+        ${overdue.length > 5 ? `<button class="aside-section-more" onclick="navigateTo('tasks',{ scope:'mine_overdue' })">+ ${overdue.length - 5} weitere ansehen</button>` : ''}
+      </div>`);
+  }
+
+  if (todayTasks.length > 0) {
+    sections.push(`
+      <div class="aside-section">
+        <div class="aside-section-head">
+          <span class="aside-section-title">Heute fällig</span>
+          <span class="aside-section-count">${todayTasks.length}</span>
+        </div>
+        ${todayTasks.map(t => renderAsideTaskRow(t, todayISO)).join('')}
+      </div>`);
+  }
+
+  if (futureTasks.length > 0) {
+    sections.push(`
+      <div class="aside-section">
+        <div class="aside-section-head">
+          <span class="aside-section-title">Demnächst</span>
+          <span class="aside-section-count">${futureTasks.length}</span>
+        </div>
+        ${futureTasks.map(t => renderAsideTaskRow(t, todayISO)).join('')}
+      </div>`);
+  }
+
+  if (sections.length === 0) {
+    sections.push(`
+      <div class="aside-section">
+        <div class="aside-section-head">
+          <span class="aside-section-title">Aufgaben</span>
+        </div>
+        <div class="aside-empty">Keine offenen Aufgaben — alles im Griff.</div>
+      </div>`);
+  }
+
+  return `
+    <div class="aside-card">
+      <div class="aside-card-title">Aufgaben</div>
+      ${sections.join('')}
+      <div class="aside-card-footer">
+        <button class="aside-link" onclick="navigateTo('tasks',{ scope:'mine_open' })">Alle meine offenen ansehen →</button>
+      </div>
+    </div>`;
+}
+
+/** Eine Zeile in der Aufgaben-Aside / Wochen-Liste. */
+function renderAsideTaskRow(t, todayISO) {
+  const ueberfaellig = t.faelligkeit && t.faelligkeit < todayISO;
+  const heute = t.faelligkeit === todayISO;
+  const datumLabel = t.faelligkeit
+    ? (heute ? 'Heute' : (ueberfaellig ? `${Math.round((new Date(todayISO) - new Date(t.faelligkeit)) / 86400000)} Tage überfällig` : formatDateDE(t.faelligkeit)))
+    : '—';
+  const datumClass = ueberfaellig ? ' is-bad' : (heute ? ' is-warn' : '');
+  const firma = t.company?.name ? ` · ${esc(t.company.name)}` : '';
+  return `
+    <button class="aside-task-row" onclick="openTaskModal('edit','${esc(t.id)}')">
+      <div class="aside-task-titel">${esc(t.titel || '—')}</div>
+      <div class="aside-task-meta">
+        <span class="aside-task-date${datumClass}">${esc(datumLabel)}</span>${firma}
+      </div>
+    </button>`;
+}
+
+/** v1.44.9: Aufgaben-Box im Wochen-Tab — standardmäßig zugeklappt.
+ *  Klick auf Toggle öffnet eine kompakte Liste der Wochen-Aufgaben +
+ *  überfälligen. Damit die Wochen-Strip nicht überlagert wird. */
+function renderWocheTasksCollapsed(data) {
+  const todayISO = toISODate(new Date());
+  const overdue = data.overdueTasks || [];
+  const weekTasks = (data.tasks || []);
+  const total = overdue.length + weekTasks.length;
+
+  if (total === 0) return '';
+
+  // Inhalt: überfällige zuerst (rot), dann Wochen-Tasks gruppiert nach Datum
+  const inner = [];
+  if (overdue.length > 0) {
+    inner.push(`
+      <div class="aside-section">
+        <div class="aside-section-head is-danger">
+          <span class="aside-section-title">Überfällig</span>
+          <span class="aside-section-count">${overdue.length}</span>
+        </div>
+        ${overdue.map(t => renderAsideTaskRow(t, todayISO)).join('')}
+      </div>`);
+  }
+  if (weekTasks.length > 0) {
+    inner.push(`
+      <div class="aside-section">
+        <div class="aside-section-head">
+          <span class="aside-section-title">Diese Woche fällig</span>
+          <span class="aside-section-count">${weekTasks.length}</span>
+        </div>
+        ${weekTasks.map(t => renderAsideTaskRow(t, todayISO)).join('')}
+      </div>`);
+  }
+
+  const summary = [
+    weekTasks.length > 0 ? `${weekTasks.length} fällig` : null,
+    overdue.length > 0 ? `<span class="kpi-inline-bad">${overdue.length} überfällig</span>` : null
+  ].filter(Boolean).join(' · ');
+
+  return `
+    <details class="woche-tasks-box">
+      <summary class="woche-tasks-summary">
+        <span class="woche-tasks-chevron">▸</span>
+        <span class="woche-tasks-label">Aufgaben diese Woche</span>
+        <span class="woche-tasks-count">${summary}</span>
+      </summary>
+      <div class="woche-tasks-list">
+        ${inner.join('')}
+      </div>
+    </details>`;
+}
+
 /** Hilfsaktion für den Hero: Status auf „Durchgeführt" setzen ohne Modal-Umweg.
  *  Triggert auch checkAndUpdateProjectStatus, falls der Einsatz zu einem
  *  Projekt gehört — sonst läuft der Auto-Status nicht synchron. */
@@ -11238,7 +11388,8 @@ function renderBriefingCards(scope, data, opts = {}) {
   const onlyHot = !!opts.onlyHot;
 
   // ── HOT — überfällige Aufgaben ──
-  if (data.overdueTasks.length > 0) {
+  // v1.44.9: heroMode nutzt eine Aufgaben-Aside, da darf hier nicht doppelt gerendert werden.
+  if (data.overdueTasks.length > 0 && !opts.skipHot) {
     const oldest = data.overdueTasks[0];
     const daysOverdue = Math.round((new Date(todayISO) - new Date(oldest.faelligkeit)) / 86400000);
     const restCount = data.overdueTasks.length - 1;
