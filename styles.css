@@ -3488,6 +3488,162 @@ select.typ-select-secondary {
   .week-day-head { display: flex; justify-content: space-between; align-items: center; }
 }
 
+/* v1.45.2 — Monat-Tab Datendichte-Dashboard */
+.month-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (max-width: 900px) {
+  .month-kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+.kpi-tile {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-left: 2px solid var(--muted);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 10px;
+  transition: transform .12s, box-shadow .12s;
+}
+.kpi-tile:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.05);
+}
+.kpi-tile.is-billed { border-left-color: var(--status-billed-accent); }
+.kpi-tile.is-billed .kpi-tile-value { color: var(--status-billed-accent); }
+.kpi-tile.is-billed .kpi-tile-spark { color: var(--status-billed-accent); }
+.kpi-tile.is-plan { border-left-color: var(--status-plan-accent); }
+.kpi-tile.is-plan .kpi-tile-value { color: var(--status-plan-accent); }
+.kpi-tile.is-plan .kpi-tile-spark { color: var(--status-plan-accent); }
+.kpi-tile.is-done { border-left-color: var(--status-done-accent); }
+.kpi-tile.is-done .kpi-tile-value { color: var(--status-done-accent); }
+.kpi-tile.is-info { border-left-color: var(--color-info); }
+.kpi-tile.is-info .kpi-tile-value { color: var(--color-info); }
+.kpi-tile-body { flex: 1; min-width: 0; }
+.kpi-tile-kicker {
+  font-size: 11px; font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+.kpi-tile-value {
+  font-size: 22px; font-weight: 500;
+  line-height: 1.2;
+  color: var(--text);
+}
+.kpi-tile-sub {
+  font-size: 11px; color: var(--muted);
+  margin-top: 4px;
+}
+.kpi-tile-spark { flex-shrink: 0; opacity: .8; }
+
+/* Umsatz-Verlauf-Chart */
+.month-chart {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+/* Top-Kunden + Pipeline nebeneinander */
+.month-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 800px) {
+  .month-bottom-grid { grid-template-columns: 1fr; }
+}
+.month-section {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.month-section .month-section-title {
+  margin-top: 0; margin-bottom: 12px;
+  border-bottom: 0.5px solid var(--border);
+}
+.month-section-empty {
+  font-size: 12px; color: var(--muted); font-style: italic;
+  padding: 6px 0;
+}
+
+/* Top-Kunden — Balken-Diagramm vertikal mit Liste */
+.top-customers {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.top-customer-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  min-height: 40px;
+  transition: background .15s;
+}
+.top-customer-row:hover { background: var(--surface); border-color: var(--status-billed-accent); }
+.top-customer-bar {
+  width: 4px;
+  background: var(--status-billed-accent);
+  border-radius: 2px;
+  align-self: stretch;
+  margin: 4px 0;
+  min-height: 8px;
+}
+.top-customer-name {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.top-customer-sum {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  text-align: right;
+}
+
+/* Pipeline-Stages */
+.pipeline-stages {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.pipeline-stage-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  background: var(--bg);
+  transition: background .15s;
+}
+.pipeline-stage-row.is-plan   { background: var(--status-plan-bg); color: var(--status-plan-fg); }
+.pipeline-stage-row.is-done   { background: var(--status-done-bg); color: var(--status-done-fg); }
+.pipeline-stage-row.is-billed { background: var(--status-billed-bg); color: var(--status-billed-fg); }
+.pipeline-stage-row:hover { filter: brightness(.97); }
+.pipeline-stage-name { font-size: 13px; font-weight: 500; }
+.pipeline-stage-count {
+  font-size: 12px; font-weight: 500;
+  background: rgba(255,255,255,.6);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.pipeline-stage-sum { font-size: 13px; font-weight: 500; }
+
 /* v1.44.12 — Monat-Tab Dashboard mit klickbaren KPI-Kacheln */
 .month-dashboard { margin-bottom: 20px; }
 .month-section-title {

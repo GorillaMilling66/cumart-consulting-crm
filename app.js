@@ -1,5 +1,24 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.2 (Monat-Tab Datendichte:
+   - Erweiterte KPI-Reihe mit 4 Kacheln: Abgerechnet · Geplant ·
+     Auslastung % · Pipeline. Pro Kachel 2 px linker Status-
+     Token-Border und (für Umsatz-Kacheln) Mini-Sparkline rechts
+     unten (30 Tage Umsatz-Verlauf).
+   - Auslastungs-Selector: durchgef.+abgerechn. Tage / BW-
+     Werktage im Monat.
+   - Umsatz-Verlauf-Chart als SVG (kein Chart-Lib): solide
+     grüne Linie für realisierten Umsatz bis heute, gestrichelte
+     blaue Forecast-Linie ab heute (geplante Einsätze), grau
+     gestrichelte Ziel-Linie als Mittel der letzten 3 Monatsumsätze.
+   - Top-5-Kunden im Monat aus durchgef.+abgerechn. Einsätzen,
+     mit vertikalem Balken proportional zum Top-1, Klick öffnet
+     Firmen-Detail.
+   - Pipeline-Stages (Lead/Angebot/In Arbeit/Abschlussphase) mit
+     Stage-Token-Hintergründen, Klick öffnet Projekt-Liste.
+   - Daten-Selectoren in loadBriefingData für Monat: Pipeline-
+     Projekte, 30-Tage-Sparkline, Tagesumsatz-Reihe, Top-Kunden,
+     Vor-3-Monats-Mittel als Ziel-Default.)
    Version 1.45.1 (Wochen-Tab Wochenstreifen oben:
    - Wochenstreifen mit 7 Tageskarten Mo–So mit farbigem
      Indikator-Balken (geplant=blau, durchgeführt=grün,
@@ -11022,6 +11041,127 @@ async function loadBriefingData(userId, scope) {
       });
   }
 
+  // v1.45.2: Zusätzliche Monats-Daten für das Datendichte-Dashboard.
+  // Pipeline-Projekte, Top-Kunden, 30-Tage-Sparkline, Vor-Monats-Umsätze.
+  let pipelineProjects = [];
+  let topCustomers = [];
+  let revenueSparkline = []; // 30 Tage
+  let prevMonthsAvg = 0;
+  let monthDailyRevenue = []; // pro Tag des aktuellen Monats: { iso, done, billed }
+  if (scope === 'monat') {
+    const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
+    const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
+    const sparkStart = new Date(todayISO + 'T00:00:00'); sparkStart.setDate(sparkStart.getDate() - 29);
+    const prev3Start = new Date(monthStart); prev3Start.setMonth(prev3Start.getMonth() - 3);
+    const prev3End   = new Date(monthStart); prev3End.setDate(0);
+
+    const [pipelineRes, recentDepsRes, prev3DepsRes] = await Promise.all([
+      // Pipeline: Projekte aus den relevanten Stages
+      db.from('projects')
+        .select('id, name, status, geschaetzter_umsatz, company:companies(id, name)')
+        .is('deleted_at', null)
+        .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase']),
+      // Letzte 30 Tage Einsätze für Sparkline + Top-Kunden
+      db.from('deployment_technicians')
+        .select('deployment:deployments!inner(id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, company:companies(id, name))')
+        .eq('user_id', userId),
+      // Vorige 3 Monate für Ziel-Berechnung
+      db.from('deployment_technicians')
+        .select('deployment:deployments!inner(id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis)')
+        .eq('user_id', userId)
+    ]);
+
+    const allDepsBroad = (recentDepsRes.data || [])
+      .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von);
+
+    // 30-Tage-Sparkline: pro Tag den Umsatz aus durchgef.+abgerechn. Einsätzen
+    const sparkMap = {};
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(sparkStart); d.setDate(sparkStart.getDate() + i);
+      sparkMap[toISODate(d)] = 0;
+    }
+    allDepsBroad.forEach(d => {
+      if (!['Durchgeführt', 'Abgerechnet'].includes(d.status)) return;
+      // Tageswert pro abgedecktem Tag im Sparkline-Fenster
+      const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+      const einzel = Number(d.einzelpreis) || 0;
+      Object.keys(sparkMap).forEach(iso => {
+        if (iso >= von && iso <= bis) sparkMap[iso] += einzel;
+      });
+    });
+    revenueSparkline = Object.values(sparkMap);
+
+    // Pro Tag des aktuellen Monats: kumulierter Umsatz (durchgef.+abgerechn.) +
+    // Forecast-Anteil aus geplanten Einsätzen.
+    const mStart = toISODate(monthStart);
+    const mEnd   = toISODate(monthEnd);
+    const dailyMap = {};
+    let cur = new Date(monthStart);
+    while (toISODate(cur) <= mEnd) {
+      dailyMap[toISODate(cur)] = { iso: toISODate(cur), realized: 0, forecast: 0 };
+      cur.setDate(cur.getDate() + 1);
+    }
+    allDepsBroad.forEach(d => {
+      const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+      if (von > mEnd || bis < mStart) return;
+      const einzel = Number(d.einzelpreis) || 0;
+      Object.keys(dailyMap).forEach(iso => {
+        if (iso < von || iso > bis) return;
+        if (d.status === 'Durchgeführt' || d.status === 'Abgerechnet') {
+          dailyMap[iso].realized += einzel;
+        } else if (d.status === 'Geplant') {
+          dailyMap[iso].forecast += einzel;
+        }
+      });
+    });
+    monthDailyRevenue = Object.values(dailyMap);
+
+    // Top-Kunden im Monat: Aggregation pro Firma aus durchgef.+abgerechn.
+    const customerMap = new Map();
+    allDepsBroad.forEach(d => {
+      if (!d.company?.id) return;
+      if (!['Durchgeführt', 'Abgerechnet'].includes(d.status)) return;
+      const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+      if (von > mEnd || bis < mStart) return;
+      // Tageswert × abgedeckter Anteil im Monat
+      const einzel = Number(d.einzelpreis) || 0;
+      const overlapStart = von > mStart ? von : mStart;
+      const overlapEnd   = bis < mEnd   ? bis : mEnd;
+      const days = Math.round((new Date(overlapEnd) - new Date(overlapStart)) / 86400000) + 1;
+      const wert = einzel * Math.max(1, days);
+      const cur = customerMap.get(d.company.id) || { id: d.company.id, name: d.company.name, umsatz: 0 };
+      cur.umsatz += wert;
+      customerMap.set(d.company.id, cur);
+    });
+    topCustomers = Array.from(customerMap.values())
+      .sort((a, b) => b.umsatz - a.umsatz)
+      .slice(0, 5);
+
+    // Pipeline-Projekte
+    pipelineProjects = pipelineRes.data || [];
+
+    // Ziel-Default: Mittel der letzten 3 abgeschlossenen Monatsumsätze
+    const prev3Deps = (prev3DepsRes.data || [])
+      .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von);
+    const prev3Start_ISO = toISODate(prev3Start);
+    const prev3End_ISO   = toISODate(prev3End);
+    const monthlySum = {};
+    prev3Deps.forEach(d => {
+      if (!['Durchgeführt', 'Abgerechnet'].includes(d.status)) return;
+      const von = d.datum_von;
+      if (von < prev3Start_ISO || von > prev3End_ISO) return;
+      const ym = von.substring(0, 7);
+      const einzel = Number(d.einzelpreis) || 0;
+      const tage = (() => {
+        const bis = d.datum_bis || von;
+        return Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
+      })();
+      monthlySum[ym] = (monthlySum[ym] || 0) + einzel * tage;
+    });
+    const prev3Vals = Object.values(monthlySum);
+    if (prev3Vals.length > 0) prevMonthsAvg = prev3Vals.reduce((s,v)=>s+v,0) / prev3Vals.length;
+  }
+
   return {
     range,
     appointments: apptInRange.data || [],
@@ -11035,7 +11175,12 @@ async function loadBriefingData(userId, scope) {
     incompleteStats: incompleteStats || { companies: 0, contacts: 0 },
     todayDepTechniciansMap,
     previewAppointments,
-    previewDeployments
+    previewDeployments,
+    pipelineProjects,
+    topCustomers,
+    revenueSparkline,
+    monthDailyRevenue,
+    prevMonthsAvg
   };
 }
 
@@ -11149,61 +11294,242 @@ function renderBriefing(scope, data) {
   `;
 }
 
-/** v1.44.12: KPI-Kachel-Dashboard für „Dieser Monat". Klickbare Kacheln
- *  springen mit gesetzten Filtern in die jeweilige Liste. */
+/** v1.45.2: Monat-Tab Datendichte-Dashboard. Vier Sektionen:
+ *  1. Erweiterte KPI-Reihe (Abgerechnet, Geplant, Auslastung, Pipeline)
+ *     mit Mini-Sparklines (30 Tage Umsatz)
+ *  2. Umsatz-Verlauf-Diagramm (kumuliert + Forecast + Ziel-Linie)
+ *  3. Top-5-Kunden mit Balken
+ *  4. Pipeline-Stages (Lead/Angebot/In Arbeit/Abschluss) */
 function renderBriefingMonthDashboard(data) {
-  const apptCount = data.appointments.length;
-
+  const todayISO = toISODate(new Date());
   const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
   const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
   const depsAbgerechnet = data.deployments.filter(d => d.status === 'Abgerechnet');
-  const depsStorniert   = data.deployments.filter(d => d.status === 'Storniert');
 
-  const depWert = arr => arr.reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
-  // Geplanter Umsatz = noch nicht abgerechnet (Geplant + Durchgeführt), ohne Storno
-  const umsatzGeplant     = depWert(depsGeplant) + depWert(depsDurchgef);
-  const umsatzAbgerechnet = depWert(depsAbgerechnet);
+  // Umsatz pro Tag aus dem Monat × abgedeckter Tage = Summe
+  const sumDays = (arr) => arr.reduce((s, d) => {
+    const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+    if (!von) return s;
+    const days = Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
+    return s + (Number(d.einzelpreis) || 0) * days;
+  }, 0);
+  const umsatzGeplant     = sumDays(depsGeplant) + sumDays(depsDurchgef);
+  const umsatzAbgerechnet = sumDays(depsAbgerechnet);
   const umsatzGesamt      = umsatzGeplant + umsatzAbgerechnet;
 
-  const tasksOpen   = data.tasks.length + data.overdueTasks.length;
-  const tasksDone   = (data.weekDoneAppts || []).length;  // Platzhalter — keine Monats-Erledigt-Daten geladen
+  // Auslastung: durchgef.+abgerechn. Tage / Werktage im Monat
+  const arbeitsTage = (() => {
+    const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
+    const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
+    const yearHolidays = computeBwHolidays(monthStart.getFullYear());
+    let werk = 0, belegt = 0;
+    let cur = new Date(monthStart);
+    while (cur <= monthEnd) {
+      const iso = toISODate(cur);
+      const dow = cur.getDay();
+      const isWorkday = dow !== 0 && dow !== 6 && !yearHolidays.has(iso);
+      if (isWorkday) {
+        werk++;
+        if (data.deployments.some(dep =>
+          ['Durchgeführt', 'Abgerechnet'].includes(dep.status) &&
+          iso >= dep.datum_von &&
+          iso <= (dep.datum_bis || dep.datum_von)
+        )) belegt++;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return { werk, belegt };
+  })();
+  const auslastungPct = arbeitsTage.werk > 0
+    ? Math.round((arbeitsTage.belegt / arbeitsTage.werk) * 100)
+    : 0;
 
-  const tile = (kicker, value, sub, color, onclick) => `
-    <button class="month-tile is-${color}" onclick="${onclick}" type="button">
-      <div class="month-tile-kicker">${esc(kicker)}</div>
-      <div class="month-tile-value">${esc(String(value))}</div>
-      ${sub ? `<div class="month-tile-sub">${esc(sub)}</div>` : ''}
+  // Pipeline aggregiert
+  const pipelineProjects = data.pipelineProjects || [];
+  const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+
+  // KPI-Kacheln mit Sparkline
+  const tile = (kicker, value, sub, color, onclick, sparkData) => `
+    <button class="kpi-tile is-${color}" type="button" onclick="${onclick}">
+      <div class="kpi-tile-body">
+        <div class="kpi-tile-kicker">${esc(kicker)}</div>
+        <div class="kpi-tile-value">${esc(String(value))}</div>
+        ${sub ? `<div class="kpi-tile-sub">${esc(sub)}</div>` : ''}
+      </div>
+      ${sparkData ? `<div class="kpi-tile-spark">${renderSparkline(sparkData)}</div>` : ''}
     </button>`;
+
+  const sparkData = data.revenueSparkline || [];
+
+  const kpiRow = `
+    <div class="month-kpi-row">
+      ${tile('Abgerechnet', formatPreis(umsatzAbgerechnet),
+          `${depsAbgerechnet.length} Einsätze`, 'billed',
+          "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })",
+          sparkData)}
+      ${tile('Geplant', formatPreis(umsatzGeplant),
+          `${depsGeplant.length + depsDurchgef.length} Einsätze`, 'plan',
+          "navigateTo('deployments',{ range:'month', status:'Geplant' })",
+          sparkData)}
+      ${tile('Auslastung', `${auslastungPct}%`,
+          `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
+          "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })",
+          null)}
+      ${tile('Pipeline', formatPreis(pipelineSum),
+          `${pipelineProjects.length} Projekte`, 'info',
+          "navigateTo('projects')",
+          null)}
+    </div>`;
+
+  // Umsatz-Verlauf-Diagramm
+  const monthName = MONTHS_DE[new Date(todayISO).getMonth()];
+  const ziel = data.prevMonthsAvg && data.prevMonthsAvg > 0 ? data.prevMonthsAvg : null;
+  const chartHtml = renderRevenueChart(data.monthDailyRevenue || [], todayISO, ziel);
+
+  // Top-Kunden + Pipeline-Stages nebeneinander
+  const topCustomers = data.topCustomers || [];
+  const maxUmsatz = topCustomers.length > 0 ? topCustomers[0].umsatz : 1;
+  const customersHtml = topCustomers.length === 0
+    ? `<div class="month-section-empty">Noch keine Umsätze in diesem Monat.</div>`
+    : topCustomers.map(c => {
+        const pct = Math.max(4, Math.round((c.umsatz / maxUmsatz) * 100));
+        return `
+          <button class="top-customer-row" type="button" onclick="navigateTo('firma','${esc(c.id)}')">
+            <span class="top-customer-bar" style="height:${pct}%"></span>
+            <span class="top-customer-name">${esc(c.name)}</span>
+            <span class="top-customer-sum">${esc(formatPreis(c.umsatz))}</span>
+          </button>`;
+      }).join('');
+
+  // Pipeline-Stages
+  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
+  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
+  const stagesHtml = stages.map(stage => {
+    const projs = pipelineProjects.filter(p => p.status === stage);
+    const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+    return `
+      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
+        <span class="pipeline-stage-name">${esc(stage)}</span>
+        <span class="pipeline-stage-count">${projs.length}</span>
+        <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
+      </button>`;
+  }).join('');
 
   return `
     <div class="month-dashboard">
-      <div class="month-section-title">Aktivitäten · Drilldown per Klick</div>
-      <div class="month-grid">
-        ${tile('Termine', apptCount, 'im Monat', 'neutral',
-            "navigateTo('appointments',{ range:'month' })")}
-        ${tile('Geplante Einsätze', depsGeplant.length, 'im Monat', 'plan',
-            "navigateTo('deployments',{ range:'month', status:'Geplant' })")}
-        ${tile('Durchgeführte Einsätze', depsDurchgef.length, 'im Monat', 'done',
-            "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
-        ${tile('Abgerechnete Einsätze', depsAbgerechnet.length, 'im Monat', 'billed',
-            "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })")}
-        ${depsStorniert.length > 0 ? tile('Stornierte Einsätze', depsStorniert.length, 'im Monat', 'danger',
-            "navigateTo('deployments',{ range:'month', status:'Storniert' })") : ''}
-        ${tile('Offene Aufgaben', tasksOpen, data.overdueTasks.length > 0 ? `${data.overdueTasks.length} überfällig` : 'gesamt', tasksOpen > 0 ? 'warn' : 'neutral',
-            "navigateTo('tasks',{ scope:'mine_open' })")}
-      </div>
+      ${kpiRow}
 
-      <div class="month-section-title">Umsatz · ${esc(formatPreis(umsatzGesamt))} gesamt</div>
-      <div class="month-grid month-grid-revenue">
-        ${tile('Geplanter Umsatz', formatPreis(umsatzGeplant),
-            `${depsGeplant.length + depsDurchgef.length} Einsätze (Geplant + Durchgeführt)`,
-            'plan-revenue',
-            "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
-        ${tile('Abgerechneter Umsatz', formatPreis(umsatzAbgerechnet),
-            `${depsAbgerechnet.length} Einsätze`, 'billed-revenue',
-            "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })")}
+      <div class="month-section-title">Umsatz-Verlauf ${esc(monthName)} · kumuliert</div>
+      <div class="month-chart">${chartHtml}</div>
+
+      <div class="month-bottom-grid">
+        <div class="month-section">
+          <div class="month-section-title">Top-Kunden</div>
+          <div class="top-customers">${customersHtml}</div>
+        </div>
+        <div class="month-section">
+          <div class="month-section-title">Pipeline</div>
+          <div class="pipeline-stages">${stagesHtml}</div>
+        </div>
       </div>
     </div>`;
+}
+
+/** Mini-Sparkline als SVG (30 Tage). */
+function renderSparkline(values) {
+  if (!values || values.length === 0) return '';
+  const w = 80, h = 24;
+  const max = Math.max(...values, 1);
+  const step = w / Math.max(1, values.length - 1);
+  const points = values.map((v, i) => {
+    const x = i * step;
+    const y = h - (v / max) * (h - 2) - 1;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `
+    <svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points="${points}" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+    </svg>`;
+}
+
+/** Umsatz-Verlauf für aktuellen Monat: solide Linie bis heute (kumuliert
+ *  durchgef.+abgerechn.), gestrichelte Forecast-Linie ab heute, horizontale
+ *  Ziel-Linie. */
+function renderRevenueChart(daily, todayISO, ziel) {
+  if (!daily || daily.length === 0) return '<div class="month-section-empty">Keine Daten.</div>';
+
+  // Kumulieren
+  let cumReal = 0, cumForecast = 0;
+  let realPath = [];   // bis heute
+  let forecastStart = null;
+  let forecastPath = [];
+  daily.forEach(d => {
+    cumReal += d.realized;
+    if (d.iso <= todayISO) {
+      realPath.push({ iso: d.iso, value: cumReal });
+      forecastStart = cumReal;
+    }
+    if (d.iso > todayISO) {
+      cumForecast += d.realized + d.forecast;
+      forecastPath.push({ iso: d.iso, value: forecastStart + cumForecast });
+    }
+  });
+
+  const w = 720, h = 90;
+  const padL = 40, padR = 16, padT = 8, padB = 18;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const allValues = [...realPath, ...forecastPath].map(p => p.value);
+  const zielVal = ziel && ziel > 0 ? ziel : 0;
+  const maxVal = Math.max(...allValues, zielVal, 1);
+
+  const xFor = (i) => padL + (i / (daily.length - 1)) * innerW;
+  const yFor = (v) => padT + innerH - (v / maxVal) * innerH;
+
+  const realCoords = realPath.map((p, idx) => `${xFor(idx)},${yFor(p.value)}`).join(' ');
+
+  // Forecast: schließe an letzten Real-Punkt an
+  const lastRealIdx = realPath.length - 1;
+  const forecastCoordsArr = forecastPath.map((p, idx) =>
+    `${xFor(lastRealIdx + 1 + idx)},${yFor(p.value)}`
+  );
+  const forecastCoords = lastRealIdx >= 0
+    ? `${xFor(lastRealIdx)},${yFor(realPath[lastRealIdx].value)} ${forecastCoordsArr.join(' ')}`
+    : forecastCoordsArr.join(' ');
+
+  const zielY = zielVal > 0 ? yFor(zielVal) : null;
+  const zielLineHtml = zielY !== null ? `
+    <line x1="${padL}" y1="${zielY}" x2="${padL+innerW}" y2="${zielY}" stroke="#9ca3af" stroke-width="1" stroke-dasharray="2 4"/>
+    <text x="${padL+innerW-2}" y="${zielY-3}" font-size="10" fill="#6b7280" text-anchor="end">Ziel ${formatPreis(zielVal)}</text>
+  ` : '';
+
+  // X-Achsen-Labels: Tag 1, 15, letzter
+  const xLabels = [];
+  if (daily.length > 0) {
+    const days = [0, Math.floor(daily.length / 2), daily.length - 1];
+    days.forEach(i => {
+      const dayNum = new Date(daily[i].iso + 'T00:00:00').getDate();
+      xLabels.push(`<text x="${xFor(i)}" y="${h-4}" font-size="10" fill="#6b7280" text-anchor="middle">${dayNum}</text>`);
+    });
+  }
+
+  return `
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet">
+      ${zielLineHtml}
+      ${realCoords ? `<polyline points="${realCoords}" fill="none" stroke="${getComputedColor('--status-done-accent')}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+      ${forecastCoords ? `<polyline points="${forecastCoords}" fill="none" stroke="${getComputedColor('--color-info')}" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+      ${xLabels.join('')}
+      <text x="${padL-4}" y="${padT+10}" font-size="10" fill="#6b7280" text-anchor="end">${formatPreis(maxVal)}</text>
+      <text x="${padL-4}" y="${h-padB+4}" font-size="10" fill="#6b7280" text-anchor="end">0</text>
+    </svg>`;
+}
+
+function getComputedColor(varName) {
+  // Pragmatischer Fallback — gibt bei nicht gesetzten Variablen einen Hex-Default zurück
+  const fallback = {
+    '--status-done-accent': '#5a8c1f',
+    '--color-info': '#1d4ed8'
+  }[varName];
+  return fallback || '#666';
 }
 
 /** v1.45.1: Wochenstreifen oben — 7 Tageskarten Mo–So mit Indikator-Balken
