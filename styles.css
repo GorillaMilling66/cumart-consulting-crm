@@ -3187,6 +3187,26 @@ select.typ-select-secondary {
   border: 0.5px solid var(--status-plan-fg);
 }
 
+/* v1.45.5: Indikator-Badge in der Firmen-Liste für unvollständige Datensätze */
+.incomplete-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--status-holiday-bg);
+  color: var(--status-holiday-fg);
+  vertical-align: middle;
+}
+.filter-toggle {
+  font-size: 13px; color: var(--text);
+  user-select: none;
+}
+.filter-toggle input[type="checkbox"] {
+  accent-color: var(--color-info);
+}
+
 /* v1.44.9 — Wochen-Tab kollabierte Aufgaben-Box */
 .woche-tasks-box {
   background: var(--surface);
@@ -3406,6 +3426,18 @@ select.typ-select-secondary {
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+/* v1.45.5: Einheitliche Pill (fixed width) für saubere Spaltenausrichtung */
+.week-agenda-pill {
+  flex-shrink: 0;
+  width: 78px;
+  text-align: center;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .3px;
+  padding: 4px 0;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: var(--muted);
+}
 .week-agenda-body { flex: 1; min-width: 0; }
 .week-agenda-titel {
   font-size: 13px; font-weight: 600; color: var(--text);
@@ -3424,6 +3456,7 @@ select.typ-select-secondary {
 }
 .week-agenda-item.is-termin:hover { background: #dbeafe; }
 .week-agenda-item.is-termin .week-agenda-tag { background: #dbeafe; color: var(--link); }
+.week-agenda-item.is-termin .week-agenda-pill { background: var(--status-plan-bg); color: var(--status-plan-fg); }
 
 /* Einsatz — Status-Farben */
 .week-agenda-item.is-einsatz {
@@ -3432,6 +3465,10 @@ select.typ-select-secondary {
 }
 .week-agenda-item.is-einsatz:hover { background: #dcfce7; }
 .week-agenda-item.is-einsatz .week-agenda-tag { background: #dcfce7; color: var(--success); }
+.week-agenda-item.is-einsatz .week-agenda-pill { background: var(--status-plan-bg); color: var(--status-plan-fg); }
+.week-agenda-item.is-einsatz.dep-status-durchgeführt .week-agenda-pill { background: var(--status-done-bg); color: var(--status-done-fg); }
+.week-agenda-item.is-einsatz.dep-status-abgerechnet .week-agenda-pill  { background: var(--status-billed-bg); color: var(--status-billed-fg); }
+.week-agenda-item.is-einsatz.dep-status-storniert .week-agenda-pill    { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
 .week-agenda-item.is-einsatz.dep-status-durchgeführt { border-left-color: var(--muted); background: #f9fafb; }
 .week-agenda-item.is-einsatz.dep-status-durchgeführt:hover { background: #f3f4f6; }
 .week-agenda-item.is-einsatz.dep-status-durchgeführt .week-agenda-tag { background: #f3f4f6; color: var(--muted); }

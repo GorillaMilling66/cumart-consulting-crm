@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.5 (Wochen-Items aligned + Datenpflege-Filter:
+   1) Wochen-Agenda-Items haben jetzt eine einzelne fixed-width
+      Pille (78 px) statt Tag+Status nebeneinander. Damit stehen
+      Pills und Titel sauber untereinander aligned.
+   2) Firmen-Liste: neuer Filter „Nur unvollständige" + Pill
+      „unvollständig" (amber Token-Farben) neben dem Firmennamen.
+      Click „Erste Firma öffnen" navigiert zur ersten
+      unvollständigen, „Unvollständige Firmen" springt mit
+      gesetztem Filter in die Liste.)
    Version 1.45.4 (Heute-Tab — nächste 3 Tage als 3 Cards
    nebeneinander direkt unter den Einsatzkarten. Vorher waren
    sie in einem zugeklappten Akkordeon ganz unten — jetzt sofort
@@ -551,6 +560,7 @@ let pendingDeploymentsFilter = null;
 
 // Pending filter für Aufgaben (z.B. #/aufgaben?firma=…&scope=all_open)
 let pendingTasksFilter = null;
+let pendingCompaniesFilter = null;
 // Aktiver Projekt-Filter (kein UI-Dropdown, nur per URL-Param)
 let tasksProjectFilterActive = null;
 
@@ -2147,6 +2157,9 @@ function navigateTo(page, param) {
     hash = '#/einsaetze';
   } else if (page === 'heute') {
     hash = '#/heute';
+  } else if (page === 'companies' && param && typeof param === 'object') {
+    pendingCompaniesFilter = { ...(pendingCompaniesFilter || {}), ...param };
+    hash = '#/firmen';
   } else if (page === 'companies') {
     hash = '#/firmen';
   } else if (page === 'contacts') {
@@ -3966,15 +3979,36 @@ async function loadCompanies() {
   if (error) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
   companiesCache = data || [];
+
+  // v1.45.5: Pending-Filter aus Drilldown anwenden
+  if (pendingCompaniesFilter) {
+    if (pendingCompaniesFilter.incomplete) {
+      const cb = document.getElementById('companies-incomplete-filter');
+      if (cb) cb.checked = true;
+    }
+    pendingCompaniesFilter = null;
+  }
+
   filterCompanies();
+}
+
+/** v1.45.5: prüft ob eine Firma als „unvollständig" zählt — gleiche Logik
+ *  wie in loadIncompleteRecordsStats (keine Adresse UND keine Kontaktdaten). */
+function isCompanyIncomplete(c) {
+  return !((c.strasse || '').trim())
+      && !((c.stadt   || '').trim())
+      && !((c.telefon || '').trim())
+      && !((c.email   || '').trim());
 }
 
 function filterCompanies() {
   const searchTerm = document.getElementById('companies-search').value.trim().toLowerCase();
   const typFilter  = document.getElementById('companies-typ-filter').value;
+  const incompleteFilter = document.getElementById('companies-incomplete-filter')?.checked;
 
   let filtered = companiesCache;
   if (typFilter) filtered = filtered.filter(c => c.typ_id === typFilter);
+  if (incompleteFilter) filtered = filtered.filter(isCompanyIncomplete);
   if (searchTerm) {
     filtered = filtered.filter(c => {
       const haystack = [c.name, c.stadt, c.plz, c.email, c.telefon, c.branche, c.strasse, c.website]
@@ -4041,7 +4075,7 @@ function renderCompaniesTable(companies) {
     return `
       <tr>
         <td>
-          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${abcHtml}${esc(c.name)}</div>
+          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${abcHtml}${esc(c.name)}${isCompanyIncomplete(c) ? '<span class="incomplete-badge" title="Datenpflege-Bedarf — keine Adresse und keine Kontaktdaten">unvollständig</span>' : ''}</div>
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
         </td>
         <td>
@@ -11741,6 +11775,8 @@ function renderWeekAgendaDay(day) {
 }
 
 function renderWeekAgendaItem(it) {
+  // v1.45.5: Eine fixed-width Pille pro Item (statt Tag + Status nebeneinander).
+  // Damit stehen alle Items sauber untereinander aligned.
   if (it.kind === 'einsatz') {
     const d = it.dep;
     const status = d.status || 'Geplant';
@@ -11753,8 +11789,7 @@ function renderWeekAgendaItem(it) {
       wert > 0 ? formatPreis(wert) : ''
     ].filter(Boolean).join(' · ');
     return `<div class="week-agenda-item is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" data-kind="deployment" data-id="${esc(d.id)}" onclick="weekStripToggleExpand('deployment','${esc(d.id)}',this)">
-      <span class="week-agenda-tag">Einsatz</span>
-      <span class="week-agenda-status">${esc(status)}</span>
+      <span class="week-agenda-pill">Einsatz</span>
       <div class="week-agenda-body">
         <div class="week-agenda-titel">${esc(firma)}</div>
         <div class="week-agenda-sub">${esc(titel)}${meta ? ' · ' + esc(meta) : ''}</div>
@@ -11766,9 +11801,9 @@ function renderWeekAgendaItem(it) {
     const titel = t.titel || 'Termin';
     const firma = t.company?.name || '';
     const sub = [firma, t.ort].filter(Boolean).join(' · ');
+    const pillText = time || 'Termin';
     return `<div class="week-agenda-item is-termin" data-kind="appointment" data-id="${esc(t.id)}" onclick="weekStripToggleExpand('appointment','${esc(t.id)}',this)">
-      <span class="week-agenda-tag">Termin</span>
-      <span class="week-agenda-time">${esc(time || '—')}</span>
+      <span class="week-agenda-pill">${esc(pillText)}</span>
       <div class="week-agenda-body">
         <div class="week-agenda-titel">${esc(titel)}</div>
         ${sub ? `<div class="week-agenda-sub">${esc(sub)}</div>` : ''}
@@ -12299,7 +12334,7 @@ function renderHeuteTasksAside(data) {
         <div class="aside-insight-body">${parts.join('. ')}.</div>
         <div class="aside-insight-actions">
           ${actionBtn}
-          ${ic.companies > 0 ? `<button class="aside-insight-btn is-ghost" onclick="navigateTo('companies')">Alle Firmen</button>` : ''}
+          ${ic.companies > 0 ? `<button class="aside-insight-btn is-ghost" onclick="navigateTo('companies',{ incomplete: true })">Unvollständige Firmen</button>` : ''}
           ${ic.contacts  > 0 ? `<button class="aside-insight-btn is-ghost" onclick="navigateTo('contacts')">Alle Kontakte</button>` : ''}
         </div>
       </div>`;
