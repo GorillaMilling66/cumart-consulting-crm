@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.43.0 (Vier UX-Verbesserungen rund um Datenpflege:
+   1) Kalender-Quick-Create-Einsatz: aktueller User wird auto-
+   matisch als Techniker eingetragen. 2) Quick-Create-Mini-
+   Modale für Firma + Kontakt mit Plus-Button neben jedem
+   Firma-/Kontakt-Dropdown in den Anlege-Modals — Firma nur
+   mit Name, Kontakt nur mit Vor+Nachname anlegbar, Rest
+   später ergänzen. 3) Briefing-Card „Datenpflege" zählt
+   unvollständige Datensätze (Firma ohne Adresse+Kontakt,
+   Kontakt ohne Telefon+E-Mail+Position). 4) Kalender-Bar
+   bekommt „Alle Mitarbeiter"-Option als ersten Eintrag im
+   Mitarbeiter-Dropdown — Default bleibt eingeloggter User.)
    Version 1.42.0 (Dein Tag — Briefing-Dashboard als Login-
    Landing. Drei Tabs Heute/Woche/Monat im narrativen Stil:
    Narrativ-Leiste mit regelbasiertem Slot-Filling, KPI-Mini-
@@ -9965,7 +9976,9 @@ async function initCalendarBar() {
 
   await loadUserProfilesCache();
   const select = document.getElementById('calendar-user-select');
-  select.innerHTML = userProfilesCache
+  // v1.43: „Alle Mitarbeiter" als zusätzliche Option oben
+  select.innerHTML = `<option value="__all__">Alle Mitarbeiter</option>`
+    + userProfilesCache
     .map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
   if (currentProfile?.id) select.value = currentProfile.id;
 
@@ -10033,22 +10046,31 @@ async function renderCalendarBar() {
 
   _calendarState.holidays = computeBwHolidays(year);
 
-  // Events parallel laden
+  // Events parallel laden — bei userId='__all__' ohne Personen-Filter (v1.43.0)
+  const isAll = userId === '__all__';
+  const apptQuery = db.from('appointments')
+    .select('id, titel, datum, uhrzeit_von, status, company:companies(name), typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
+    .is('deleted_at', null)
+    .gte('datum', startISO).lte('datum', endISO);
+  if (!isAll) apptQuery.eq('erstellt_von', userId);
+
   const [depRes, apptRes] = await Promise.all([
-    // Einsätze: über deployment_technicians → deployments
-    db.from('deployment_technicians')
-      .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, company:companies(name))')
-      .eq('user_id', userId),
-    // Termine: erstellt_von = user, im Monatsfenster
-    db.from('appointments')
-      .select('id, titel, datum, uhrzeit_von, status, company:companies(name), typ:lookup_values!appointments_typ_id_fkey(wert, farbe)').is('deleted_at', null)
-      .eq('erstellt_von', userId)
-      .gte('datum', startISO).lte('datum', endISO)
+    isAll
+      // „Alle": direkt alle Einsätze laden, ohne Join über deployment_technicians
+      ? db.from('deployments')
+          .select('id, titel, datum_von, datum_bis, status, deleted_at, company:companies(name)')
+          .is('deleted_at', null)
+      : db.from('deployment_technicians')
+          .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, company:companies(name))')
+          .eq('user_id', userId),
+    apptQuery
   ]);
 
-  const deployments = (depRes.data || [])
-    .map(r => r.deployment)
-    .filter(d => d && !d.deleted_at && d.datum_von);
+  const deployments = isAll
+    ? (depRes.data || []).filter(d => d && !d.deleted_at && d.datum_von)
+    : (depRes.data || [])
+        .map(r => r.deployment)
+        .filter(d => d && !d.deleted_at && d.datum_von);
   const apptsInMonth = apptRes.data || [];
 
   // Event-Map pro Tag befüllen
@@ -10221,6 +10243,141 @@ async function calendarQuickCreateAppointment(iso) {
   if (datum) { datum.value = iso; datum.dispatchEvent(new Event('change', { bubbles: true })); }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  QUICK-CREATE FIRMA / KONTAKT (v1.43.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Inline-Anlegen von Firma/Kontakt aus anderen Modals heraus, ohne
+// das Eltern-Modal zu verlassen. Pflichtfelder: nur Name (Firma)
+// bzw. Vor+Nachname (Kontakt). Nach Save wird das Ziel-Select
+// neu populiert und der neue Eintrag direkt selektiert.
+
+let _qcTargetSelectId = null;       // Ziel-Select-ID, in den der neue Eintrag gewählt wird
+let _qcContextCompanySelectId = null; // Bei Kontakt-Quick-Create: Firma aus diesem Select vorbelegen
+
+function openQuickCreateCompany(targetSelectId) {
+  _qcTargetSelectId = targetSelectId;
+  document.getElementById('qf-name').value = '';
+  document.getElementById('modal-quick-firma').classList.add('open');
+  setTimeout(() => document.getElementById('qf-name').focus(), 100);
+}
+
+function closeQuickCreateCompany() {
+  document.getElementById('modal-quick-firma').classList.remove('open');
+  _qcTargetSelectId = null;
+}
+
+async function saveQuickCreateCompany() {
+  const name = document.getElementById('qf-name').value.trim();
+  if (!name) { showToast('Bitte Firmenname eingeben.', true); return; }
+  const targetId = _qcTargetSelectId;
+  const btn = document.getElementById('qf-save-btn');
+
+  btn.disabled = true; btn.textContent = 'Wird angelegt …';
+  try {
+    // Default-Typ: erster aktiver „unternehmens_typ" aus den Lookups
+    const typen = await loadUnternehmensTypen();
+    const default_typ_id = typen[0]?.id || null;
+    if (!default_typ_id) {
+      throw new Error('Kein Firmen-Typ verfügbar — bitte unter Stammdaten einen anlegen.');
+    }
+    const { data, error } = await db.from('companies')
+      .insert({ name, typ_id: default_typ_id, land: 'Deutschland' })
+      .select('id, name').single();
+    if (error) throw new Error(error.message);
+
+    // Cache aktualisieren + neue Firma vorne einsortieren (alphabetisch)
+    companiesCache.push({ id: data.id, name: data.name });
+    companiesCache.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de'));
+
+    // Ziel-Select neu populieren — Platzhalter-Option (falls vorhanden) erhalten
+    if (targetId) {
+      const sel = document.getElementById(targetId);
+      if (sel) {
+        const placeholderHtml = sel.querySelector('option[value=""]')?.outerHTML || '';
+        sel.innerHTML = placeholderHtml + companiesCache
+          .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+        sel.value = data.id;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+
+    closeQuickCreateCompany();
+    showToast(`Firma „${name}" angelegt — du kannst sie später ergänzen.`);
+  } catch (e) {
+    showToast('Fehler: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Anlegen';
+  }
+}
+
+function openQuickCreateKontakt(targetSelectId, contextCompanySelectId) {
+  _qcTargetSelectId = targetSelectId;
+  _qcContextCompanySelectId = contextCompanySelectId || null;
+  document.getElementById('qk-vorname').value = '';
+  document.getElementById('qk-nachname').value = '';
+
+  // Firma-Dropdown im Quick-Modal befüllen (wenn Cache da)
+  const firmaSel = document.getElementById('qk-firma');
+  if (firmaSel) {
+    firmaSel.innerHTML = '<option value="">— Keine Firma —</option>'
+      + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    // Vorbelegung: aus Eltern-Modal-Firma
+    if (contextCompanySelectId) {
+      const ctxVal = document.getElementById(contextCompanySelectId)?.value || '';
+      if (ctxVal) firmaSel.value = ctxVal;
+    }
+  }
+
+  document.getElementById('modal-quick-kontakt').classList.add('open');
+  setTimeout(() => document.getElementById('qk-vorname').focus(), 100);
+}
+
+function closeQuickCreateKontakt() {
+  document.getElementById('modal-quick-kontakt').classList.remove('open');
+  _qcTargetSelectId = null;
+  _qcContextCompanySelectId = null;
+}
+
+async function saveQuickCreateKontakt() {
+  const vorname  = document.getElementById('qk-vorname').value.trim();
+  const nachname = document.getElementById('qk-nachname').value.trim();
+  const firmaId  = document.getElementById('qk-firma').value || null;
+  if (!vorname || !nachname) { showToast('Bitte Vor- und Nachname eingeben.', true); return; }
+  const targetId = _qcTargetSelectId;
+  const btn = document.getElementById('qk-save-btn');
+
+  btn.disabled = true; btn.textContent = 'Wird angelegt …';
+  try {
+    const { data, error } = await db.from('contacts')
+      .insert({ vorname, nachname, company_id: firmaId })
+      .select('id, vorname, nachname, company_id').single();
+    if (error) throw new Error(error.message);
+
+    // Ziel-Select neu populieren — wir brauchen die aktuellen Kontakte des Firma-Kontexts.
+    // Pragmatisch: wenn Eltern-Modal eine Firma im Kontext hat, rebuilde die passende Dropdown.
+    if (targetId) {
+      const sel = document.getElementById(targetId);
+      if (sel) {
+        const fullName = `${vorname} ${nachname}`;
+        const opt = document.createElement('option');
+        opt.value = data.id;
+        opt.textContent = fullName;
+        sel.appendChild(opt);
+        sel.value = data.id;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+
+    closeQuickCreateKontakt();
+    showToast(`Kontakt „${vorname} ${nachname}" angelegt — du kannst ihn später ergänzen.`);
+  } catch (e) {
+    showToast('Fehler: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Anlegen';
+  }
+}
+
 async function calendarQuickCreateDeployment(iso) {
   closeCalendarQuickMenu();
   closeCalendarDayPopover();
@@ -10229,6 +10386,14 @@ async function calendarQuickCreateDeployment(iso) {
   const bis = document.getElementById('d-datum-bis');
   if (von) { von.value = iso; von.dispatchEvent(new Event('change', { bubbles: true })); }
   if (bis && !bis.value) bis.value = iso;
+  // v1.43.0: Aktueller User automatisch als Techniker, sonst landet der Einsatz
+  // nicht im Kalender, aus dem er gerade angelegt wurde.
+  if (currentProfile?.id) {
+    selectedTechnikerIds.add(currentProfile.id);
+    if (typeof renderTechnikerChipsForDeployment === 'function') {
+      renderTechnikerChipsForDeployment();
+    }
+  }
 }
 
 async function calendarQuickCreateTask(iso) {
@@ -10285,6 +10450,42 @@ function briefingRangeForScope(scope) {
   return { startISO: toISODate(first), endISO: toISODate(last), label: 'diesen Monat' };
 }
 
+/** Zählt unvollständige Datensätze (v1.43.0).
+ *  Heuristik:
+ *  - Firma unvollständig: keine Strasse UND keine Stadt UND kein Telefon UND keine E-Mail
+ *  - Kontakt unvollständig: kein Telefon UND keine E-Mail UND keine Position
+ *  Gibt nur die Zahlen zurück + die ältesten 3 IDs als Anker für die Detail-Action. */
+async function loadIncompleteRecordsStats() {
+  const [companiesRes, contactsRes] = await Promise.all([
+    db.from('companies')
+      .select('id, name, strasse, stadt, telefon, email, created_at')
+      .is('deleted_at', null).order('created_at', { ascending: false }),
+    db.from('contacts')
+      .select('id, vorname, nachname, telefon, email, position, created_at')
+      .is('deleted_at', null).order('created_at', { ascending: false })
+  ]);
+
+  const isCompanyIncomplete = c =>
+    !((c.strasse || '').trim()) &&
+    !((c.stadt   || '').trim()) &&
+    !((c.telefon || '').trim()) &&
+    !((c.email   || '').trim());
+  const isContactIncomplete = k =>
+    !((k.telefon  || '').trim()) &&
+    !((k.email    || '').trim()) &&
+    !((k.position || '').trim());
+
+  const incompleteCompanies = (companiesRes.data || []).filter(isCompanyIncomplete);
+  const incompleteContacts  = (contactsRes.data  || []).filter(isContactIncomplete);
+
+  return {
+    companies: incompleteCompanies.length,
+    contacts:  incompleteContacts.length,
+    sampleCompanies: incompleteCompanies.slice(0, 3),
+    sampleContacts:  incompleteContacts.slice(0, 3)
+  };
+}
+
 /** Lädt die Datenbasis für ein Briefing parallel. */
 async function loadBriefingData(userId, scope) {
   const range = briefingRangeForScope(scope);
@@ -10300,7 +10501,8 @@ async function loadBriefingData(userId, scope) {
     oldOpenTasks,
     lastCreatedAppt,
     weekDoneAppts,    // für Good-Karten: durchgeführte Termine der letzten 7 Tage
-    weekDoneDeps      // dito Einsätze
+    weekDoneDeps,     // dito Einsätze
+    incompleteStats   // v1.43: Datenpflege
   ] = await Promise.all([
     db.from('appointments')
       .select('id, titel, datum, uhrzeit_von, uhrzeit_bis, status, ort, company:companies(id, name), contact:contacts(id, vorname, nachname), typ:lookup_values!appointments_typ_id_fkey(wert, farbe), deployment_id')
@@ -10335,7 +10537,8 @@ async function loadBriefingData(userId, scope) {
       .lte('datum', todayISO),
     db.from('deployment_technicians')
       .select('deployment:deployments!inner(id, datum_von, status, deleted_at)')
-      .eq('user_id', userId)
+      .eq('user_id', userId),
+    loadIncompleteRecordsStats()
   ]);
 
   // Einsätze filtern auf Range + nicht gelöscht
@@ -10360,7 +10563,8 @@ async function loadBriefingData(userId, scope) {
     oldOpenTasks: oldOpenTasks.data || [],
     lastCreatedAppt: (lastCreatedAppt.data || [])[0] || null,
     weekDoneAppts: weekDoneAppts.data || [],
-    weekDoneDeps:  depsThisWeekDone
+    weekDoneDeps:  depsThisWeekDone,
+    incompleteStats: incompleteStats || { companies: 0, contacts: 0 }
   };
 }
 
@@ -10650,6 +10854,38 @@ function renderBriefingCards(scope, data) {
         </div>
         <div class="briefing-actions">
           <button class="briefing-btn is-primary" onclick="navigateTo('tasks',{ scope:'mine_open' })">Aufgaben durchgehen</button>
+        </div>
+      </div>`);
+  }
+
+  // ── DATENPFLEGE — unvollständige Firmen/Kontakte (v1.43.0) ──
+  if (data.incompleteStats && (data.incompleteStats.companies + data.incompleteStats.contacts) > 0) {
+    const ic = data.incompleteStats;
+    const parts = [];
+    if (ic.companies > 0) parts.push(`<strong>${ic.companies}</strong> Firma${ic.companies === 1 ? '' : 'en'} ohne Adresse oder Kontaktdaten`);
+    if (ic.contacts  > 0) parts.push(`<strong>${ic.contacts}</strong> Kontakt${ic.contacts === 1 ? 'e' : 'e'} ohne Telefon, E-Mail oder Position`);
+    const oldestSample = (ic.sampleCompanies?.[0] || ic.sampleContacts?.[0]);
+    let actionBtn = '';
+    if (ic.sampleCompanies && ic.sampleCompanies[0]) {
+      actionBtn = `<button class="briefing-btn is-primary" onclick="navigateTo('firma','${esc(ic.sampleCompanies[0].id)}')">Erste Firma öffnen</button>`;
+    } else if (ic.sampleContacts && ic.sampleContacts[0]) {
+      actionBtn = `<button class="briefing-btn is-primary" onclick="navigateTo('kontakt','${esc(ic.sampleContacts[0].id)}')">Ersten Kontakt öffnen</button>`;
+    }
+    cards.push(`
+      <div class="briefing-card tone-gap">
+        <div class="briefing-card-stripe"></div>
+        <div class="briefing-card-head">
+          <span class="briefing-kicker">Datenpflege</span>
+          <span class="briefing-card-since">Schnell-Anlagen ergänzen</span>
+        </div>
+        <div class="briefing-card-headline">${ic.companies + ic.contacts} Datensätze sind nur halb ausgefüllt.</div>
+        <div class="briefing-card-body">
+          ${parts.join(', ')}. ${oldestSample ? `Ältester offener: <em>${esc(oldestSample.name || (oldestSample.vorname + ' ' + oldestSample.nachname))}</em>.` : ''}
+        </div>
+        <div class="briefing-actions">
+          ${actionBtn}
+          ${ic.companies > 0 ? `<button class="briefing-btn" onclick="navigateTo('companies')">Alle Firmen</button>` : ''}
+          ${ic.contacts  > 0 ? `<button class="briefing-btn" onclick="navigateTo('contacts')">Alle Kontakte</button>` : ''}
         </div>
       </div>`);
   }

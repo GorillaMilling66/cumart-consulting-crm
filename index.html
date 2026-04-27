@@ -1793,6 +1793,52 @@
 </div>
 
 <!-- SHARED: SCHNELLAKTIONEN-MODAL (v1.25.0) -->
+<!-- SHARED: QUICK-CREATE FIRMA (v1.43.0) — schnelles Inline-Anlegen aus anderen Modals -->
+<div class="modal-overlay" id="modal-quick-firma">
+  <div class="modal" style="width:420px;max-width:calc(100vw - 40px)">
+    <div class="modal-title">Neue Firma anlegen</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Reicht der Name fürs Erste — Adresse und Kontaktdaten kannst du später ergänzen.
+    </div>
+    <div class="form-group">
+      <label>Firmenname *</label>
+      <input type="text" id="qf-name" placeholder="z. B. Müller Maschinenbau GmbH" autocomplete="off">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeQuickCreateCompany()">Abbrechen</button>
+      <button class="btn btn-primary" id="qf-save-btn" onclick="saveQuickCreateCompany()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARED: QUICK-CREATE KONTAKT (v1.43.0) -->
+<div class="modal-overlay" id="modal-quick-kontakt">
+  <div class="modal" style="width:480px;max-width:calc(100vw - 40px)">
+    <div class="modal-title">Neuen Kontakt anlegen</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Vor- und Nachname reichen — Position, Telefon und E-Mail kannst du später ergänzen.
+    </div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Vorname *</label>
+        <input type="text" id="qk-vorname" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Nachname *</label>
+        <input type="text" id="qk-nachname" autocomplete="off">
+      </div>
+    </div>
+    <div class="form-group" id="qk-firma-wrap">
+      <label>Firma <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+      <select id="qk-firma"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeQuickCreateKontakt()">Abbrechen</button>
+      <button class="btn btn-primary" id="qk-save-btn" onclick="saveQuickCreateKontakt()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-quick-actions">
   <div class="modal" style="width:480px">
     <div class="modal-title">Schnellaktionen</div>
@@ -2010,7 +2056,10 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <select id="k-company"></select>
+          <div class="select-with-add">
+            <select id="k-company"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('k-company')" title="Neue Firma anlegen">+</button>
+          </div>
         </div>
       </section>
 
@@ -2129,11 +2178,17 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <select id="t-company"></select>
+          <div class="select-with-add">
+            <select id="t-company"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('t-company')" title="Neue Firma anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Kontakt</label>
-          <select id="t-contact"></select>
+          <div class="select-with-add">
+            <select id="t-contact"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('t-contact','t-company')" title="Neuen Kontakt anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Projekt</label>
@@ -2222,11 +2277,17 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <select id="a-company"></select>
+          <div class="select-with-add">
+            <select id="a-company"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('a-company')" title="Neue Firma anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Kontakt</label>
-          <select id="a-contact"></select>
+          <div class="select-with-add">
+            <select id="a-contact"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('a-contact','a-company')" title="Neuen Kontakt anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Projekt</label>
@@ -2327,12 +2388,18 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <select id="p-company"></select>
+          <div class="select-with-add">
+            <select id="p-company"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('p-company')" title="Neue Firma anlegen">+</button>
+          </div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">Ohne Firma = internes Projekt</div>
         </div>
         <div class="form-group">
           <label>Hauptkontakt</label>
-          <select id="p-hauptkontakt"></select>
+          <div class="select-with-add">
+            <select id="p-hauptkontakt"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('p-hauptkontakt','p-company')" title="Neuen Kontakt anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Verantwortlich</label>
@@ -2453,7 +2520,10 @@
         </div>
         <div class="form-group">
           <label>Firma *</label>
-          <select id="d-company"></select>
+          <div class="select-with-add">
+            <select id="d-company"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('d-company')" title="Neue Firma anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Projekt</label>
@@ -2864,7 +2934,10 @@
         </div>
         <div class="form-group">
           <label>Hauptkontakt</label>
-          <select id="ms-hauptkontakt"></select>
+          <div class="select-with-add">
+            <select id="ms-hauptkontakt"></select>
+            <button type="button" class="select-with-add-btn" onclick="openQuickCreateKontakt('ms-hauptkontakt')" title="Neuen Kontakt anlegen">+</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Verantwortlicher</label>
