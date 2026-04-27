@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.0 (Einsatz-Hero im Heute-Dashboard. Wenn an
+   einem Tag ein Einsatz ansteht, ersetzt ein prominenter
+   Hero-Block oben die KPI-Leiste: großer Firmenname,
+   Stat-Grid mit Zeitraum/Tagessatz/Standort/Team, grüner
+   Akzent — Begründung: ein Einsatz ist die einzige direkt
+   umsatzbringende Tätigkeit und soll an Vor-Ort-Tagen alles
+   andere visuell schlagen. KPIs werden kompakter zur
+   Einordnung darunter, restliche Briefing-Cards bleiben als
+   sekundäre Information. Ohne Einsatz heute: aktuelles
+   Layout (Bürotag-Modus, Fokus auf Termine/Aufgaben).
+   Status-Hero ändert seinen Akzent (grün = geplant, gelb =
+   In Arbeit, grau = durchgeführt). Aktion „Als durchgeführt
+   markieren" direkt im Hero ohne Modal-Umweg.)
    Version 1.43.0 (Vier UX-Verbesserungen rund um Datenpflege:
    1) Kalender-Quick-Create-Einsatz: aktueller User wird auto-
    matisch als Techniker eingetragen. 2) Quick-Create-Mini-
@@ -10554,6 +10567,25 @@ async function loadBriefingData(userId, scope) {
     .filter(d => d.datum_von >= toISODate(new Date(Date.now() - 7 * 86400000)) && d.datum_von <= todayISO)
     .filter(d => d.status === 'Durchgeführt' || d.status === 'Abgerechnet');
 
+  // v1.44: Für Heute-Hero — alle Techniker der heutigen Einsätze laden, damit
+  // im Hero-Block das volle Team angezeigt werden kann (nicht nur „ich").
+  let todayDepTechniciansMap = {};
+  if (scope === 'heute') {
+    const todayDeps = depsInRangeFiltered.filter(d =>
+      d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO
+    );
+    if (todayDeps.length > 0) {
+      const ids = todayDeps.map(d => d.id);
+      const techRes = await db.from('deployment_technicians')
+        .select('deployment_id, user_id, user:user_profiles!deployment_technicians_user_id_fkey(id, name)')
+        .in('deployment_id', ids);
+      (techRes.data || []).forEach(row => {
+        if (!todayDepTechniciansMap[row.deployment_id]) todayDepTechniciansMap[row.deployment_id] = [];
+        if (row.user) todayDepTechniciansMap[row.deployment_id].push(row.user);
+      });
+    }
+  }
+
   return {
     range,
     appointments: apptInRange.data || [],
@@ -10564,7 +10596,8 @@ async function loadBriefingData(userId, scope) {
     lastCreatedAppt: (lastCreatedAppt.data || [])[0] || null,
     weekDoneAppts: weekDoneAppts.data || [],
     weekDoneDeps:  depsThisWeekDone,
-    incompleteStats: incompleteStats || { companies: 0, contacts: 0 }
+    incompleteStats: incompleteStats || { companies: 0, contacts: 0 },
+    todayDepTechniciansMap
   };
 }
 
@@ -10611,6 +10644,29 @@ function renderBriefing(scope, data) {
   })();
   const firstName = (currentProfile?.name || '').split(' ')[0] || '';
 
+  // v1.44: Heute mit Einsatz → Hero-Modus. Der Einsatz bringt Umsatz und ist
+  // Priorität für den Tag; alles andere wird zur sekundären Information.
+  const todayISO = toISODate(new Date());
+  const todayDeps = scope === 'heute'
+    ? data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO)
+    : [];
+  const heroMode = todayDeps.length > 0;
+
+  if (heroMode) {
+    return `
+      ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
+      ${renderBriefingHeroDeployment(todayDeps[0], todayDeps, data)}
+      <div class="briefing-section-head">
+        <div class="briefing-section-title">Sonst heute · zur Einordnung</div>
+        <div class="briefing-section-meta">${esc(data.range.label)}</div>
+      </div>
+      ${renderBriefingKpis(scope, data, { compact: true })}
+      ${renderBriefingCards(scope, data, { skipTodayDeployment: true })}
+      ${renderBriefingStreak(scope, data)}
+      ${renderBriefingPreview(scope, data)}
+    `;
+  }
+
   return `
     ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
     ${renderBriefingKpis(scope, data)}
@@ -10624,6 +10680,103 @@ function renderBriefing(scope, data) {
   `;
 }
 
+/** v1.44: Hero-Block für heutigen Einsatz — prominent ganz oben.
+ *  Begründung: Ein Einsatz ist die einzige direkt umsatzbringende Tätigkeit;
+ *  an Einsatz-Tagen muss der Vor-Ort-Termin alles andere visuell schlagen. */
+function renderBriefingHeroDeployment(dep, allTodayDeps, data) {
+  const techMap = data.todayDepTechniciansMap || {};
+  const techs = techMap[dep.id] || [];
+  const techText = techs.length > 0
+    ? techs.map(t => esc(t.name || '—')).join(' · ')
+    : 'Keine Techniker eingetragen';
+
+  // Zeitraum
+  const von = dep.datum_von;
+  const bis = dep.datum_bis || dep.datum_von;
+  const tage = Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
+  const zeitraumText = von === bis
+    ? formatDateDE(von)
+    : `${formatDateDE(von)} – ${formatDateDE(bis)}`;
+  const tageSub = tage > 1 ? `${tage} Tage` : '1 Tag';
+
+  // Tagessatz / Wert
+  const einzelpreis = Number(dep.einzelpreis) || 0;
+  const menge = Number(dep.menge) || 0;
+  const wert = einzelpreis * menge;
+  const tagessatzText = einzelpreis > 0
+    ? `${formatPreis(einzelpreis)}${menge > 1 ? ` × ${menge}` : ''}`
+    : '—';
+
+  const status = dep.status || 'geplant';
+  const statusClass = status === 'Durchgeführt' || status === 'Abgerechnet'
+    ? 'is-done'
+    : (status === 'In Arbeit' ? 'is-active' : 'is-planned');
+
+  const titel = dep.titel || dep.service?.name || 'Einsatz';
+  const firma = dep.company?.name || '—';
+  const ort = (dep.ort || '').trim() || (dep.company?.name ? `bei ${dep.company.name}` : '—');
+
+  const restNote = allTodayDeps.length > 1
+    ? `<div class="briefing-hero-rest">+ ${allTodayDeps.length - 1} weitere${allTodayDeps.length - 1 === 1 ? 'r' : ''} Einsatz heute</div>`
+    : '';
+
+  // Status-Toggle-Button: bietet je nach Status den nächsten logischen Schritt an
+  let toggleBtn = '';
+  if (status !== 'Durchgeführt' && status !== 'Abgerechnet') {
+    toggleBtn = `<button class="briefing-btn" onclick="markDeploymentDone('${esc(dep.id)}')">Als durchgeführt markieren</button>`;
+  }
+
+  return `
+    <div class="briefing-hero-deployment ${statusClass}">
+      <div class="briefing-hero-stripe"></div>
+      <div class="briefing-hero-head">
+        <span class="briefing-hero-kicker">Vor-Ort-Tag · Heute</span>
+        <span class="briefing-hero-status">${esc(status)}</span>
+      </div>
+      <div class="briefing-hero-firma">${esc(firma)}</div>
+      <div class="briefing-hero-titel">${esc(titel)}</div>
+      <div class="briefing-hero-stats">
+        <div class="briefing-hero-stat">
+          <div class="briefing-hero-stat-label">Zeitraum</div>
+          <div class="briefing-hero-stat-value">${esc(zeitraumText)}</div>
+          <div class="briefing-hero-stat-sub">${esc(tageSub)}</div>
+        </div>
+        <div class="briefing-hero-stat">
+          <div class="briefing-hero-stat-label">Tagessatz</div>
+          <div class="briefing-hero-stat-value">${esc(tagessatzText)}</div>
+          ${wert > 0 ? `<div class="briefing-hero-stat-sub">Gesamt ${esc(formatPreis(wert))}</div>` : ''}
+        </div>
+        <div class="briefing-hero-stat">
+          <div class="briefing-hero-stat-label">Standort</div>
+          <div class="briefing-hero-stat-value">${esc(ort)}</div>
+        </div>
+        <div class="briefing-hero-stat">
+          <div class="briefing-hero-stat-label">Team</div>
+          <div class="briefing-hero-stat-value">${techText}</div>
+        </div>
+      </div>
+      ${restNote}
+      <div class="briefing-hero-actions">
+        <button class="briefing-btn is-primary" onclick="openDeploymentModal('edit','${esc(dep.id)}')">Einsatz öffnen</button>
+        ${toggleBtn}
+        ${dep.company?.id ? `<button class="briefing-btn" onclick="navigateTo('firma','${esc(dep.company.id)}')">Firma öffnen</button>` : ''}
+      </div>
+    </div>`;
+}
+
+/** Hilfsaktion für den Hero: Status auf „Durchgeführt" setzen ohne Modal-Umweg. */
+async function markDeploymentDone(id) {
+  if (!confirm('Einsatz als durchgeführt markieren?')) return;
+  try {
+    const { error } = await db.from('deployments').update({ status: 'Durchgeführt' }).eq('id', id);
+    if (error) throw error;
+    showToast('Einsatz als durchgeführt markiert.');
+    if (typeof loadBriefing === 'function' && _currentBriefingTab) loadBriefing(_currentBriefingTab);
+  } catch (e) {
+    showToast('Fehler: ' + e.message, true);
+  }
+}
+
 // ── NARRATIV-LEISTE (regelbasiert mit Slot-Filling) ──
 function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
   const parts = [];
@@ -10634,8 +10787,10 @@ function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
     const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
     const todayAppts = data.appointments.filter(a => a.datum === todayISO);
     if (todayDeps.length > 0) {
+      // Hero zeigt den Einsatz prominent darunter — Narrativ bleibt knapp und
+      // kontextualisiert nur, was sonst noch am Tag dranhängt.
       const firma = todayDeps[0].company?.name || 'einem Kunden';
-      parts.push(`Vor-Ort-Tag bei <strong>${esc(firma)}</strong>`);
+      parts.push(`Heute bist du im Einsatz bei <strong>${esc(firma)}</strong> — der Tag gehört dem Kunden`);
     } else if (todayAppts.length > 0) {
       parts.push(`<strong>${todayAppts.length}</strong> Termin${todayAppts.length === 1 ? '' : 'e'} heute`);
     } else {
@@ -10681,7 +10836,7 @@ function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
 }
 
 // ── KPI-LEISTE ──
-function renderBriefingKpis(scope, data) {
+function renderBriefingKpis(scope, data, opts = {}) {
   const todayISO = toISODate(new Date());
   // Anzahl-Werte je nach Scope
   let label1 = 'Termine', val1 = data.appointments.length;
@@ -10698,8 +10853,9 @@ function renderBriefingKpis(scope, data) {
 
   const tasksClass = val3 > 0 ? 'is-warn' : '';
   const overdueClass = scope !== 'monat' && val4 > 0 ? 'is-danger' : '';
+  const compactClass = opts.compact ? ' is-compact' : '';
   return `
-    <div class="briefing-kpis">
+    <div class="briefing-kpis${compactClass}">
       <div class="briefing-kpi">
         <div class="briefing-kpi-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -10740,7 +10896,7 @@ function renderBriefingKpis(scope, data) {
 }
 
 // ── BRIEFING-CARDS (Hot/Opp/Gap/Good — regelbasierte Erzeugung) ──
-function renderBriefingCards(scope, data) {
+function renderBriefingCards(scope, data, opts = {}) {
   const cards = [];
   const todayISO = toISODate(new Date());
 
@@ -10770,7 +10926,9 @@ function renderBriefingCards(scope, data) {
   }
 
   // ── OPP — Heute Vor-Ort + Termine ohne Folgeschritt ──
-  if (scope === 'heute') {
+  // v1.44: Wenn der Hero-Modus den Einsatz schon prominent zeigt, hier nicht
+  // doppeln — sonst steht der gleiche Einsatz zweimal auf der Seite.
+  if (scope === 'heute' && !opts.skipTodayDeployment) {
     const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
     if (todayDeps.length > 0) {
       const dep = todayDeps[0];
