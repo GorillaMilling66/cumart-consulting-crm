@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.48.0 (Detail-Header mit Kontaktdaten-Zeile).
+   - Firma + Kontakt: Adresse / Telefon / E-Mail / Website (bzw.
+     Tel + Mail beim Kontakt) wandern aus der separaten
+     „Kontaktdaten"-Karte direkt unter den Titel im Header. Mit
+     kleinen Lucide-Icons (Pin/Phone/Mail/Globe) und tel:/mailto:
+     /https-Links. Helper renderDetailHeaderMeta + ICON_*_SVG.
+   - Sidebar-Spalte (Firma-Stammdaten) von 260 auf 320 px ver-
+     breitert, contact-card-sub darf jetzt 2 Zeilen wrappen
+     (statt nowrap+ellipsis) — Position+E-Mail bleibt lesbar.
+   - Schnellaktionen-Button im Quick-Create-Panel entfernt
+     (Firma + Kontakt). Handler-Bindings bleiben defensiv (no-op
+     wenn Element fehlt).
    Version 1.47.0 (Detail-Seiten Verdichtung & Hervorhebung).
    - Firma-Detail: Tab-Liste auf 3 reduziert (Stammdaten /
      Projekte / Aktivitäten). Kontakte als Sidebar-Panel über
@@ -4282,7 +4294,9 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-detail-name').textContent = '…';
   document.getElementById('company-detail-title').textContent = '…';
   document.getElementById('company-detail-subline').innerHTML = '';
-  document.getElementById('company-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Firma ...</div>';
+  // v1.48.0: Kontaktdaten-Meta im Header
+  const cMeta = document.getElementById('company-detail-meta');
+  if (cMeta) cMeta.innerHTML = '';
   // v1.47.0: contacts ist jetzt #company-contacts-list (kein tbody mehr).
   const cContactsList = document.getElementById('company-contacts-list');
   if (cContactsList) cContactsList.innerHTML = '<div class="info-card-empty">Lade ...</div>';
@@ -4298,7 +4312,8 @@ async function loadCompanyDetail(companyId) {
 
   if (error || !data) {
     const msg = friendlyFetchError(error, 'Firma');
-    document.getElementById('company-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">${esc(msg)}</div>`;
+    const cMetaErr = document.getElementById('company-detail-meta');
+    if (cMetaErr) cMetaErr.innerHTML = `<span style="color:var(--danger);font-size:13px">${esc(msg)}</span>`;
     document.getElementById('company-detail-title').textContent = msg;
     document.getElementById('company-detail-name').textContent = '—';
     document.getElementById('company-detail-subline').innerHTML = '';
@@ -4422,50 +4437,43 @@ function renderCompanyDetail(c) {
   // Stats-Widgets asynchron laden
   loadCompanyDashboard(c.id, c.abc_klassifizierung);
 
-  const info = document.getElementById('company-detail-info');
-  const adrLines = [];
-  if (c.strasse) adrLines.push(c.strasse);
-  const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
-  if (ort) adrLines.push(ort);
-  if (c.land && c.land !== 'Deutschland') adrLines.push(c.land);
-  const adrHtml = adrLines.length > 0
-    ? adrLines.map(l => esc(l)).join('<br>')
-    : '<span class="detail-value-muted">—</span>';
-
-  const telHtml = c.telefon
-    ? `<a href="tel:${esc(c.telefon)}">${esc(c.telefon)}</a>`
-    : '<span class="detail-value-muted">—</span>';
-  const mailHtml = c.email
-    ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`
-    : '<span class="detail-value-muted">—</span>';
-  let websiteHtml;
-  if (c.website) {
-    const url = c.website.startsWith('http') ? c.website : `https://${c.website}`;
-    websiteHtml = `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(c.website)}</a>`;
-  } else {
-    websiteHtml = '<span class="detail-value-muted">—</span>';
-  }
-
-  info.innerHTML = `
-    <div class="detail-field">
-      <div class="detail-label">Adresse</div>
-      <div class="detail-value">${adrHtml}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Website</div>
-      <div class="detail-value">${websiteHtml}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Telefon</div>
-      <div class="detail-value">${telHtml}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">E-Mail</div>
-      <div class="detail-value">${mailHtml}</div>
-    </div>
-  `;
+  // v1.48.0: Kontaktdaten direkt in den Header (kein eigenes Card mehr).
+  renderDetailHeaderMeta('company-detail-meta', {
+    address: [c.strasse, [c.plz, c.stadt].filter(Boolean).join(' '), c.land && c.land !== 'Deutschland' ? c.land : null].filter(Boolean).join(', '),
+    telefon: c.telefon,
+    email: c.email,
+    website: c.website
+  });
   // Notizen: jetzt inline-editierbar im Dashboard (siehe oben, #company-notes-inline)
 }
+
+/** v1.48.0: Rendert Adresse/Tel/Mail/Web als kompakte Inline-Zeile direkt
+ *  unter dem Titel — vorher als eigene "Kontaktdaten"-Karte unten. Nur
+ *  vorhandene Felder werden angezeigt. */
+function renderDetailHeaderMeta(elementId, fields) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const items = [];
+  if (fields.address && fields.address.trim()) {
+    items.push(`<span class="detail-meta-item"><span class="detail-meta-icon">${ICON_PIN_SVG}</span><span>${esc(fields.address)}</span></span>`);
+  }
+  if (fields.telefon) {
+    items.push(`<span class="detail-meta-item"><span class="detail-meta-icon">${ICON_PHONE_SVG}</span><a href="tel:${esc(fields.telefon)}">${esc(fields.telefon)}</a></span>`);
+  }
+  if (fields.email) {
+    items.push(`<span class="detail-meta-item"><span class="detail-meta-icon">${ICON_MAIL_SVG}</span><a href="mailto:${esc(fields.email)}">${esc(fields.email)}</a></span>`);
+  }
+  if (fields.website) {
+    const url = fields.website.startsWith('http') ? fields.website : `https://${fields.website}`;
+    items.push(`<span class="detail-meta-item"><span class="detail-meta-icon">${ICON_GLOBE_SVG}</span><a href="${esc(url)}" target="_blank" rel="noopener">${esc(fields.website)}</a></span>`);
+  }
+  el.innerHTML = items.join('');
+}
+
+const ICON_PIN_SVG   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+const ICON_PHONE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const ICON_MAIL_SVG  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/></svg>';
+const ICON_GLOBE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 
 /** v1.47.0: Kontakte als kompakte Sidebar-Liste (kein Tab mehr).
  *  Rendert in #company-contacts-list mit Name + Position + E-Mail
@@ -6214,7 +6222,9 @@ async function loadContactDetail(contactId) {
   document.getElementById('contact-detail-title').textContent = '…';
   document.getElementById('contact-detail-avatar').textContent = '…';
   document.getElementById('contact-detail-subline').innerHTML = '';
-  document.getElementById('contact-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Kontakt ...</div>';
+  // v1.48.0: Telefon/E-Mail jetzt im Header-Meta
+  const kMeta = document.getElementById('contact-detail-meta');
+  if (kMeta) kMeta.innerHTML = '';
   document.getElementById('contact-appointments-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('contact-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
   const kTasksBody = document.getElementById('contact-tasks-body');
@@ -6226,7 +6236,8 @@ async function loadContactDetail(contactId) {
 
   if (error || !data) {
     const msg = friendlyFetchError(error, 'Kontakt');
-    document.getElementById('contact-detail-info').innerHTML = `<div style="color:var(--danger);font-size:13px">${esc(msg)}</div>`;
+    const kMetaErr = document.getElementById('contact-detail-meta');
+    if (kMetaErr) kMetaErr.innerHTML = `<span style="color:var(--danger);font-size:13px">${esc(msg)}</span>`;
     document.getElementById('contact-detail-title').textContent = msg;
     document.getElementById('contact-detail-name').textContent = '—';
     document.getElementById('contact-detail-avatar').textContent = '—';
@@ -6358,38 +6369,12 @@ function renderContactDetail(k) {
   // Stats-Widgets asynchron laden
   loadContactDashboard(k.id, k.company?.id || null, k.company?.abc_klassifizierung || null, k.company?.name || null);
 
-  // Detail-Grid
-  const telHtml = k.telefon
-    ? `<a href="tel:${esc(k.telefon)}">${esc(k.telefon)}</a>`
-    : '<span class="detail-value-muted">—</span>';
-  const mailHtml = k.email
-    ? `<a href="mailto:${esc(k.email)}">${esc(k.email)}</a>`
-    : '<span class="detail-value-muted">—</span>';
-  const positionHtml = k.position
-    ? esc(k.position)
-    : '<span class="detail-value-muted">—</span>';
-  const firmaHtml = k.company
-    ? `<span class="cell-link" onclick="navigateTo('firma', '${esc(k.company.id)}')">${esc(k.company.name)}</span>`
-    : '<span class="detail-value-muted">Ohne Firma</span>';
-
-  document.getElementById('contact-detail-info').innerHTML = `
-    <div class="detail-field">
-      <div class="detail-label">Telefon</div>
-      <div class="detail-value">${telHtml}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">E-Mail</div>
-      <div class="detail-value">${mailHtml}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Position</div>
-      <div class="detail-value">${positionHtml}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Firma</div>
-      <div class="detail-value">${firmaHtml}</div>
-    </div>
-  `;
+  // v1.48.0: Telefon/E-Mail jetzt im Header-Meta. Position+Firma stehen
+  // bereits in der Subline — Doppelung vermeiden.
+  renderDetailHeaderMeta('contact-detail-meta', {
+    telefon: k.telefon,
+    email: k.email
+  });
   // Notizen: jetzt inline im Dashboard (siehe unten, wird in loadContactDetail gesetzt)
 }
 

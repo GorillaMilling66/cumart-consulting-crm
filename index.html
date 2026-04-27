@@ -409,9 +409,11 @@
 
       <div class="card detail-card">
         <div class="detail-header">
-          <div>
+          <div style="flex:1;min-width:0">
             <h1 class="page-title" id="company-detail-title">…</h1>
             <div class="detail-subline" id="company-detail-subline"></div>
+            <!-- v1.48.0: Kontaktdaten direkt im Header statt als eigene Karte -->
+            <div class="detail-header-meta" id="company-detail-meta"></div>
           </div>
           <div class="btn-row">
             <button class="btn-copy" id="company-detail-copy-btn" aria-label="Firmendaten kopieren" title="Kopieren">
@@ -488,11 +490,7 @@
               <div id="company-memberships-body"><div class="info-card-empty">Lade Mitgliedschaften ...</div></div>
             </div>
 
-            <!-- Kontaktdaten -->
-            <div class="info-card">
-              <div class="info-card-title">Kontaktdaten</div>
-              <div class="detail-grid" id="company-detail-info"></div>
-            </div>
+            <!-- v1.48.0: Kontaktdaten-Karte entfernt — Daten stehen jetzt im Header oben -->
 
             <!-- Notizen (inline-editierbar, speichert on blur) -->
             <div class="info-card">
@@ -535,9 +533,6 @@
               </button>
               <button class="quick-create-btn" id="company-quick-membership">
                 <span class="plus-icon">+</span> Mitgliedschaft
-              </button>
-              <button class="quick-create-btn quick-create-btn-accent" id="company-quick-actions">
-                <span class="plus-icon plus-icon-accent">⚡</span> Schnellaktionen
               </button>
             </div>
           </aside>
@@ -735,11 +730,13 @@
 
       <div class="card detail-card">
         <div class="detail-header">
-          <div style="display:flex;align-items:center;gap:14px">
-            <div class="avatar" id="contact-detail-avatar" style="width:44px;height:44px;font-size:14px">…</div>
-            <div>
+          <div style="display:flex;align-items:flex-start;gap:14px;flex:1;min-width:0">
+            <div class="avatar" id="contact-detail-avatar" style="width:44px;height:44px;font-size:14px;flex-shrink:0">…</div>
+            <div style="min-width:0;flex:1">
               <h1 class="page-title" id="contact-detail-title">…</h1>
               <div class="detail-subline" id="contact-detail-subline"></div>
+              <!-- v1.48.0: Telefon/E-Mail direkt im Header -->
+              <div class="detail-header-meta" id="contact-detail-meta"></div>
             </div>
           </div>
           <div class="btn-row">
@@ -806,10 +803,7 @@
               <div id="contact-opportunities"><div class="info-card-empty">Lade ...</div></div>
             </div>
 
-            <div class="info-card">
-              <div class="info-card-title">Kontaktdaten</div>
-              <div class="detail-grid" id="contact-detail-info"></div>
-            </div>
+            <!-- v1.48.0: Kontaktdaten-Karte entfernt — Daten stehen jetzt im Header oben -->
 
             <div class="info-card">
               <div class="info-card-title">Notizen</div>
@@ -830,9 +824,6 @@
             </button>
             <button class="quick-create-btn" id="contact-quick-project">
               <span class="plus-icon">+</span> Projekt
-            </button>
-            <button class="quick-create-btn quick-create-btn-accent" id="contact-quick-actions" title="Benötigt zugeordnete Firma">
-              <span class="plus-icon plus-icon-accent">⚡</span> Schnellaktionen
             </button>
           </aside>
         </div>
