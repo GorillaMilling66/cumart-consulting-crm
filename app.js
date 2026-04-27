@@ -1,5 +1,11 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.3 (Vorschau-Bereich zeigt jetzt pro Tag die
+   konkreten Termine/Einsätze mit Titel, Firma und Ort statt
+   nur die Anzahl. Termine vor Einsätzen sortiert, Termine
+   nach Uhrzeit. Pro Eintrag ein farbiger Pill-Tag (Termin/
+   Einsatz) und Sub-Zeile mit Firma · Ort. Leere Tage
+   bleiben als „— frei" erkennbar.)
    Version 1.44.2 (Neuer Aufgaben-Filter „Meine überfälligen"
    im Scope-Dropdown. Briefing-Button „Alle überfälligen
    ansehen" springt jetzt direkt mit gesetztem Filter auf die
@@ -10611,10 +10617,12 @@ async function loadBriefingData(userId, scope) {
     const toISO   = toISODate(plus3);
     const [apptRes, depRes] = await Promise.all([
       db.from('appointments')
-        .select('id, datum').is('deleted_at', null).eq('erstellt_von', userId)
-        .gte('datum', fromISO).lte('datum', toISO),
+        .select('id, titel, datum, uhrzeit_von, ort, company:companies(id, name)')
+        .is('deleted_at', null).eq('erstellt_von', userId)
+        .gte('datum', fromISO).lte('datum', toISO)
+        .order('datum', { ascending: true }).order('uhrzeit_von', { ascending: true, nullsFirst: false }),
       db.from('deployment_technicians')
-        .select('deployment:deployments!inner(id, datum_von, datum_bis, deleted_at, company:companies(name))')
+        .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, ort, deleted_at, company:companies(id, name), service:services(name))')
         .eq('user_id', userId)
     ]);
     previewAppointments = apptRes.data || [];
@@ -11148,44 +11156,78 @@ function renderBriefingPreview(scope, data) {
   // v1.44.1: Vorschau nur im Heute-Scope (Woche/Monat haben eigene Tabs) und
   // nur die nächsten 3 Kalendertage. Daten kommen aus separaten Queries
   // (siehe loadBriefingData), weil der Heute-Scope sonst nur heute lädt.
+  // v1.44.3: pro Tag werden jetzt die einzelnen Termine/Einsätze mit Titel,
+  // Firma und Ort gelistet — nicht mehr nur die Anzahl.
   if (scope !== 'heute') return '';
 
   const todayISO = toISODate(new Date());
-  const upcoming = {};
-  // Drei feste Tage nach heute initialisieren, damit auch leere Tage als Zeile
-  // sichtbar bleiben („— frei").
+  const days = {};
   for (let i = 1; i <= 3; i++) {
     const d = new Date(todayISO); d.setDate(d.getDate() + i);
-    upcoming[toISODate(d)] = { termine: 0, einsaetze: 0 };
+    days[toISODate(d)] = { items: [] };
   }
 
   (data.previewAppointments || []).forEach(a => {
-    if (upcoming[a.datum]) upcoming[a.datum].termine++;
+    if (!days[a.datum]) return;
+    const ortFirma = [a.company?.name, a.ort].filter(Boolean).join(' · ');
+    days[a.datum].items.push({
+      kind: 'termin',
+      titel: a.titel || 'Termin',
+      sub: ortFirma,
+      time: a.uhrzeit_von || ''
+    });
   });
   (data.previewDeployments || []).forEach(d => {
-    Object.keys(upcoming).forEach(iso => {
+    Object.keys(days).forEach(iso => {
       const von = d.datum_von, bis = d.datum_bis || d.datum_von;
-      if (iso >= von && iso <= bis) upcoming[iso].einsaetze++;
+      if (iso >= von && iso <= bis) {
+        const ortFirma = [d.company?.name, d.ort].filter(Boolean).join(' · ');
+        days[iso].items.push({
+          kind: 'einsatz',
+          titel: d.titel || d.service?.name || 'Einsatz',
+          sub: ortFirma,
+          time: ''
+        });
+      }
     });
   });
 
-  const dates = Object.keys(upcoming).sort();
+  // Pro Tag: Termine vor Einsätzen, Termine nach Uhrzeit
+  Object.values(days).forEach(d => {
+    d.items.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'termin' ? -1 : 1;
+      return (a.time || '').localeCompare(b.time || '');
+    });
+  });
+
+  const dates = Object.keys(days).sort();
   const rowsHtml = dates.map(iso => {
     const dt = new Date(iso);
     const day = WEEKDAYS_DE[dt.getDay()];
     const sub = `${dt.getDate()}. ${MONTHS_DE[dt.getMonth()]}`;
-    const u = upcoming[iso];
-    const stats = [
-      u.termine > 0 ? `${u.termine} Termin${u.termine === 1 ? '' : 'e'}` : null,
-      u.einsaetze > 0 ? `${u.einsaetze} Einsatz${u.einsaetze === 1 ? '' : 'e'}` : null
-    ].filter(Boolean).join(' · ') || '— frei';
+    const items = days[iso].items;
+
+    let bodyHtml;
+    if (items.length === 0) {
+      bodyHtml = `<div class="briefing-preview-empty">— frei</div>`;
+    } else {
+      bodyHtml = items.map(it => `
+        <div class="briefing-preview-item">
+          <span class="briefing-preview-kind is-${it.kind}">${it.kind === 'termin' ? 'Termin' : 'Einsatz'}</span>
+          <div class="briefing-preview-item-body">
+            <div class="briefing-preview-item-titel">${it.time ? `<span class="briefing-preview-time">${esc(it.time.substring(0,5))}</span> ` : ''}${esc(it.titel)}</div>
+            ${it.sub ? `<div class="briefing-preview-item-sub">${esc(it.sub)}</div>` : ''}
+          </div>
+        </div>`).join('');
+    }
+
     return `
       <div class="briefing-preview-row">
-        <div>
+        <div class="briefing-preview-day-col">
           <div class="briefing-preview-day">${esc(day)}</div>
           <div class="briefing-preview-day-sub">${esc(sub)}</div>
         </div>
-        <div class="briefing-preview-stats">${esc(stats)}</div>
+        <div class="briefing-preview-items">${bodyHtml}</div>
       </div>`;
   }).join('');
   return `
