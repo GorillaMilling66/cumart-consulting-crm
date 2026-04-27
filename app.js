@@ -1,5 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.11 (Firma-Combobox + unabhängige Anlage:
+   1) Firma-Felder in Termin/Aufgabe/Projekt/Einsatz/Kontakt
+      sind jetzt <input list="…"> Combobox — analog zur
+      Kontakt-Combobox aus v1.44.10. Plus-Buttons + extra
+      Quick-Create-Modal entfernt. Tippt der User einen Namen
+      ein, der nicht in der Liste ist, wird die Firma beim
+      Speichern automatisch angelegt (nur Name, Rest später).
+   2) Kontakt darf jetzt unabhängig von einer Firma angelegt
+      werden — Combobox bleibt immer enabled, auch ohne Firma
+      gewählt. Beim Anlegen eines neuen Kontakts wird company_id
+      auf null gesetzt, falls keine Firma gewählt.
+   3) onChange-Handler auf Firma-Select wurden zu input-Events
+      auf Firma-Combobox: getCompanyComboboxId() liefert die
+      ID nur bei exaktem Match — abhängige Dropdowns (Kontakt,
+      Projekt, Adress-Auto-Fill) reagieren erst, wenn der
+      Firmen-Name gefunden wurde.)
    Version 1.44.10 (Kontakt-Combobox statt Select+Plus-Modal.
    Bisher: Kontakt-Dropdown + Plus-Button → das Quick-Create-
    Modal öffnete sich „hinter" dem aktiven Modal (z-index-Bug)
@@ -1321,7 +1337,9 @@ function renderAppointmentPreview() {
   const uhrzeitBis = document.getElementById('t-uhrzeit-bis').value;
   const typId = document.getElementById('t-typ').value;
   const statusVal = document.getElementById('t-status').value;
-  const companyId = document.getElementById('t-company').value;
+  // t-company ist seit v1.44.11 eine Combobox — ID nur bei exaktem Match,
+  // sonst leer (neue Firma wird beim Save angelegt).
+  const companyId = getCompanyComboboxId('t-company', 't-company-list');
   // t-contact ist seit v1.44.10 ein Combobox-<input>
   const contactInput = document.getElementById('t-contact');
   const contactName = (contactInput?.value || '').trim();
@@ -1410,7 +1428,8 @@ function renderDeploymentPreview() {
 
   const titelVal = document.getElementById('d-titel').value.trim();
   const statusVal = document.getElementById('d-status').value;
-  const companyId = document.getElementById('d-company').value;
+  // d-company ist seit v1.44.11 eine Combobox
+  const companyId = getCompanyComboboxId('d-company', 'd-company-list');
   const company = companiesCache.find(c => c.id === companyId);
   const projectSelect = document.getElementById('d-project');
   const projectName = projectSelect.value ? (projectSelect.options[projectSelect.selectedIndex]?.textContent || '') : '';
@@ -1515,7 +1534,8 @@ function renderTaskPreview() {
   const assigneeSelect = document.getElementById('a-assigned-to');
   const assigneeName = assigneeSelect.value ? (assigneeSelect.options[assigneeSelect.selectedIndex]?.textContent || '') : '';
   const beschreibung = document.getElementById('a-beschreibung').value.trim();
-  const companyId = document.getElementById('a-company').value;
+  // a-company ist seit v1.44.11 eine Combobox
+  const companyId = getCompanyComboboxId('a-company', 'a-company-list');
   const company = companiesCache.find(c => c.id === companyId);
   // a-contact ist seit v1.44.10 ein Combobox-<input>
   const contactInput = document.getElementById('a-contact');
@@ -1674,8 +1694,9 @@ function renderContactPreview() {
   const vorname  = document.getElementById('k-vorname').value.trim();
   const nachname = document.getElementById('k-nachname').value.trim();
   const position = document.getElementById('k-position').value.trim();
-  const companySelect = document.getElementById('k-company');
-  const companyName   = companySelect.value ? (companySelect.options[companySelect.selectedIndex]?.textContent || '') : '';
+  // k-company ist seit v1.44.11 eine Combobox
+  const companyInput = document.getElementById('k-company');
+  const companyName  = (companyInput?.value || '').trim();
   const telefon  = document.getElementById('k-telefon').value.trim();
   const email    = document.getElementById('k-email').value.trim();
 
@@ -1692,7 +1713,7 @@ function renderContactPreview() {
   const positionHtml = position ? `<div class="preview-time">${esc(position)}</div>` : '';
 
   const kvRows = [];
-  if (companyName && companySelect.value) kvRows.push(['Firma', esc(companyName)]);
+  if (companyName) kvRows.push(['Firma', esc(companyName)]);
   if (telefon) kvRows.push(['Telefon', esc(telefon)]);
   if (email)   kvRows.push(['E-Mail',  esc(email)]);
   const kvHtml = kvRows.length
@@ -1730,8 +1751,9 @@ function renderProjectPreview() {
   const umsatz     = Number(document.getElementById('p-umsatz').value) || 0;
   const startdatum = document.getElementById('p-startdatum').value;
   const enddatum   = document.getElementById('p-enddatum').value;
-  const companySelect = document.getElementById('p-company');
-  const companyName   = companySelect.value ? (companySelect.options[companySelect.selectedIndex]?.textContent || '') : '';
+  // p-company ist seit v1.44.11 eine Combobox
+  const companyInput = document.getElementById('p-company');
+  const companyName  = (companyInput?.value || '').trim();
   // p-hauptkontakt ist seit v1.44.10 ein Combobox-<input> — der Wert ist
   // direkt der Anzeigename, kein Mapping über options nötig.
   const kontaktInput = document.getElementById('p-hauptkontakt');
@@ -1765,7 +1787,7 @@ function renderProjectPreview() {
     : '';
 
   const kvRows = [];
-  if (companyName && companySelect.value) kvRows.push(['Firma', esc(companyName)]);
+  if (companyName) kvRows.push(['Firma', esc(companyName)]);
   if (kontaktName) kvRows.push(['Kontakt', esc(kontaktName)]);
   if (verantwName && verantwSelect.value) kvRows.push(['Verantw.', esc(verantwName)]);
   const kvHtml = kvRows.length
@@ -4496,9 +4518,8 @@ async function openContactModal(mode, contactId = null) {
     const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
-  const companySelect = document.getElementById('k-company');
-  companySelect.innerHTML = '<option value="">— Keine Firma —</option>'
-    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  // v1.44.11: k-company ist eine Combobox — neue Firmen werden inline angelegt
+  fillCompanyCombobox('k-company', 'k-company-list');
 
   document.getElementById('k-vorname').value = '';
   document.getElementById('k-nachname').value = '';
@@ -4506,7 +4527,7 @@ async function openContactModal(mode, contactId = null) {
   document.getElementById('k-telefon').value = '';
   document.getElementById('k-email').value = '';
   document.getElementById('k-notizen').value = '';
-  companySelect.value = '';
+  setCompanyComboboxValue('k-company', 'k-company-list', '');
 
   if (mode === 'new') {
     document.getElementById('modal-contact-title').textContent = 'Neuer Kontakt';
@@ -4514,7 +4535,7 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-delete-btn').style.display = 'none';
 
     if (contactModalPrefillCompanyId) {
-      companySelect.value = contactModalPrefillCompanyId;
+      setCompanyComboboxValue('k-company', 'k-company-list', contactModalPrefillCompanyId);
       contactModalPrefillCompanyId = null;
     }
   } else {
@@ -4531,7 +4552,7 @@ async function openContactModal(mode, contactId = null) {
     document.getElementById('k-telefon').value = data.telefon || '';
     document.getElementById('k-email').value = data.email || '';
     document.getElementById('k-notizen').value = data.notizen || '';
-    if (data.company_id) companySelect.value = data.company_id;
+    if (data.company_id) setCompanyComboboxValue('k-company', 'k-company-list', data.company_id);
   }
 
   setupContactPreviewListeners();  // v1.38
@@ -4551,7 +4572,6 @@ async function saveContact() {
   const vorname    = document.getElementById('k-vorname').value.trim();
   const nachname   = document.getElementById('k-nachname').value.trim();
   const position   = document.getElementById('k-position').value.trim();
-  const company_id = document.getElementById('k-company').value || null;
   const telefon    = document.getElementById('k-telefon').value.trim();
   const email      = document.getElementById('k-email').value.trim();
   const notizen    = document.getElementById('k-notizen').value.trim();
@@ -4565,6 +4585,15 @@ async function saveContact() {
   btn.textContent = editingContactId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // v1.44.11: Firma-Combobox auflösen — legt ggf. eine neue Firma an
+    let company_id = null;
+    try {
+      company_id = await resolveCompanyComboboxValue('k-company', 'k-company-list');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingContactId ? 'Speichern' : 'Anlegen';
+      return;
+    }
+
     const payload = {
       vorname, nachname,
       position: position || null, company_id,
@@ -4803,9 +4832,8 @@ async function openAppointmentModal(mode, appointmentId = null) {
     companiesCache = cs || companiesCache;
   }
 
-  const companySelect = document.getElementById('t-company');
-  companySelect.innerHTML = '<option value="">— Keine Firma —</option>'
-    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  // v1.44.11: t-company ist eine Combobox mit Datalist
+  fillCompanyCombobox('t-company', 't-company-list');
 
   // Termintypen laden
   const typen = await loadTerminTypen();
@@ -4828,7 +4856,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
   document.getElementById('t-ort').value = '';
   document.getElementById('t-notizen').value = '';
   document.getElementById('t-ort-hint').style.display = 'none';
-  companySelect.value = '';
+  setCompanyComboboxValue('t-company', 't-company-list', '');
 
   await rebuildContactDropdownForAppointment('');
   await rebuildProjectDropdownForAppointment('');
@@ -4840,7 +4868,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
 
     // Prefill-Company aus Firmen-Detailseite
     if (appointmentModalPrefillCompanyId) {
-      companySelect.value = appointmentModalPrefillCompanyId;
+      setCompanyComboboxValue('t-company', 't-company-list', appointmentModalPrefillCompanyId);
       await rebuildContactDropdownForAppointment(appointmentModalPrefillCompanyId);
       await rebuildProjectDropdownForAppointment(appointmentModalPrefillCompanyId);
       updateOrtHint();
@@ -4854,7 +4882,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
         .select('id, name, company_id').is('deleted_at', null).eq('id', appointmentModalPrefillProjectId).single();
       if (proj) {
         if (proj.company_id) {
-          companySelect.value = proj.company_id;
+          setCompanyComboboxValue('t-company', 't-company-list', proj.company_id);
           await rebuildContactDropdownForAppointment(proj.company_id);
           await rebuildProjectDropdownForAppointment(proj.company_id);
           updateOrtHint();
@@ -4873,7 +4901,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
         .select('id, vorname, nachname, company_id').is('deleted_at', null).eq('id', appointmentModalPrefillContactId).single();
       if (k) {
         if (k.company_id) {
-          companySelect.value = k.company_id;
+          setCompanyComboboxValue('t-company', 't-company-list', k.company_id);
           await rebuildContactDropdownForAppointment(k.company_id);
           await rebuildProjectDropdownForAppointment(k.company_id);
           updateOrtHint();
@@ -4899,7 +4927,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
     document.getElementById('t-notizen').value = data.notizen || '';
     if (data.typ_id) typSelect.value = data.typ_id;
     if (data.company_id) {
-      companySelect.value = data.company_id;
+      setCompanyComboboxValue('t-company', 't-company-list', data.company_id);
       await rebuildContactDropdownForAppointment(data.company_id);
       await rebuildProjectDropdownForAppointment(data.company_id);
       if (data.contact_id) setContactComboboxValue('t-contact', 't-contact-list', data.contact_id);
@@ -4935,7 +4963,7 @@ async function rebuildContactDropdownForAppointment(companyId) {
 }
 
 function updateOrtHint() {
-  const companyId = document.getElementById('t-company').value;
+  const companyId = getCompanyComboboxId('t-company', 't-company-list');
   const hint = document.getElementById('t-ort-hint');
   if (!companyId) { hint.style.display = 'none'; return; }
   const company = companiesCache.find(c => c.id === companyId);
@@ -4947,7 +4975,7 @@ function updateOrtHint() {
 }
 
 function useCompanyAddressForOrt() {
-  const companyId = document.getElementById('t-company').value;
+  const companyId = getCompanyComboboxId('t-company', 't-company-list');
   if (!companyId) return;
   const company = companiesCache.find(c => c.id === companyId);
   if (!company) return;
@@ -4969,7 +4997,7 @@ function autoFillOrtIfAppropriate() {
   // Nur auto-fillen, wenn Feld leer ist oder noch den letzten Auto-Fill enthält
   if (ortInput.value !== '' && ortInput.value !== lastAutoFilledOrt) return;
 
-  const companyId = document.getElementById('t-company').value;
+  const companyId = getCompanyComboboxId('t-company', 't-company-list');
   if (!companyId) return;
   const company = companiesCache.find(c => c.id === companyId);
   if (!company) return;
@@ -5115,12 +5143,16 @@ function applyGanztag(prefix) {
 }
 
 function setupAppointmentAutoFill() {
-  const companySelect = document.getElementById('t-company');
+  const companyInput = document.getElementById('t-company');
   const typSelect = document.getElementById('t-typ');
 
-  companySelect.onchange = async () => {
-    await rebuildContactDropdownForAppointment(companySelect.value);
-    await rebuildProjectDropdownForAppointment(companySelect.value);
+  // v1.44.11: Combobox-Input statt Select. `input`-Event triggert auch beim
+  // Auswählen aus dem Datalist. Wir laden Kontakt/Projekt nur, wenn der Text
+  // exakt zu einer Firma matcht — sonst leer.
+  companyInput.oninput = async () => {
+    const id = getCompanyComboboxId('t-company', 't-company-list');
+    await rebuildContactDropdownForAppointment(id);
+    await rebuildProjectDropdownForAppointment(id);
     updateOrtHint();
     autoFillOrtIfAppropriate();
   };
@@ -5137,7 +5169,6 @@ async function saveAppointment() {
   const uhrzeit_bis  = document.getElementById('t-uhrzeit-bis').value;
   const typ_id       = document.getElementById('t-typ').value;
   const status       = document.getElementById('t-status').value;
-  const company_id   = document.getElementById('t-company').value || null;
   const project_id   = document.getElementById('t-project')?.value || null;
   const ort          = document.getElementById('t-ort').value.trim();
   const notizen      = document.getElementById('t-notizen').value.trim();
@@ -5157,6 +5188,14 @@ async function saveAppointment() {
   btn.textContent = editingAppointmentId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // v1.44.11: Firma-Combobox auflösen — legt ggf. eine neue Firma an
+    let company_id = null;
+    try {
+      company_id = await resolveCompanyComboboxValue('t-company', 't-company-list');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingAppointmentId ? 'Speichern' : 'Anlegen';
+      return;
+    }
     // Kontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
     let contact_id = null;
     try {
@@ -5447,20 +5486,20 @@ async function openProjectModal(mode, projectId = null) {
   statusSelect.innerHTML = projektStatusCache.map(s =>
     `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
 
-  const companySelect = document.getElementById('p-company');
-  companySelect.innerHTML = '<option value="">— Intern (ohne Firma) —</option>'
-    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  // v1.44.11: p-company ist eine Combobox
+  fillCompanyCombobox('p-company', 'p-company-list');
 
   const userSelect = document.getElementById('p-verantwortlicher');
   userSelect.innerHTML = '<option value="">— Kein Verantwortlicher —</option>'
     + userProfilesCache.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
 
-  // Hauptkontakt-Combobox: initial leer + disabled bis Firma gewählt
+  // Hauptkontakt-Combobox: initial leer (immer enabled, kein „Erst Firma wählen")
   await fillContactCombobox('p-hauptkontakt', 'p-hauptkontakt-list', '');
 
-  // Firma onchange → Hauptkontakt-Combobox neu befüllen
-  companySelect.onchange = async () => {
-    await rebuildHauptkontaktDropdown(companySelect.value);
+  // Firma-Combobox-Input → Hauptkontakt-Combobox neu befüllen bei Match
+  document.getElementById('p-company').oninput = async () => {
+    const id = getCompanyComboboxId('p-company', 'p-company-list');
+    await rebuildHauptkontaktDropdown(id);
   };
 
   document.getElementById('p-name').value = '';
@@ -5470,7 +5509,7 @@ async function openProjectModal(mode, projectId = null) {
   document.getElementById('p-umsatz').value = '';
   document.getElementById('p-notizen').value = '';
   statusSelect.value = 'Angebot';
-  companySelect.value = '';
+  setCompanyComboboxValue('p-company', 'p-company-list', '');
 
   if (mode === 'new') {
     document.getElementById('modal-project-title').textContent = 'Neues Projekt';
@@ -5482,7 +5521,7 @@ async function openProjectModal(mode, projectId = null) {
 
     // Prefill-Company aus Firmen-Detailseite
     if (projectModalPrefillCompanyId) {
-      companySelect.value = projectModalPrefillCompanyId;
+      setCompanyComboboxValue('p-company', 'p-company-list', projectModalPrefillCompanyId);
       await rebuildHauptkontaktDropdown(projectModalPrefillCompanyId);
       projectModalPrefillCompanyId = null;
     }
@@ -5493,7 +5532,7 @@ async function openProjectModal(mode, projectId = null) {
         .select('id, company_id').is('deleted_at', null).eq('id', projectModalPrefillHauptkontaktId).single();
       if (k) {
         if (k.company_id) {
-          companySelect.value = k.company_id;
+          setCompanyComboboxValue('p-company', 'p-company-list', k.company_id);
           await rebuildHauptkontaktDropdown(k.company_id);
         }
         setContactComboboxValue('p-hauptkontakt', 'p-hauptkontakt-list', k.id);
@@ -5517,7 +5556,7 @@ async function openProjectModal(mode, projectId = null) {
     statusSelect.value = data.status || 'Angebot';
     if (data.verantwortlicher_id) userSelect.value = data.verantwortlicher_id;
     if (data.company_id) {
-      companySelect.value = data.company_id;
+      setCompanyComboboxValue('p-company', 'p-company-list', data.company_id);
       await rebuildHauptkontaktDropdown(data.company_id);
       if (data.hauptkontakt_id) setContactComboboxValue('p-hauptkontakt', 'p-hauptkontakt-list', data.hauptkontakt_id);
     }
@@ -5544,7 +5583,6 @@ function closeProjectModal() {
 async function saveProject() {
   const name              = document.getElementById('p-name').value.trim();
   const status            = document.getElementById('p-status').value;
-  const company_id        = document.getElementById('p-company').value || null;
   const verantwortlicher_id = document.getElementById('p-verantwortlicher').value || null;
   const startdatum        = document.getElementById('p-startdatum').value || null;
   const enddatum          = document.getElementById('p-enddatum').value || null;
@@ -5574,6 +5612,14 @@ async function saveProject() {
   btn.textContent = editingProjectId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // v1.44.11: Firma-Combobox auflösen — legt ggf. eine neue Firma an
+    let company_id = null;
+    try {
+      company_id = await resolveCompanyComboboxValue('p-company', 'p-company-list');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingProjectId ? 'Speichern' : 'Anlegen';
+      return;
+    }
     // Hauptkontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
     let hauptkontakt_id = null;
     try {
@@ -6507,10 +6553,9 @@ function generateDeploymentAutoTitle() {
     serviceName = raw.split(' (')[0].trim(); // Einheit-Klammer entfernen
   }
 
-  const companySelect = document.getElementById('d-company');
-  const companyName = companySelect.value
-    ? (companySelect.options[companySelect.selectedIndex]?.textContent || '').trim()
-    : '';
+  // v1.44.11: d-company ist eine Combobox — der Anzeigename steht im Input
+  const companyInput = document.getElementById('d-company');
+  const companyName = (companyInput?.value || '').trim();
 
   const userName = currentProfile?.name || currentUser?.email || '';
 
@@ -6532,10 +6577,9 @@ function generateDeploymentAutoDescription() {
     serviceName = raw.split(' (')[0].trim();
   }
 
-  const companySelect = document.getElementById('d-company');
-  const companyName = companySelect.value
-    ? (companySelect.options[companySelect.selectedIndex]?.textContent || '').trim()
-    : '';
+  // v1.44.11: d-company ist eine Combobox — der Anzeigename steht im Input
+  const companyInput = document.getElementById('d-company');
+  const companyName = (companyInput?.value || '').trim();
 
   const datumVon = document.getElementById('d-datum-von').value;
   const datumBis = document.getElementById('d-datum-bis').value;
@@ -6602,9 +6646,8 @@ async function openDeploymentModal(mode, deploymentId = null) {
     companiesCache = cs || companiesCache;
   }
 
-  const companySelect = document.getElementById('d-company');
-  companySelect.innerHTML = '<option value="">— Firma wählen —</option>'
-    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  // v1.44.11: d-company ist eine Combobox
+  fillCompanyCombobox('d-company', 'd-company-list');
 
   // Service-Dropdown (mit data-Attributen für Auto-Fill von Preis und Zeiten)
   const serviceSelect = document.getElementById('d-service');
@@ -6664,7 +6707,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
 
     // Prefill aus Firmen-Detail / Projekt-Detail
     if (deploymentModalPrefillCompanyId) {
-      companySelect.value = deploymentModalPrefillCompanyId;
+      setCompanyComboboxValue('d-company', 'd-company-list', deploymentModalPrefillCompanyId);
       await rebuildProjectDropdownForDeployment(deploymentModalPrefillCompanyId);
       updateDeploymentOrtHint();
       deploymentModalPrefillCompanyId = null;
@@ -6675,7 +6718,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
         .select('id, name, company_id').is('deleted_at', null).eq('id', deploymentModalPrefillProjectId).single();
       if (proj) {
         if (proj.company_id) {
-          companySelect.value = proj.company_id;
+          setCompanyComboboxValue('d-company', 'd-company-list', proj.company_id);
           await rebuildProjectDropdownForDeployment(proj.company_id);
           updateDeploymentOrtHint();
         }
@@ -6714,7 +6757,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     document.getElementById('d-externe-techniker').value = data.externe_techniker || '';
 
     if (data.company_id) {
-      companySelect.value = data.company_id;
+      setCompanyComboboxValue('d-company', 'd-company-list', data.company_id);
       await rebuildProjectDropdownForDeployment(data.company_id);
       if (data.project_id) document.getElementById('d-project').value = data.project_id;
       updateDeploymentOrtHint();
@@ -6759,21 +6802,24 @@ async function openDeploymentModal(mode, deploymentId = null) {
 }
 
 function setupDeploymentModalListeners() {
-  const companySelect = document.getElementById('d-company');
+  const companyInput = document.getElementById('d-company');
   const serviceSelect = document.getElementById('d-service');
   const datumVon = document.getElementById('d-datum-von');
   const datumBis = document.getElementById('d-datum-bis');
   const menge = document.getElementById('d-menge');
   const einzelpreis = document.getElementById('d-einzelpreis');
 
-  companySelect.onchange = async () => {
-    await rebuildProjectDropdownForDeployment(companySelect.value);
+  // v1.44.11: Combobox-Input statt Select. Bei Match (existierende Firma)
+  // werden Projekt-Dropdown und Adress-Auto-Fill getriggert.
+  companyInput.oninput = async () => {
+    const id = getCompanyComboboxId('d-company', 'd-company-list');
+    await rebuildProjectDropdownForDeployment(id);
     updateDeploymentOrtHint();
 
-    // Auto-Ort: Wenn Ort-Feld leer und Firma mit Adresse gewählt → automatisch übernehmen
+    // Auto-Ort: Wenn Ort-Feld leer und Firma (mit Match) Adresse hat → übernehmen
     const ortInput = document.getElementById('d-ort');
-    if (!ortInput.value.trim() && companySelect.value) {
-      const company = companiesCache.find(c => c.id === companySelect.value);
+    if (!ortInput.value.trim() && id) {
+      const company = companiesCache.find(c => c.id === id);
       if (company) {
         const parts = [company.strasse, [company.plz, company.stadt].filter(Boolean).join(' ')].filter(Boolean);
         if (parts.length > 0) {
@@ -6855,7 +6901,7 @@ function recomputeDeploymentMengeFromDates(force = false) {
 }
 
 function updateDeploymentOrtHint() {
-  const companyId = document.getElementById('d-company').value;
+  const companyId = getCompanyComboboxId('d-company', 'd-company-list');
   const hint = document.getElementById('d-ort-hint');
   if (!companyId) { hint.style.display = 'none'; return; }
   const company = companiesCache.find(c => c.id === companyId);
@@ -6867,7 +6913,7 @@ function updateDeploymentOrtHint() {
 }
 
 function useCompanyAddressForDeploymentOrt() {
-  const companyId = document.getElementById('d-company').value;
+  const companyId = getCompanyComboboxId('d-company', 'd-company-list');
   if (!companyId) return;
   const company = companiesCache.find(c => c.id === companyId);
   if (!company) return;
@@ -6955,7 +7001,6 @@ async function saveDeployment() {
   const uhrzeit_von   = document.getElementById('d-uhrzeit-von').value;
   const uhrzeit_bis   = document.getElementById('d-uhrzeit-bis').value;
   const status        = document.getElementById('d-status').value;
-  const company_id    = document.getElementById('d-company').value || null;
   const project_id    = document.getElementById('d-project').value || null;
   const service_id    = document.getElementById('d-service').value || null;
   const mengeRaw      = document.getElementById('d-menge').value;
@@ -6969,11 +7014,21 @@ async function saveDeployment() {
 
   // Auto-Titel + Auto-Beschreibung nur beim Neu-Anlegen (nicht beim Edit)
   const isNew = !editingDeploymentId;
+  // v1.44.11: Firma-Combobox auflösen — legt ggf. eine neue Firma an.
+  // Muss VOR Auto-Titel-Generierung passieren, damit der Firmen-Name
+  // im Cache steht.
+  let company_id = null;
+  try {
+    company_id = await resolveCompanyComboboxValue('d-company', 'd-company-list');
+  } catch (e) {
+    return;
+  }
+
   const finalTitel = titel || (isNew ? generateDeploymentAutoTitle() : '');
   const finalBeschreibung = beschreibungInput || (isNew ? generateDeploymentAutoDescription() : '');
 
   if (!finalTitel) { showToast('Bitte Titel eingeben (oder Leistung/Firma wählen für Auto-Titel).', true); return; }
-  if (!company_id) { showToast('Bitte Firma auswählen.', true); return; }
+  if (!company_id) { showToast('Bitte Firma auswählen oder neuen Namen tippen.', true); return; }
 
   // Datum: entweder beide gesetzt oder beide leer (Ungeplant)
   const vonGesetzt = !!datum_von;
@@ -7157,7 +7212,7 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
  * Wird bei Firmenwechsel und beim Modal-Open aufgerufen.
  */
 async function refreshRedeemSection() {
-  const companyId = document.getElementById('d-company').value;
+  const companyId = getCompanyComboboxId('d-company', 'd-company-list');
   const wrap = document.getElementById('d-redeem-wrap');
   const select = document.getElementById('d-redeem-entitlement');
   const check = document.getElementById('d-redeem-check');
@@ -10430,6 +10485,85 @@ async function saveQuickCreateCompany() {
 }
 
 /* ───────────────────────────────────────────────
+   FIRMA-COMBOBOX (v1.44.11)
+   Analog zur Kontakt-Combobox — ersetzt das Firma-<select> + Plus-Button.
+   User tippt → Datalist filtert vorhandene Firmen. Beim Speichern:
+   - Match in Liste → existierende Firma-ID
+   - Nicht-leer & nicht in Liste → neue Firma (nur Name) wird angelegt
+   - Leer → null
+   ─────────────────────────────────────────────── */
+
+function fillCompanyCombobox(inputId, datalistId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input || !dl) return;
+  input.placeholder = 'Firma wählen oder neuen Namen tippen …';
+  dl.innerHTML = (companiesCache || []).map(c =>
+    `<option data-id="${esc(c.id)}" value="${esc(c.name)}"></option>`
+  ).join('');
+}
+
+function setCompanyComboboxValue(inputId, datalistId, companyId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input) return;
+  if (!companyId) {
+    input.value = '';
+    input.dataset.resolvedId = '';
+    return;
+  }
+  const opt = dl ? Array.from(dl.options).find(o => o.dataset.id === companyId) : null;
+  if (opt) {
+    input.value = opt.value;
+    input.dataset.resolvedId = companyId;
+    return;
+  }
+  // Fallback aus Cache, falls Datalist noch nicht aktualisiert ist
+  const company = (companiesCache || []).find(c => c.id === companyId);
+  if (company) {
+    input.value = company.name;
+    input.dataset.resolvedId = companyId;
+  }
+}
+
+/** Synchroner Lookup für onInput-Handler: gibt nur eine ID zurück, wenn der
+ *  Text exakt zu einer Liste-Option passt — sonst leer. Wird genutzt um
+ *  abhängige Dropdowns (Kontakt, Projekt) live nachzuladen, ohne dass
+ *  bereits eine neue Firma angelegt wird. */
+function getCompanyComboboxId(inputId, datalistId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input || !dl) return '';
+  const value = (input.value || '').trim();
+  if (!value) return '';
+  const opt = Array.from(dl.options).find(o => o.value === value);
+  return opt && opt.dataset.id ? opt.dataset.id : '';
+}
+
+async function resolveCompanyComboboxValue(inputId, datalistId) {
+  const input = document.getElementById(inputId);
+  const dl = document.getElementById(datalistId);
+  if (!input) return null;
+  const value = (input.value || '').trim();
+  if (!value) return null;
+  if (dl) {
+    const opt = Array.from(dl.options).find(o => o.value === value);
+    if (opt && opt.dataset.id) return opt.dataset.id;
+  }
+  // Nicht in Liste → neue Firma anlegen (nur Name, Rest später ergänzen)
+  const { data, error } = await db.from('companies')
+    .insert({ name: value, erstellt_von: currentProfile?.id })
+    .select('id, name').single();
+  if (error) {
+    showToast('Fehler beim Anlegen der Firma: ' + error.message, true);
+    throw error;
+  }
+  if (Array.isArray(companiesCache)) companiesCache.push({ id: data.id, name: data.name });
+  showToast(`Firma „${value}" angelegt.`);
+  return data.id;
+}
+
+/* ───────────────────────────────────────────────
    KONTAKT-COMBOBOX (v1.44.10)
    Ersetzt das Kontakt-<select> + Plus-Button durch ein <input list="…"> mit
    <datalist>. User kann tippen oder aus Liste wählen. Ergebnis:
@@ -10443,15 +10577,17 @@ async function fillContactCombobox(inputId, datalistId, companyId) {
   const input = document.getElementById(inputId);
   const dl = document.getElementById(datalistId);
   if (!input || !dl) return;
+  // v1.44.11: Kontakt darf auch ohne Firma angelegt werden — Input bleibt
+  // immer enabled. Ohne Firma ist die Datalist leer (oder zeigt nichts an,
+  // weil eine Liste aller Kontakte ohne Firmenkontext nicht hilfreich ist).
   input.value = '';
   input.dataset.resolvedId = '';
+  input.disabled = false;
   if (!companyId) {
     dl.innerHTML = '';
-    input.placeholder = 'Erst Firma wählen …';
-    input.disabled = true;
+    input.placeholder = 'Neuen Namen tippen …';
     return;
   }
-  input.disabled = false;
   input.placeholder = 'Kontakt wählen oder neuen Namen tippen …';
   const { data, error } = await db.from('contacts')
     .select('id, vorname, nachname').is('deleted_at', null).eq('company_id', companyId)
@@ -10490,17 +10626,15 @@ async function resolveContactComboboxValue(inputId, datalistId, companyId) {
     const opt = Array.from(dl.options).find(o => o.value === value);
     if (opt && opt.dataset.id) return opt.dataset.id;
   }
-  // Nicht in Liste → neuer Kontakt
-  if (!companyId) {
-    showToast('Bitte zuerst eine Firma wählen, bevor ein neuer Kontakt angelegt wird.', true);
-    throw new Error('contact-without-company');
-  }
+  // v1.44.11: Kontakt darf auch ohne Firma angelegt werden (z.B. wenn der
+  // Termin/Aufgabe keine Firmen-Zuordnung hat). company_id ist dann null.
   const parts = value.split(/\s+/);
   const vorname = parts[0];
   const nachname = parts.slice(1).join(' ') || '—';
+  const insertData = { vorname, nachname, erstellt_von: currentProfile?.id };
+  if (companyId) insertData.company_id = companyId;
   const { data, error } = await db.from('contacts')
-    .insert({ vorname, nachname, company_id: companyId, erstellt_von: currentProfile?.id })
-    .select('id').single();
+    .insert(insertData).select('id').single();
   if (error) {
     showToast('Fehler beim Anlegen des Kontakts: ' + error.message, true);
     throw error;
@@ -11989,9 +12123,8 @@ async function openTaskModal(mode, taskId = null) {
   assigneeSelect.innerHTML = userProfilesCache
     .map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
 
-  const companySelect = document.getElementById('a-company');
-  companySelect.innerHTML = '<option value="">— Keine Firma —</option>'
-    + companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  // v1.44.11: a-company ist eine Combobox
+  fillCompanyCombobox('a-company', 'a-company-list');
 
   // Defaults
   document.getElementById('a-titel').value = '';
@@ -12001,7 +12134,7 @@ async function openTaskModal(mode, taskId = null) {
   document.getElementById('a-create-appointment').checked = false;  // v1.40
   statusSelect.value = 'offen';
   if (currentProfile?.id) assigneeSelect.value = currentProfile.id;
-  companySelect.value = '';
+  setCompanyComboboxValue('a-company', 'a-company-list', '');
 
   await rebuildContactDropdownForTask('');
   await rebuildProjectDropdownForTask('');
@@ -12013,7 +12146,7 @@ async function openTaskModal(mode, taskId = null) {
 
     // Prefill aus Firmen-Detailseite
     if (taskModalPrefillCompanyId) {
-      companySelect.value = taskModalPrefillCompanyId;
+      setCompanyComboboxValue('a-company', 'a-company-list', taskModalPrefillCompanyId);
       await rebuildContactDropdownForTask(taskModalPrefillCompanyId);
       await rebuildProjectDropdownForTask(taskModalPrefillCompanyId);
       taskModalPrefillCompanyId = null;
@@ -12025,7 +12158,7 @@ async function openTaskModal(mode, taskId = null) {
         .select('id, name, company_id').is('deleted_at', null).eq('id', taskModalPrefillProjectId).single();
       if (proj) {
         if (proj.company_id) {
-          companySelect.value = proj.company_id;
+          setCompanyComboboxValue('a-company', 'a-company-list', proj.company_id);
           await rebuildContactDropdownForTask(proj.company_id);
         }
         await rebuildProjectDropdownForTask(proj.company_id || '');
@@ -12041,7 +12174,7 @@ async function openTaskModal(mode, taskId = null) {
         .select('id, vorname, nachname, company_id').is('deleted_at', null).eq('id', taskModalPrefillContactId).single();
       if (k) {
         if (k.company_id) {
-          companySelect.value = k.company_id;
+          setCompanyComboboxValue('a-company', 'a-company-list', k.company_id);
           await rebuildContactDropdownForTask(k.company_id);
           await rebuildProjectDropdownForTask(k.company_id);
         }
@@ -12068,7 +12201,7 @@ async function openTaskModal(mode, taskId = null) {
     statusSelect.value   = data.status || 'offen';
     if (data.assigned_to) assigneeSelect.value = data.assigned_to;
     if (data.company_id) {
-      companySelect.value = data.company_id;
+      setCompanyComboboxValue('a-company', 'a-company-list', data.company_id);
       await rebuildContactDropdownForTask(data.company_id);
       await rebuildProjectDropdownForTask(data.company_id);
       if (data.contact_id) setContactComboboxValue('a-contact', 'a-contact-list', data.contact_id);
@@ -12088,10 +12221,11 @@ async function openTaskModal(mode, taskId = null) {
     }
   }
 
-  // Firma-Change-Handler für Kontakt/Projekt-Nachladen
-  companySelect.onchange = async () => {
-    await rebuildContactDropdownForTask(companySelect.value);
-    await rebuildProjectDropdownForTask(companySelect.value);
+  // Firma-Combobox-Input — bei Match Kontakt/Projekt nachladen (v1.44.11)
+  document.getElementById('a-company').oninput = async () => {
+    const id = getCompanyComboboxId('a-company', 'a-company-list');
+    await rebuildContactDropdownForTask(id);
+    await rebuildProjectDropdownForTask(id);
   };
 
   setupTaskPreviewListeners();  // v1.38
@@ -12131,7 +12265,6 @@ async function saveTask() {
   const beschreibung = document.getElementById('a-beschreibung').value.trim();
   const status       = document.getElementById('a-status').value;
   const assigned_to  = document.getElementById('a-assigned-to').value || null;
-  const company_id   = document.getElementById('a-company').value || null;
   const project_id   = document.getElementById('a-project')?.value || null;
   const notizen      = document.getElementById('a-notizen').value.trim();
   const createAppt   = document.getElementById('a-create-appointment').checked;  // v1.40
@@ -12150,6 +12283,14 @@ async function saveTask() {
   btn.textContent = editingTaskId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // v1.44.11: Firma-Combobox auflösen — legt ggf. eine neue Firma an
+    let company_id = null;
+    try {
+      company_id = await resolveCompanyComboboxValue('a-company', 'a-company-list');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = editingTaskId ? 'Speichern' : 'Anlegen';
+      return;
+    }
     // Kontakt-Combobox auflösen — legt ggf. einen neuen Kontakt an
     let contact_id = null;
     try {

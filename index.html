@@ -2060,10 +2060,9 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <div class="select-with-add">
-            <select id="k-company"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('k-company')" title="Neue Firma anlegen">+</button>
-          </div>
+          <input id="k-company" list="k-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+          <datalist id="k-company-list"></datalist>
+          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt. Optional.</small>
         </div>
       </section>
 
@@ -2182,14 +2181,12 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <div class="select-with-add">
-            <select id="t-company"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('t-company')" title="Neue Firma anlegen">+</button>
-          </div>
+          <input id="t-company" list="t-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+          <datalist id="t-company-list"></datalist>
         </div>
         <div class="form-group">
           <label>Kontakt</label>
-          <input id="t-contact" list="t-contact-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <input id="t-contact" list="t-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
           <datalist id="t-contact-list"></datalist>
           <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
@@ -2280,16 +2277,13 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <div class="select-with-add">
-            <select id="a-company"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('a-company')" title="Neue Firma anlegen">+</button>
-          </div>
+          <input id="a-company" list="a-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+          <datalist id="a-company-list"></datalist>
         </div>
         <div class="form-group">
           <label>Kontakt</label>
-          <input id="a-contact" list="a-contact-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <input id="a-contact" list="a-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
           <datalist id="a-contact-list"></datalist>
-          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
         <div class="form-group">
           <label>Projekt</label>
@@ -2390,17 +2384,14 @@
         </div>
         <div class="form-group">
           <label>Firma</label>
-          <div class="select-with-add">
-            <select id="p-company"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('p-company')" title="Neue Firma anlegen">+</button>
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Ohne Firma = internes Projekt</div>
+          <input id="p-company" list="p-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+          <datalist id="p-company-list"></datalist>
+          <small class="field-hint">Ohne Firma = internes Projekt.</small>
         </div>
         <div class="form-group">
           <label>Hauptkontakt</label>
-          <input id="p-hauptkontakt" list="p-hauptkontakt-list" autocomplete="off" placeholder="Erst Firma wählen …" disabled>
+          <input id="p-hauptkontakt" list="p-hauptkontakt-list" autocomplete="off" placeholder="Neuen Namen tippen …">
           <datalist id="p-hauptkontakt-list"></datalist>
-          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
         </div>
         <div class="form-group">
           <label>Verantwortlich</label>
@@ -2521,10 +2512,8 @@
         </div>
         <div class="form-group">
           <label>Firma *</label>
-          <div class="select-with-add">
-            <select id="d-company"></select>
-            <button type="button" class="select-with-add-btn" onclick="openQuickCreateCompany('d-company')" title="Neue Firma anlegen">+</button>
-          </div>
+          <input id="d-company" list="d-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+          <datalist id="d-company-list"></datalist>
         </div>
         <div class="form-group">
           <label>Projekt</label>
