@@ -3609,6 +3609,86 @@ select.typ-select-secondary {
   .week-day-head { display: flex; justify-content: space-between; align-items: center; }
 }
 
+/* v1.45.6 — Monat-Sicht-Toggle (Technik / Vertrieb / Beides) */
+.month-view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  margin-bottom: 16px;
+  width: fit-content;
+}
+.month-view-btn {
+  font-size: 12px; font-weight: 500;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  transition: background .15s, color .15s;
+}
+.month-view-btn:hover { color: var(--text); }
+.month-view-btn.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+/* v1.45.6 — Einsatzleistungs-Bars (Technik) */
+.einsatz-stat-list {
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.einsatz-stat-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.einsatz-stat-label {
+  font-size: 12px; color: var(--text);
+}
+.einsatz-stat-bar-wrap {
+  height: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.einsatz-stat-bar {
+  display: block; height: 100%;
+  border-radius: 4px;
+  transition: width .3s;
+}
+.einsatz-stat-bar.is-plan    { background: var(--status-plan-accent); }
+.einsatz-stat-bar.is-done    { background: var(--status-done-accent); }
+.einsatz-stat-bar.is-billed  { background: var(--status-billed-accent); }
+.einsatz-stat-bar.is-overdue { background: var(--status-overdue-accent); }
+.einsatz-stat-count {
+  font-size: 13px; font-weight: 500;
+  text-align: right;
+  color: var(--text);
+}
+.month-section-meta {
+  font-size: 11px; color: var(--muted);
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--border);
+}
+
+/* Overdue-Variante für KPI-Tile */
+.kpi-tile.is-overdue { border-left-color: var(--status-overdue-accent); }
+.kpi-tile.is-overdue .kpi-tile-value { color: var(--status-overdue-accent); }
+
 /* v1.45.2 — Monat-Tab Datendichte-Dashboard */
 .month-kpi-row {
   display: grid;

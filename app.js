@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.45.6 (Monat-Tab rollenbasiert: Technik / Vertrieb /
+   Beides als Toggle oben rechts. Default je nach Rolle aus
+   user_profiles.roles, persistiert in localStorage.
+   - Technik-Sicht: Auslastung % · Durchgeführte Einsätze ·
+     Geplante Einsätze · Aufgaben offen. Plus Einsatzleistung
+     als Balken-Übersicht (Geplant/Durchgeführt/Abgerechnet/
+     Storniert) und Top-Einsatztage pro Kunde.
+   - Vertrieb-Sicht: Abgerechnet · Geplant · Pipeline · Conversion
+     (Termine→Einsatz). Plus Umsatz-Verlauf, Top-Kunden, Pipeline-
+     Stages und Akquise-Zähler („X Termine von dir erstellt").
+   - Beides-Sicht: kombiniert (Auslastung + Umsatz + Pipeline).
+   Daten-Selectoren in loadBriefingData um createdAppointments-
+   Count, createdDeploymentsCount, conversionRate, tasksDoneInMonth,
+   topCustomerDays erweitert.)
    Version 1.45.5 (Wochen-Items aligned + Datenpflege-Filter:
    1) Wochen-Agenda-Items haben jetzt eine einzelne fixed-width
       Pille (78 px) statt Tag+Status nebeneinander. Damit stehen
@@ -10918,6 +10932,24 @@ async function refreshCalendarBar() {
 // - Vorschau (nächste 3 Werktage / Wochen)
 
 let _currentBriefingTab = 'heute';
+// v1.45.6: Monat-Tab Sicht — 'technik' | 'vertrieb' | 'beides'.
+// Default aus Rolle, kann pro Session geändert werden.
+let _monthDashView = null;
+function getMonthDashView() {
+  if (_monthDashView) return _monthDashView;
+  const stored = (() => { try { return localStorage.getItem('monthDashView'); } catch (e) { return null; }})();
+  if (stored && ['technik','vertrieb','beides'].includes(stored)) { _monthDashView = stored; return _monthDashView; }
+  const role = currentProfile?.roles?.name;
+  if (role === 'Techniker') _monthDashView = 'technik';
+  else if (role === 'Vertrieb') _monthDashView = 'vertrieb';
+  else _monthDashView = 'beides';
+  return _monthDashView;
+}
+function setMonthDashView(v) {
+  _monthDashView = v;
+  try { localStorage.setItem('monthDashView', v); } catch (e) {}
+  loadBriefing('monat');
+}
 
 const WEEKDAYS_DE = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MONTHS_DE   = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -11095,20 +11127,29 @@ async function loadBriefingData(userId, scope) {
   }
 
   // v1.45.2: Zusätzliche Monats-Daten für das Datendichte-Dashboard.
-  // Pipeline-Projekte, Top-Kunden, 30-Tage-Sparkline, Vor-Monats-Umsätze.
+  // v1.45.6: Erweitert für Vertrieb/Technik-Sichten — erstellte Termine/
+  // Einsätze, erledigte Aufgaben, Conversion.
   let pipelineProjects = [];
   let topCustomers = [];
   let revenueSparkline = []; // 30 Tage
   let prevMonthsAvg = 0;
-  let monthDailyRevenue = []; // pro Tag des aktuellen Monats: { iso, done, billed }
+  let monthDailyRevenue = [];
+  let createdAppointmentsCount = 0;
+  let createdDeploymentsCount  = 0;
+  let conversionRate           = null;
+  let tasksDoneInMonth         = 0;
+  let topCustomerDays          = []; // pro Kunde Tage-Zahl (Technik)
   if (scope === 'monat') {
     const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
     const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
     const sparkStart = new Date(todayISO + 'T00:00:00'); sparkStart.setDate(sparkStart.getDate() - 29);
     const prev3Start = new Date(monthStart); prev3Start.setMonth(prev3Start.getMonth() - 3);
     const prev3End   = new Date(monthStart); prev3End.setDate(0);
+    const monthStartISO = toISODate(monthStart);
+    const monthEndISO   = toISODate(monthEnd);
 
-    const [pipelineRes, recentDepsRes, prev3DepsRes] = await Promise.all([
+    const [pipelineRes, recentDepsRes, prev3DepsRes,
+           createdApptsRes, createdDepsRes, conversionRes, tasksDoneRes] = await Promise.all([
       // Pipeline: Projekte aus den relevanten Stages
       db.from('projects')
         .select('id, name, status, geschaetzter_umsatz, company:companies(id, name)')
@@ -11121,7 +11162,29 @@ async function loadBriefingData(userId, scope) {
       // Vorige 3 Monate für Ziel-Berechnung
       db.from('deployment_technicians')
         .select('deployment:deployments!inner(id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis)')
-        .eq('user_id', userId)
+        .eq('user_id', userId),
+      // v1.45.6: Im Monat erstellte Termine (Vertrieb)
+      db.from('appointments')
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null).eq('erstellt_von', userId)
+        .gte('created_at', monthStartISO).lte('created_at', monthEndISO + 'T23:59:59'),
+      // v1.45.6: Im Monat erstellte Einsätze (Vertrieb)
+      db.from('deployments')
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null).eq('erstellt_von', userId)
+        .gte('created_at', monthStartISO).lte('created_at', monthEndISO + 'T23:59:59'),
+      // v1.45.6: Conversion — durchgef. Termine im Monat mit/ohne Einsatz-Folge
+      db.from('appointments')
+        .select('id, deployment_id')
+        .is('deleted_at', null).eq('erstellt_von', userId)
+        .eq('status', 'durchgefuehrt')
+        .gte('datum', monthStartISO).lte('datum', monthEndISO),
+      // v1.45.6: Im Monat erledigte Aufgaben (Technik)
+      db.from('tasks')
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null).eq('assigned_to', userId)
+        .eq('status', 'erledigt')
+        .gte('erledigt_am', monthStartISO).lte('erledigt_am', monthEndISO + 'T23:59:59')
     ]);
 
     const allDepsBroad = (recentDepsRes.data || [])
@@ -11190,6 +11253,34 @@ async function loadBriefingData(userId, scope) {
       .sort((a, b) => b.umsatz - a.umsatz)
       .slice(0, 5);
 
+    // v1.45.6: Top-Einsatztage für Technik — Aggregation in Tagen statt €
+    const customerDayMap = new Map();
+    allDepsBroad.forEach(d => {
+      if (!d.company?.id) return;
+      if (!['Durchgeführt', 'Abgerechnet'].includes(d.status)) return;
+      const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+      if (von > monthEndISO || bis < monthStartISO) return;
+      const overlapStart = von > monthStartISO ? von : monthStartISO;
+      const overlapEnd   = bis < monthEndISO   ? bis : monthEndISO;
+      const days = Math.round((new Date(overlapEnd) - new Date(overlapStart)) / 86400000) + 1;
+      const cur = customerDayMap.get(d.company.id) || { id: d.company.id, name: d.company.name, days: 0 };
+      cur.days += Math.max(1, days);
+      customerDayMap.set(d.company.id, cur);
+    });
+    topCustomerDays = Array.from(customerDayMap.values())
+      .sort((a, b) => b.days - a.days)
+      .slice(0, 5);
+
+    // v1.45.6: Counts + Conversion aus den separaten Queries
+    createdAppointmentsCount = createdApptsRes.count || 0;
+    createdDeploymentsCount  = createdDepsRes.count  || 0;
+    tasksDoneInMonth         = tasksDoneRes.count    || 0;
+    const convAppts = conversionRes.data || [];
+    if (convAppts.length > 0) {
+      const withDeployment = convAppts.filter(a => a.deployment_id).length;
+      conversionRate = Math.round((withDeployment / convAppts.length) * 100);
+    }
+
     // Pipeline-Projekte
     pipelineProjects = pipelineRes.data || [];
 
@@ -11233,7 +11324,12 @@ async function loadBriefingData(userId, scope) {
     topCustomers,
     revenueSparkline,
     monthDailyRevenue,
-    prevMonthsAvg
+    prevMonthsAvg,
+    topCustomerDays,
+    createdAppointmentsCount,
+    createdDeploymentsCount,
+    conversionRate,
+    tasksDoneInMonth
   };
 }
 
@@ -11348,13 +11444,317 @@ function renderBriefing(scope, data) {
   `;
 }
 
-/** v1.45.2: Monat-Tab Datendichte-Dashboard. Vier Sektionen:
- *  1. Erweiterte KPI-Reihe (Abgerechnet, Geplant, Auslastung, Pipeline)
- *     mit Mini-Sparklines (30 Tage Umsatz)
- *  2. Umsatz-Verlauf-Diagramm (kumuliert + Forecast + Ziel-Linie)
- *  3. Top-5-Kunden mit Balken
- *  4. Pipeline-Stages (Lead/Angebot/In Arbeit/Abschluss) */
+/** v1.45.6: Monat-Dashboard mit Sicht-Toggle (Technik / Vertrieb / Beides).
+ *  Default je nach Rolle; per localStorage merkt sich die Wahl. */
 function renderBriefingMonthDashboard(data) {
+  const view = getMonthDashView();
+  const toggle = `
+    <div class="month-view-toggle">
+      <button class="month-view-btn ${view === 'technik' ? 'is-active' : ''}" type="button" onclick="setMonthDashView('technik')">Technik</button>
+      <button class="month-view-btn ${view === 'vertrieb' ? 'is-active' : ''}" type="button" onclick="setMonthDashView('vertrieb')">Vertrieb</button>
+      <button class="month-view-btn ${view === 'beides' ? 'is-active' : ''}" type="button" onclick="setMonthDashView('beides')">Beides</button>
+    </div>`;
+
+  let body = '';
+  if (view === 'technik')      body = renderMonthDashTechnik(data);
+  else if (view === 'vertrieb') body = renderMonthDashVertrieb(data);
+  else                          body = renderMonthDashBeides(data);
+
+  return `<div class="month-dashboard">${toggle}${body}</div>`;
+}
+
+/** v1.45.6: Technik-Sicht — Auslastung, Einsatzleistung, Aufgaben.
+ *  Kein Umsatz-Verlauf, keine Pipeline. */
+function renderMonthDashTechnik(data) {
+  const todayISO = toISODate(new Date());
+  const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
+  const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
+  const depsAbgerechnet = data.deployments.filter(d => d.status === 'Abgerechnet');
+  const depsStorniert   = data.deployments.filter(d => d.status === 'Storniert');
+
+  // Auslastung
+  const arbeitsTage = computeMonthAuslastung(data, todayISO);
+  const auslastungPct = arbeitsTage.werk > 0
+    ? Math.round((arbeitsTage.belegt / arbeitsTage.werk) * 100)
+    : 0;
+
+  // Aufgaben
+  const tasksOpen = (data.tasks || []).length;
+  const tasksOverdue = (data.overdueTasks || []).length;
+  const tasksDone = data.tasksDoneInMonth || 0;
+
+  const kpiRow = `
+    <div class="month-kpi-row">
+      ${monthKpiTile('Auslastung', `${auslastungPct}%`, `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
+        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+      ${monthKpiTile('Durchgeführt', depsDurchgef.length, 'Einsätze im Monat', 'done',
+        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+      ${monthKpiTile('Geplant', depsGeplant.length, 'Einsätze noch offen', 'plan',
+        "navigateTo('deployments',{ range:'month', status:'Geplant' })")}
+      ${monthKpiTile('Aufgaben offen', tasksOpen, tasksOverdue > 0 ? `${tasksOverdue} überfällig` : 'gesamt', tasksOverdue > 0 ? 'overdue' : 'plan',
+        "navigateTo('tasks',{ scope:'mine_open' })")}
+    </div>`;
+
+  // Einsatzleistung als Balken-Übersicht
+  const stats = [
+    { label: 'Geplant',      count: depsGeplant.length,     color: 'plan' },
+    { label: 'Durchgeführt', count: depsDurchgef.length,    color: 'done' },
+    { label: 'Abgerechnet',  count: depsAbgerechnet.length, color: 'billed' },
+    { label: 'Storniert',    count: depsStorniert.length,   color: 'overdue' }
+  ];
+  const maxCount = Math.max(...stats.map(s => s.count), 1);
+  const einsatzBars = stats.map(s => `
+    <button class="einsatz-stat-row" type="button" onclick="navigateTo('deployments',{ range:'month', status:'${esc(s.label)}' })">
+      <span class="einsatz-stat-label">${esc(s.label)}</span>
+      <span class="einsatz-stat-bar-wrap">
+        <span class="einsatz-stat-bar is-${s.color}" style="width:${Math.round((s.count / maxCount) * 100)}%"></span>
+      </span>
+      <span class="einsatz-stat-count">${s.count}</span>
+    </button>
+  `).join('');
+
+  // Top-Kunden nach Tagen
+  const topDays = data.topCustomerDays || [];
+  const maxDays = topDays.length > 0 ? topDays[0].days : 1;
+  const topDaysHtml = topDays.length === 0
+    ? '<div class="month-section-empty">Noch keine Einsatztage in diesem Monat.</div>'
+    : topDays.map(c => {
+        const pct = Math.max(4, Math.round((c.days / maxDays) * 100));
+        return `
+          <button class="top-customer-row" type="button" onclick="navigateTo('firma','${esc(c.id)}')">
+            <span class="top-customer-bar" style="height:${pct}%"></span>
+            <span class="top-customer-name">${esc(c.name)}</span>
+            <span class="top-customer-sum">${c.days} ${c.days === 1 ? 'Tag' : 'Tage'}</span>
+          </button>`;
+      }).join('');
+
+  return `
+    ${kpiRow}
+    <div class="month-bottom-grid">
+      <div class="month-section">
+        <div class="month-section-title">Einsatzleistung</div>
+        <div class="einsatz-stat-list">${einsatzBars}</div>
+        <div class="month-section-meta">${tasksDone} Aufgaben erledigt im Monat</div>
+      </div>
+      <div class="month-section">
+        <div class="month-section-title">Top-Einsatztage (Kunde)</div>
+        <div class="top-customers">${topDaysHtml}</div>
+      </div>
+    </div>`;
+}
+
+/** v1.45.6: Vertrieb-Sicht — Umsatz, Pipeline, Top-Kunden, Conversion. */
+function renderMonthDashVertrieb(data) {
+  const todayISO = toISODate(new Date());
+  const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
+  const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
+  const depsAbgerechnet = data.deployments.filter(d => d.status === 'Abgerechnet');
+
+  const sumDays = (arr) => arr.reduce((s, d) => {
+    const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+    if (!von) return s;
+    const days = Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
+    return s + (Number(d.einzelpreis) || 0) * days;
+  }, 0);
+  const umsatzGeplant     = sumDays(depsGeplant) + sumDays(depsDurchgef);
+  const umsatzAbgerechnet = sumDays(depsAbgerechnet);
+
+  const pipelineProjects = data.pipelineProjects || [];
+  const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+
+  const conv = data.conversionRate;
+  const convText = conv === null ? '—' : `${conv}%`;
+  const sparkData = data.revenueSparkline || [];
+
+  const kpiRow = `
+    <div class="month-kpi-row">
+      ${monthKpiTile('Abgerechnet', formatPreis(umsatzAbgerechnet), `${depsAbgerechnet.length} Einsätze`, 'billed',
+        "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })", sparkData)}
+      ${monthKpiTile('Geplant', formatPreis(umsatzGeplant), `${depsGeplant.length + depsDurchgef.length} Einsätze`, 'plan',
+        "navigateTo('deployments',{ range:'month', status:'Geplant' })", sparkData)}
+      ${monthKpiTile('Pipeline', formatPreis(pipelineSum), `${pipelineProjects.length} Projekte`, 'info',
+        "navigateTo('projects')")}
+      ${monthKpiTile('Conversion', convText, 'Termine → Einsatz', 'done',
+        "navigateTo('appointments',{ range:'month', status:'durchgefuehrt' })")}
+    </div>`;
+
+  // Umsatz-Verlauf
+  const monthName = MONTHS_DE[new Date(todayISO).getMonth()];
+  const ziel = data.prevMonthsAvg && data.prevMonthsAvg > 0 ? data.prevMonthsAvg : null;
+  const chartHtml = renderRevenueChart(data.monthDailyRevenue || [], todayISO, ziel);
+
+  // Top-Kunden + Pipeline-Stages
+  const topCustomers = data.topCustomers || [];
+  const maxUmsatz = topCustomers.length > 0 ? topCustomers[0].umsatz : 1;
+  const customersHtml = topCustomers.length === 0
+    ? '<div class="month-section-empty">Noch keine Umsätze in diesem Monat.</div>'
+    : topCustomers.map(c => {
+        const pct = Math.max(4, Math.round((c.umsatz / maxUmsatz) * 100));
+        return `
+          <button class="top-customer-row" type="button" onclick="navigateTo('firma','${esc(c.id)}')">
+            <span class="top-customer-bar" style="height:${pct}%"></span>
+            <span class="top-customer-name">${esc(c.name)}</span>
+            <span class="top-customer-sum">${esc(formatPreis(c.umsatz))}</span>
+          </button>`;
+      }).join('');
+
+  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
+  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
+  const stagesHtml = stages.map(stage => {
+    const projs = pipelineProjects.filter(p => p.status === stage);
+    const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+    return `
+      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
+        <span class="pipeline-stage-name">${esc(stage)}</span>
+        <span class="pipeline-stage-count">${projs.length}</span>
+        <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
+      </button>`;
+  }).join('');
+
+  // Akquise-Kennzahl unten als Footer-Hint
+  const akquise = `${data.createdAppointmentsCount || 0} Termine · ${data.createdDeploymentsCount || 0} Einsätze von dir erstellt`;
+
+  return `
+    ${kpiRow}
+    <div class="month-section-title">Umsatz-Verlauf ${esc(monthName)} · kumuliert</div>
+    <div class="month-chart">${chartHtml}</div>
+    <div class="month-bottom-grid">
+      <div class="month-section">
+        <div class="month-section-title">Top-Kunden</div>
+        <div class="top-customers">${customersHtml}</div>
+      </div>
+      <div class="month-section">
+        <div class="month-section-title">Pipeline</div>
+        <div class="pipeline-stages">${stagesHtml}</div>
+        <div class="month-section-meta">${akquise}</div>
+      </div>
+    </div>`;
+}
+
+/** v1.45.6: Beides-Sicht — vereint Vertrieb + Auslastung + Aufgaben. */
+function renderMonthDashBeides(data) {
+  const todayISO = toISODate(new Date());
+  const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
+  const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
+  const depsAbgerechnet = data.deployments.filter(d => d.status === 'Abgerechnet');
+
+  const sumDays = (arr) => arr.reduce((s, d) => {
+    const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+    if (!von) return s;
+    const days = Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
+    return s + (Number(d.einzelpreis) || 0) * days;
+  }, 0);
+  const umsatzGeplant     = sumDays(depsGeplant) + sumDays(depsDurchgef);
+  const umsatzAbgerechnet = sumDays(depsAbgerechnet);
+
+  const arbeitsTage = computeMonthAuslastung(data, todayISO);
+  const auslastungPct = arbeitsTage.werk > 0
+    ? Math.round((arbeitsTage.belegt / arbeitsTage.werk) * 100)
+    : 0;
+
+  const pipelineProjects = data.pipelineProjects || [];
+  const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+  const sparkData = data.revenueSparkline || [];
+
+  const kpiRow = `
+    <div class="month-kpi-row">
+      ${monthKpiTile('Abgerechnet', formatPreis(umsatzAbgerechnet), `${depsAbgerechnet.length} Einsätze`, 'billed',
+        "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })", sparkData)}
+      ${monthKpiTile('Geplant', formatPreis(umsatzGeplant), `${depsGeplant.length + depsDurchgef.length} Einsätze`, 'plan',
+        "navigateTo('deployments',{ range:'month', status:'Geplant' })", sparkData)}
+      ${monthKpiTile('Auslastung', `${auslastungPct}%`, `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
+        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+      ${monthKpiTile('Pipeline', formatPreis(pipelineSum), `${pipelineProjects.length} Projekte`, 'info',
+        "navigateTo('projects')")}
+    </div>`;
+
+  const monthName = MONTHS_DE[new Date(todayISO).getMonth()];
+  const ziel = data.prevMonthsAvg && data.prevMonthsAvg > 0 ? data.prevMonthsAvg : null;
+  const chartHtml = renderRevenueChart(data.monthDailyRevenue || [], todayISO, ziel);
+
+  const topCustomers = data.topCustomers || [];
+  const maxUmsatz = topCustomers.length > 0 ? topCustomers[0].umsatz : 1;
+  const customersHtml = topCustomers.length === 0
+    ? '<div class="month-section-empty">Noch keine Umsätze in diesem Monat.</div>'
+    : topCustomers.map(c => {
+        const pct = Math.max(4, Math.round((c.umsatz / maxUmsatz) * 100));
+        return `
+          <button class="top-customer-row" type="button" onclick="navigateTo('firma','${esc(c.id)}')">
+            <span class="top-customer-bar" style="height:${pct}%"></span>
+            <span class="top-customer-name">${esc(c.name)}</span>
+            <span class="top-customer-sum">${esc(formatPreis(c.umsatz))}</span>
+          </button>`;
+      }).join('');
+
+  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
+  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
+  const stagesHtml = stages.map(stage => {
+    const projs = pipelineProjects.filter(p => p.status === stage);
+    const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+    return `
+      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
+        <span class="pipeline-stage-name">${esc(stage)}</span>
+        <span class="pipeline-stage-count">${projs.length}</span>
+        <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
+      </button>`;
+  }).join('');
+
+  return `
+    ${kpiRow}
+    <div class="month-section-title">Umsatz-Verlauf ${esc(monthName)} · kumuliert</div>
+    <div class="month-chart">${chartHtml}</div>
+    <div class="month-bottom-grid">
+      <div class="month-section">
+        <div class="month-section-title">Top-Kunden</div>
+        <div class="top-customers">${customersHtml}</div>
+      </div>
+      <div class="month-section">
+        <div class="month-section-title">Pipeline</div>
+        <div class="pipeline-stages">${stagesHtml}</div>
+      </div>
+    </div>`;
+}
+
+/** Helper für KPI-Kachel mit optionaler Sparkline. */
+function monthKpiTile(kicker, value, sub, color, onclick, sparkData) {
+  return `
+    <button class="kpi-tile is-${color}" type="button" onclick="${onclick}">
+      <div class="kpi-tile-body">
+        <div class="kpi-tile-kicker">${esc(kicker)}</div>
+        <div class="kpi-tile-value">${esc(String(value))}</div>
+        ${sub ? `<div class="kpi-tile-sub">${esc(sub)}</div>` : ''}
+      </div>
+      ${sparkData && sparkData.length > 0 ? `<div class="kpi-tile-spark">${renderSparkline(sparkData)}</div>` : ''}
+    </button>`;
+}
+
+/** Helper für Auslastung — extrahiert, wird von Technik + Beides genutzt. */
+function computeMonthAuslastung(data, todayISO) {
+  const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
+  const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
+  const yearHolidays = computeBwHolidays(monthStart.getFullYear());
+  let werk = 0, belegt = 0;
+  let cur = new Date(monthStart);
+  while (cur <= monthEnd) {
+    const iso = toISODate(cur);
+    const dow = cur.getDay();
+    const isWorkday = dow !== 0 && dow !== 6 && !yearHolidays.has(iso);
+    if (isWorkday) {
+      werk++;
+      if (data.deployments.some(dep =>
+        ['Durchgeführt', 'Abgerechnet'].includes(dep.status) &&
+        iso >= dep.datum_von &&
+        iso <= (dep.datum_bis || dep.datum_von)
+      )) belegt++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return { werk, belegt };
+}
+
+/** ALT (vor v1.45.6) — wird durch die neuen renderMonthDash*-Funktionen ersetzt.
+ *  Bleibt im Code als Fallback, falls jemand direkt darauf zugreift. */
+function _renderBriefingMonthDashboard_legacy(data) {
   const todayISO = toISODate(new Date());
   const depsGeplant     = data.deployments.filter(d => d.status === 'Geplant');
   const depsDurchgef    = data.deployments.filter(d => d.status === 'Durchgeführt');
