@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.1 (Fix Vorschau-Bereich im Heute-Tab. Bisher
+   filterte er auf `data.appointments`, aber im Heute-Scope
+   wird die Range nur auf heute begrenzt — Treffer für
+   `datum > heute` waren immer leer. Neu: dedizierte Queries
+   für die nächsten 3 Tage (Termine + Einsätze), Vorschau wird
+   nur noch im Heute-Tab gerendert (Woche/Monat haben eigene
+   Tabs), leere Tage erscheinen als „— frei", damit man auf
+   einen Blick sieht, wo Lücken sind.)
    Version 1.44.0 (Einsatz-Hero im Heute-Dashboard. Wenn an
    einem Tag ein Einsatz ansteht, ersetzt ein prominenter
    Hero-Block oben die KPI-Leiste: großer Firmenname,
@@ -10586,6 +10594,33 @@ async function loadBriefingData(userId, scope) {
     }
   }
 
+  // v1.44.1: Vorschau auf 3 Tage — nur im Heute-Scope. Eigene Queries, weil die
+  // Range-Daten oben nur den heutigen Tag abdecken. Tabs „Woche"/„Monat" haben
+  // ihre eigenen Daten, dort ist eine Vorschau redundant.
+  let previewAppointments = [];
+  let previewDeployments = [];
+  if (scope === 'heute') {
+    const tomorrow = new Date(todayISO); tomorrow.setDate(tomorrow.getDate() + 1);
+    const plus3 = new Date(todayISO); plus3.setDate(plus3.getDate() + 3);
+    const fromISO = toISODate(tomorrow);
+    const toISO   = toISODate(plus3);
+    const [apptRes, depRes] = await Promise.all([
+      db.from('appointments')
+        .select('id, datum').is('deleted_at', null).eq('erstellt_von', userId)
+        .gte('datum', fromISO).lte('datum', toISO),
+      db.from('deployment_technicians')
+        .select('deployment:deployments!inner(id, datum_von, datum_bis, deleted_at, company:companies(name))')
+        .eq('user_id', userId)
+    ]);
+    previewAppointments = apptRes.data || [];
+    previewDeployments = (depRes.data || [])
+      .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von)
+      .filter(d => {
+        const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+        return von <= toISO && bis >= fromISO;
+      });
+  }
+
   return {
     range,
     appointments: apptInRange.data || [],
@@ -10597,7 +10632,9 @@ async function loadBriefingData(userId, scope) {
     weekDoneAppts: weekDoneAppts.data || [],
     weekDoneDeps:  depsThisWeekDone,
     incompleteStats: incompleteStats || { companies: 0, contacts: 0 },
-    todayDepTechniciansMap
+    todayDepTechniciansMap,
+    previewAppointments,
+    previewDeployments
   };
 }
 
@@ -11103,30 +11140,31 @@ async function renderBriefingPreviewAsync(scope, userId) {
 }
 
 function renderBriefingPreview(scope, data) {
-  // Pragmatisch: für Heute/Woche zeigen wir die nächsten 3 Tage (außer heute) aus den
-  // bereits geladenen Daten; für Monat eine Vier-Wochen-Mini-Übersicht.
+  // v1.44.1: Vorschau nur im Heute-Scope (Woche/Monat haben eigene Tabs) und
+  // nur die nächsten 3 Kalendertage. Daten kommen aus separaten Queries
+  // (siehe loadBriefingData), weil der Heute-Scope sonst nur heute lädt.
+  if (scope !== 'heute') return '';
+
   const todayISO = toISODate(new Date());
-  const upcoming = data.appointments
-    .filter(a => a.datum > todayISO)
-    .reduce((acc, a) => {
-      acc[a.datum] = acc[a.datum] || { termine: 0, einsaetze: 0 };
-      acc[a.datum].termine++;
-      return acc;
-    }, {});
-  data.deployments.forEach(d => {
-    if (d.datum_von > todayISO) {
-      upcoming[d.datum_von] = upcoming[d.datum_von] || { termine: 0, einsaetze: 0 };
-      upcoming[d.datum_von].einsaetze++;
-    }
-  });
-  const dates = Object.keys(upcoming).sort().slice(0, 5);
-  if (dates.length === 0) {
-    return `
-      <div class="briefing-preview">
-        <div class="briefing-preview-title">Vorschau · die nächsten Tage</div>
-        <div style="font-size:13px;color:var(--muted);padding:8px 0">Keine weiteren Termine oder Einsätze in diesem Zeitraum.</div>
-      </div>`;
+  const upcoming = {};
+  // Drei feste Tage nach heute initialisieren, damit auch leere Tage als Zeile
+  // sichtbar bleiben („— frei").
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(todayISO); d.setDate(d.getDate() + i);
+    upcoming[toISODate(d)] = { termine: 0, einsaetze: 0 };
   }
+
+  (data.previewAppointments || []).forEach(a => {
+    if (upcoming[a.datum]) upcoming[a.datum].termine++;
+  });
+  (data.previewDeployments || []).forEach(d => {
+    Object.keys(upcoming).forEach(iso => {
+      const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+      if (iso >= von && iso <= bis) upcoming[iso].einsaetze++;
+    });
+  });
+
+  const dates = Object.keys(upcoming).sort();
   const rowsHtml = dates.map(iso => {
     const dt = new Date(iso);
     const day = WEEKDAYS_DE[dt.getDay()];
@@ -11135,7 +11173,7 @@ function renderBriefingPreview(scope, data) {
     const stats = [
       u.termine > 0 ? `${u.termine} Termin${u.termine === 1 ? '' : 'e'}` : null,
       u.einsaetze > 0 ? `${u.einsaetze} Einsatz${u.einsaetze === 1 ? '' : 'e'}` : null
-    ].filter(Boolean).join(' · ') || '—';
+    ].filter(Boolean).join(' · ') || '— frei';
     return `
       <div class="briefing-preview-row">
         <div>
@@ -11147,7 +11185,7 @@ function renderBriefingPreview(scope, data) {
   }).join('');
   return `
     <div class="briefing-preview">
-      <div class="briefing-preview-title">Vorschau · ${dates.length} kommende Tage</div>
+      <div class="briefing-preview-title">Vorschau · die nächsten 3 Tage</div>
       ${rowsHtml}
     </div>`;
 }
