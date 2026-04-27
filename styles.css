@@ -1060,6 +1060,19 @@ tr:hover td { background: var(--bg); }
   background: #fef2f2;
   border-color: #fecaca;
 }
+/* v1.44.6 — Schnell-Status-Icons in Einsatz-Listen */
+.icon-btn.icon-btn-success { color: var(--success); }
+.icon-btn.icon-btn-success:hover {
+  color: var(--success);
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+.icon-btn.icon-btn-billed { color: var(--link); }
+.icon-btn.icon-btn-billed:hover {
+  color: var(--link);
+  background: #dbeafe;
+  border-color: #bfdbfe;
+}
 .icon-btn[disabled] {
   opacity: 0.4;
   cursor: not-allowed;

@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.6 (Zwei UX-Verbesserungen rund um Einsätze:
+   1) Hero-Block: mehrere Einsätze am selben Tag werden jetzt
+      als eigene Hero-Blöcke untereinander gerendert — vorher
+      stand nur „+1 weiterer Einsatz heute" als Kommentar.
+      Begründung: jeder Einsatz braucht seine eigene Aktion.
+   2) Schnell-Status-Icons in der Hauptliste der Einsätze
+      neben dem Bearbeiten-Symbol:
+      - Geplant + Datum vergangen/heute → Check-Icon (grün)
+        setzt direkt auf Durchgeführt
+      - Durchgeführt + Admin → €-Icon (blau) setzt auf
+        Abgerechnet. Nicht-Admins sehen das Icon nicht
+        (umsatzwirksame Aktion, Admin-only).
+      - Abgerechnet → kein Schnellweg.
+   renderActionIcons bekommt einen optionalen extraIconsHtml-
+   Parameter, neuer Helfer renderDeploymentQuickStatusIcons.)
    Version 1.44.5 (Einsatz-Hero kennt jetzt beide Status-
    Übergänge: Geplant → „Als durchgeführt markieren",
    Durchgeführt → „Als abgerechnet markieren". Bei Abgerechnet
@@ -580,13 +595,15 @@ window.addEventListener('resize', () => closeKebabMenu());
 const ICON_EDIT = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
 const ICON_DELETE = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>';
 const ICON_KEBAB = '<svg fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+const ICON_CHECK = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+const ICON_BILLED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" stroke="none" fill="currentColor">€</text></svg>';
 
 /**
  * Rendert die Standard-Aktionen für Listen-Zeilen (v1.20.0):
  * Bearbeiten als Hover-sichtbares Primär-Icon + Kebab-Menü für sekundäre
  * Aktionen (Kopieren / Duplizieren / Löschen).
  */
-function renderActionIcons(entityType, id) {
+function renderActionIcons(entityType, id, extraIconsHtml = '') {
   const editHandler = {
     company: `onclick="openCompanyModal('edit', '${esc(id)}')"`,
     contact: `onclick="openContactModal('edit', '${esc(id)}')"`,
@@ -598,9 +615,26 @@ function renderActionIcons(entityType, id) {
 
   return `
     <div class="action-icons">
+      ${extraIconsHtml}
       <button class="icon-btn" ${editHandler} title="Bearbeiten">${ICON_EDIT}</button>
       <button class="icon-btn kebab-btn" onclick="openKebabMenu('${entityType}', '${esc(id)}', this, event)" title="Weitere Aktionen">${ICON_KEBAB}</button>
     </div>`;
+}
+
+/** v1.44.6: Schnell-Status-Icons für Einsatz-Listen.
+ *  - Geplant + Datum vergangen oder heute: Check-Icon → setzt auf Durchgeführt
+ *  - Durchgeführt + Admin: €-Icon → setzt auf Abgerechnet
+ *  Begründung: Sequenz Geplant → Durchgeführt ist Aufwand-Tracking, darf
+ *  jeder. Durchgeführt → Abgerechnet ist umsatzwirksam — nur Admin. */
+function renderDeploymentQuickStatusIcons(d) {
+  const todayISO = toISODate(new Date());
+  const html = [];
+  if (d.status === 'Geplant' && d.datum_von && d.datum_von <= todayISO) {
+    html.push(`<button class="icon-btn icon-btn-success" onclick="quickDeploymentMarkDone('${esc(d.id)}')" title="Als durchgeführt markieren">${ICON_CHECK}</button>`);
+  } else if (d.status === 'Durchgeführt' && isAdmin()) {
+    html.push(`<button class="icon-btn icon-btn-billed" onclick="quickDeploymentMarkBilled('${esc(d.id)}')" title="Als abgerechnet markieren">${ICON_BILLED}</button>`);
+  }
+  return html.join('');
 }
 
 /* ───────────────────────────────────────────────
@@ -6423,7 +6457,7 @@ function renderDeploymentsTable(deployments) {
         <td class="col-desktop" style="color:var(--muted)">${leistungHtml}</td>
         <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
         <td class="col-tablet">${esc(formatPreis(gesamt))}</td>
-        <td class="col-action" style="text-align:right">${renderActionIcons('deployment', d.id)}</td>
+        <td class="col-action" style="text-align:right">${renderActionIcons('deployment', d.id, renderDeploymentQuickStatusIcons(d))}</td>
       </tr>`;
   }).join('');
 }
@@ -10728,9 +10762,13 @@ function renderBriefing(scope, data) {
   if (metaEl) metaEl.innerHTML = renderBriefingKpisInline(scope, data, { heroMode });
 
   if (heroMode) {
+    // v1.44.6: alle heutigen Einsätze als eigene Hero-Blöcke rendern, statt
+    // nur den ersten + „+1 weiterer Einsatz heute" als Kommentar — der User
+    // soll beide auf einen Blick sehen und einzeln darauf agieren können.
+    const heroBlocks = todayDeps.map(d => renderBriefingHeroDeployment(d, data)).join('');
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
-      ${renderBriefingHeroDeployment(todayDeps[0], todayDeps, data)}
+      ${heroBlocks}
       ${renderBriefingCards(scope, data, { skipTodayDeployment: true })}
       ${renderBriefingStreak(scope, data)}
       ${renderBriefingPreview(scope, data)}
@@ -10778,10 +10816,12 @@ function renderBriefingKpisInline(scope, data, opts = {}) {
   return parts.join('<span class="kpi-inline-sep">·</span>');
 }
 
-/** v1.44: Hero-Block für heutigen Einsatz — prominent ganz oben.
+/** v1.44: Hero-Block für einen heutigen Einsatz — prominent ganz oben.
  *  Begründung: Ein Einsatz ist die einzige direkt umsatzbringende Tätigkeit;
- *  an Einsatz-Tagen muss der Vor-Ort-Termin alles andere visuell schlagen. */
-function renderBriefingHeroDeployment(dep, allTodayDeps, data) {
+ *  an Einsatz-Tagen muss der Vor-Ort-Termin alles andere visuell schlagen.
+ *  v1.44.6: pro Einsatz ein eigener Hero (mehrere Einsätze am selben Tag
+ *  werden untereinander gestapelt — kein „+1 weiterer"-Kommentar mehr). */
+function renderBriefingHeroDeployment(dep, data) {
   const techMap = data.todayDepTechniciansMap || {};
   const techs = techMap[dep.id] || [];
   const techText = techs.length > 0
@@ -10813,10 +10853,6 @@ function renderBriefingHeroDeployment(dep, allTodayDeps, data) {
   const titel = dep.titel || dep.service?.name || 'Einsatz';
   const firma = dep.company?.name || '—';
   const ort = (dep.ort || '').trim() || (dep.company?.name ? `bei ${dep.company.name}` : '—');
-
-  const restNote = allTodayDeps.length > 1
-    ? `<div class="briefing-hero-rest">+ ${allTodayDeps.length - 1} weitere${allTodayDeps.length - 1 === 1 ? 'r' : ''} Einsatz heute</div>`
-    : '';
 
   // Status-Toggle-Button: bietet je nach Status den nächsten logischen Schritt an.
   // Geplant → Durchgeführt, Durchgeführt → Abgerechnet. Bei Abgerechnet kein
@@ -10857,7 +10893,6 @@ function renderBriefingHeroDeployment(dep, allTodayDeps, data) {
           <div class="briefing-hero-stat-value">${techText}</div>
         </div>
       </div>
-      ${restNote}
       <div class="briefing-hero-actions">
         <button class="briefing-btn is-primary" onclick="openDeploymentModal('edit','${esc(dep.id)}')">Einsatz öffnen</button>
         ${toggleBtn}
