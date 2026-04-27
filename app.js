@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.4 (Heute-Page Aufräumarbeit:
+   1) KPI-Bar wandert nach oben rechts neben die Tabs „Heute /
+      Diese Woche / Dieser Monat" — Text-only, keine Icons,
+      keine Cards. Spart eine ganze Sektion am Listenanfang.
+   2) Im Hero-Modus (Einsatz heute): „Sonst heute"-Sektion
+      komplett raus. Einsätze-KPI raus (steht prominent im
+      Hero), Aufgaben + Überfällig fusioniert: „1 Aufgabe
+      (1 überfällig)".
+   3) Vorschau-Sortierung: Einsatz immer vor Termin (Einsatz
+      ist umsatzrelevant, geht vor).
+   4) Vorschau-Pills mit fester Breite (64 px), damit Titel
+      sauber untereinander stehen — egal wie lang das Label.)
    Version 1.44.3 (Vorschau-Bereich zeigt jetzt pro Tag die
    konkreten Termine/Einsätze mit Titel, Firma und Ort statt
    nur die Anzahl. Termine vor Einsätzen sortiert, Termine
@@ -10702,15 +10714,15 @@ function renderBriefing(scope, data) {
     : [];
   const heroMode = todayDeps.length > 0;
 
+  // v1.44.4: KPI-Leiste wandert nach oben rechts in die Tab-Zeile, kompakt
+  // als Text ohne Icons. Wird hier nur befüllt — Container ist im HTML schon.
+  const metaEl = document.getElementById('heute-tab-meta');
+  if (metaEl) metaEl.innerHTML = renderBriefingKpisInline(scope, data, { heroMode });
+
   if (heroMode) {
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
       ${renderBriefingHeroDeployment(todayDeps[0], todayDeps, data)}
-      <div class="briefing-section-head">
-        <div class="briefing-section-title">Sonst heute · zur Einordnung</div>
-        <div class="briefing-section-meta">${esc(data.range.label)}</div>
-      </div>
-      ${renderBriefingKpis(scope, data, { compact: true })}
       ${renderBriefingCards(scope, data, { skipTodayDeployment: true })}
       ${renderBriefingStreak(scope, data)}
       ${renderBriefingPreview(scope, data)}
@@ -10719,15 +10731,43 @@ function renderBriefing(scope, data) {
 
   return `
     ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
-    ${renderBriefingKpis(scope, data)}
-    <div class="briefing-section-head">
-      <div class="briefing-section-title">Briefing · sortiert nach Dringlichkeit</div>
-      <div class="briefing-section-meta">${esc(data.range.label)}</div>
-    </div>
     ${renderBriefingCards(scope, data)}
     ${renderBriefingStreak(scope, data)}
     ${renderBriefingPreview(scope, data)}
   `;
+}
+
+/** v1.44.4: Inline-KPI-Bar oben rechts neben den Tabs.
+ *  - Hero-Modus (Einsatz heute): „X Termine · Y Aufgaben (Z überfällig)"
+ *    — Einsätze raus (steht prominent im Hero), Aufgaben + Überfällig fusioniert.
+ *  - Heute ohne Einsatz: alle vier (Termine · Einsätze · Aufgaben · Überfällig).
+ *  - Woche: dito.
+ *  - Monat: Termine · Einsätze · Aufgaben · Umsatz.
+ *  Kein Icon, kein Cards-Look — knappe Text-Pills mit Trennpunkt. */
+function renderBriefingKpisInline(scope, data, opts = {}) {
+  const overdueText = data.overdueTasks.length > 0
+    ? ` <span class="kpi-inline-bad">(${data.overdueTasks.length} überfällig)</span>`
+    : '';
+  const parts = [];
+
+  if (opts.heroMode) {
+    parts.push(`<span class="kpi-inline-num">${data.appointments.length}</span> ${data.appointments.length === 1 ? 'Termin' : 'Termine'}`);
+    parts.push(`<span class="kpi-inline-num">${data.tasks.length}</span> ${data.tasks.length === 1 ? 'Aufgabe' : 'Aufgaben'}${overdueText}`);
+  } else if (scope === 'monat') {
+    const umsatz = data.deployments
+      .filter(d => d.status === 'Durchgeführt' || d.status === 'Abgerechnet')
+      .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+    parts.push(`<span class="kpi-inline-num">${data.appointments.length}</span> Termine`);
+    parts.push(`<span class="kpi-inline-num">${data.deployments.length}</span> Einsätze`);
+    parts.push(`<span class="kpi-inline-num">${data.tasks.length}</span> Aufgaben`);
+    parts.push(`<span class="kpi-inline-num">${esc(formatPreis(umsatz))}</span> Umsatz`);
+  } else {
+    parts.push(`<span class="kpi-inline-num">${data.appointments.length}</span> Termine`);
+    parts.push(`<span class="kpi-inline-num">${data.deployments.length}</span> Einsätze`);
+    parts.push(`<span class="kpi-inline-num">${data.tasks.length}</span> Aufgaben${overdueText}`);
+  }
+
+  return parts.join('<span class="kpi-inline-sep">·</span>');
 }
 
 /** v1.44: Hero-Block für heutigen Einsatz — prominent ganz oben.
@@ -11192,10 +11232,10 @@ function renderBriefingPreview(scope, data) {
     });
   });
 
-  // Pro Tag: Termine vor Einsätzen, Termine nach Uhrzeit
+  // Pro Tag: Einsätze immer zuerst (umsatzrelevant), dann Termine nach Uhrzeit
   Object.values(days).forEach(d => {
     d.items.sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'termin' ? -1 : 1;
+      if (a.kind !== b.kind) return a.kind === 'einsatz' ? -1 : 1;
       return (a.time || '').localeCompare(b.time || '');
     });
   });

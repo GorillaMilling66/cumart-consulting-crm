@@ -2734,6 +2734,39 @@ select.typ-select-secondary {
 .briefing-narrative-text .accent-warn { color: var(--warning); font-weight: 600; }
 .briefing-narrative-text .accent-good { color: var(--success); font-weight: 600; }
 
+/* v1.44.4 — Tab-Zeile mit inline KPIs rechts.
+   Tabs links, kompakte KPI-Bar rechts (Text-only, keine Icons) — der Page-
+   Header bleibt frei für Titel + Datum. */
+.heute-tabs-row {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.heute-tabs-row .detail-tabs {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.briefing-kpis-inline {
+  font-size: 13px; color: var(--muted);
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+}
+.briefing-kpis-inline .kpi-inline-num {
+  font-weight: 600; color: var(--text);
+}
+.briefing-kpis-inline .kpi-inline-sep {
+  color: var(--border); font-weight: 400;
+}
+.briefing-kpis-inline .kpi-inline-bad {
+  color: var(--danger); font-weight: 500;
+}
+@media (max-width: 600px) {
+  .heute-tabs-row { gap: 6px; }
+  .briefing-kpis-inline { font-size: 12px; gap: 6px; padding-bottom: 8px; }
+}
+
 /* ─── HERO-BLOCK FÜR HEUTIGEN EINSATZ (v1.44) ───
    An Einsatz-Tagen ersetzt dieser Block die KPI-Leiste oben — der Einsatz
    ist die einzige direkt umsatzbringende Tätigkeit und soll maximalen
@@ -3083,13 +3116,15 @@ select.typ-select-secondary {
   padding-top: 1px;
 }
 .briefing-preview-item {
-  display: flex; align-items: flex-start; gap: 10px;
+  display: flex; align-items: flex-start; gap: 12px;
 }
 .briefing-preview-kind {
   flex-shrink: 0;
+  width: 64px;
+  text-align: center;
   font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .4px;
-  padding: 2px 8px;
+  padding: 3px 0;
   border-radius: 999px;
   margin-top: 1px;
 }

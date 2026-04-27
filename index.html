@@ -326,10 +326,13 @@
         </h1>
       </div>
 
-      <div class="detail-tabs" id="heute-tabs">
-        <button class="detail-tab active" data-tab="heute" onclick="switchBriefingTab('heute')">Heute</button>
-        <button class="detail-tab" data-tab="woche" onclick="switchBriefingTab('woche')">Diese Woche</button>
-        <button class="detail-tab" data-tab="monat" onclick="switchBriefingTab('monat')">Dieser Monat</button>
+      <div class="heute-tabs-row">
+        <div class="detail-tabs" id="heute-tabs">
+          <button class="detail-tab active" data-tab="heute" onclick="switchBriefingTab('heute')">Heute</button>
+          <button class="detail-tab" data-tab="woche" onclick="switchBriefingTab('woche')">Diese Woche</button>
+          <button class="detail-tab" data-tab="monat" onclick="switchBriefingTab('monat')">Dieser Monat</button>
+        </div>
+        <div class="briefing-kpis-inline" id="heute-tab-meta"></div>
       </div>
 
       <div id="briefing-container">
