@@ -2899,6 +2899,123 @@ select.typ-select-secondary {
   padding-top: 12px;
 }
 
+/* v1.44.13 — Wochen-Agenda „Diese Woche". Mo–Fr als vertikale Liste mit
+   Tag-Headern. Pro Tag horizontale Item-Zeilen (Termine + Einsätze). */
+.week-agenda {
+  display: flex; flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.week-agenda-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.week-agenda-day.is-today {
+  border-left-color: var(--success);
+  background: linear-gradient(90deg, #f0fdf4 0%, var(--surface) 30%);
+}
+.week-agenda-day.is-past { opacity: .6; }
+.week-agenda-head {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+.week-agenda-day-name {
+  font-size: 14px; font-weight: 700; color: var(--text);
+}
+.week-agenda-day.is-today .week-agenda-day-name { color: var(--success); }
+.week-agenda-day-date {
+  font-size: 12px; color: var(--muted);
+}
+.week-agenda-items {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.week-agenda-empty {
+  font-size: 12px; color: var(--muted); font-style: italic;
+  padding: 4px 0;
+}
+.week-agenda-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.week-agenda-item:hover {
+  background: var(--surface);
+  transform: translateX(2px);
+}
+.week-agenda-item.is-active {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.week-agenda-tag {
+  flex-shrink: 0;
+  width: 64px; text-align: center;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .4px;
+  padding: 3px 0;
+  border-radius: 999px;
+  background: #f3f4f6; color: var(--muted);
+}
+.week-agenda-time, .week-agenda-status {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  min-width: 56px;
+  text-align: center;
+  padding: 2px 8px;
+  background: rgba(255,255,255,.6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.week-agenda-body { flex: 1; min-width: 0; }
+.week-agenda-titel {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.week-agenda-sub {
+  font-size: 11px; color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Termin = blau */
+.week-agenda-item.is-termin {
+  border-left-color: var(--link);
+  background: #eff6ff;
+}
+.week-agenda-item.is-termin:hover { background: #dbeafe; }
+.week-agenda-item.is-termin .week-agenda-tag { background: #dbeafe; color: var(--link); }
+
+/* Einsatz — Status-Farben */
+.week-agenda-item.is-einsatz {
+  border-left-color: var(--success);
+  background: #f0fdf4;
+}
+.week-agenda-item.is-einsatz:hover { background: #dcfce7; }
+.week-agenda-item.is-einsatz .week-agenda-tag { background: #dcfce7; color: var(--success); }
+.week-agenda-item.is-einsatz.dep-status-durchgeführt { border-left-color: var(--muted); background: #f9fafb; }
+.week-agenda-item.is-einsatz.dep-status-durchgeführt:hover { background: #f3f4f6; }
+.week-agenda-item.is-einsatz.dep-status-durchgeführt .week-agenda-tag { background: #f3f4f6; color: var(--muted); }
+.week-agenda-item.is-einsatz.dep-status-abgerechnet { border-left-color: var(--link); background: #eff6ff; }
+.week-agenda-item.is-einsatz.dep-status-abgerechnet:hover { background: #dbeafe; }
+.week-agenda-item.is-einsatz.dep-status-abgerechnet .week-agenda-tag { background: #dbeafe; color: var(--link); }
+.week-agenda-item.is-einsatz.dep-status-storniert { border-left-color: var(--danger); background: #fef2f2; opacity: .75; }
+.week-agenda-item.is-einsatz.dep-status-storniert .week-agenda-tag { background: #fef2f2; color: var(--danger); }
+
+@media (max-width: 600px) {
+  .week-agenda-item { flex-wrap: wrap; }
+  .week-agenda-tag, .week-agenda-time, .week-agenda-status { min-width: auto; }
+}
+
 /* v1.44.7 — Wochen-Strip „Diese Woche".
    v1.44.8: 5 Werktage Mo–Fr, Klick auf Pill öffnet Inline-Dashboard
    unterhalb der Strip statt Modal. */

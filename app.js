@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.13 (Wochen-Tab umgebaut:
+   1) 2-spaltiges Layout wie Heute — Agenda links, Aufgaben-
+      Aside rechts (sticky). Wegen kollabierter Aufgaben-Box
+      mussten Aufgaben vorher untergehen oder ausgeklappt
+      werden — jetzt immer sichtbar parallel zur Agenda.
+   2) Agenda-Liste statt Spalten-Strip. Mo–Fr als vertikale
+      Cards mit Tag-Header. Pro Tag horizontale Item-Zeilen
+      mit Pill (Termin/Einsatz), Status/Uhrzeit, Titel und
+      Sub-Zeile (Firma · Ort · ggf. „Tag X/Y" bei Mehrtägigen).
+      Lesbarer als die engen 5 Spalten, sobald pro Tag
+      mehrere Items anstehen. Klick weiter Inline-Dashboard
+      darunter (über bestehenden weekStripToggleExpand).)
    Version 1.44.12 (Dieser-Monat-Tab als Drilldown-Dashboard.
    Statt der bisherigen Briefing-Cards bekommt der Monat-Tab
    ein KPI-Kachel-Grid. Pro Kachel ein klickbarer Drilldown
@@ -11067,10 +11079,13 @@ function renderBriefing(scope, data) {
   // v1.44.9: Aufgaben standardmäßig zugeklappt — sonst dominieren sie die
   // Woche-Übersicht. Klick auf den Toggle öffnet die Wochen-Aufgaben-Liste.
   if (scope === 'woche') {
+    // v1.44.13: 2-spaltiges Layout wie Heute — Agenda links, Aufgaben rechts.
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
-      ${renderBriefingWeekStrip(data)}
-      ${renderWocheTasksCollapsed(data)}
+      <div class="heute-grid">
+        <div class="heute-main">${renderBriefingWeekAgenda(data)}</div>
+        <div class="heute-aside">${renderHeuteTasksAside(data)}</div>
+      </div>
       ${renderBriefingStreak(scope, data)}
     `;
   }
@@ -11150,9 +11165,128 @@ function renderBriefingMonthDashboard(data) {
     </div>`;
 }
 
-/** v1.44.7: Wochen-Strip für „Diese Woche".
- *  v1.44.8: Mo–Fr (5 Werktage), Sa/So entfernt — Geschäftslogik.
- *  Klick auf Pill öffnet Inline-Dashboard unterhalb (wie in den Listen). */
+/** v1.44.13: Wochen-Agenda für „Diese Woche". Mo–Fr als Liste mit Tag-
+ *  Headern. Pro Tag: Einsätze (zuerst, umsatzrelevant) und Termine als
+ *  klickbare Item-Zeilen. Lesbarer als die alte Spalten-Strip, wenn pro
+ *  Tag mehrere Items anstehen. Klick öffnet Inline-Dashboard unterhalb. */
+function renderBriefingWeekAgenda(data) {
+  const todayISO = toISODate(new Date());
+  const startISO = data.range.startISO;
+
+  const days = [];
+  const start = new Date(startISO + 'T00:00:00');
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const iso = toISODate(d);
+    days.push({
+      iso,
+      weekday: WEEKDAYS_DE[d.getDay()],
+      day: d.getDate(),
+      month: MONTHS_DE[d.getMonth()],
+      isToday: iso === todayISO,
+      isPast: iso < todayISO,
+      items: []
+    });
+  }
+
+  // Einsätze auf alle abgedeckten Tage (mehrtägig)
+  (data.deployments || []).forEach(dep => {
+    const von = dep.datum_von;
+    const bis = dep.datum_bis || dep.datum_von;
+    days.forEach(day => {
+      if (day.iso >= von && day.iso <= bis) {
+        // Markiere Mehrtägige mit Tag-Position (z.B. „Tag 2 von 3")
+        let tagInfo = '';
+        if (von !== bis) {
+          const tagN = Math.round((new Date(day.iso) - new Date(von)) / 86400000) + 1;
+          const totalTage = Math.round((new Date(bis) - new Date(von)) / 86400000) + 1;
+          tagInfo = `Tag ${tagN}/${totalTage}`;
+        }
+        day.items.push({ kind: 'einsatz', dep, tagInfo });
+      }
+    });
+  });
+  // Termine
+  (data.appointments || []).forEach(t => {
+    const day = days.find(d => d.iso === t.datum);
+    if (day) day.items.push({ kind: 'termin', appt: t });
+  });
+  // Pro Tag: Einsätze zuerst, dann Termine nach Uhrzeit
+  days.forEach(d => {
+    d.items.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'einsatz' ? -1 : 1;
+      if (a.kind === 'termin') {
+        return ((a.appt.uhrzeit_von || '') || '').localeCompare(b.appt.uhrzeit_von || '');
+      }
+      return 0;
+    });
+  });
+
+  return `
+    <div class="week-agenda">
+      ${days.map(day => renderWeekAgendaDay(day)).join('')}
+    </div>
+    <div id="week-strip-expand"></div>`;
+}
+
+function renderWeekAgendaDay(day) {
+  const cls = ['week-agenda-day'];
+  if (day.isToday) cls.push('is-today');
+  if (day.isPast)  cls.push('is-past');
+
+  const itemsHtml = day.items.length === 0
+    ? `<div class="week-agenda-empty">— frei</div>`
+    : day.items.map(it => renderWeekAgendaItem(it)).join('');
+
+  return `
+    <div class="${cls.join(' ')}">
+      <div class="week-agenda-head">
+        <div class="week-agenda-day-name">${esc(day.weekday)}${day.isToday ? ' · Heute' : ''}</div>
+        <div class="week-agenda-day-date">${day.day}. ${esc(day.month)}</div>
+      </div>
+      <div class="week-agenda-items">${itemsHtml}</div>
+    </div>`;
+}
+
+function renderWeekAgendaItem(it) {
+  if (it.kind === 'einsatz') {
+    const d = it.dep;
+    const status = d.status || 'Geplant';
+    const firma = d.company?.name || 'Einsatz';
+    const titel = d.titel || d.service?.name || 'Einsatz';
+    const wert = (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0);
+    const meta = [
+      it.tagInfo,
+      d.ort && d.ort !== firma ? d.ort : '',
+      wert > 0 ? formatPreis(wert) : ''
+    ].filter(Boolean).join(' · ');
+    return `<div class="week-agenda-item is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" data-kind="deployment" data-id="${esc(d.id)}" onclick="weekStripToggleExpand('deployment','${esc(d.id)}',this)">
+      <span class="week-agenda-tag">Einsatz</span>
+      <span class="week-agenda-status">${esc(status)}</span>
+      <div class="week-agenda-body">
+        <div class="week-agenda-titel">${esc(firma)}</div>
+        <div class="week-agenda-sub">${esc(titel)}${meta ? ' · ' + esc(meta) : ''}</div>
+      </div>
+    </div>`;
+  } else {
+    const t = it.appt;
+    const time = t.uhrzeit_von ? t.uhrzeit_von.substring(0, 5) : '';
+    const titel = t.titel || 'Termin';
+    const firma = t.company?.name || '';
+    const sub = [firma, t.ort].filter(Boolean).join(' · ');
+    return `<div class="week-agenda-item is-termin" data-kind="appointment" data-id="${esc(t.id)}" onclick="weekStripToggleExpand('appointment','${esc(t.id)}',this)">
+      <span class="week-agenda-tag">Termin</span>
+      <span class="week-agenda-time">${esc(time || '—')}</span>
+      <div class="week-agenda-body">
+        <div class="week-agenda-titel">${esc(titel)}</div>
+        ${sub ? `<div class="week-agenda-sub">${esc(sub)}</div>` : ''}
+      </div>
+    </div>`;
+  }
+}
+
+/** Alte Spalten-Strip — wird seit v1.44.13 nicht mehr verwendet, aber zur
+ *  Sicherheit hier belassen (falls anderer Code drauf zugreift). */
 function renderBriefingWeekStrip(data) {
   const todayISO = toISODate(new Date());
   const startISO = data.range.startISO;
