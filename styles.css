@@ -563,6 +563,36 @@ body {
   .dashboard-row-2col { grid-template-columns: 1fr; }
 }
 
+/* v1.47.0: 3-Spalten-Variante (Letzte | Bevorstehend | Team im Projekt) */
+.dashboard-row-3col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .dashboard-row-3col { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 700px) {
+  .dashboard-row-3col { grid-template-columns: 1fr; }
+}
+
+/* v1.47.0: Stat-Row mit 4 Karten (Projekt-Detail) */
+.dashboard-stats.is-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+@media (max-width: 1100px) {
+  .dashboard-stats.is-4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .dashboard-stats.is-4 { grid-template-columns: 1fr; }
+}
+
+/* v1.47.0: Kompaktes Detail-Grid (für Team-Card mit nur 2 Feldern) */
+.detail-grid-tight {
+  gap: 8px 12px;
+}
+.detail-grid-tight .detail-field { gap: 2px; }
+
 /* ── STAT-CARD CLICKABLE (v1.25.0) — z. B. ABC-Edit ── */
 .stat-card-clickable {
   cursor: pointer;
@@ -690,12 +720,25 @@ body {
   min-height: 72px;
 }
 .stat-card-body { flex: 1; min-width: 0; }
+/* v1.47.0: Card-Label hervorgehoben — bold, dunkler, farbiger Punkt davor */
 .stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--text);
   text-transform: uppercase;
-  letter-spacing: .4px;
-  margin-bottom: 4px;
+  letter-spacing: .5px;
+  margin-bottom: 6px;
+}
+.stat-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
 }
 .stat-value {
   font-size: 18px;
@@ -713,13 +756,25 @@ body {
   border-radius: var(--radius);
   padding: 16px 20px;
 }
+/* v1.47.0: Info-Card-Titel hervorgehoben — bold, dunkel, mit farbigem Punkt */
 .info-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--text);
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
   margin-bottom: 12px;
+}
+.info-card-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
 }
 .info-card-empty { color: var(--muted); font-size: 13px; font-style: italic; }
 
@@ -763,10 +818,104 @@ body {
   background: var(--surface);
 }
 
-/* Quick-Create Panel (rechte Spalte) */
-.quick-create-panel {
+/* v1.47.0: Sidebar-Wrapper für Kontakte-Panel + Quick-Create-Panel */
+.dashboard-aside {
   position: sticky;
   top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (max-width: 960px) {
+  .dashboard-aside { position: static; }
+}
+
+/* v1.47.0: Kontakte als Sidebar-Liste statt eigener Tab */
+.contacts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.contacts-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.contacts-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px; font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.contacts-panel-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+.contact-card {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background .1s;
+}
+.contact-card:hover { background: var(--bg); }
+.contact-card-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600;
+}
+.contact-card-body { min-width: 0; }
+.contact-card-name {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.contact-card-sub {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.contact-card-actions {
+  display: flex; gap: 2px;
+  opacity: 0;
+  transition: opacity .1s;
+}
+.contact-card:hover .contact-card-actions { opacity: 1; }
+.contact-card-actions .btn-icon {
+  background: none; border: none; cursor: pointer;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--muted);
+  border-radius: 4px;
+}
+.contact-card-actions .btn-icon:hover { background: var(--surface); color: var(--text); }
+
+/* v1.47.0: Title-Row in Info-Card (Mitgliedschaften: Titel + Button) */
+.info-card-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.info-card-title-row .info-card-title { margin-bottom: 0; }
+
+/* Quick-Create Panel (rechte Spalte) */
+.quick-create-panel {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -776,14 +925,25 @@ body {
   border-radius: var(--radius);
 }
 .quick-create-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--text);
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
   padding: 4px 6px 8px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
+}
+.quick-create-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
 }
 .quick-create-btn {
   display: flex;
@@ -3241,17 +3401,33 @@ select.typ-select-secondary {
   padding-top: 12px;
 }
 
-/* v1.45.1 — Wochenstreifen Mo–So oben über der Agenda */
+/* v1.45.1 — Wochenstreifen oben über der Agenda; v1.47.0 reduziert auf Mo–Fr */
+.week-strip-header {
+  display: flex; align-items: baseline; gap: 12px;
+  margin: 6px 4px 8px;
+}
+.week-strip-kw {
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: .4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.week-strip-range {
+  font-size: 12px; color: var(--muted);
+}
 .week-strip-row {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-bottom: 16px;
 }
-@media (max-width: 1280px) {
+@media (max-width: 1024px) {
   .week-strip-row {
     grid-auto-flow: column;
-    grid-template-columns: repeat(7, minmax(112px, 1fr));
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     padding-bottom: 6px;

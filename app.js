@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.47.0 (Detail-Seiten Verdichtung & Hervorhebung).
+   - Firma-Detail: Tab-Liste auf 3 reduziert (Stammdaten /
+     Projekte / Aktivitäten). Kontakte als Sidebar-Panel über
+     Schnell-Anlegen statt eigener Tab. Mitgliedschaften in
+     Stammdaten-Dashboard eingegliedert. Termine + Aufgaben +
+     Einsätze gestapelt im Aktivitäten-Tab.
+   - Wochen-Tab: nur noch Mo–Fr (Wochenende ausgeblendet) +
+     KW-Header (ISO 8601) über dem Strip.
+   - Projekt-Detail: 4-Spalten-Stat-Row (Status / Wirtschaft-
+     lichkeit / Zeitplan / Offene Aufgaben) statt 3-Spalten-
+     Orphan. Letzte/Bevorstehend/Team in 3-Spalten-Row,
+     Projektdaten-Card komplett ersetzt durch kompakte
+     Team-Card (nur Verantwortlich + Hauptkontakt; Umsatz/Daten
+     bleiben oben in den Stat-Cards).
+   - Card-Titel hervorgehoben (Stat-Label, Info-Card-Title,
+     Quick-Create-Title, Contacts-Panel-Title): bold, dunkel,
+     farbiger Punkt davor — vorher zu unauffällig.
+   - switchDetailTab kennt Aliasse für entfallene Firma-Tabs:
+     kontakte/mitgliedschaften → stammdaten,
+     termine/aufgaben/einsaetze → aktivitaeten.
+   - loadCompanyContacts rendert kompakte Sidebar-Karten
+     statt voller Tabelle. ISO-Wochen-Helper isoWeekNumber.)
    Version 1.46.0 (Monat-Tab Rollen-Schärfung — Technik bekommt
    Restmonat-Liste + Pflegerückstand-KPI statt nackt-Geplant;
    Vertrieb bekommt Forecast-KPI (Realisiert + Geplant + gewichtete
@@ -4261,7 +4283,9 @@ async function loadCompanyDetail(companyId) {
   document.getElementById('company-detail-title').textContent = '…';
   document.getElementById('company-detail-subline').innerHTML = '';
   document.getElementById('company-detail-info').innerHTML = '<div style="color:var(--muted);font-size:13px">Lade Firma ...</div>';
-  document.getElementById('company-contacts-body').innerHTML = '<tr><td colspan="5"><div class="empty">Lade Kontakte ...</div></td></tr>';
+  // v1.47.0: contacts ist jetzt #company-contacts-list (kein tbody mehr).
+  const cContactsList = document.getElementById('company-contacts-list');
+  if (cContactsList) cContactsList.innerHTML = '<div class="info-card-empty">Lade ...</div>';
   document.getElementById('company-appointments-body').innerHTML = '<tr><td colspan="7"><div class="empty">Lade Termine ...</div></td></tr>';
   document.getElementById('company-appointments-show-all').style.display = 'none';
   document.getElementById('company-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>';
@@ -4279,13 +4303,15 @@ async function loadCompanyDetail(companyId) {
     document.getElementById('company-detail-name').textContent = '—';
     document.getElementById('company-detail-subline').innerHTML = '';
     // Abhängige Sektionen nicht starten, sondern leeren Zustand anzeigen
-    document.getElementById('company-contacts-body').innerHTML = '<tr><td colspan="5"><div class="empty">—</div></td></tr>';
+    // v1.47.0: contacts ist Sidebar-Liste, kein tbody mehr
+    const cListErr = document.getElementById('company-contacts-list');
+    if (cListErr) cListErr.innerHTML = '<div class="info-card-empty">—</div>';
     document.getElementById('company-appointments-body').innerHTML = '<tr><td colspan="7"><div class="empty">—</div></td></tr>';
     document.getElementById('company-projects-body').innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     const depBody = document.getElementById('company-deployments-body');
     if (depBody) depBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     const msBody = document.getElementById('company-memberships-body');
-    if (msBody) msBody.innerHTML = '<div class="empty">—</div>';
+    if (msBody) msBody.innerHTML = '<div class="info-card-empty">—</div>';
     const tasksBody = document.getElementById('company-tasks-body');
     if (tasksBody) tasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">—</div></td></tr>';
     return;
@@ -4441,16 +4467,19 @@ function renderCompanyDetail(c) {
   // Notizen: jetzt inline-editierbar im Dashboard (siehe oben, #company-notes-inline)
 }
 
+/** v1.47.0: Kontakte als kompakte Sidebar-Liste (kein Tab mehr).
+ *  Rendert in #company-contacts-list mit Name + Position + E-Mail
+ *  als anklickbare Karten. Bearbeiten/Kopieren via Hover-Icons. */
 async function loadCompanyContacts(companyId) {
-  const tbody = document.getElementById('company-contacts-body');
+  const list   = document.getElementById('company-contacts-list');
   const countEl = document.getElementById('company-contacts-count');
 
   const { data, error } = await db.from('contacts')
     .select('*').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
-    countEl.textContent = 'Kontakte';
+    if (list) list.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`;
+    if (countEl) countEl.textContent = 'Kontakte';
     return;
   }
 
@@ -4464,29 +4493,29 @@ async function loadCompanyContacts(companyId) {
   }
 
   const total = (data || []).length;
-  countEl.textContent = total === 0 ? 'Keine Kontakte' : `${total} Kontakt${total === 1 ? '' : 'e'}`;
-  setTabCount('company', 'kontakte', total);
+  if (countEl) countEl.textContent = total === 0 ? 'Kontakte' : `Kontakte · ${total}`;
 
+  if (!list) return;
   if (total === 0) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Kontakte für diese Firma. Klicke oben auf „+ Kontakt hinzufügen".</div></td></tr>';
+    list.innerHTML = '<div class="info-card-empty">Noch keine Kontakte. Klicke oben auf „+ Kontakt".</div>';
     return;
   }
 
-  tbody.innerHTML = data.map(k => {
-    const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
+  list.innerHTML = data.map(k => {
+    const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ') || '—';
+    const sub = [k.position, k.email || k.telefon].filter(Boolean).join(' · ');
     return `
-      <tr>
-        <td><div class="cell-link" onclick="navigateTo('kontakt', '${esc(k.id)}')">${esc(fullName)}</div></td>
-        <td class="col-tablet" style="color:var(--muted)">${esc(k.position || '—')}</td>
-        <td class="col-tablet" style="color:var(--muted)">${esc(k.telefon || '—')}</td>
-        <td class="col-desktop" style="color:var(--muted)">${esc(k.email || '—')}</td>
-        <td class="col-action" style="text-align:right">
-          <div class="btn-row" style="justify-content:flex-end">
-            <button class="btn-copy" onclick="copyContactById('${esc(k.id)}')" title="Kontakt kopieren" aria-label="Kontakt kopieren">${COPY_ICON_SVG}</button>
-            <button class="btn btn-sm" onclick="openContactModal('edit', '${esc(k.id)}')">Bearbeiten</button>
-          </div>
-        </td>
-      </tr>`;
+      <div class="contact-card" onclick="navigateTo('kontakt', '${esc(k.id)}')">
+        <div class="contact-card-avatar">${esc(ini(fullName))}</div>
+        <div class="contact-card-body">
+          <div class="contact-card-name">${esc(fullName)}</div>
+          ${sub ? `<div class="contact-card-sub">${esc(sub)}</div>` : ''}
+        </div>
+        <div class="contact-card-actions" onclick="event.stopPropagation()">
+          <button class="btn-copy" onclick="copyContactById('${esc(k.id)}')" title="Kopieren" aria-label="Kopieren">${COPY_ICON_SVG}</button>
+          <button class="btn-icon" onclick="openContactModal('edit', '${esc(k.id)}')" title="Bearbeiten" aria-label="Bearbeiten">✎</button>
+        </div>
+      </div>`;
   }).join('');
 }
 
@@ -5942,6 +5971,9 @@ function renderProjectDetail(p) {
 
   const verantwortlicherName = p.verantwortlicher?.name || null;
 
+  // v1.47.0: nur Verantwortlich + Hauptkontakt — alle anderen Felder
+  // sind redundant in den 4 Stat-Cards oben (Status, Wirtschaftlichkeit
+  // mit Umsatz, Zeitplan mit Daten, Offene Aufgaben).
   const info = document.getElementById('project-detail-info');
   info.innerHTML = `
     <div class="detail-field">
@@ -5951,22 +5983,6 @@ function renderProjectDetail(p) {
     <div class="detail-field">
       <div class="detail-label">Hauptkontakt</div>
       <div class="detail-value">${hauptkontaktName ? esc(hauptkontaktName) : '<span class="detail-value-muted">—</span>'}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Startdatum</div>
-      <div class="detail-value">${p.startdatum ? esc(formatDateDE(p.startdatum)) : '<span class="detail-value-muted">—</span>'}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Enddatum (geplant)</div>
-      <div class="detail-value">${p.enddatum ? esc(formatDateDE(p.enddatum)) : '<span class="detail-value-muted">—</span>'}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Geschätzter Umsatz</div>
-      <div class="detail-value" style="font-weight:500">${esc(formatPreis(p.geschaetzter_umsatz))}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-label">Leistungsumsatz (Einsätze)</div>
-      <div class="detail-value" id="project-detail-leistungsumsatz" style="font-weight:500;color:var(--muted)">Lade ...</div>
     </div>
   `;
 
@@ -8379,6 +8395,20 @@ function switchDetailTab(entityType, tabKey) {
   const pageId = { company: 'page-company-detail', project: 'page-project-detail', contact: 'page-contact-detail' }[entityType];
   const page = document.getElementById(pageId);
   if (!page) return;
+
+  // v1.47.0: Firma-Detail hat nur noch 3 Tabs. Alte URLs/Bookmarks auf
+  // entfernte Tabs werden umgemappt: Kontakte/Mitgliedschaften → Stammdaten,
+  // Termine/Aufgaben/Einsätze → Aktivitäten.
+  if (entityType === 'company') {
+    const COMPANY_TAB_ALIASES = {
+      kontakte: 'stammdaten',
+      mitgliedschaften: 'stammdaten',
+      termine: 'aktivitaeten',
+      aufgaben: 'aktivitaeten',
+      einsaetze: 'aktivitaeten'
+    };
+    if (COMPANY_TAB_ALIASES[tabKey]) tabKey = COMPANY_TAB_ALIASES[tabKey];
+  }
 
   page.querySelectorAll('.detail-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tabKey);
@@ -10963,6 +10993,15 @@ function setMonthDashView(v) {
 const WEEKDAYS_DE = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MONTHS_DE   = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 
+/** v1.47.0: ISO-8601 Kalenderwoche aus Date. Mo=Tag 1, Donnerstag-Regel. */
+function isoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
 /** Berechnet den Datums-Bereich für „Heute" / „Diese Woche" / „Dieser Monat". */
 function briefingRangeForScope(scope) {
   const now = new Date(); now.setHours(0, 0, 0, 0);
@@ -10971,11 +11010,14 @@ function briefingRangeForScope(scope) {
     return { startISO: todayISO, endISO: todayISO, label: 'heute' };
   }
   if (scope === 'woche') {
+    // v1.47.0: nur Werktage (Mo–Fr). Samstag/Sonntag werden im Dashboard
+    // weder als Karten noch in der Agenda angezeigt — Range entsprechend
+    // verkürzt, damit Tagessummen/KPIs nicht durch Wochenend-Daten verfälscht.
     const dow = now.getDay(); // 0=So..6=Sa
     const monOffset = dow === 0 ? -6 : 1 - dow;
     const monday = new Date(now); monday.setDate(now.getDate() + monOffset);
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-    return { startISO: toISODate(monday), endISO: toISODate(sunday), label: 'diese Woche' };
+    const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+    return { startISO: toISODate(monday), endISO: toISODate(friday), label: 'diese Woche' };
   }
   // Monat
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -12168,9 +12210,9 @@ function renderWeekStrip(data) {
   const startISO = data.range.startISO;
   const start = new Date(startISO + 'T00:00:00');
 
-  // Aggregiere pro Tag aus den existierenden Daten
+  // v1.47.0: 5 Werktage statt 7. Wochenende ausgeblendet.
   const dayInfo = {};
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const iso = toISODate(d);
     dayInfo[iso] = { iso, terms: 0, deps: [], tagSumme: 0 };
@@ -12232,7 +12274,18 @@ function renderWeekStrip(data) {
       </button>`;
   }).join('');
 
-  return `<div class="week-strip-row">${cards}</div>`;
+  // v1.47.0: KW-Header + Datumsspanne über den Tageskarten.
+  const startDate = new Date(startISO + 'T00:00:00');
+  const endDate = new Date(startDate); endDate.setDate(startDate.getDate() + 4);
+  const kw = isoWeekNumber(startDate);
+  const fmt = (d) => `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+  const headerRange = `${fmt(startDate)}–${fmt(endDate)}${endDate.getFullYear()}`;
+  return `
+    <div class="week-strip-header">
+      <span class="week-strip-kw">KW ${kw}</span>
+      <span class="week-strip-range">${esc(headerRange)}</span>
+    </div>
+    <div class="week-strip-row">${cards}</div>`;
 }
 
 /** Scrollt smooth zur Tageszeile in der Wochen-Agenda. */
@@ -12255,10 +12308,10 @@ function renderBriefingWeekAgenda(data) {
 
   const days = [];
   const start = new Date(startISO + 'T00:00:00');
-  // v1.45.1: 7 Tage Mo–So (vorher nur 5 Werktage). Plus Feiertag-Erkennung
-  // (BW) und Tagessumme aus Einsätzen pro Tag.
+  // v1.47.0: zurück auf 5 Werktage (Mo–Fr). Feiertag-Erkennung (BW)
+  // und Tagessumme aus Einsätzen pro Tag bleiben.
   const yearHolidays = new Map();
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const iso = toISODate(d);
     const dow = d.getDay();
