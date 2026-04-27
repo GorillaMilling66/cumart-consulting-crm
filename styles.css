@@ -2747,13 +2747,14 @@ select.typ-select-secondary {
 .briefing-narrative-text .accent-warn { color: var(--warning); font-weight: 600; }
 .briefing-narrative-text .accent-good { color: var(--success); font-weight: 600; }
 
-/* v1.44.7 — Wochen-Strip „Diese Woche". 7 Spalten Mo–So, pro Tag eine
-   kompakte Spalte mit Einsatz-/Termin-Pills. Klick öffnet das Modal. */
+/* v1.44.7 — Wochen-Strip „Diese Woche".
+   v1.44.8: 5 Werktage Mo–Fr, Klick auf Pill öffnet Inline-Dashboard
+   unterhalb der Strip statt Modal. */
 .week-strip {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .week-day {
   background: var(--surface);
@@ -2770,8 +2771,6 @@ select.typ-select-secondary {
   box-shadow: 0 2px 8px rgba(34, 197, 94, .08);
 }
 .week-day.is-past { opacity: .55; }
-.week-day.is-weekend { background: #fafafa; }
-.week-day.is-weekend.is-today { background: linear-gradient(180deg, #f0fdf4 0%, var(--surface) 30%); }
 .week-day-head {
   margin-bottom: 8px;
   padding-bottom: 6px;
@@ -2814,6 +2813,11 @@ select.typ-select-secondary {
   background: var(--surface);
   transform: translateX(1px);
 }
+.week-pill.is-active {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  background: var(--surface);
+}
 .week-pill .week-pill-kind {
   font-size: 9px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .4px;
@@ -2845,8 +2849,22 @@ select.typ-select-secondary {
 .week-pill.is-einsatz.dep-status-abgerechnet .week-pill-kind { color: var(--link); }
 .week-pill.is-einsatz.dep-status-storniert .week-pill-kind { color: var(--danger); }
 
+/* Inline-Dashboard unterhalb der Wochen-Strip */
+.week-expand-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  animation: weekExpandIn .2s ease-out;
+}
+@keyframes weekExpandIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 900px) {
-  .week-strip { grid-template-columns: repeat(7, minmax(110px, 1fr)); overflow-x: auto; padding-bottom: 8px; }
+  .week-strip { grid-template-columns: repeat(5, minmax(120px, 1fr)); overflow-x: auto; padding-bottom: 8px; }
   .week-day { min-height: 160px; }
 }
 @media (max-width: 600px) {

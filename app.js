@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.44.8 (Diese-Woche-Strip Feinjustage:
+   1) Sa/So entfernt — Wochen-Strip zeigt nur Mo–Fr (Werktage).
+      Geschäftslogik: an Wochenenden finden keine Kunden-
+      Termine/Einsätze statt.
+   2) Klick auf Pill öffnet jetzt das Inline-Dashboard
+      unterhalb der Strip statt das Bearbeiten-Modal — analog
+      zum Listen-Inline-Expand. Aktive Pill bekommt einen
+      Akzent-Outline. Erneuter Klick schließt. Auf Mobile
+      fällt es zurück auf das Modal (Inline-Expand braucht
+      Platz).
+   Wiederverwendet die existierenden render-Funktionen
+   renderDeploymentExpandedRow / renderAppointmentExpandedRow,
+   damit die Detail-Ansicht 1:1 dieselbe ist wie in den Listen.)
    Version 1.44.7 (Diese-Woche-Tab als 7-Tage-Strip. Statt der
    bisherigen Briefing-Cards bekommt der Wochen-Tab eine
    Spaltenansicht Mo–So. Pro Tag werden alle Einsätze (zuerst,
@@ -10810,15 +10823,16 @@ function renderBriefing(scope, data) {
   `;
 }
 
-/** v1.44.7: 7-Tage-Strip für „Diese Woche". Mo–So als Spalten, pro Tag
- *  Einsätze (zuerst) und Termine als kompakte klickbare Pills. */
+/** v1.44.7: Wochen-Strip für „Diese Woche".
+ *  v1.44.8: Mo–Fr (5 Werktage), Sa/So entfernt — Geschäftslogik.
+ *  Klick auf Pill öffnet Inline-Dashboard unterhalb (wie in den Listen). */
 function renderBriefingWeekStrip(data) {
   const todayISO = toISODate(new Date());
   const startISO = data.range.startISO;
 
   const days = [];
   const start = new Date(startISO + 'T00:00:00');
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const iso = toISODate(d);
     days.push({
@@ -10828,7 +10842,6 @@ function renderBriefingWeekStrip(data) {
       month: MONTHS_DE[d.getMonth()],
       isToday: iso === todayISO,
       isPast: iso < todayISO,
-      isWeekend: d.getDay() === 0 || d.getDay() === 6,
       einsaetze: [],
       termine: []
     });
@@ -10855,7 +10868,7 @@ function renderBriefingWeekStrip(data) {
   return `
     <div class="week-strip">
       ${days.map(day => `
-        <div class="week-day${day.isToday ? ' is-today' : ''}${day.isPast ? ' is-past' : ''}${day.isWeekend ? ' is-weekend' : ''}">
+        <div class="week-day${day.isToday ? ' is-today' : ''}${day.isPast ? ' is-past' : ''}">
           <div class="week-day-head">
             <div class="week-day-name">${esc(day.weekday)}</div>
             <div class="week-day-date">${day.day}. ${esc(day.month)}</div>
@@ -10867,10 +10880,12 @@ function renderBriefingWeekStrip(data) {
           </div>
         </div>
       `).join('')}
-    </div>`;
+    </div>
+    <div id="week-strip-expand"></div>`;
 }
 
-/** Klein-Pill für die Wochen-Strip — klickbar, öffnet das Edit-Modal. */
+/** Klein-Pill für die Wochen-Strip — klickbar, öffnet Inline-Dashboard
+ *  unterhalb der Strip (oder Modal auf Mobile). */
 function renderWeekPill(kind, item) {
   if (kind === 'einsatz') {
     const status = item.status || 'Geplant';
@@ -10878,7 +10893,7 @@ function renderWeekPill(kind, item) {
     const titel = item.titel || item.service?.name || 'Einsatz';
     const wert = (Number(item.menge) || 0) * (Number(item.einzelpreis) || 0);
     const tooltip = `${titel}${firma !== titel ? ' · ' + firma : ''}${wert > 0 ? ' · ' + formatPreis(wert) : ''} · ${status}`;
-    return `<div class="week-pill is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" onclick="openDeploymentModal('edit','${esc(item.id)}')" title="${esc(tooltip)}">
+    return `<div class="week-pill is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" data-kind="deployment" data-id="${esc(item.id)}" onclick="weekStripToggleExpand('deployment','${esc(item.id)}',this)" title="${esc(tooltip)}">
       <span class="week-pill-kind">Einsatz</span>
       <span class="week-pill-title">${esc(firma)}</span>
     </div>`;
@@ -10887,10 +10902,54 @@ function renderWeekPill(kind, item) {
     const titel = item.titel || 'Termin';
     const firma = item.company?.name || '';
     const tooltip = `${time ? time + ' · ' : ''}${titel}${firma ? ' · ' + firma : ''}`;
-    return `<div class="week-pill is-termin" onclick="openAppointmentModal('edit','${esc(item.id)}')" title="${esc(tooltip)}">
+    return `<div class="week-pill is-termin" data-kind="appointment" data-id="${esc(item.id)}" onclick="weekStripToggleExpand('appointment','${esc(item.id)}',this)" title="${esc(tooltip)}">
       ${time ? `<span class="week-pill-time">${esc(time)}</span>` : ''}
       <span class="week-pill-title">${esc(firma || titel)}</span>
     </div>`;
+  }
+}
+
+/** v1.44.8: Inline-Dashboard unterhalb der Wochen-Strip toggeln.
+ *  Wiederverwendet die existierenden render-Funktionen aus dem
+ *  Listen-Inline-Expand. Auf Mobile fällt die Pill auf das Modal zurück. */
+let _weekStripExpanded = { kind: null, id: null };
+async function weekStripToggleExpand(entityType, entityId, pillEl) {
+  if (isMobileForExpand && isMobileForExpand()) {
+    if (entityType === 'deployment')  return openDeploymentModal('edit', entityId);
+    if (entityType === 'appointment') return openAppointmentModal('edit', entityId);
+    return;
+  }
+
+  const container = document.getElementById('week-strip-expand');
+  if (!container) return;
+
+  // Doppelklick auf gleiche Pill → schließen
+  if (_weekStripExpanded.kind === entityType && _weekStripExpanded.id === entityId) {
+    container.innerHTML = '';
+    document.querySelectorAll('.week-pill.is-active').forEach(el => el.classList.remove('is-active'));
+    _weekStripExpanded = { kind: null, id: null };
+    return;
+  }
+
+  // Vorher aktive Pill abschalten
+  document.querySelectorAll('.week-pill.is-active').forEach(el => el.classList.remove('is-active'));
+  pillEl?.classList.add('is-active');
+  _weekStripExpanded = { kind: entityType, id: entityId };
+
+  // Skeleton sofort
+  container.innerHTML = `<div class="week-expand-panel"><div class="expanded-row-panel-inner">${renderExpandedSkeleton()}</div></div>`;
+
+  try {
+    let html = '';
+    if (entityType === 'deployment')       html = await renderDeploymentExpandedRow(entityId, null);
+    else if (entityType === 'appointment') html = await renderAppointmentExpandedRow(entityId, null);
+
+    // Nur einsetzen, wenn der User in der Zwischenzeit nicht woanders geklickt hat
+    if (_weekStripExpanded.kind === entityType && _weekStripExpanded.id === entityId) {
+      container.innerHTML = `<div class="week-expand-panel"><div class="expanded-row-panel-inner">${html}</div></div>`;
+    }
+  } catch (e) {
+    container.innerHTML = `<div class="week-expand-panel"><div class="info-card-empty">Fehler: ${esc(e.message)}</div></div>`;
   }
 }
 
