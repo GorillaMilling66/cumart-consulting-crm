@@ -273,6 +273,18 @@
             </svg>
             Mitgliedschafts-Programme
           </button>
+
+          <button class="nav-item nav-item-sub" id="nav-templates"
+                  onclick="navigateTo('templates')" data-admin-only="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/>
+              <rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+            Templates
+          </button>
         </div>
       </div>
 
@@ -1504,6 +1516,43 @@
       </div>
     </div>
 
+    <!-- PAGE: TEMPLATES (v1.50.0) -->
+    <div class="page" id="page-templates">
+      <div class="page-header">
+        <h1 class="page-title">Templates</h1>
+        <button class="btn btn-primary" onclick="openTemplateModal('new')">+ Neues Template</button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        Vorlagen für Termine, Aufgaben, Einsätze und Projekte. Beim Anlegen
+        kann ein Template gewählt werden — die hinterlegten Felder werden
+        automatisch befüllt. Datumsfelder bleiben leer (Kontext-spezifisch).
+      </p>
+      <div class="card">
+        <div class="card-title">Vorlagen nach Typ</div>
+        <div class="form-group" style="max-width:320px;margin-bottom:20px">
+          <label>Typ anzeigen</label>
+          <select id="tpl-filter-typ" onchange="loadTemplates()">
+            <option value="termin">Termin</option>
+            <option value="aufgabe">Aufgabe</option>
+            <option value="einsatz">Einsatz</option>
+            <option value="projekt">Projekt</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="templates-table-body">
+              <tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- PAGE: MITGLIEDSCHAFTS-PROGRAMME -->
     <div class="page" id="page-programs">
       <div class="page-header">
@@ -2076,6 +2125,13 @@
   <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-appointment-title">Neuer Termin</div>
 
+    <div class="modal-template-row" id="t-template-row" style="display:none">
+      <label>Aus Template:</label>
+      <select id="t-template-select" onchange="applyTemplateToEntity('termin', this.value)">
+        <option value="">— Kein Template —</option>
+      </select>
+    </div>
+
     <div class="modal-3col">
       <!-- LINKS: Live-Vorschau -->
       <aside class="modal-preview-card" id="t-preview">
@@ -2192,6 +2248,13 @@
   <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-aufgabe-title">Neue Aufgabe</div>
 
+    <div class="modal-template-row" id="a-template-row" style="display:none">
+      <label>Aus Template:</label>
+      <select id="a-template-select" onchange="applyTemplateToEntity('aufgabe', this.value)">
+        <option value="">— Kein Template —</option>
+      </select>
+    </div>
+
     <div class="modal-3col">
       <!-- LINKS: Preview -->
       <aside class="modal-preview-card" id="a-preview"></aside>
@@ -2293,6 +2356,13 @@
   <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-project-title">Neues Projekt</div>
 
+    <div class="modal-template-row" id="p-template-row" style="display:none">
+      <label>Aus Template:</label>
+      <select id="p-template-select" onchange="applyTemplateToEntity('projekt', this.value)">
+        <option value="">— Kein Template —</option>
+      </select>
+    </div>
+
     <div class="modal-3col">
       <!-- LINKS: Preview -->
       <aside class="modal-preview-card" id="p-preview"></aside>
@@ -2386,6 +2456,13 @@
 <div class="modal-overlay" id="modal-deployment">
   <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
     <div class="modal-title" id="modal-deployment-title">Neuer Einsatz</div>
+
+    <div class="modal-template-row" id="d-template-row" style="display:none">
+      <label>Aus Template:</label>
+      <select id="d-template-select" onchange="applyTemplateToEntity('einsatz', this.value)">
+        <option value="">— Kein Template —</option>
+      </select>
+    </div>
 
     <div class="modal-3col">
       <!-- LINKS: Preview -->
@@ -2690,6 +2767,57 @@
       </button>
       <button class="btn" onclick="closeServiceModal()">Abbrechen</button>
       <button class="btn btn-primary" id="s-save-btn" onclick="saveService()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: TEMPLATE (v1.50.0) — Präfix tpl-* (t-* ist Termin) -->
+<div class="modal-overlay" id="modal-template">
+  <div class="modal" style="width:720px;max-width:95vw">
+    <div class="modal-title" id="modal-template-title">Neues Template</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Typ *</label>
+        <select id="tpl-typ" onchange="onTemplateTypeChange()">
+          <option value="termin">Termin</option>
+          <option value="aufgabe">Aufgabe</option>
+          <option value="einsatz">Einsatz</option>
+          <option value="projekt">Projekt</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Template-Name *</label>
+        <input type="text" id="tpl-name" placeholder="z. B. Standard-Kickoff">
+      </div>
+      <div class="form-group">
+        <label>Reihenfolge</label>
+        <input type="number" id="tpl-reihenfolge" min="0" step="1" value="0">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="tpl-aktiv">
+          <option value="true">Aktiv</option>
+          <option value="false">Archiviert</option>
+        </select>
+      </div>
+    </div>
+    <div style="padding:14px;margin-top:14px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">
+        Vorbelegungs-Felder
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px">
+        Leer lassen = beim Anlegen wird das Feld nicht überschrieben. Datumsfelder
+        werden generell nicht vorbelegt — die füllt der Nutzer beim Anlegen selbst.
+      </p>
+      <div id="tpl-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="tpl-delete-btn"
+              onclick="deleteTemplate()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeTemplateModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="tpl-save-btn" onclick="saveTemplate()">Anlegen</button>
     </div>
   </div>
 </div>

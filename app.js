@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.50.0 (Templates für Anlage-Modale).
+   Neue Tabelle `templates` (typ · name · daten jsonb · reihenfolge ·
+   ist_aktiv) — Admin pflegt unter „Stammdaten → Templates", alle
+   authenticated dürfen lesen. Beim Anlegen eines Termins / einer
+   Aufgabe / eines Einsatzes / Projekts kann oben im Modal ein
+   Template gewählt werden — die hinterlegten Felder werden
+   automatisch befüllt (change/input-Events werden gefeuert, damit
+   abhängige Logik wie Auto-Berechnungen reagiert). Datumsfelder
+   bleiben bewusst leer, der Nutzer füllt sie kontext-spezifisch.
+   Modal-IDs nutzen `tpl-*` (kein Konflikt mit Termin-`t-*`).
+   TEMPLATE_SCHEMAS pro Typ definiert die templatisierbaren Felder,
+   TEMPLATE_FIELD_MAP mappt JSON-Schlüssel auf Modal-DOM-IDs.
+   Neue RLS-Policies: select_authenticated + admin_write/update/delete
+   PERMISSIVE + only_active_users RESTRICTIVE.)
    Version 1.49.0 (Heute-Tab Aufgaben-Aside auch im Bürotag-Pfad).
    Wenn kein Einsatz für heute ansteht (kein heroMode), wurde der
    Aufgaben-Aside rechts bisher nicht gerendert — der Bereich war
@@ -2162,6 +2176,7 @@ function showPage(name) {
   if (name === 'services') loadServices();
   if (name === 'lookups') loadLookupsPage();
   if (name === 'programs') loadPrograms();
+  if (name === 'templates') loadTemplates();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
@@ -3243,6 +3258,365 @@ async function deleteLookup() {
     btn.disabled = false;
     btn.textContent = 'Löschen';
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TEMPLATES (v1.50.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Vorlagen für Termin / Aufgabe / Einsatz / Projekt. Eine Tabelle
+// `templates`, daten als JSON. Beim Anlegen einer Entität kann
+// ein Template gewählt werden — die hinterlegten Felder werden
+// automatisch gefüllt. Datumsfelder werden bewusst nicht
+// vorbelegt (Kontext-spezifisch).
+
+/** Feld-Schemata pro Template-Typ. type bestimmt das Render im
+ *  Template-Editor (text/number/checkbox/textarea/time/lookup/service/user). */
+const TEMPLATE_SCHEMAS = {
+  termin: [
+    { key: 'titel',        label: 'Titel',         type: 'text',     placeholder: 'z. B. Erstgespräch' },
+    { key: 'typ_id',       label: 'Termin-Typ',    type: 'lookup',   kategorie: 'termin_typ' },
+    { key: 'status',       label: 'Status',        type: 'lookup',   kategorie: 'termin_status' },
+    { key: 'ort',          label: 'Ort',           type: 'text',     placeholder: 'z. B. Online / Vor Ort' },
+    { key: 'ganztag',      label: 'Ganztägig',     type: 'checkbox' },
+    { key: 'uhrzeit_von',  label: 'Uhrzeit von',   type: 'time' },
+    { key: 'uhrzeit_bis',  label: 'Uhrzeit bis',   type: 'time' },
+    { key: 'beschreibung', label: 'Beschreibung',  type: 'textarea' }
+  ],
+  aufgabe: [
+    { key: 'titel',        label: 'Titel',         type: 'text' },
+    { key: 'status',       label: 'Status',        type: 'lookup',   kategorie: 'aufgabe_status' },
+    { key: 'beschreibung', label: 'Beschreibung',  type: 'textarea' },
+    { key: 'assigned_to',  label: 'Zuständig (Default)', type: 'user' }
+  ],
+  einsatz: [
+    { key: 'titel',        label: 'Titel',         type: 'text' },
+    { key: 'service_id',   label: 'Leistung',      type: 'service' },
+    { key: 'menge',        label: 'Menge',         type: 'number',   step: '0.01' },
+    { key: 'einzelpreis',  label: 'Einzelpreis (€)', type: 'number', step: '0.01' },
+    { key: 'status',       label: 'Status',        type: 'lookup',   kategorie: 'einsatz_status' },
+    { key: 'ort',          label: 'Ort',           type: 'text' },
+    { key: 'ganztag',      label: 'Ganztägig',     type: 'checkbox' },
+    { key: 'uhrzeit_von',  label: 'Uhrzeit von',   type: 'time' },
+    { key: 'uhrzeit_bis',  label: 'Uhrzeit bis',   type: 'time' },
+    { key: 'beschreibung', label: 'Beschreibung',  type: 'textarea' }
+  ],
+  projekt: [
+    { key: 'name',                label: 'Name (Default)', type: 'text', placeholder: 'wird beim Anlegen meist überschrieben' },
+    { key: 'status',              label: 'Status',         type: 'text-or-lookup', kategorie: 'projekt_status' },
+    { key: 'geschaetzter_umsatz', label: 'Geschätzter Umsatz (€)', type: 'number', step: '0.01' },
+    { key: 'beschreibung',        label: 'Beschreibung',   type: 'textarea' }
+  ]
+};
+
+let editingTemplateId = null;
+let templatesCache = { termin: null, aufgabe: null, einsatz: null, projekt: null };
+
+/** Holt aktive Templates für einen Typ (cache-first, Admin sieht beim Pflegen
+ *  alle inkl. archivierter — siehe loadTemplates für die Liste). */
+async function fetchActiveTemplates(typ) {
+  if (templatesCache[typ]) return templatesCache[typ];
+  const { data } = await db.from('templates')
+    .select('*').eq('typ', typ).eq('ist_aktiv', true)
+    .order('reihenfolge').order('name');
+  templatesCache[typ] = data || [];
+  return templatesCache[typ];
+}
+function invalidateTemplatesCache() {
+  templatesCache = { termin: null, aufgabe: null, einsatz: null, projekt: null };
+}
+
+/** Liste auf der Admin-Seite — gefiltert nach gewähltem Typ, inkl. archivierter. */
+async function loadTemplates() {
+  if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Seite.', true); return; }
+  const tbody = document.getElementById('templates-table-body');
+  const filter = document.getElementById('tpl-filter-typ');
+  const typ = filter?.value || 'termin';
+  tbody.innerHTML = '<tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>';
+
+  const { data, error } = await db.from('templates')
+    .select('*').eq('typ', typ)
+    .order('ist_aktiv', { ascending: false }).order('reihenfolge').order('name');
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4"><div class="empty">Noch keine Templates für diesen Typ. Klicke oben auf „+ Neues Template".</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(t => `
+    <tr>
+      <td><div class="cell-link" onclick="openTemplateModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
+      <td>${t.reihenfolge}</td>
+      <td>${t.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>' : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>'}</td>
+      <td class="col-action" style="text-align:right">
+        <button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openTemplateModal(mode, templateId = null) {
+  if (!isAdmin()) { showToast('Nur Admins.', true); return; }
+  editingTemplateId = templateId;
+  document.getElementById('modal-template-title').textContent = mode === 'edit' ? 'Template bearbeiten' : 'Neues Template';
+  document.getElementById('tpl-save-btn').textContent = mode === 'edit' ? 'Speichern' : 'Anlegen';
+  document.getElementById('tpl-delete-btn').style.display = mode === 'edit' ? 'inline-block' : 'none';
+
+  let prefilled = {};
+  let typ = document.getElementById('tpl-filter-typ')?.value || 'termin';
+  let name = '';
+  let reihenfolge = 0;
+  let ist_aktiv = true;
+
+  if (mode === 'edit' && templateId) {
+    const { data, error } = await db.from('templates').select('*').eq('id', templateId).single();
+    if (error || !data) { showToast('Template nicht gefunden.', true); return; }
+    typ = data.typ;
+    name = data.name;
+    reihenfolge = data.reihenfolge;
+    ist_aktiv = data.ist_aktiv;
+    prefilled = data.daten || {};
+  }
+
+  document.getElementById('tpl-typ').value = typ;
+  document.getElementById('tpl-typ').disabled = (mode === 'edit'); // Typ nicht änderbar bei Edit
+  document.getElementById('tpl-name').value = name;
+  document.getElementById('tpl-reihenfolge').value = reihenfolge;
+  document.getElementById('tpl-aktiv').value = String(ist_aktiv);
+
+  await renderTemplateFields(typ, prefilled);
+
+  document.getElementById('modal-template').classList.add('open');
+}
+
+function closeTemplateModal() {
+  document.getElementById('modal-template').classList.remove('open');
+  editingTemplateId = null;
+  document.getElementById('tpl-typ').disabled = false;
+}
+
+async function onTemplateTypeChange() {
+  const typ = document.getElementById('tpl-typ').value;
+  await renderTemplateFields(typ, {});
+}
+
+/** Generiert die Vorbelegungs-Felder dynamisch aus dem Schema. */
+async function renderTemplateFields(typ, prefilled) {
+  const wrap = document.getElementById('tpl-fields');
+  const schema = TEMPLATE_SCHEMAS[typ] || [];
+
+  // Lookup-Optionen vorab laden
+  const lookupOptions = {};
+  for (const f of schema) {
+    if (f.type === 'lookup' || f.type === 'text-or-lookup') {
+      const { data } = await db.from('lookup_values')
+        .select('id, wert').eq('kategorie', f.kategorie).eq('ist_aktiv', true)
+        .order('reihenfolge').order('wert');
+      lookupOptions[f.key] = data || [];
+    }
+  }
+
+  // Services + User für Einsatz/Aufgabe
+  let serviceOpts = [];
+  let userOpts = [];
+  if (schema.some(f => f.type === 'service')) {
+    const { data } = await db.from('services').select('id, name').is('deleted_at', null).order('name');
+    serviceOpts = data || [];
+  }
+  if (schema.some(f => f.type === 'user')) {
+    const { data } = await db.from('user_profiles').select('id, name').eq('ist_aktiv', true).order('name');
+    userOpts = data || [];
+  }
+
+  wrap.innerHTML = '<div class="form-grid">' + schema.map(f => {
+    const val = prefilled[f.key];
+    const id = `tpl-f-${f.key}`;
+    if (f.type === 'text') {
+      return `<div class="form-group"><label>${esc(f.label)}</label><input type="text" id="${id}" placeholder="${esc(f.placeholder || '')}" value="${esc(val ?? '')}"></div>`;
+    }
+    if (f.type === 'number') {
+      return `<div class="form-group"><label>${esc(f.label)}</label><input type="number" id="${id}" step="${esc(f.step || 'any')}" value="${val ?? ''}"></div>`;
+    }
+    if (f.type === 'time') {
+      return `<div class="form-group"><label>${esc(f.label)}</label><input type="time" id="${id}" value="${esc(val ?? '')}"></div>`;
+    }
+    if (f.type === 'checkbox') {
+      const checked = val === true ? 'checked' : '';
+      return `<div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="${id}" ${checked}> ${esc(f.label)}</label></div>`;
+    }
+    if (f.type === 'textarea') {
+      return `<div class="form-group full"><label>${esc(f.label)}</label><textarea id="${id}" rows="2">${esc(val ?? '')}</textarea></div>`;
+    }
+    if (f.type === 'lookup') {
+      const opts = (lookupOptions[f.key] || []).map(o =>
+        `<option value="${esc(o.id)}" ${val === o.id ? 'selected' : ''}>${esc(o.wert)}</option>`).join('');
+      return `<div class="form-group"><label>${esc(f.label)}</label><select id="${id}"><option value="">— Nicht vorbelegen —</option>${opts}</select></div>`;
+    }
+    if (f.type === 'text-or-lookup') {
+      // Für projekt_status: lookup_values.wert wird als Text gespeichert (kein FK)
+      const opts = (lookupOptions[f.key] || []).map(o =>
+        `<option value="${esc(o.wert)}" ${val === o.wert ? 'selected' : ''}>${esc(o.wert)}</option>`).join('');
+      return `<div class="form-group"><label>${esc(f.label)}</label><select id="${id}"><option value="">— Nicht vorbelegen —</option>${opts}</select></div>`;
+    }
+    if (f.type === 'service') {
+      const opts = serviceOpts.map(o =>
+        `<option value="${esc(o.id)}" ${val === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+      return `<div class="form-group"><label>${esc(f.label)}</label><select id="${id}"><option value="">— Nicht vorbelegen —</option>${opts}</select></div>`;
+    }
+    if (f.type === 'user') {
+      const opts = userOpts.map(o =>
+        `<option value="${esc(o.id)}" ${val === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+      return `<div class="form-group"><label>${esc(f.label)}</label><select id="${id}"><option value="">— Nicht vorbelegen —</option>${opts}</select></div>`;
+    }
+    return '';
+  }).join('') + '</div>';
+}
+
+/** Liest die Werte aus den dynamischen Feldern und gibt nur die nicht-leeren zurück. */
+function readTemplateFields(typ) {
+  const schema = TEMPLATE_SCHEMAS[typ] || [];
+  const out = {};
+  for (const f of schema) {
+    const el = document.getElementById(`tpl-f-${f.key}`);
+    if (!el) continue;
+    if (f.type === 'checkbox') {
+      if (el.checked) out[f.key] = true;
+      // unchecked = nicht vorbelegen
+    } else {
+      const v = el.value.trim();
+      if (v === '') continue;
+      if (f.type === 'number') out[f.key] = Number(v);
+      else out[f.key] = v;
+    }
+  }
+  return out;
+}
+
+async function saveTemplate() {
+  if (!isAdmin()) { showToast('Nur Admins.', true); return; }
+  const typ = document.getElementById('tpl-typ').value;
+  const name = document.getElementById('tpl-name').value.trim();
+  const reihenfolge = Number(document.getElementById('tpl-reihenfolge').value) || 0;
+  const ist_aktiv = document.getElementById('tpl-aktiv').value === 'true';
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+
+  const daten = readTemplateFields(typ);
+
+  if (editingTemplateId) {
+    const { error } = await db.from('templates')
+      .update({ name, reihenfolge, ist_aktiv, daten })
+      .eq('id', editingTemplateId);
+    if (error) { showToast('Fehler beim Speichern: ' + error.message, true); return; }
+    showToast('Template aktualisiert.');
+  } else {
+    const { error } = await db.from('templates')
+      .insert({ typ, name, reihenfolge, ist_aktiv, daten, erstellt_von: currentProfile?.id });
+    if (error) { showToast('Fehler beim Anlegen: ' + error.message, true); return; }
+    showToast('Template angelegt.');
+  }
+  invalidateTemplatesCache();
+  closeTemplateModal();
+  await loadTemplates();
+}
+
+async function deleteTemplate() {
+  if (!editingTemplateId) return;
+  if (!await confirmDialog('Dieses Template wirklich löschen?')) return;
+  const { error } = await db.from('templates').delete().eq('id', editingTemplateId);
+  if (error) { showToast('Fehler beim Löschen: ' + error.message, true); return; }
+  invalidateTemplatesCache();
+  showToast('Template gelöscht.');
+  closeTemplateModal();
+  await loadTemplates();
+}
+
+/** Mappt Template-JSON-Schlüssel auf Modal-DOM-IDs pro Entitäts-Typ. */
+const TEMPLATE_FIELD_MAP = {
+  termin: {
+    titel:        't-titel',
+    typ_id:       't-typ',
+    status:       't-status',
+    ort:          't-ort',
+    ganztag:      't-ganztag',
+    uhrzeit_von:  't-uhrzeit-von',
+    uhrzeit_bis:  't-uhrzeit-bis',
+    beschreibung: 't-notizen'
+  },
+  aufgabe: {
+    titel:        'a-titel',
+    status:       'a-status',
+    beschreibung: 'a-beschreibung',
+    assigned_to:  'a-assigned-to'
+  },
+  einsatz: {
+    titel:        'd-titel',
+    service_id:   'd-service',
+    menge:        'd-menge',
+    einzelpreis:  'd-einzelpreis',
+    status:       'd-status',
+    ort:          'd-ort',
+    ganztag:      'd-ganztag',
+    uhrzeit_von:  'd-uhrzeit-von',
+    uhrzeit_bis:  'd-uhrzeit-bis',
+    beschreibung: 'd-beschreibung'
+  },
+  projekt: {
+    name:                'p-name',
+    status:              'p-status',
+    geschaetzter_umsatz: 'p-umsatz',
+    beschreibung:        'p-beschreibung'
+  }
+};
+const TEMPLATE_PREFIX = { termin: 't', aufgabe: 'a', einsatz: 'd', projekt: 'p' };
+
+/** Befüllt die "Aus Template"-Auswahl im Anlage-Modal. Nur im New-Modus
+ *  und nur, wenn aktive Templates für den Typ existieren — sonst Zeile aus. */
+async function populateTemplateDropdown(typ, mode) {
+  const prefix = TEMPLATE_PREFIX[typ];
+  if (!prefix) return;
+  const row = document.getElementById(`${prefix}-template-row`);
+  const sel = document.getElementById(`${prefix}-template-select`);
+  if (!row || !sel) return;
+  if (mode !== 'new') { row.style.display = 'none'; return; }
+  const tpls = await fetchActiveTemplates(typ);
+  if (tpls.length === 0) { row.style.display = 'none'; return; }
+  sel.innerHTML = '<option value="">— Kein Template —</option>' + tpls.map(t =>
+    `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  sel.value = '';
+  row.style.display = '';
+}
+
+/** Wendet ein Template auf das aktive Anlage-Modal an: setzt jedes
+ *  im Template hinterlegte Feld auf das passende DOM-Element und löst
+ *  change/input-Events aus, damit abhängige Logik (Auto-Berechnungen,
+ *  Preview etc.) reagiert. */
+async function applyTemplateToEntity(typ, templateId) {
+  if (!templateId) return;
+  const tpls = await fetchActiveTemplates(typ);
+  const tpl = tpls.find(t => t.id === templateId);
+  if (!tpl) return;
+  const map = TEMPLATE_FIELD_MAP[typ] || {};
+  const daten = tpl.daten || {};
+  let applied = 0;
+  for (const key of Object.keys(daten)) {
+    const elId = map[key];
+    if (!elId) continue;
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    const val = daten[key];
+    if (el.type === 'checkbox') {
+      el.checked = !!val;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      el.value = val;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    applied++;
+  }
+  if (applied > 0) showToast(`Template „${tpl.name}" angewendet (${applied} Felder).`);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5163,6 +5537,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
   setupAppointmentPreviewListeners();  // v1.37
   renderAppointmentPreview();          // v1.37 — initialer Preview-Stand
 
+  await populateTemplateDropdown('termin', mode);
   document.getElementById('modal-appointment').classList.add('open');
   setTimeout(() => document.getElementById('t-titel').focus(), 100);
 }
@@ -5783,6 +6158,7 @@ async function openProjectModal(mode, projectId = null) {
   setupProjectPreviewListeners();  // v1.38
   renderProjectPreview();           // v1.38
 
+  await populateTemplateDropdown('projekt', mode);
   document.getElementById('modal-project').classList.add('open');
   setTimeout(() => document.getElementById('p-name').focus(), 100);
 }
@@ -6988,6 +7364,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
   setupDeploymentPreviewListeners();  // v1.38
   renderDeploymentPreview();           // v1.38
 
+  await populateTemplateDropdown('einsatz', mode);
   document.getElementById('modal-deployment').classList.add('open');
   setTimeout(() => document.getElementById('d-titel').focus(), 100);
 }
@@ -13860,6 +14237,7 @@ async function openTaskModal(mode, taskId = null) {
   setupTaskPreviewListeners();  // v1.38
   renderTaskPreview();           // v1.38
 
+  await populateTemplateDropdown('aufgabe', mode);
   document.getElementById('modal-aufgabe').classList.add('open');
   setTimeout(() => document.getElementById('a-titel').focus(), 100);
 }
