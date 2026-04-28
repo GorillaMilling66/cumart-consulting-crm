@@ -2259,6 +2259,8 @@ function navigateTo(page, param) {
     hash = '#/stammdaten';
   } else if (page === 'programs') {
     hash = '#/programme';
+  } else if (page === 'templates') {
+    hash = '#/templates';
   } else {
     hash = '#/firmen';
   }
@@ -2367,6 +2369,7 @@ function handleHashChange() {
   if (hash === '#/leistungen') { showPage('services'); return; }
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
   if (hash === '#/programme')  { showPage('programs'); return; }
+  if (hash === '#/templates')  { showPage('templates'); return; }
   // v1.45.3: Alias — die Sidebar trägt das Label „Mitgliedschafts-Programme",
   // historisch wurde teils auch /#/mitgliedschafts-programme verlinkt.
   if (hash === '#/mitgliedschafts-programme') { showPage('programs'); return; }
