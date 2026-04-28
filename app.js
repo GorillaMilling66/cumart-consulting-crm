@@ -3425,7 +3425,7 @@ async function renderTemplateFields(typ, prefilled) {
   let serviceOpts = [];
   let userOpts = [];
   if (schema.some(f => f.type === 'service')) {
-    const { data } = await db.from('services').select('id, name').is('deleted_at', null).order('name');
+    const { data } = await db.from('services').select('id, name').eq('ist_aktiv', true).order('name');
     serviceOpts = data || [];
   }
   if (schema.some(f => f.type === 'user')) {
