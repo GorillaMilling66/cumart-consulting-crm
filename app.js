@@ -3442,10 +3442,12 @@ async function renderTemplateFields(typ, prefilled) {
     }
   }
 
-  // Services + User für Einsatz/Aufgabe
+  // Services + User für Einsatz/Aufgabe.
+  // v1.51.2: Bei Projekt-Templates auch laden, damit Einsatz-Sub-Items
+  // im Sub-Items-Editor die Leistungs-Auswahl haben.
   let serviceOpts = [];
   let userOpts = [];
-  if (schema.some(f => f.type === 'service')) {
+  if (schema.some(f => f.type === 'service') || typ === 'projekt') {
     const { data } = await db.from('services').select('id, name').eq('ist_aktiv', true).order('name');
     serviceOpts = data || [];
   }
