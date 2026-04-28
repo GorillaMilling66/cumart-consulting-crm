@@ -1,5 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.49.0 (Heute-Tab Aufgaben-Aside auch im Bürotag-Pfad).
+   Wenn kein Einsatz für heute ansteht (kein heroMode), wurde der
+   Aufgaben-Aside rechts bisher nicht gerendert — der Bereich war
+   für den User komplett unsichtbar, auch wenn er Aufgaben hatte.
+   Jetzt: scope='heute' bekommt unabhängig vom heroMode den
+   .heute-grid-Layout mit heute-aside, der renderHeuteTasksAside
+   anzeigt (auch im Empty-State „alles im Griff").)
    Version 1.48.0 (Detail-Header mit Kontaktdaten-Zeile).
    - Firma + Kontakt: Adresse / Telefon / E-Mail / Website (bzw.
      Tel + Mail beim Kontakt) wandern aus der separaten
@@ -11537,6 +11544,24 @@ function renderBriefing(scope, data) {
     return `
       ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
       ${renderBriefingMonthDashboard(data)}
+      ${renderBriefingStreak(scope, data)}
+    `;
+  }
+
+  // v1.49.0: Heute ohne Einsatz (Bürotag) bekommt jetzt auch den
+  // Aufgaben-Aside rechts — vorher nur im Hero-Pfad. Aside zeigt auch
+  // Empty-State („Keine offenen Aufgaben — alles im Griff."), damit
+  // klar ist, dass der Bereich existiert.
+  if (scope === 'heute') {
+    return `
+      ${renderBriefingNarrative(scope, data, greeting, firstName, initials)}
+      <div class="heute-grid">
+        <div class="heute-main">
+          ${renderBriefingCards(scope, data)}
+          ${renderBriefingPreview(scope, data)}
+        </div>
+        <div class="heute-aside">${renderHeuteTasksAside(data)}</div>
+      </div>
       ${renderBriefingStreak(scope, data)}
     `;
   }
