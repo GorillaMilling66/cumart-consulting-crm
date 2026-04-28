@@ -1623,6 +1623,42 @@ tr:hover td { background: var(--bg); }
 .p-activity-titel { font-weight: 500; color: var(--text); }
 .p-activity-status { font-size: 11px; color: var(--muted); }
 
+/* v1.52.0: Strukturierte Dokumentation (Projekt-Detail + Termin/Einsatz-Modal) */
+.doc-grid {
+  display: flex; flex-direction: column;
+  gap: 12px;
+}
+.doc-field { display: flex; flex-direction: column; gap: 4px; }
+.doc-field-label {
+  font-size: 11px; font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.doc-field-textarea {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  resize: vertical;
+  min-height: 52px;
+  font-family: inherit;
+  line-height: 1.4;
+  transition: border-color .12s, box-shadow .12s;
+}
+.doc-field-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, .08);
+}
+.doc-field-status {
+  font-size: 11px;
+  min-height: 13px;
+  color: var(--muted);
+}
+
 /* v1.50.0: "Aus Template"-Auswahl oben in den Anlage-Modalen */
 .modal-template-row {
   display: flex; align-items: center;

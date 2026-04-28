@@ -1,5 +1,22 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.52.0 (Strukturierte Dokumentation für Projekt /
+   Termin / Einsatz). Neue jsonb-Spalte `dokumentation` auf den
+   drei Tabellen, Daten-Migration: notizen → dokumentation.
+   anmerkungen. Pro Entitätstyp ein festes Feld-Schema:
+     Projekt:  Kundenherausforderung, Lösungsansatz, Themenwahl,
+               Erfolgskriterien, Anmerkungen
+     Termin:   Gesprächsinhalt, Vereinbarungen, Nächste Schritte,
+               Anmerkungen
+     Einsatz:  Durchgeführte Themen, Teilnehmer, Erkenntnisse,
+               Folge-Maßnahmen, Anmerkungen
+   Im Projekt-Detail (Stammdaten-Tab) als Inline-Edit-Block mit
+   Auto-Save on Blur pro Feld; in Termin/Einsatz-Modalen als
+   kollabierbarer Bereich, beim Save mit ins Payload. Helfer:
+   DOCUMENTATION_SCHEMAS, renderDocumentationBlock,
+   readDocumentationFromDom, saveDocumentationFieldInline.
+   notizen-Spalte bleibt als historischer Backup erhalten,
+   neue Saves schreiben aber nur in `dokumentation`.)
    Version 1.51.0 (Projekt-Templates mit Sub-Items + Aktivitäten-
    Bereich im Projekt-Anlage-Modal).
    - Projekt-Template-Editor bekommt zusätzlichen Block „Standard-
@@ -3689,7 +3706,9 @@ const TEMPLATE_FIELD_MAP = {
     ganztag:      't-ganztag',
     uhrzeit_von:  't-uhrzeit-von',
     uhrzeit_bis:  't-uhrzeit-bis',
-    beschreibung: 't-notizen'
+    // v1.52.0: keine freie notizen-Textarea mehr — Template-Feld "beschreibung"
+    // landet im Doku-Feld „Gesprächsinhalt"
+    beschreibung: 't-doc-gespraechsinhalt'
   },
   aufgabe: {
     titel:        'a-titel',
@@ -3852,6 +3871,118 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
     if (!error) created += depRows.length;
   }
   return created;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DOKUMENTATION (v1.52.0)
+// ═══════════════════════════════════════════════════════════
+//
+// Strukturierte Dokumentation pro Entität (Projekt / Termin / Einsatz).
+// Pro Entitätstyp ein festes Feld-Schema. Speicherung in
+// `<table>.dokumentation` jsonb.
+
+const DOCUMENTATION_SCHEMAS = {
+  projekt: [
+    { key: 'kundenherausforderung', label: 'Kundenherausforderung', placeholder: 'Welches Problem will der Kunde lösen?' },
+    { key: 'loesungsansatz',        label: 'Lösungsansatz',         placeholder: 'Wie gehen wir es an?' },
+    { key: 'themenwahl',            label: 'Themenwahl',            placeholder: 'Welche Module / Bestandteile?' },
+    { key: 'erfolgskriterien',      label: 'Erfolgskriterien',      placeholder: 'Woran messen wir Erfolg?' },
+    { key: 'anmerkungen',           label: 'Anmerkungen',           placeholder: 'Sonstiges, was hier dokumentiert sein soll' }
+  ],
+  termin: [
+    { key: 'gespraechsinhalt',  label: 'Gesprächsinhalt',  placeholder: 'Was wurde besprochen?' },
+    { key: 'vereinbarungen',    label: 'Vereinbarungen',   placeholder: 'Was wurde zugesagt?' },
+    { key: 'naechste_schritte', label: 'Nächste Schritte', placeholder: 'Folge-Termin? Aufgaben?' },
+    { key: 'anmerkungen',       label: 'Anmerkungen',      placeholder: 'Sonstiges' }
+  ],
+  einsatz: [
+    { key: 'durchgefuehrte_themen', label: 'Durchgeführte Themen', placeholder: 'Was haben wir gemacht?' },
+    { key: 'teilnehmer',            label: 'Teilnehmer',           placeholder: 'Anzahl + Skill-Level' },
+    { key: 'erkenntnisse',          label: 'Erkenntnisse',         placeholder: 'Was hat funktioniert / nicht?' },
+    { key: 'folge_massnahmen',      label: 'Folge-Maßnahmen',      placeholder: 'Was muss noch passieren?' },
+    { key: 'anmerkungen',           label: 'Anmerkungen',          placeholder: 'Sonstiges' }
+  ]
+};
+
+const DOCUMENTATION_TABLE = {
+  projekt: 'projects',
+  termin:  'appointments',
+  einsatz: 'deployments'
+};
+
+/** Rendert den Doku-Block. Im Inline-Modus (Projekt-Detail) speichert
+ *  jedes Feld bei blur einzeln (saveDocumentationFieldInline). Im Modal-
+ *  Modus (Termin/Einsatz) wird das Block-Ergebnis erst beim Save ausgelesen
+ *  via readDocumentationFromDom. */
+function renderDocumentationBlock(entityType, dokData, options = {}) {
+  const schema = DOCUMENTATION_SCHEMAS[entityType] || [];
+  const data = dokData || {};
+  const idPrefix = options.idPrefix || `doc-${entityType}`;
+  const inline = !!options.inline;
+  const entityId = options.entityId || '';
+  return `<div class="doc-grid">${schema.map(f => {
+    const id = `${idPrefix}-${f.key}`;
+    const val = data[f.key] || '';
+    const blurAttr = inline && entityId
+      ? `onblur="saveDocumentationFieldInline('${entityType}','${esc(entityId)}','${f.key}', this)"`
+      : '';
+    const savedAttr = inline ? `data-saved-value="${esc(val)}"` : '';
+    return `
+      <div class="doc-field">
+        <label class="doc-field-label" for="${id}">${esc(f.label)}</label>
+        <textarea id="${id}" class="doc-field-textarea" rows="2" placeholder="${esc(f.placeholder || '')}" ${blurAttr} ${savedAttr}>${esc(val)}</textarea>
+        ${inline ? `<div class="doc-field-status" id="${id}-status"></div>` : ''}
+      </div>`;
+  }).join('')}</div>`;
+}
+
+/** Liest den aktuellen Stand des Doku-Blocks aus dem DOM. Leere Felder
+ *  werden ausgelassen (kein Eintrag im JSON). */
+function readDocumentationFromDom(entityType, idPrefix) {
+  const schema = DOCUMENTATION_SCHEMAS[entityType] || [];
+  const out = {};
+  for (const f of schema) {
+    const el = document.getElementById(`${idPrefix}-${f.key}`);
+    if (!el) continue;
+    const v = (el.value || '').trim();
+    if (v) out[f.key] = v;
+  }
+  return out;
+}
+
+/** Inline-Save eines einzelnen Feldes — nutzt JSONB-Update direkt im
+ *  jeweiligen Datensatz. Statusanzeige unter dem Feld. */
+async function saveDocumentationFieldInline(entityType, id, key, el) {
+  const table = DOCUMENTATION_TABLE[entityType];
+  if (!table || !id) return;
+  const newVal = (el.value || '').trim();
+  const saved = el.dataset.savedValue ?? '';
+  if (newVal === saved) return;
+
+  const statusEl = document.getElementById(`${el.id}-status`);
+  if (statusEl) { statusEl.textContent = 'Speichere ...'; statusEl.style.color = 'var(--muted)'; }
+
+  // Aktuellen JSON holen, key setzen oder löschen, zurückschreiben.
+  const { data, error: fetchErr } = await db.from(table).select('dokumentation').eq('id', id).single();
+  if (fetchErr) {
+    if (statusEl) { statusEl.textContent = 'Fehler beim Laden'; statusEl.style.color = 'var(--danger)'; }
+    return;
+  }
+  const dok = data?.dokumentation && typeof data.dokumentation === 'object' ? { ...data.dokumentation } : {};
+  if (newVal) dok[key] = newVal;
+  else delete dok[key];
+
+  const { error } = await db.from(table).update({ dokumentation: dok }).eq('id', id);
+  if (error) {
+    if (statusEl) { statusEl.textContent = 'Fehler: ' + error.message; statusEl.style.color = 'var(--danger)'; }
+    return;
+  }
+  el.dataset.savedValue = newVal;
+  if (statusEl) {
+    statusEl.textContent = 'Gespeichert';
+    statusEl.style.color = 'var(--status-done-accent)';
+    setTimeout(() => { if (statusEl.textContent === 'Gespeichert') statusEl.textContent = ''; }, 1800);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5681,7 +5812,9 @@ async function openAppointmentModal(mode, appointmentId = null) {
   const tGanz = document.getElementById('t-ganztag'); if (tGanz) tGanz.checked = false;
   document.getElementById('t-status').value = 'geplant';
   document.getElementById('t-ort').value = '';
-  document.getElementById('t-notizen').value = '';
+  // v1.52.0: Doku-Block initial leer rendern (wird bei Edit überschrieben)
+  document.getElementById('t-documentation-block').innerHTML =
+    renderDocumentationBlock('termin', null, { idPrefix: 't-doc' });
   document.getElementById('t-ort-hint').style.display = 'none';
   setCompanyComboboxValue('t-company', 't-company-list', '');
 
@@ -5751,7 +5884,9 @@ async function openAppointmentModal(mode, appointmentId = null) {
     document.getElementById('t-uhrzeit-bis').value = data.uhrzeit_bis ? data.uhrzeit_bis.substring(0, 5) : '';
     document.getElementById('t-status').value = data.status || 'geplant';
     document.getElementById('t-ort').value = data.ort || '';
-    document.getElementById('t-notizen').value = data.notizen || '';
+    // v1.52.0: Doku-Block aus dokumentation-jsonb befüllen
+    document.getElementById('t-documentation-block').innerHTML =
+      renderDocumentationBlock('termin', data.dokumentation, { idPrefix: 't-doc' });
     if (data.typ_id) typSelect.value = data.typ_id;
     if (data.company_id) {
       setCompanyComboboxValue('t-company', 't-company-list', data.company_id);
@@ -5999,7 +6134,8 @@ async function saveAppointment() {
   const status       = document.getElementById('t-status').value;
   const project_id   = document.getElementById('t-project')?.value || null;
   const ort          = document.getElementById('t-ort').value.trim();
-  const notizen      = document.getElementById('t-notizen').value.trim();
+  // v1.52.0: dokumentation aus dem Doku-Block lesen (statt freier notizen-Textarea)
+  const dokumentation = readDocumentationFromDom('termin', 't-doc');
   const btn          = document.getElementById('t-save-btn');
 
   if (!titel)   { showToast('Bitte Titel eingeben.', true); return; }
@@ -6039,7 +6175,7 @@ async function saveAppointment() {
       typ_id, status,
       company_id, contact_id, project_id,
       ort: ort || null,
-      notizen: notizen || null
+      dokumentation
     };
     if (!editingAppointmentId) payload.erstellt_von = currentUser?.id || null;
 
@@ -6780,7 +6916,7 @@ function renderProjectDetail(p) {
     </div>
   `;
 
-  // Inline-Beschreibung + Notizen (v1.30)
+  // Inline-Beschreibung (v1.30) — Kurzbeschreibung als Headline
   const beschreibungArea = document.getElementById('project-beschreibung-inline');
   if (beschreibungArea) {
     beschreibungArea.value = p.beschreibung || '';
@@ -6788,12 +6924,14 @@ function renderProjectDetail(p) {
     beschreibungArea.dataset.projectId = p.id;
     document.getElementById('project-beschreibung-save-status').textContent = '';
   }
-  const notizenArea = document.getElementById('project-notizen-inline');
-  if (notizenArea) {
-    notizenArea.value = p.notizen || '';
-    notizenArea.dataset.savedValue = p.notizen || '';
-    notizenArea.dataset.projectId = p.id;
-    document.getElementById('project-notizen-save-status').textContent = '';
+  // v1.52.0: Strukturierte Dokumentation (5 Felder mit Auto-Save on Blur)
+  const docBlock = document.getElementById('project-documentation-block');
+  if (docBlock) {
+    docBlock.innerHTML = renderDocumentationBlock('projekt', p.dokumentation, {
+      idPrefix: 'project-doc',
+      inline: true,
+      entityId: p.id
+    });
   }
 
   // Quick-Create-Panel (v1.30) — ersetzt die Einzelbuttons im Header der Sub-Tabs
@@ -7654,7 +7792,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-menge').value = '1';
   document.getElementById('d-einzelpreis').value = '';
   document.getElementById('d-beschreibung').value = '';
-  document.getElementById('d-notizen').value = '';
+  // v1.52.0: Doku-Block leer rendern (wird bei Edit überschrieben)
+  document.getElementById('d-documentation-block').innerHTML =
+    renderDocumentationBlock('einsatz', null, { idPrefix: 'd-doc' });
   document.getElementById('d-externe-techniker').value = '';
   document.getElementById('d-create-appointment').checked = false;
   // Redeem-State zurücksetzen (v1.14.0)
@@ -7723,7 +7863,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
     _deploymentMengeManuallyEdited = true;  // v1.33: existierende Menge nicht durch Auto-Berechnung ersetzen
     document.getElementById('d-einzelpreis').value = data.einzelpreis ?? '';
     document.getElementById('d-beschreibung').value = data.beschreibung || '';
-    document.getElementById('d-notizen').value = data.notizen || '';
+    // v1.52.0: Doku-Block aus dokumentation befüllen
+    document.getElementById('d-documentation-block').innerHTML =
+      renderDocumentationBlock('einsatz', data.dokumentation, { idPrefix: 'd-doc' });
     document.getElementById('d-externe-techniker').value = data.externe_techniker || '';
 
     if (data.company_id) {
@@ -7978,7 +8120,8 @@ async function saveDeployment() {
   const einzelRaw     = document.getElementById('d-einzelpreis').value;
   const ort           = document.getElementById('d-ort').value.trim();
   const beschreibungInput = document.getElementById('d-beschreibung').value.trim();
-  const notizen       = document.getElementById('d-notizen').value.trim();
+  // v1.52.0: dokumentation aus dem Doku-Block (statt freier notizen-Textarea)
+  const dokumentation = readDocumentationFromDom('einsatz', 'd-doc');
   const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
   const createAppointment = document.getElementById('d-create-appointment').checked;
   const btn           = document.getElementById('d-save-btn');
@@ -8045,7 +8188,7 @@ async function saveDeployment() {
       menge, einzelpreis,
       ort: ort || null,
       beschreibung: finalBeschreibung || null,
-      notizen: notizen || null,
+      dokumentation,
       externe_techniker: externe_techniker || null
     };
     if (!editingDeploymentId) payload.erstellt_von = currentUser?.id || null;

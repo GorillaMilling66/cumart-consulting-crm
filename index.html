@@ -1230,12 +1230,12 @@
               <div id="project-beschreibung-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
             </div>
 
+            <!-- v1.52.0: Strukturierte Dokumentation (ersetzt Notizen) -->
             <div class="info-card">
-              <div class="info-card-title">Notizen</div>
-              <textarea class="notes-edit-area" id="project-notizen-inline"
-                        placeholder="Freitext-Notizen zum Projekt ..."
-                        onblur="saveProjectNotizenInline()"></textarea>
-              <div id="project-notizen-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
+              <div class="info-card-title">Dokumentation</div>
+              <div id="project-documentation-block">
+                <div class="info-card-empty">Lade ...</div>
+              </div>
             </div>
           </div>
 
@@ -2224,10 +2224,11 @@
     </div>
 
     <div class="modal-preview-footer">
-      <div class="modal-group-title collapsed">Notizen</div>
+      <!-- v1.52.0: Strukturierte Dokumentation statt freier Notizen -->
+      <div class="modal-group-title collapsed">Dokumentation</div>
       <div class="form-grid" style="display:none">
         <div class="form-group full">
-          <textarea id="t-notizen" rows="3" placeholder="Freitext-Notizen zum Termin ..."></textarea>
+          <div id="t-documentation-block"></div>
         </div>
       </div>
     </div>
@@ -2661,16 +2662,19 @@
         </div>
       </div>
 
-      <!-- Beschreibung & Notizen (kollabiert) -->
-      <div class="modal-group-title collapsed">Beschreibung &amp; Notizen</div>
+      <!-- Beschreibung (Kurzbeschreibung) — kollabiert -->
+      <div class="modal-group-title collapsed">Beschreibung</div>
       <div class="form-grid" style="display:none">
         <div class="form-group full">
-          <label>Beschreibung</label>
           <textarea id="d-beschreibung" rows="2" placeholder="Worum geht es bei diesem Einsatz?"></textarea>
         </div>
+      </div>
+
+      <!-- v1.52.0: Strukturierte Dokumentation statt freier Notizen -->
+      <div class="modal-group-title collapsed">Dokumentation</div>
+      <div class="form-grid" style="display:none">
         <div class="form-group full">
-          <label>Notizen</label>
-          <textarea id="d-notizen" rows="2" placeholder="Freitext-Notizen ..."></textarea>
+          <div id="d-documentation-block"></div>
         </div>
       </div>
     </div>
