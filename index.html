@@ -2441,6 +2441,48 @@
       </div>
     </div>
 
+    <!-- v1.51.0: Aktivitäten-Bereich, erscheint nach erstem Speichern -->
+    <div id="p-activities-section" style="display:none">
+      <div class="p-activities-divider"></div>
+      <div class="p-activities-head">
+        <div class="modal-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Aktivitäten zu diesem Projekt
+        </div>
+        <p class="p-activities-hint">Lege direkt hier Termine, Aufgaben und Einsätze an — das Projekt wird automatisch verknüpft.</p>
+      </div>
+      <div class="p-quick-add-grid">
+        <div class="p-quick-add-card">
+          <div class="p-quick-add-title">+ Termin</div>
+          <input type="date" id="pq-termin-datum">
+          <input type="text" id="pq-termin-titel" placeholder="Titel">
+          <button class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('termin')">Anlegen</button>
+        </div>
+        <div class="p-quick-add-card">
+          <div class="p-quick-add-title">+ Aufgabe</div>
+          <input type="date" id="pq-aufgabe-faelligkeit">
+          <input type="text" id="pq-aufgabe-titel" placeholder="Titel">
+          <button class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('aufgabe')">Anlegen</button>
+        </div>
+        <div class="p-quick-add-card">
+          <div class="p-quick-add-title">+ Einsatz</div>
+          <input type="date" id="pq-einsatz-datum">
+          <input type="text" id="pq-einsatz-titel" placeholder="Titel">
+          <select id="pq-einsatz-service"><option value="">— Leistung wählen —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('einsatz')">Anlegen</button>
+        </div>
+      </div>
+      <div class="p-activities-list-title">Bisherige Aktivitäten</div>
+      <div id="p-activities-list">
+        <div class="info-card-empty">Lade ...</div>
+      </div>
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" id="p-delete-btn"
               onclick="deleteProject()" style="margin-right:auto;display:none">

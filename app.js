@@ -1,5 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.51.0 (Projekt-Templates mit Sub-Items + Aktivitäten-
+   Bereich im Projekt-Anlage-Modal).
+   - Projekt-Template-Editor bekommt zusätzlichen Block „Standard-
+     Aktivitäten": Liste editierbarer Zeilen mit Typ (Termin /
+     Aufgabe / Einsatz) · Titel · Werktage-Offset ab Projektstart;
+     bei Einsatz zusätzlich Service / Menge / Einzelpreis.
+     Speicherort: daten._subitems (Array im JSONB).
+   - Beim Anlegen eines Projekts mit Template werden die Sub-Items
+     nach erfolgreichem Insert automatisch als echte Datensätze
+     erstellt (appointments / tasks / deployments) — Datum =
+     Projektstart + Offset Werktage (Sa/So übersprungen). Ohne
+     Projektstart bleiben sie datumslos.
+   - Projekt-Anlage-Modal bleibt nach erstem Save offen, ein
+     Aktivitäten-Bereich erscheint mit drei Quick-Add-Karten
+     (Termin / Aufgabe / Einsatz) + Liste der bereits angelegten
+     Aktivitäten. Save-Button wird zu „Schließen". Beim Edit-Mode
+     unverändert (Modal schließt nach Save wie bisher).
+   - Helper: addWerktage(startISO, days), createTemplateSubItems,
+     showProjectActivitiesSection, renderProjectModalActivities,
+     quickAddProjectActivity. _activeProjectTemplateId trackt das
+     gewählte Template über das Modal-Formular hinweg.)
    Version 1.50.0 (Templates für Anlage-Modale).
    Neue Tabelle `templates` (typ · name · daten jsonb · reihenfolge ·
    ist_aktiv) — Admin pflegt unter „Stammdaten → Templates", alle
@@ -3475,9 +3496,119 @@ async function renderTemplateFields(typ, prefilled) {
     }
     return '';
   }).join('') + '</div>';
+
+  // v1.51.0: Bei Projekt-Templates zusätzlich Sub-Items-Editor („Standard-Aktivitäten")
+  if (typ === 'projekt') {
+    const subitems = Array.isArray(prefilled._subitems) ? prefilled._subitems : [];
+    wrap.insertAdjacentHTML('beforeend', renderTemplateSubItemsEditor(subitems, serviceOpts));
+  }
 }
 
-/** Liest die Werte aus den dynamischen Feldern und gibt nur die nicht-leeren zurück. */
+/** v1.51.0: Sub-Items-Editor für Projekt-Templates. Pro Zeile:
+ *  Typ · Titel · Offset (Werktage) · bei Einsatz zusätzlich Service/Menge/Preis.
+ *  State im DOM (data-attr) statt globalem Array — readTemplateFields liest später aus. */
+function renderTemplateSubItemsEditor(subitems, serviceOpts) {
+  return `
+    <div class="tpl-subitems-block">
+      <div class="tpl-subitems-head">
+        <div class="tpl-subitems-title">Standard-Aktivitäten</div>
+        <button type="button" class="btn btn-sm" onclick="addTemplateSubItem()">+ Aktivität</button>
+      </div>
+      <p class="tpl-subitems-hint">
+        Werden beim Anwenden des Templates automatisch als Termine / Aufgaben / Einsätze
+        zum neuen Projekt erstellt. Das Datum wird aus „Projektstart + Werktage-Offset"
+        berechnet (Sa/So werden übersprungen). Ohne Projektstart bleiben sie datumslos.
+      </p>
+      <div id="tpl-subitems-list" data-services='${esc(JSON.stringify(serviceOpts))}'>
+        ${subitems.map((s, i) => renderTemplateSubItemRow(s, i, serviceOpts)).join('')}
+        ${subitems.length === 0 ? '<div class="info-card-empty">Noch keine Standard-Aktivitäten. Klicke oben auf „+ Aktivität".</div>' : ''}
+      </div>
+    </div>`;
+}
+
+function renderTemplateSubItemRow(item, idx, serviceOpts) {
+  const t = item.typ || 'termin';
+  const titel = item.titel || '';
+  const offset = item.offset_werktage ?? 0;
+  const service = item.service_id || '';
+  const menge = item.menge ?? '';
+  const einzelpreis = item.einzelpreis ?? '';
+  const isEinsatz = t === 'einsatz';
+  const serviceOpt = (serviceOpts || []).map(o =>
+    `<option value="${esc(o.id)}" ${service === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+  return `
+    <div class="tpl-subitem-row" data-idx="${idx}">
+      <select class="tpl-si-typ" onchange="onSubItemTypChange(${idx})">
+        <option value="termin"  ${t === 'termin'  ? 'selected' : ''}>Termin</option>
+        <option value="aufgabe" ${t === 'aufgabe' ? 'selected' : ''}>Aufgabe</option>
+        <option value="einsatz" ${t === 'einsatz' ? 'selected' : ''}>Einsatz</option>
+      </select>
+      <input type="text" class="tpl-si-titel" placeholder="Titel" value="${esc(titel)}">
+      <input type="number" class="tpl-si-offset" min="0" step="1" value="${offset}" title="Werktage ab Projektstart">
+      <span class="tpl-si-offset-suffix">WT</span>
+      <select class="tpl-si-service" style="${isEinsatz ? '' : 'display:none'}">
+        <option value="">— Leistung —</option>${serviceOpt}
+      </select>
+      <input type="number" class="tpl-si-menge" placeholder="Menge" step="0.01" value="${menge}" style="${isEinsatz ? '' : 'display:none'}">
+      <input type="number" class="tpl-si-preis" placeholder="Preis €" step="0.01" value="${einzelpreis}" style="${isEinsatz ? '' : 'display:none'}">
+      <button type="button" class="tpl-si-del" onclick="removeTemplateSubItem(${idx})" title="Entfernen" aria-label="Entfernen">×</button>
+    </div>`;
+}
+
+function addTemplateSubItem() {
+  const list = document.getElementById('tpl-subitems-list');
+  if (!list) return;
+  const empty = list.querySelector('.info-card-empty');
+  if (empty) empty.remove();
+  const serviceOpts = JSON.parse(list.dataset.services || '[]');
+  const idx = list.querySelectorAll('.tpl-subitem-row').length;
+  list.insertAdjacentHTML('beforeend', renderTemplateSubItemRow({}, idx, serviceOpts));
+}
+
+function removeTemplateSubItem(idx) {
+  const list = document.getElementById('tpl-subitems-list');
+  if (!list) return;
+  const row = list.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
+  if (row) row.remove();
+  if (list.querySelectorAll('.tpl-subitem-row').length === 0) {
+    list.innerHTML = '<div class="info-card-empty">Noch keine Standard-Aktivitäten. Klicke oben auf „+ Aktivität".</div>';
+  }
+}
+
+function onSubItemTypChange(idx) {
+  const list = document.getElementById('tpl-subitems-list');
+  const row = list?.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
+  if (!row) return;
+  const isEinsatz = row.querySelector('.tpl-si-typ').value === 'einsatz';
+  row.querySelector('.tpl-si-service').style.display = isEinsatz ? '' : 'none';
+  row.querySelector('.tpl-si-menge').style.display   = isEinsatz ? '' : 'none';
+  row.querySelector('.tpl-si-preis').style.display   = isEinsatz ? '' : 'none';
+}
+
+/** Liest die aktuellen Sub-Items aus dem DOM. */
+function readTemplateSubItems() {
+  const list = document.getElementById('tpl-subitems-list');
+  if (!list) return [];
+  return [...list.querySelectorAll('.tpl-subitem-row')].map(row => {
+    const typ = row.querySelector('.tpl-si-typ').value;
+    const titel = row.querySelector('.tpl-si-titel').value.trim();
+    const offset = Number(row.querySelector('.tpl-si-offset').value) || 0;
+    const item = { typ, titel, offset_werktage: offset };
+    if (typ === 'einsatz') {
+      const sid = row.querySelector('.tpl-si-service').value;
+      const menge = row.querySelector('.tpl-si-menge').value;
+      const preis = row.querySelector('.tpl-si-preis').value;
+      if (sid) item.service_id = sid;
+      if (menge !== '') item.menge = Number(menge);
+      if (preis !== '') item.einzelpreis = Number(preis);
+    }
+    return item;
+  }).filter(it => it.titel); // ohne Titel keine Auto-Anlage möglich
+}
+
+/** Liest die Werte aus den dynamischen Feldern und gibt nur die nicht-leeren zurück.
+ *  v1.51.0: Bei typ='projekt' werden zusätzlich die Sub-Items unter `_subitems`
+ *  abgelegt — Auto-Erstellen passiert beim Anwenden des Templates. */
 function readTemplateFields(typ) {
   const schema = TEMPLATE_SCHEMAS[typ] || [];
   const out = {};
@@ -3493,6 +3624,10 @@ function readTemplateFields(typ) {
       if (f.type === 'number') out[f.key] = Number(v);
       else out[f.key] = v;
     }
+  }
+  if (typ === 'projekt') {
+    const subitems = readTemplateSubItems();
+    if (subitems.length > 0) out._subitems = subitems;
   }
   return out;
 }
@@ -3595,7 +3730,12 @@ async function populateTemplateDropdown(typ, mode) {
  *  im Template hinterlegte Feld auf das passende DOM-Element und löst
  *  change/input-Events aus, damit abhängige Logik (Auto-Berechnungen,
  *  Preview etc.) reagiert. */
+/** v1.51.0: aktives Projekt-Template merken — saveProject schaut hier nach
+ *  und erzeugt Sub-Items mit project_id nach erfolgreichem Insert. */
+let _activeProjectTemplateId = null;
+
 async function applyTemplateToEntity(typ, templateId) {
+  if (typ === 'projekt') _activeProjectTemplateId = templateId || null;
   if (!templateId) return;
   const tpls = await fetchActiveTemplates(typ);
   const tpl = tpls.find(t => t.id === templateId);
@@ -3604,6 +3744,7 @@ async function applyTemplateToEntity(typ, templateId) {
   const daten = tpl.daten || {};
   let applied = 0;
   for (const key of Object.keys(daten)) {
+    if (key.startsWith('_')) continue; // _subitems & andere Meta-Schlüssel überspringen
     const elId = map[key];
     if (!elId) continue;
     const el = document.getElementById(elId);
@@ -3619,7 +3760,89 @@ async function applyTemplateToEntity(typ, templateId) {
     }
     applied++;
   }
-  if (applied > 0) showToast(`Template „${tpl.name}" angewendet (${applied} Felder).`);
+  let toastSuffix = '';
+  if (typ === 'projekt' && Array.isArray(daten._subitems) && daten._subitems.length > 0) {
+    toastSuffix = ` · ${daten._subitems.length} Aktivität${daten._subitems.length === 1 ? '' : 'en'} folgen nach dem Speichern`;
+  }
+  if (applied > 0 || toastSuffix) showToast(`Template „${tpl.name}" angewendet${applied > 0 ? ` (${applied} Felder)` : ''}${toastSuffix}.`);
+}
+
+/** v1.51.0: Datum + N Werktage (Mo-Fr). Sa/So überspringen. */
+function addWerktage(startISO, days) {
+  if (!startISO) return null;
+  const d = new Date(startISO + 'T00:00:00');
+  let added = 0;
+  if (days === 0) return toISODate(d);
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return toISODate(d);
+}
+
+/** v1.51.0: Erzeugt die Sub-Items eines Projekt-Templates als echte Datensätze
+ *  (appointments/tasks/deployments) mit project_id und berechnetem Datum. */
+async function createTemplateSubItems(templateId, projectId, projectStartdatum) {
+  const tpls = await fetchActiveTemplates('projekt');
+  const tpl = tpls.find(t => t.id === templateId);
+  if (!tpl) return 0;
+  const subitems = tpl.daten?._subitems;
+  if (!Array.isArray(subitems) || subitems.length === 0) return 0;
+
+  const userId = currentProfile?.id || currentUser?.id || null;
+  const apptRows = [];
+  const taskRows = [];
+  const depRows  = [];
+
+  for (const it of subitems) {
+    const datum = projectStartdatum ? addWerktage(projectStartdatum, it.offset_werktage || 0) : null;
+    if (it.typ === 'termin') {
+      apptRows.push({
+        titel: it.titel,
+        datum,
+        status: 'geplant',
+        project_id: projectId,
+        erstellt_von: userId
+      });
+    } else if (it.typ === 'aufgabe') {
+      taskRows.push({
+        titel: it.titel,
+        faelligkeit: datum,
+        status: 'offen',
+        project_id: projectId,
+        assigned_to: userId,
+        erstellt_von: userId
+      });
+    } else if (it.typ === 'einsatz') {
+      depRows.push({
+        titel: it.titel,
+        datum_von: datum,
+        datum_bis: datum,
+        status: 'Geplant',
+        project_id: projectId,
+        service_id: it.service_id || null,
+        menge: it.menge ?? 1,
+        einzelpreis: it.einzelpreis ?? 0,
+        erstellt_von: userId
+      });
+    }
+  }
+
+  let created = 0;
+  if (apptRows.length > 0) {
+    const { error, count } = await db.from('appointments').insert(apptRows);
+    if (!error) created += apptRows.length;
+  }
+  if (taskRows.length > 0) {
+    const { error } = await db.from('tasks').insert(taskRows);
+    if (!error) created += taskRows.length;
+  }
+  if (depRows.length > 0) {
+    const { error } = await db.from('deployments').insert(depRows);
+    if (!error) created += depRows.length;
+  }
+  return created;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6175,6 +6398,15 @@ function closeProjectModal() {
   editingProjectId = null;
   projectModalPrefillCompanyId = null;
   projectModalPrefillHauptkontaktId = null;
+  _activeProjectTemplateId = null;
+  // v1.51.0: Aktivitäten-Bereich zurücksetzen + Save-Button-Verhalten reset
+  const sec = document.getElementById('p-activities-section');
+  if (sec) sec.style.display = 'none';
+  const btn = document.getElementById('p-save-btn');
+  if (btn) {
+    btn.textContent = 'Anlegen';
+    btn.onclick = saveProject;
+  }
 }
 
 async function saveProject() {
@@ -6236,14 +6468,51 @@ async function saveProject() {
     if (!editingProjectId) payload.erstellt_von = currentUser?.id || null;
 
     const savedId = editingProjectId;
+    const isNewProject = !savedId;
 
+    let newProjectId = savedId;
     let error;
-    if (editingProjectId) { ({ error } = await db.from('projects').update(payload).eq('id', editingProjectId)); }
-    else { ({ error } = await db.from('projects').insert(payload)); }
+    if (editingProjectId) {
+      ({ error } = await db.from('projects').update(payload).eq('id', editingProjectId));
+    } else {
+      const { data, error: insErr } = await db.from('projects').insert(payload).select('id').single();
+      error = insErr;
+      if (data) newProjectId = data.id;
+    }
     if (error) throw new Error(error.message);
 
+    // v1.51.0: Sub-Items aus dem aktiven Template auto-erstellen (nur bei neuem Projekt)
+    let subitemsCreated = 0;
+    if (isNewProject && _activeProjectTemplateId && newProjectId) {
+      subitemsCreated = await createTemplateSubItems(_activeProjectTemplateId, newProjectId, startdatum);
+    }
+
+    const baseToast = savedId ? 'Projekt aktualisiert.' : 'Projekt angelegt.';
+    const toastMsg = subitemsCreated > 0
+      ? `${baseToast} ${subitemsCreated} Aktivität${subitemsCreated === 1 ? '' : 'en'} aus Template erstellt.`
+      : baseToast;
+    showToast(toastMsg);
+
+    // v1.51.0: Bei neuen Projekten Modal nicht schließen — stattdessen Aktivitäten-
+    // Bereich einblenden, damit der User direkt weitere Aktivitäten anlegen kann.
+    if (isNewProject && newProjectId) {
+      editingProjectId = newProjectId;
+      _activeProjectTemplateId = null; // Sub-Items wurden bereits erstellt
+      // Modal in Bearbeiten-Modus überführen + Aktivitäten-Bereich zeigen
+      document.getElementById('modal-project-title').textContent = 'Projekt: ' + name;
+      btn.textContent = 'Schließen';
+      btn.onclick = closeProjectModalFromActivities;
+      const delBtn = document.getElementById('p-delete-btn');
+      if (delBtn) delBtn.style.display = 'inline-block';
+      // Template-Auswahl ausblenden (Template kann nur einmal angewandt werden)
+      const tplRow = document.getElementById('p-template-row');
+      if (tplRow) tplRow.style.display = 'none';
+      await showProjectActivitiesSection(newProjectId);
+      btn.disabled = false;
+      return;
+    }
+
     closeProjectModal();
-    showToast(savedId ? 'Projekt aktualisiert.' : 'Projekt angelegt.');
 
     // Kontext-sensibles Refresh
     if (savedId && currentProjectDetailId === savedId) {
@@ -6259,8 +6528,130 @@ async function saveProject() {
     showToast(e.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = editingProjectId ? 'Speichern' : 'Anlegen';
+    if (!editingProjectId || btn.textContent === 'Wird angelegt ...' || btn.textContent === 'Wird gespeichert ...') {
+      btn.textContent = editingProjectId ? 'Speichern' : 'Anlegen';
+    }
   }
+}
+
+/** v1.51.0: „Schließen" nach Aktivitäten-Editierung — Modal zu, Listen refreshen. */
+async function closeProjectModalFromActivities() {
+  const id = editingProjectId;
+  closeProjectModal();
+  if (id && currentProjectDetailId === id) {
+    await loadProjectDetail(id);
+  } else if (currentCompanyDetailId && document.getElementById('page-company-detail').classList.contains('active')) {
+    await loadCompanyProjects(currentCompanyDetailId);
+  } else {
+    await loadProjects();
+  }
+}
+
+/** v1.51.0: Blendet den Aktivitäten-Bereich ein, befüllt Datumsfelder mit
+ *  Projektstart (oder heute), lädt das Service-Dropdown + die Liste. */
+async function showProjectActivitiesSection(projectId) {
+  const sec = document.getElementById('p-activities-section');
+  if (!sec) return;
+  const startdatum = document.getElementById('p-startdatum').value || toISODate(new Date());
+  document.getElementById('pq-termin-datum').value = startdatum;
+  document.getElementById('pq-aufgabe-faelligkeit').value = startdatum;
+  document.getElementById('pq-einsatz-datum').value = startdatum;
+  document.getElementById('pq-termin-titel').value = '';
+  document.getElementById('pq-aufgabe-titel').value = '';
+  document.getElementById('pq-einsatz-titel').value = '';
+
+  // Service-Dropdown befüllen
+  const services = await loadServicesCache();
+  const sel = document.getElementById('pq-einsatz-service');
+  sel.innerHTML = '<option value="">— Leistung wählen —</option>' +
+    services.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+
+  sec.style.display = '';
+  await renderProjectModalActivities(projectId);
+}
+
+async function renderProjectModalActivities(projectId) {
+  const list = document.getElementById('p-activities-list');
+  if (!list) return;
+  list.innerHTML = '<div class="info-card-empty">Lade ...</div>';
+
+  const [apptRes, taskRes, depRes] = await Promise.all([
+    db.from('appointments').select('id, titel, datum, status').is('deleted_at', null).eq('project_id', projectId).order('datum'),
+    db.from('tasks').select('id, titel, faelligkeit, status').is('deleted_at', null).eq('project_id', projectId).order('faelligkeit'),
+    db.from('deployments').select('id, titel, datum_von, status').is('deleted_at', null).eq('project_id', projectId).order('datum_von')
+  ]);
+
+  const items = [
+    ...(apptRes.data || []).map(a => ({ kind: 'Termin', icon: 'T', id: a.id, titel: a.titel || '—', datum: a.datum, status: a.status })),
+    ...(taskRes.data || []).map(t => ({ kind: 'Aufgabe', icon: 'A', id: t.id, titel: t.titel || '—', datum: t.faelligkeit, status: t.status })),
+    ...(depRes.data  || []).map(d => ({ kind: 'Einsatz', icon: 'E', id: d.id, titel: d.titel || '—', datum: d.datum_von, status: d.status }))
+  ];
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="info-card-empty">Noch keine Aktivitäten — leg über die Karten oben los.</div>';
+    return;
+  }
+
+  // Sortierung nach Datum (NULLs ans Ende)
+  items.sort((a, b) => {
+    if (!a.datum && !b.datum) return 0;
+    if (!a.datum) return 1;
+    if (!b.datum) return -1;
+    return a.datum.localeCompare(b.datum);
+  });
+
+  list.innerHTML = items.map(it => `
+    <div class="p-activity-row">
+      <span class="p-activity-kind p-activity-kind-${it.kind.toLowerCase()}">${esc(it.kind)}</span>
+      <span class="p-activity-date">${it.datum ? esc(formatDateCompact(it.datum)) : '—'}</span>
+      <span class="p-activity-titel">${esc(it.titel)}</span>
+      <span class="p-activity-status">${esc(it.status || '')}</span>
+    </div>
+  `).join('');
+}
+
+/** v1.51.0: Quick-Add aus dem Projekt-Modal — direkt mit project_id einfügen. */
+async function quickAddProjectActivity(typ) {
+  if (!editingProjectId) { showToast('Erst Projekt speichern.', true); return; }
+  const userId = currentProfile?.id || currentUser?.id || null;
+
+  if (typ === 'termin') {
+    const datum = document.getElementById('pq-termin-datum').value || null;
+    const titel = document.getElementById('pq-termin-titel').value.trim();
+    if (!titel) { showToast('Titel fehlt.', true); return; }
+    const { error } = await db.from('appointments').insert({
+      titel, datum, status: 'geplant', project_id: editingProjectId, erstellt_von: userId
+    });
+    if (error) { showToast('Fehler: ' + error.message, true); return; }
+    document.getElementById('pq-termin-titel').value = '';
+    showToast('Termin angelegt.');
+  } else if (typ === 'aufgabe') {
+    const faelligkeit = document.getElementById('pq-aufgabe-faelligkeit').value || null;
+    const titel = document.getElementById('pq-aufgabe-titel').value.trim();
+    if (!titel) { showToast('Titel fehlt.', true); return; }
+    const { error } = await db.from('tasks').insert({
+      titel, faelligkeit, status: 'offen',
+      project_id: editingProjectId, assigned_to: userId, erstellt_von: userId
+    });
+    if (error) { showToast('Fehler: ' + error.message, true); return; }
+    document.getElementById('pq-aufgabe-titel').value = '';
+    showToast('Aufgabe angelegt.');
+  } else if (typ === 'einsatz') {
+    const datum = document.getElementById('pq-einsatz-datum').value || null;
+    const titel = document.getElementById('pq-einsatz-titel').value.trim();
+    const service_id = document.getElementById('pq-einsatz-service').value || null;
+    if (!titel) { showToast('Titel fehlt.', true); return; }
+    const { error } = await db.from('deployments').insert({
+      titel, datum_von: datum, datum_bis: datum, status: 'Geplant',
+      project_id: editingProjectId, service_id,
+      menge: 1, einzelpreis: 0,
+      erstellt_von: userId
+    });
+    if (error) { showToast('Fehler: ' + error.message, true); return; }
+    document.getElementById('pq-einsatz-titel').value = '';
+    showToast('Einsatz angelegt.');
+  }
+  await renderProjectModalActivities(editingProjectId);
 }
 
 async function deleteProject() {

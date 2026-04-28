@@ -1429,6 +1429,124 @@ tr:hover td { background: var(--bg); }
 }
 .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
 
+/* v1.51.0: Sub-Items-Editor in Projekt-Templates */
+.tpl-subitems-block {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tpl-subitems-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.tpl-subitems-title {
+  font-size: 12px; font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.tpl-subitems-hint {
+  font-size: 11px; color: var(--muted);
+  margin: 0 0 12px;
+}
+.tpl-subitem-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 70px 28px auto auto auto 28px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 0.5px solid var(--border);
+}
+.tpl-subitem-row:last-child { border-bottom: none; }
+.tpl-subitem-row select,
+.tpl-subitem-row input {
+  height: 30px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.tpl-si-offset-suffix {
+  font-size: 11px; color: var(--muted);
+  text-align: left;
+}
+.tpl-si-del {
+  width: 28px; height: 28px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px; color: var(--muted);
+  line-height: 1;
+}
+.tpl-si-del:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+/* v1.51.0: Aktivitäten-Bereich im Projekt-Modal nach Save */
+.p-activities-divider {
+  border-top: 1px solid var(--border);
+  margin: 24px 0 16px;
+}
+.p-activities-head { margin-bottom: 12px; }
+.p-activities-hint {
+  font-size: 12px; color: var(--muted);
+  margin: 4px 0 0;
+}
+.p-quick-add-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 800px) {
+  .p-quick-add-grid { grid-template-columns: 1fr; }
+}
+.p-quick-add-card {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.p-quick-add-title {
+  font-size: 12px; font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.p-quick-add-card input,
+.p-quick-add-card select {
+  height: 32px; font-size: 13px; padding: 4px 8px;
+}
+.p-quick-add-card .btn { align-self: stretch; }
+.p-activities-list-title {
+  font-size: 11px; font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: .4px;
+  margin-bottom: 8px;
+}
+.p-activity-row {
+  display: grid;
+  grid-template-columns: 70px 90px 1fr auto;
+  gap: 12px; align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 0.5px solid var(--border);
+}
+.p-activity-row:last-child { border-bottom: none; }
+.p-activity-kind {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-align: center;
+}
+.p-activity-kind-termin  { background: var(--status-plan-bg);   color: var(--status-plan-fg); }
+.p-activity-kind-aufgabe { background: var(--status-billed-bg); color: var(--status-billed-fg); }
+.p-activity-kind-einsatz { background: var(--status-done-bg);   color: var(--status-done-fg); }
+.p-activity-date  { font-size: 12px; color: var(--muted); }
+.p-activity-titel { font-weight: 500; color: var(--text); }
+.p-activity-status { font-size: 11px; color: var(--muted); }
+
 /* v1.50.0: "Aus Template"-Auswahl oben in den Anlage-Modalen */
 .modal-template-row {
   display: flex; align-items: center;
