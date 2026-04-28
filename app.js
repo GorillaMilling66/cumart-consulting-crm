@@ -3537,21 +3537,30 @@ function renderTemplateSubItemRow(item, idx, serviceOpts) {
   const serviceOpt = (serviceOpts || []).map(o =>
     `<option value="${esc(o.id)}" ${service === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
   return `
-    <div class="tpl-subitem-row" data-idx="${idx}">
-      <select class="tpl-si-typ" onchange="onSubItemTypChange(${idx})">
-        <option value="termin"  ${t === 'termin'  ? 'selected' : ''}>Termin</option>
-        <option value="aufgabe" ${t === 'aufgabe' ? 'selected' : ''}>Aufgabe</option>
-        <option value="einsatz" ${t === 'einsatz' ? 'selected' : ''}>Einsatz</option>
-      </select>
-      <input type="text" class="tpl-si-titel" placeholder="Titel" value="${esc(titel)}">
-      <input type="number" class="tpl-si-offset" min="0" step="1" value="${offset}" title="Werktage ab Projektstart">
-      <span class="tpl-si-offset-suffix">WT</span>
-      <select class="tpl-si-service" style="${isEinsatz ? '' : 'display:none'}">
-        <option value="">— Leistung —</option>${serviceOpt}
-      </select>
-      <input type="number" class="tpl-si-menge" placeholder="Menge" step="0.01" value="${menge}" style="${isEinsatz ? '' : 'display:none'}">
-      <input type="number" class="tpl-si-preis" placeholder="Preis €" step="0.01" value="${einzelpreis}" style="${isEinsatz ? '' : 'display:none'}">
-      <button type="button" class="tpl-si-del" onclick="removeTemplateSubItem(${idx})" title="Entfernen" aria-label="Entfernen">×</button>
+    <div class="tpl-subitem-row${isEinsatz ? ' is-einsatz' : ''}" data-idx="${idx}">
+      <div class="tpl-si-main">
+        <select class="tpl-si-typ" onchange="onSubItemTypChange(${idx})">
+          <option value="termin"  ${t === 'termin'  ? 'selected' : ''}>Termin</option>
+          <option value="aufgabe" ${t === 'aufgabe' ? 'selected' : ''}>Aufgabe</option>
+          <option value="einsatz" ${t === 'einsatz' ? 'selected' : ''}>Einsatz</option>
+        </select>
+        <input type="text" class="tpl-si-titel" placeholder="Titel" value="${esc(titel)}">
+        <div class="tpl-si-offset-wrap" title="Werktage ab Projektstart">
+          <input type="number" class="tpl-si-offset" min="0" step="1" value="${offset}">
+          <span class="tpl-si-offset-suffix">WT</span>
+        </div>
+        <button type="button" class="tpl-si-del" onclick="removeTemplateSubItem(${idx})" title="Entfernen" aria-label="Entfernen">×</button>
+      </div>
+      <div class="tpl-si-einsatz">
+        <label class="tpl-si-extra-label">Leistung</label>
+        <select class="tpl-si-service">
+          <option value="">— wählen —</option>${serviceOpt}
+        </select>
+        <label class="tpl-si-extra-label">Menge</label>
+        <input type="number" class="tpl-si-menge" placeholder="1" step="0.01" value="${menge}">
+        <label class="tpl-si-extra-label">Preis €</label>
+        <input type="number" class="tpl-si-preis" placeholder="0,00" step="0.01" value="${einzelpreis}">
+      </div>
     </div>`;
 }
 
@@ -3580,9 +3589,7 @@ function onSubItemTypChange(idx) {
   const row = list?.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
   if (!row) return;
   const isEinsatz = row.querySelector('.tpl-si-typ').value === 'einsatz';
-  row.querySelector('.tpl-si-service').style.display = isEinsatz ? '' : 'none';
-  row.querySelector('.tpl-si-menge').style.display   = isEinsatz ? '' : 'none';
-  row.querySelector('.tpl-si-preis').style.display   = isEinsatz ? '' : 'none';
+  row.classList.toggle('is-einsatz', isEinsatz);
 }
 
 /** Liest die aktuellen Sub-Items aus dem DOM. */
