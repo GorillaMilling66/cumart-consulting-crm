@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.0-pre.0 (Komplett-Redesign Phase 0: Foundation).
+   - Neue Design-Tokens (warm-creme Page-BG, Pastell-Themen-Palette
+     in 8 Farben, Typ-Pillen für Activity-Stream, neue Radius- &
+     Border-Skala). Bestehende Variablennamen behalten ihre Rolle.
+   - Top-Navigation mit drei Hauptbereichen Briefing · Arbeitsplatz
+     · Listen ersetzt den heutigen App-Header. Logo „cumart" links,
+     Suche/Zahnrad/Avatar rechts. Sidebar bleibt parallel sichtbar
+     bis Phase 5 (sonst kein Zugriff auf Admin-Bereiche).
+   - Hash-Router um /briefing, /arbeitsplatz, /listen, /einstellungen
+     erweitert. Loader-Stubs zeigen „kommt in Phase X"-Hinweis mit
+     Sprung zur aktuellen Funktion.
+   - setActiveTopNavTab markiert den passenden Bereichs-Tab je nach
+     aktiver Page (Listen-Tab z.B. auch bei Detail-Pages aktiv).
+   - Avatar-Initialen werden im Top-Nav rechts gespiegelt.
    Version 1.53.0 (Phase A des Master-Plan v2.1: Themen als
    echte M:N-Strukturdaten).
    - Neue Tabelle `project_themes` (id, project_id, name,
@@ -2237,6 +2251,9 @@ function showPage(name) {
   const navBtn = document.getElementById('nav-' + name);
   if (navBtn) navBtn.classList.add('active');
 
+  // v2.0.0 — Top-Nav-Tab-Activation
+  setActiveTopNavTab(name);
+
   setMobileNav(name);
 
   if (name === 'users') loadUsers();
@@ -2250,6 +2267,76 @@ function showPage(name) {
   if (name === 'tasks') loadTasks();
   if (name === 'projects') loadProjects();
   if (name === 'deployments') loadDeployments();
+  // v2.0.0 — Hauptbereiche
+  if (name === 'briefing')      loadBriefingV2?.();
+  if (name === 'arbeitsplatz')  loadArbeitsplatz?.();
+  if (name === 'listen')        loadListenPage?.();
+  if (name === 'einstellungen') loadEinstellungen?.();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.0 — DREI-BEREICHE (Briefing / Arbeitsplatz / Listen)
+// ═══════════════════════════════════════════════════════════
+//
+// Loader-Stubs. In Phase 0 zeigen sie Übergangs-Inhalte; werden
+// in Phasen 2-5 mit echten Inhalten gefüllt.
+
+async function loadBriefingV2() {
+  const c = document.getElementById('briefing-v2-container');
+  if (!c) return;
+  c.innerHTML = `
+    <div class="redesign-stub">
+      <div class="redesign-stub-eyebrow">BEREICH 1</div>
+      <h1 class="redesign-stub-title">Briefing — was muss ich tun</h1>
+      <p class="redesign-stub-hint">Wird in Phase 3 gebaut. Bis dahin findest du das tägliche Briefing in der Sidebar unter „Dein Tag".</p>
+      <button class="btn btn-primary" onclick="navigateTo('heute')">Zum aktuellen Briefing →</button>
+    </div>`;
+}
+
+async function loadArbeitsplatz() {
+  const c = document.getElementById('arbeitsplatz-container');
+  if (!c) return;
+  c.innerHTML = `
+    <div class="redesign-stub">
+      <div class="redesign-stub-eyebrow">BEREICH 2</div>
+      <h1 class="redesign-stub-title">Arbeitsplatz — wo ich erschaffe</h1>
+      <p class="redesign-stub-hint">Wird in Phase 4 gebaut. Bis dahin nutze das FAB-Plus-Menü unten rechts oder die Sidebar-Listen.</p>
+    </div>`;
+}
+
+async function loadListenPage() {
+  const c = document.getElementById('listen-container');
+  if (!c) return;
+  c.innerHTML = `
+    <div class="redesign-stub">
+      <div class="redesign-stub-eyebrow">BEREICH 3</div>
+      <h1 class="redesign-stub-title">Listen — wo ich finde</h1>
+      <p class="redesign-stub-hint">Wird in Phase 2 gebaut. Bis dahin findest du alle Listen in der Sidebar (Firmen / Kontakte / Projekte / Termine / Einsätze / Aufgaben).</p>
+    </div>`;
+}
+
+async function loadEinstellungen() {
+  const c = document.getElementById('einstellungen-container');
+  if (!c) return;
+  c.innerHTML = `
+    <div class="redesign-stub">
+      <div class="redesign-stub-eyebrow">EINSTELLUNGEN</div>
+      <h1 class="redesign-stub-title">Konfiguration</h1>
+      <p class="redesign-stub-hint">Wird in Phase 5 gebaut. Bis dahin findest du Stammdaten / Benutzer / Leistungen / Programme / Templates in der Sidebar unter „Einstellungen".</p>
+    </div>`;
+}
+
+/** v2.0.0 — markiert den passenden Top-Nav-Tab als aktiv. */
+function setActiveTopNavTab(pageName) {
+  document.querySelectorAll('.app-topnav-tab').forEach(t => t.classList.remove('active'));
+  let tabId = null;
+  // Mapping: welche Page gehört zu welchem Bereich?
+  if (pageName === 'briefing' || pageName === 'heute') tabId = 'topnav-briefing';
+  else if (pageName === 'arbeitsplatz') tabId = 'topnav-arbeitsplatz';
+  else if (['listen','companies','contacts','projects','appointments','deployments','tasks',
+            'company-detail','contact-detail','project-detail'].includes(pageName)) tabId = 'topnav-listen';
+  // Einstellungen-Pages markieren keinen Top-Nav-Tab (eigener Bereich)
+  if (tabId) document.getElementById(tabId)?.classList.add('active');
 }
 
 function setMobileNav(pageName) {
@@ -2328,6 +2415,14 @@ function navigateTo(page, param) {
     hash = '#/programme';
   } else if (page === 'templates') {
     hash = '#/templates';
+  } else if (page === 'briefing') {
+    hash = '#/briefing';
+  } else if (page === 'arbeitsplatz') {
+    hash = '#/arbeitsplatz';
+  } else if (page === 'listen') {
+    hash = '#/listen';
+  } else if (page === 'einstellungen') {
+    hash = '#/einstellungen';
   } else {
     hash = '#/firmen';
   }
@@ -2437,6 +2532,11 @@ function handleHashChange() {
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
   if (hash === '#/programme')  { showPage('programs'); return; }
   if (hash === '#/templates')  { showPage('templates'); return; }
+  // v2.0.0 — Drei-Bereiche-Architektur
+  if (hash === '#/briefing')      { showPage('briefing');      return; }
+  if (hash === '#/arbeitsplatz')  { showPage('arbeitsplatz');  return; }
+  if (hash === '#/listen')        { showPage('listen');        return; }
+  if (hash === '#/einstellungen') { showPage('einstellungen'); return; }
   // v1.45.3: Alias — die Sidebar trägt das Label „Mitgliedschafts-Programme",
   // historisch wurde teils auch /#/mitgliedschafts-programme verlinkt.
   if (hash === '#/mitgliedschafts-programme') { showPage('programs'); return; }
@@ -2566,6 +2666,9 @@ function renderSidebar() {
       <div class="sidebar-user-name">${esc(currentProfile?.name || currentUser.email)}</div>
       <div class="sidebar-user-role">${esc(currentProfile?.roles?.name || '—')}</div>
     </div>`;
+  // v2.0.0 — Avatar-Initialen in Top-Nav
+  const topnavAvatar = document.getElementById('topnav-avatar-initials');
+  if (topnavAvatar) topnavAvatar.textContent = ini(currentProfile?.name || currentUser?.email || '?');
 }
 
 function renderMobileHeaderUser() {

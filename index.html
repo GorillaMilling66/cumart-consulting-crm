@@ -110,16 +110,35 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
 
-  <!-- GLOBALER TOP-HEADER (v1.36.0) — zentrale Suchleiste -->
-  <header class="app-header" id="app-header">
-    <button class="app-header-search" onclick="openSearchOverlay()" title="Globale Suche (⌘K)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="11" cy="11" r="7"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-      <span class="app-header-search-placeholder">Firmen, Kontakte, Projekte, Termine, Einsätze suchen …</span>
-      <kbd class="kbd">⌘K</kbd>
-    </button>
+  <!-- GLOBALER TOP-HEADER (v2.0.0 — Drei-Bereiche-Top-Nav) -->
+  <header class="app-topnav" id="app-topnav">
+    <div class="app-topnav-left">
+      <a class="app-topnav-brand" onclick="navigateTo('briefing')">cumart</a>
+      <nav class="app-topnav-tabs" role="navigation" aria-label="Hauptnavigation">
+        <a class="app-topnav-tab" id="topnav-briefing" onclick="navigateTo('briefing')">Briefing</a>
+        <a class="app-topnav-tab" id="topnav-arbeitsplatz" onclick="navigateTo('arbeitsplatz')">Arbeitsplatz</a>
+        <a class="app-topnav-tab" id="topnav-listen" onclick="navigateTo('listen')">Listen</a>
+      </nav>
+    </div>
+    <div class="app-topnav-right">
+      <button class="app-topnav-search" onclick="openSearchOverlay()" title="Globale Suche (⌘K)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span>Suche</span>
+        <kbd class="kbd">⌘K</kbd>
+      </button>
+      <button class="app-topnav-icon" onclick="navigateTo('einstellungen')" title="Einstellungen" aria-label="Einstellungen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+      <button class="app-topnav-avatar" id="topnav-avatar" onclick="doLogout()" title="Abmelden">
+        <span id="topnav-avatar-initials">SC</span>
+      </button>
+    </div>
   </header>
 
   <!-- DESKTOP SIDEBAR -->
@@ -316,6 +335,34 @@
 
   <!-- MAIN -->
   <main class="main">
+
+    <!-- v2.0.0 — BRIEFING (Hauptbereich 1) -->
+    <div class="page" id="page-briefing">
+      <div id="briefing-v2-container">
+        <div class="info-card-empty">Lade Briefing …</div>
+      </div>
+    </div>
+
+    <!-- v2.0.0 — ARBEITSPLATZ (Hauptbereich 2) -->
+    <div class="page" id="page-arbeitsplatz">
+      <div id="arbeitsplatz-container">
+        <div class="info-card-empty">Lade Arbeitsplatz …</div>
+      </div>
+    </div>
+
+    <!-- v2.0.0 — LISTEN (Hauptbereich 3) -->
+    <div class="page" id="page-listen">
+      <div id="listen-container">
+        <div class="info-card-empty">Lade Listen …</div>
+      </div>
+    </div>
+
+    <!-- v2.0.0 — EINSTELLUNGEN (Admin-Bereich) -->
+    <div class="page" id="page-einstellungen">
+      <div id="einstellungen-container">
+        <div class="info-card-empty">Lade Einstellungen …</div>
+      </div>
+    </div>
 
     <!-- PLATZHALTER -->
     <div class="page" id="page-home">

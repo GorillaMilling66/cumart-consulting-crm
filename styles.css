@@ -7,20 +7,37 @@
 /* ── RESET & BASIS ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:       #f9fafb;
-  --surface:  #ffffff;
-  --border:   #e5e7eb;
-  --text:     #111827;
-  --muted:    #6b7280;
-  --primary:  #111827;
+  /* ═══════════════════════════════════════════════════════════════════════
+     v2.0.0 — Design-Tokens (Komplett-Redesign laut Mockups)
+     Warm-cremefarbenes Page-BG, weiße Cards mit dünnen Borders, weiche
+     Pastell-Status-Pillen, kuratierte 8er-Themen-Palette.
+     Bestehende Variablennamen behalten ihre Rolle — nur Werte gemappt.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* Hauptpalette */
+  --bg:       #F1EFE8;   /* warm-cremiger Page-Hintergrund (statt kalt-weiß) */
+  --surface:  #FFFFFF;   /* Card-Hintergrund */
+  --bg-soft:  #F8F7F2;   /* leicht warm-getöntes Surface (Hero-Cards, gefüllte Felder) */
+  --border:   rgba(0,0,0,0.08);   /* 0.5–1 px Default-Border */
+  --border-strong: rgba(0,0,0,0.15);  /* Hover/Aktiv */
+  --border-accent: rgba(0,0,0,0.30);  /* Akzent-Border (Focus-Ring) */
+  --text:     #1F1F1D;   /* warm-schwarz */
+  --muted:    #5F5E5A;   /* warm-grau (Sub-Text) */
+  --tertiary: #888780;   /* sehr leise Meta-Hints */
+  --primary:  #1F1F1D;   /* Primary-Button-Hintergrund (warm-schwarz) */
   --link:     #1d4ed8;
   --danger:   #dc2626;
   --success:  #16a34a;
   --warning:  #d97706;
-  --radius:   8px;
-  --shadow:   0 1px 3px rgba(0,0,0,.08);
 
-  /* v1.45 — Status-Farb-Tokens (eine konsistente Skala für alle Tabs) */
+  /* Radius-Skala */
+  --radius-sm: 3px;
+  --radius:    8px;     /* alias --radius-md */
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow:    none;    /* v2.0: keine Schatten */
+
+  /* Status-Pillen — bleiben farbtreu zur v1.x-Praxis */
   --status-plan-bg:        #E6F1FB;
   --status-plan-fg:        #042C53;
   --status-plan-accent:    #1d4ed8;
@@ -42,6 +59,29 @@
   --status-holiday-accent: #b45309;
 
   --color-info:            #1d4ed8;
+
+  /* v2.0 — Themen-Farb-Palette (8 kuratierte Pastell-Werte) */
+  --theme-blue-bg:    #E6F1FB;  --theme-blue-fg:    #042C53;
+  --theme-purple-bg:  #EEEDFE;  --theme-purple-fg:  #26215C;
+  --theme-amber-bg:   #FAEEDA;  --theme-amber-fg:   #412402;
+  --theme-green-bg:   #EAF3DE;  --theme-green-fg:   #173404;
+  --theme-pink-bg:    #FBEAF0;  --theme-pink-fg:    #4B1528;
+  --theme-teal-bg:    #E1F5EE;  --theme-teal-fg:    #04342C;
+  --theme-red-bg:     #FCEBEB;  --theme-red-fg:     #501313;
+  --theme-grey-bg:    #F1EFE8;  --theme-grey-fg:    #3A3A37;
+
+  /* v2.0 — Typ-Pillen (Activity-Stream, Recent-Liste) */
+  --type-projekt-bg:   #E6F1FB;  --type-projekt-fg:  #042C53;
+  --type-firma-bg:     #E1F5EE;  --type-firma-fg:    #04342C;
+  --type-einsatz-bg:   #FAEEDA;  --type-einsatz-fg:  #412402;
+  --type-kontakt-bg:   #EEEDFE;  --type-kontakt-fg:  #26215C;
+  --type-termin-bg:    #E6F1FB;  --type-termin-fg:   #042C53;
+  --type-aufgabe-bg:   #FBEAF0;  --type-aufgabe-fg:  #4B1528;
+  --type-notiz-bg:     #F1EFE8;  --type-notiz-fg:    #3A3A37;
+  --type-status-bg:    #F1EFE8;  --type-status-fg:   #3A3A37;
+
+  /* v2.0 — Top-Navigation */
+  --topnav-height: 56px;
 
   --mobile-header-height: 56px;
   --mobile-nav-height: 62px;
@@ -325,66 +365,143 @@ body {
 .more-item-danger { color: var(--danger); }
 .more-item-danger svg { color: var(--danger); }
 
-/* ── GLOBALER APP-HEADER (v1.36.0) ── */
-.app-header {
+/* ── v2.0.0 TOP-NAV (Drei-Bereiche-Architektur) ──────────────────────── */
+.app-topnav {
   position: fixed;
   top: 0;
-  left: 220px;
+  left: 220px;          /* Sidebar bleibt vorerst — Phase 5 entfernt sie */
   right: 0;
-  height: 64px;
-  background: var(--surface);
+  height: var(--topnav-height);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 0 32px;
+  justify-content: space-between;
+  padding: 0 24px;
   z-index: 95;
+  gap: 24px;
 }
-.app-header-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 720px;
-  height: 42px;
-  padding: 0 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
+.app-topnav-left {
+  display: flex; align-items: center; gap: 28px;
+}
+.app-topnav-brand {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.2px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.app-topnav-tabs {
+  display: flex; align-items: center; gap: 4px;
+}
+.app-topnav-tab {
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--muted);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.app-topnav-tab:hover { background: var(--bg-soft); color: var(--text); }
+.app-topnav-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  border: 0.5px solid var(--border);
+  font-weight: 500;
+}
+.app-topnav-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.app-topnav-search {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-family: inherit;
+  font-size: 13px;
   color: var(--muted);
   transition: border-color .12s, background .12s;
 }
-.app-header-search:hover {
-  border-color: var(--link);
-  background: var(--surface);
+.app-topnav-search:hover { border-color: var(--border-strong); }
+.app-topnav-search svg { width: 14px; height: 14px; flex-shrink: 0; }
+.app-topnav-search .kbd {
+  font-size: 11px;
+  padding: 1px 5px;
+  background: var(--bg);
+  border-radius: 3px;
+  margin-left: 4px;
 }
-.app-header-search svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
+.app-topnav-icon {
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--muted);
+  transition: background .12s, color .12s;
 }
-.app-header-search-placeholder {
-  flex: 1;
-  text-align: left;
-  font-size: 14px;
-}
-.app-header-search .kbd {
-  margin-left: auto;
-  flex-shrink: 0;
+.app-topnav-icon:hover { background: var(--bg-soft); color: var(--text); }
+.app-topnav-icon svg { width: 18px; height: 18px; }
+.app-topnav-avatar {
+  width: 32px; height: 32px;
+  background: var(--text);
+  color: var(--surface);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* Mobile: kein Top-Header, bestehender Mobile-Header bleibt */
+/* Backwards-Kompat: alte .app-header-Klassen verlinken auf neue Top-Nav */
+.app-header { display: none; }
+
+/* v2.0.0 — Stub-Layout für leere Bereiche während Phasen-Roll-out */
+.redesign-stub {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 80px 24px;
+  text-align: center;
+}
+.redesign-stub-eyebrow {
+  font-size: 11px; font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.redesign-stub-title {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 16px;
+  letter-spacing: -0.3px;
+}
+.redesign-stub-hint {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+/* Mobile: Top-Nav ausblenden (Mobile-Bottom-Nav bleibt) */
 @media (max-width: 900px) {
-  .app-header { display: none; }
+  .app-topnav { display: none; }
 }
 
 /* ── MAIN CONTENT ── */
 .main {
   flex: 1;
-  margin-left: 220px;
-  padding: 96px 32px 32px;            /* 96px top = 64px Header + 32px Abstand */
+  margin-left: 220px;          /* Sidebar bleibt bis Phase 5 */
+  padding: 80px 32px 32px;     /* 80px top = 56px Top-Nav + 24px Abstand */
   min-height: 100vh;
 }
 .page { display: none; }
