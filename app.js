@@ -2037,6 +2037,7 @@ function renderContactPreview() {
     : '';
 
   el.innerHTML = `
+    <div class="drawer__preview-label">VORSCHAU</div>
     ${avatarHtml}
     ${nameHtml}
     ${positionHtml}

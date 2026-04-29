@@ -2428,25 +2428,22 @@
 </div>
 
 <!-- MODAL: KONTAKT (v1.38.0 3-Spalten mit Preview) -->
-<div class="modal-overlay" id="modal-contact">
-  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
-    <div class="modal-title" id="modal-contact-title">Neuer Kontakt</div>
+<!-- v2.0.2: Kontakt-Drawer (slide-in von rechts) — Punkt 8 Pilot -->
+<div class="drawer-overlay" id="modal-contact" onclick="if(event.target===this)closeContactModal()">
+  <aside class="drawer">
 
-    <div class="modal-3col">
-      <!-- LINKS: Preview -->
-      <aside class="modal-preview-card" id="k-preview"></aside>
+    <header class="drawer__header">
+      <div class="drawer__title" id="modal-contact-title">Neuer Kontakt</div>
+      <button type="button" class="drawer__close" onclick="closeContactModal()" aria-label="Schließen">×</button>
+    </header>
 
-      <!-- MITTE: Stammdaten -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-          Stammdaten
-        </div>
+    <div class="drawer__body">
+
+      <!-- Live-Vorschau wird von renderContactPreview() befüllt -->
+      <aside class="drawer__preview" id="k-preview"></aside>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">PERSON</div>
         <div class="form-row-2">
           <div class="form-group">
             <label>Vorname *</label>
@@ -2457,59 +2454,59 @@
             <input type="text" id="k-nachname" placeholder="Müller">
           </div>
         </div>
-        <div class="form-group">
-          <label>Position</label>
-          <input type="text" id="k-position" placeholder="z. B. Fertigungsleiter">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Position</label>
+            <input type="text" id="k-position" placeholder="z. B. Fertigungsleiter">
+          </div>
+          <div class="form-group">
+            <label>Firma</label>
+            <input id="k-company" list="k-company-list" autocomplete="off" placeholder="Firma wählen oder Namen tippen …">
+            <datalist id="k-company-list"></datalist>
+            <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Firma</label>
-          <input id="k-company" list="k-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
-          <datalist id="k-company-list"></datalist>
-          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt. Optional.</small>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">ERREICHBARKEIT</div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Telefon</label>
+            <input type="tel" id="k-telefon" placeholder="+49 7031 12345"
+                   inputmode="tel"
+                   oninput="sanitizePhoneInput(this)">
+          </div>
+          <div class="form-group">
+            <label>E-Mail</label>
+            <input type="email" id="k-email" placeholder="t.mueller@firma.de"
+                   inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+                   onblur="sanitizeEmailOnBlur(this)">
+          </div>
         </div>
       </section>
 
-      <!-- RECHTS: Kontakt -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-          </svg>
-          Kontakt
-        </div>
+      <section class="drawer__section">
+        <div class="drawer__section-label">NOTIZEN</div>
         <div class="form-group">
-          <label>Telefon</label>
-          <input type="tel" id="k-telefon" placeholder="+49 7031 12345"
-                 inputmode="tel"
-                 oninput="sanitizePhoneInput(this)">
-        </div>
-        <div class="form-group">
-          <label>E-Mail</label>
-          <input type="email" id="k-email" placeholder="t.mueller@firma.de"
-                 inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
-                 onblur="sanitizeEmailOnBlur(this)">
+          <textarea id="k-notizen" rows="3" placeholder="Freitext-Notizen zum Kontakt …"></textarea>
         </div>
       </section>
+
     </div>
 
-    <div class="modal-preview-footer">
-      <div class="modal-group-title collapsed">Notizen</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <textarea id="k-notizen" rows="3" placeholder="Freitext-Notizen zum Kontakt ..."></textarea>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="k-delete-btn"
-              onclick="deleteContact()" style="margin-right:auto;display:none">
+    <footer class="drawer__footer">
+      <button type="button" class="btn btn-danger btn-sm" id="k-delete-btn"
+              onclick="deleteContact()" style="display:none">
         Löschen
       </button>
-      <button class="btn" onclick="closeContactModal()">Abbrechen</button>
-      <button class="btn btn-primary" id="k-save-btn" onclick="saveContact()">Anlegen</button>
-    </div>
-  </div>
+      <div class="drawer__footer-actions">
+        <button type="button" class="btn" onclick="closeContactModal()">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="k-save-btn" onclick="saveContact()">Anlegen</button>
+      </div>
+    </footer>
+
+  </aside>
 </div>
 
 <!-- MODAL: TERMIN -->
