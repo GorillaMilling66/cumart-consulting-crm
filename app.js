@@ -3001,6 +3001,17 @@ async function loadListenPage() {
     </div>`;
 }
 
+/** v2.0.0 Phase 9e — Listen-Tab-Counts mit Filter-Reaktivität. Loader rufen
+ *  setListenTabCount('companies', anzahlGefiltert) auf, sobald sie ihre
+ *  Liste gerendert haben — der Wert reflektiert dann die aktuell sichtbaren
+ *  Zeilen, nicht die Total-Anzahl. */
+function setListenTabCount(page, count) {
+  const el = document.getElementById('listen-tab-count-' + page);
+  if (!el) return;
+  if (count == null || count === '') { el.textContent = ''; return; }
+  el.textContent = `· ${count}`;
+}
+
 /** v2.0.0 — Sub-Nav für Listen ein-/ausblenden + aktiven Tab markieren. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
 const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users'];
@@ -3052,16 +3063,16 @@ function setActiveTopNavTab(pageName) {
 }
 
 function setMobileNav(pageName) {
+  // v2.0.0 Phase 9d — Mobile-Bottom-Nav auf drei Bereiche umgestellt
   document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
-
-  if (pageName === 'companies' || pageName === 'company-detail') {
-    document.getElementById('m-nav-companies')?.classList.add('active');
-  } else if (pageName === 'appointments') {
-    document.getElementById('m-nav-appointments')?.classList.add('active');
-  } else if (pageName === 'tasks') {
-    document.getElementById('m-nav-tasks')?.classList.add('active');
+  if (pageName === 'briefing' || pageName === 'heute') {
+    document.getElementById('m-nav-briefing')?.classList.add('active');
+  } else if (pageName === 'arbeitsplatz') {
+    document.getElementById('m-nav-arbeitsplatz')?.classList.add('active');
+  } else if (['listen','companies','contacts','projects','appointments','deployments','tasks',
+              'company-detail','contact-detail','project-detail','deployment-detail','appointment-detail'].includes(pageName)) {
+    document.getElementById('m-nav-listen')?.classList.add('active');
   } else {
-    // contacts, contact-detail, projects, project-detail, deployments, users, services, lookups, programs → Mehr-Tab
     document.getElementById('m-nav-more')?.classList.add('active');
   }
 }
@@ -6028,6 +6039,7 @@ function renderCompaniesTable(companies) {
   countEl.textContent = (shown === total)
     ? `${total} ${total === 1 ? 'Firma' : 'Firmen'}`
     : `${shown} von ${total} Firmen`;
+  setListenTabCount('companies', shown);
 
   if (shown === 0) {
     const msg = total === 0
@@ -6605,6 +6617,7 @@ function renderContactsTable(contacts) {
   countEl.textContent = (shown === total)
     ? `${total} Kontakt${total === 1 ? '' : 'e'}`
     : `${shown} von ${total} Kontakten`;
+  setListenTabCount('contacts', shown);
 
   if (shown === 0) {
     const msg = total === 0
@@ -6901,6 +6914,7 @@ function renderAppointmentsTable(appointments) {
   countEl.textContent = (shown === total)
     ? `${total} Termin${total === 1 ? '' : 'e'}`
     : `${shown} von ${total} Terminen`;
+  setListenTabCount('appointments', shown);
 
   if (shown === 0) {
     const msg = total === 0
@@ -7565,6 +7579,7 @@ function renderProjectsTable(projects) {
   countEl.textContent = (shown === total)
     ? `${total} Projekt${total === 1 ? '' : 'e'}`
     : `${shown} von ${total} Projekten`;
+  setListenTabCount('projects', shown);
 
   if (shown === 0) {
     const msg = total === 0
@@ -8785,6 +8800,7 @@ function renderDeploymentsTable(deployments) {
   countEl.textContent = (shown === total)
     ? `${total} Einsatz${total === 1 ? '' : '̈e'}`.replace('tz̈e', 'tze')
     : `${shown} von ${total} Einsätzen`;
+  setListenTabCount('deployments', shown);
   // Hinweis zum Umsatz aktiver Einsätze
   const umsatzAktiv = deployments
     .filter(d => ['Durchgeführt', 'Abgerechnet'].includes(d.status) && !d.project_id)
@@ -15830,6 +15846,7 @@ async function renderTasksTable(tasks) {
   countEl.textContent = (shown === total)
     ? `${total} Aufgabe${total === 1 ? '' : 'n'}`
     : `${shown} von ${total} Aufgaben`;
+  setListenTabCount('tasks', shown);
 
   if (shown === 0) {
     const msg = total === 0
