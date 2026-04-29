@@ -355,24 +355,52 @@
       <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
     </div>
 
-    <!-- v2.0.0 — BRIEFING (Hauptbereich 1) -->
+    <!-- v2.0.0 — BRIEFING (Hauptbereich 1) — Section-Layout statt Tabs -->
     <div class="page" id="page-briefing">
-      <div class="briefing-v2">
-        <div class="briefing-v2-tabs">
-          <button class="briefing-v2-tab active" data-scope="heute" onclick="switchBriefingV2('heute')">Heute</button>
-          <button class="briefing-v2-tab"        data-scope="woche" onclick="switchBriefingV2('woche')">Diese Woche</button>
-          <button class="briefing-v2-tab"        data-scope="monat" onclick="switchBriefingV2('monat')">Dieser Monat</button>
+      <header class="bv2-header">
+        <div>
+          <div class="bv2-header-eyebrow">BRIEFING</div>
+          <h1 class="bv2-header-title" id="bv2-greeting">…</h1>
         </div>
+        <div class="bv2-header-date" id="bv2-date">…</div>
+      </header>
 
-        <div class="briefing-v2-hero" id="briefing-v2-hero">
-          <div class="info-card-empty">Lade …</div>
-        </div>
-
-        <div class="briefing-v2-grid">
-          <div class="briefing-v2-main" id="briefing-v2-main"></div>
-          <aside class="briefing-v2-aside" id="briefing-v2-aside"></aside>
-        </div>
+      <!-- HEUTE -->
+      <div class="bv2-divider">
+        <span class="bv2-divider-label">HEUTE</span>
+        <span class="bv2-divider-hint" id="bv2-heute-hint">&nbsp;</span>
       </div>
+      <p class="bv2-greeting-line" id="bv2-heute-lead">Lade …</p>
+
+      <div class="bv2-today-layout">
+        <div class="bv2-today-main">
+          <div id="bv2-today-hero"></div>
+          <div id="bv2-today-cards"></div>
+          <div id="bv2-today-kpis"></div>
+        </div>
+        <aside class="bv2-today-sidebar">
+          <div id="bv2-today-overdue"></div>
+          <div id="bv2-today-due"></div>
+          <div id="bv2-today-data"></div>
+        </aside>
+      </div>
+
+      <!-- DIESE WOCHE -->
+      <div class="bv2-divider">
+        <span class="bv2-divider-label">DIESE WOCHE</span>
+        <span class="bv2-divider-hint" id="bv2-week-hint">&nbsp;</span>
+      </div>
+      <div id="bv2-week-strip"></div>
+      <div id="bv2-week-upcoming"></div>
+
+      <!-- DIESER MONAT -->
+      <div class="bv2-divider">
+        <span class="bv2-divider-label">DIESER MONAT</span>
+        <span class="bv2-divider-hint" id="bv2-month-hint">&nbsp;</span>
+      </div>
+      <div id="bv2-month-kpis"></div>
+      <div id="bv2-month-chart"></div>
+      <div id="bv2-month-bottom"></div>
     </div>
 
     <!-- v2.0.0 — ARBEITSPLATZ (Hauptbereich 2) -->
@@ -2153,14 +2181,14 @@
   </svg>
 </button>
 
+<!-- v2.0.0 Phase 9c — FAB schlanker: 4 Kern-Aktionen + „Mehr im Arbeitsplatz" -->
 <div class="fab-menu" id="fab-menu" role="menu">
   <div class="fab-menu-title" id="fab-menu-title">Schnell anlegen</div>
-  <button class="fab-menu-item" role="menuitem" onclick="fabAction('company')">Neue Firma</button>
-  <button class="fab-menu-item" role="menuitem" onclick="fabAction('contact')">Neuer Kontakt</button>
-  <button class="fab-menu-item" role="menuitem" onclick="fabAction('task')">Neue Aufgabe</button>
-  <button class="fab-menu-item" role="menuitem" onclick="fabAction('appointment')">Neuer Termin</button>
-  <button class="fab-menu-item" role="menuitem" onclick="fabAction('deployment')">Neuer Einsatz</button>
-  <button class="fab-menu-item" role="menuitem" onclick="fabAction('project')">Neues Projekt</button>
+  <button class="fab-menu-item" role="menuitem" onclick="fabAction('task')">+ Aufgabe</button>
+  <button class="fab-menu-item" role="menuitem" onclick="fabAction('appointment')">+ Termin</button>
+  <button class="fab-menu-item" role="menuitem" onclick="fabAction('deployment')">+ Einsatz</button>
+  <button class="fab-menu-item" role="menuitem" onclick="fabAction('note')">+ Notiz</button>
+  <button class="fab-menu-item fab-menu-item-link" role="menuitem" onclick="fabOpenArbeitsplatz()">Mehr im Arbeitsplatz →</button>
 </div>
 
 <!-- SHARED: KEBAB-MENÜ (Listen-Zeilen sekundäre Aktionen, v1.20.0) -->

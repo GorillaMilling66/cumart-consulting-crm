@@ -2307,196 +2307,446 @@ function showPage(name) {
 // Loader-Stubs. In Phase 0 zeigen sie Übergangs-Inhalte; werden
 // in Phasen 2-5 mit echten Inhalten gefüllt.
 
-let _briefingV2Scope = 'heute';
-
+// v2.0.0 — Briefing als Section-Layout (alle drei Bereiche scrollbar in einer Page)
 async function loadBriefingV2() {
   const userId = currentProfile?.id;
   if (!userId) return;
-  const heroEl  = document.getElementById('briefing-v2-hero');
-  const mainEl  = document.getElementById('briefing-v2-main');
-  const asideEl = document.getElementById('briefing-v2-aside');
-  if (!heroEl || !mainEl || !asideEl) return;
 
-  // Tab-Active-Setzung
-  document.querySelectorAll('.briefing-v2-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.scope === _briefingV2Scope);
-  });
-
-  heroEl.innerHTML  = '<div class="info-card-empty">Lade …</div>';
-  mainEl.innerHTML  = '';
-  asideEl.innerHTML = '';
-
-  try {
-    const data = await loadBriefingData(userId, _briefingV2Scope);
-    heroEl.innerHTML  = renderBriefingV2Hero(data, _briefingV2Scope);
-    mainEl.innerHTML  = renderBriefingV2Main(data, _briefingV2Scope);
-    asideEl.innerHTML = renderBriefingV2Aside(data, _briefingV2Scope);
-  } catch (e) {
-    heroEl.innerHTML = `<div class="info-card-empty" style="color:var(--danger)">Fehler: ${esc(e.message)}</div>`;
-  }
-}
-
-function switchBriefingV2(scope) {
-  _briefingV2Scope = scope;
-  loadBriefingV2();
-}
-
-/** Dynamischer Eröffnungssatz je nach Tageskontext. */
-function renderBriefingV2Hero(data, scope) {
-  const firstName = (currentProfile?.name || '').split(' ')[0] || 'Selcuk';
-  const todayISO = toISODate(new Date());
-  const greeting = (() => {
+  // Header — Greeting + Datum
+  const greetingEl = document.getElementById('bv2-greeting');
+  const dateEl = document.getElementById('bv2-date');
+  if (greetingEl) {
+    const firstName = (currentProfile?.name || '').split(' ')[0] || 'Selcuk';
     const h = new Date().getHours();
-    if (h < 11) return 'Guten Morgen';
-    if (h < 18) return 'Hallo';
-    return 'Guten Abend';
-  })();
-
-  if (scope === 'heute') {
-    const todayDeps = (data.deployments || []).filter(d =>
-      d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
-    const todayAppts = (data.appointments || []).filter(a => a.datum === todayISO);
-    const overdue = (data.overdueTasks || []).length;
-    const overdueSuffix = overdue > 0 ? ` — <strong>${overdue}</strong> überfällige Aufgaben.` : '.';
-
-    let lead = '';
-    if (todayDeps.length > 0) {
-      const firma = todayDeps[0].company?.name || '—';
-      lead = `Heute bist du im Einsatz bei <strong>${esc(firma)}</strong>${overdueSuffix}`;
-    } else if (todayAppts.length > 0) {
-      lead = `Heute hast du <strong>${todayAppts.length}</strong> Termin${todayAppts.length === 1 ? '' : 'e'}${overdueSuffix}`;
-    } else {
-      lead = `Heute keine festen Termine — guter Slot für Akquise oder Aufholarbeit${overdueSuffix}`;
-    }
-    return `<div class="briefing-v2-hero-text">${greeting}, ${esc(firstName)}. ${lead}</div>`;
+    const greet = h < 11 ? 'Guten Morgen' : h < 18 ? 'Guten Tag' : 'Guten Abend';
+    greetingEl.textContent = `${greet}, ${firstName}`;
+  }
+  if (dateEl) {
+    const d = new Date();
+    dateEl.textContent = `${WEEKDAYS_DE[d.getDay()]}, ${d.getDate()}. ${MONTHS_DE[d.getMonth()]} ${d.getFullYear()}`;
   }
 
-  if (scope === 'woche') {
-    const term = (data.appointments || []).length;
-    const eins = (data.deployments || []).length;
-    return `<div class="briefing-v2-hero-text">${greeting}, ${esc(firstName)}. Diese Woche: <strong>${term}</strong> Termin${term === 1 ? '' : 'e'} und <strong>${eins}</strong> Einsatz${eins === 1 ? '' : 'sätze'}.</div>`;
-  }
+  // Drei Datensätze parallel laden (Heute / Woche / Monat)
+  const [heute, woche, monat] = await Promise.all([
+    loadBriefingData(userId, 'heute'),
+    loadBriefingData(userId, 'woche'),
+    loadBriefingData(userId, 'monat')
+  ]);
 
-  // monat
-  const term = (data.appointments || []).length;
-  const eins = (data.deployments || []).length;
-  return `<div class="briefing-v2-hero-text">${greeting}, ${esc(firstName)}. Dieser Monat: <strong>${term}</strong> Termine und <strong>${eins}</strong> Einsätze.</div>`;
+  renderBriefingHeute(heute);
+  renderBriefingWoche(woche);
+  renderBriefingMonat(monat);
 }
 
-/** Hauptbereich — Hero-Card des aktuellen Einsatzes (wenn vorhanden) +
- *  Folge-Karten für weitere heutige Aktivitäten + KPI-Tiles unten. */
-function renderBriefingV2Main(data, scope) {
+function renderBriefingHeute(data) {
   const todayISO = toISODate(new Date());
-  const todayDeps = scope === 'heute'
-    ? (data.deployments || []).filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO)
-    : [];
-  const todayAppts = scope === 'heute'
-    ? (data.appointments || []).filter(a => a.datum === todayISO)
-    : [];
-  const otherDeps = scope === 'heute'
-    ? (data.deployments || []).filter(d => !todayDeps.includes(d) && d.datum_von >= todayISO).slice(0, 2)
-    : [];
-  const otherAppts = scope === 'heute'
-    ? todayAppts.slice(0, 2)
-    : [];
-
-  // Hero-Card: erster heutiger Einsatz, sonst erster Termin, sonst nichts
-  let heroCardHtml = '';
-  if (todayDeps.length > 0) {
-    const dep = todayDeps[0];
-    const status = (dep.status || 'Geplant');
-    const statusKey = status.toLowerCase().replace(/[^a-z]/g, '');
-    const preis = (Number(dep.einzelpreis) || 0) * (Number(dep.menge) || 1);
-    heroCardHtml = `
-      <div class="briefing-v2-hero-card">
-        <div class="briefing-v2-hero-card-pills">
-          <span class="briefing-v2-hero-card-eyebrow">JETZT · VOR-ORT</span>
-          <span class="status-pill status-pill-${esc(statusKey)}">${esc(status)}</span>
-        </div>
-        <div class="briefing-v2-hero-card-title">${esc(dep.company?.name || dep.titel || '—')}</div>
-        <div class="briefing-v2-hero-card-meta">${esc(dep.titel || dep.service?.name || '')} · ${esc(dep.ort || '')} · ${esc(formatPreis(preis))}</div>
-      </div>`;
-  }
-
-  // Folge-Karten (kompakt, nebeneinander)
-  const followCards = [
-    ...otherDeps.map(d => ({
-      eyebrow: 'EINSATZ',
-      time: formatTime(d.uhrzeit_von) || formatDateCompact(d.datum_von),
-      title: d.company?.name || d.titel || '—',
-      meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · ')
-    })),
-    ...otherAppts.map(a => ({
-      eyebrow: a.typ?.wert || 'TERMIN',
-      time: formatTime(a.uhrzeit_von) || formatDateCompact(a.datum),
-      title: a.titel || '—',
-      meta: [a.ort, a.contact ? [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ') : null].filter(Boolean).join(' · ')
-    }))
-  ].slice(0, 3);
-  const followCardsHtml = followCards.length === 0 ? '' : `
-    <div class="briefing-v2-follow-grid">
-      ${followCards.map(c => `
-        <div class="briefing-v2-follow-card">
-          <div class="briefing-v2-follow-eyebrow">${esc(c.eyebrow)} · ${esc(c.time || '')}</div>
-          <div class="briefing-v2-follow-title">${esc(c.title)}</div>
-          <div class="briefing-v2-follow-meta">${esc(c.meta || '')}</div>
-        </div>`).join('')}
-    </div>`;
-
-  // KPI-Tiles unten
-  const kpiTermine   = (data.appointments || []).length;
-  const kpiEinsaetze = (data.deployments || []).length;
-  const kpiAufgaben  = (data.tasks || []).length;
-  const kpiOverdue   = (data.overdueTasks || []).length;
-  const kpiHtml = `
-    <div class="briefing-v2-kpi-grid">
-      <div class="briefing-v2-kpi"><div class="briefing-v2-kpi-label">Termine</div><div class="briefing-v2-kpi-value">${kpiTermine}</div></div>
-      <div class="briefing-v2-kpi"><div class="briefing-v2-kpi-label">Einsätze</div><div class="briefing-v2-kpi-value">${kpiEinsaetze}</div></div>
-      <div class="briefing-v2-kpi"><div class="briefing-v2-kpi-label">Aufgaben</div><div class="briefing-v2-kpi-value">${kpiAufgaben}</div></div>
-      <div class="briefing-v2-kpi ${kpiOverdue > 0 ? 'is-overdue' : ''}"><div class="briefing-v2-kpi-label">Überfällig</div><div class="briefing-v2-kpi-value">${kpiOverdue}</div></div>
-    </div>`;
-
-  return heroCardHtml + followCardsHtml + kpiHtml;
-}
-
-/** Sidebar: INBOX (neue Aufgaben), ÜBERFÄLLIG, HEUTE FÄLLIG. */
-function renderBriefingV2Aside(data, scope) {
-  const todayISO = toISODate(new Date());
+  const todayDeps = (data.deployments || []).filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
+  const todayAppts = (data.appointments || []).filter(a => a.datum === todayISO);
   const overdue = data.overdueTasks || [];
   const todayDue = (data.tasks || []).filter(t => t.faelligkeit === todayISO);
 
-  const overdueHtml = overdue.length === 0 ? '' : `
-    <div class="briefing-v2-side-card">
-      <div class="briefing-v2-side-title is-danger">ÜBERFÄLLIG · ${overdue.length}</div>
-      ${overdue.slice(0, 5).map(t => {
-        const days = Math.max(0, Math.round((new Date(todayISO) - new Date(t.faelligkeit)) / 86400000));
-        return `
-          <label class="briefing-v2-side-item">
-            <input type="checkbox" onchange="markTaskDoneInline('${esc(t.id)}', this.checked)">
-            <span class="briefing-v2-side-item-label">${esc(t.titel)}</span>
-            <span class="briefing-v2-side-item-meta">${days}T</span>
-          </label>`;
-      }).join('')}
-    </div>`;
+  // Hint
+  const hintEl = document.getElementById('bv2-heute-hint');
+  if (hintEl) {
+    const parts = [];
+    if (todayDeps.length > 0) parts.push(`${todayDeps.length} Einsa${todayDeps.length === 1 ? 'tz' : 'tze'}`);
+    if (todayAppts.length > 0) parts.push(`${todayAppts.length} Termin${todayAppts.length === 1 ? '' : 'e'}`);
+    if (overdue.length > 0) parts.push(`${overdue.length} überfällig`);
+    hintEl.textContent = parts.join(' · ');
+  }
 
-  const todayDueHtml = todayDue.length === 0 ? '' : `
-    <div class="briefing-v2-side-card">
-      <div class="briefing-v2-side-title">HEUTE FÄLLIG · ${todayDue.length}</div>
-      ${todayDue.map(t => `
-        <label class="briefing-v2-side-item">
-          <input type="checkbox" onchange="markTaskDoneInline('${esc(t.id)}', this.checked)">
-          <span class="briefing-v2-side-item-label">${esc(t.titel)}</span>
-        </label>`).join('')}
-    </div>`;
+  // Lead-Satz
+  const leadEl = document.getElementById('bv2-heute-lead');
+  if (leadEl) {
+    const overdueSuffix = overdue.length > 0 ? ` — <span class="danger">${overdue.length} überfällige Aufgaben</span>.` : '.';
+    if (todayDeps.length > 0) {
+      leadEl.innerHTML = `Heute bist du im Einsatz bei <strong>${esc(todayDeps[0].company?.name || '—')}</strong>${overdueSuffix}`;
+    } else if (todayAppts.length > 0) {
+      leadEl.innerHTML = `Heute hast du <strong>${todayAppts.length}</strong> Termin${todayAppts.length === 1 ? '' : 'e'}${overdueSuffix}`;
+    } else {
+      leadEl.innerHTML = `Heute keine festen Termine — guter Slot für Akquise oder Aufholarbeit${overdueSuffix}`;
+    }
+  }
 
-  if (overdue.length === 0 && todayDue.length === 0) {
-    return `
-      <div class="briefing-v2-side-card">
-        <div class="briefing-v2-side-empty">Alles im Griff. Keine überfälligen, keine fälligen Aufgaben.</div>
+  // Hero-Einsatz
+  const heroEl = document.getElementById('bv2-today-hero');
+  if (heroEl) {
+    if (todayDeps.length > 0) {
+      const dep = todayDeps[0];
+      const status = dep.status || 'Geplant';
+      const statusCls = status === 'Durchgeführt' ? 'is-lgreen' : status === 'Abgerechnet' ? 'is-dgreen' : status === 'Storniert' ? 'is-red' : 'is-lgreen';
+      const tageVon = formatDateCompact(dep.datum_von);
+      const tageBis = dep.datum_bis && dep.datum_bis !== dep.datum_von ? formatDateCompact(dep.datum_bis) : '';
+      const zeitraum = tageBis ? `${tageVon} – ${tageBis}` : tageVon;
+      const tagessatz = `${formatPreis(dep.einzelpreis || 0)} × ${dep.menge || 1}`;
+      heroEl.innerHTML = `
+        <div class="bv2-hero-einsatz" onclick="navigateTo('einsatz','${esc(dep.id)}')" style="cursor:pointer">
+          <div class="bv2-hero-pills">
+            <span class="bv2-pill is-blue is-lg">JETZT · VOR-ORT</span>
+            <span class="bv2-pill ${statusCls}">${esc(status)}</span>
+          </div>
+          <h2 class="bv2-hero-title">${esc(dep.company?.name || dep.titel || '—')}</h2>
+          <div class="bv2-hero-sub">${esc(dep.titel || dep.service?.name || '')}${dep.ort ? ' · ' + esc(dep.ort) : ''}</div>
+          <div class="bv2-hero-meta">
+            <div class="bv2-hero-meta-item">
+              <div class="bv2-hero-meta-label">Zeitraum</div>
+              <div class="bv2-hero-meta-value">${esc(zeitraum)}</div>
+            </div>
+            <div class="bv2-hero-meta-item">
+              <div class="bv2-hero-meta-label">Tagessatz</div>
+              <div class="bv2-hero-meta-value">${esc(tagessatz)}</div>
+            </div>
+            <div class="bv2-hero-meta-item">
+              <div class="bv2-hero-meta-label">Team</div>
+              <div class="bv2-hero-meta-value">${esc(currentProfile?.name || '—')}</div>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      heroEl.innerHTML = '';
+    }
+  }
+
+  // Compact-Cards: weitere heutige Einsätze + Termine
+  const cardsEl = document.getElementById('bv2-today-cards');
+  if (cardsEl) {
+    const otherDeps = todayDeps.slice(1);
+    const remaining = (data.deployments || []).filter(d => d.datum_von > todayISO).slice(0, 3);
+    const cards = [
+      ...otherDeps.map(d => ({
+        eyebrow: 'VOR-ORT', status: d.status, statusCls: d.status === 'Abgerechnet' ? 'is-dgreen' : 'is-lgreen',
+        title: d.company?.name || d.titel || '—',
+        sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
+        click: `navigateTo('einsatz','${d.id}')`,
+        done: d.status === 'Abgerechnet'
+      })),
+      ...remaining.map(d => ({
+        eyebrow: `VOR-ORT · ${formatDateCompact(d.datum_von)}`, status: d.status, statusCls: 'is-lgreen',
+        title: d.company?.name || d.titel || '—',
+        sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
+        click: `navigateTo('einsatz','${d.id}')`,
+        done: false
+      }))
+    ];
+    cardsEl.innerHTML = cards.length === 0 ? '' : `
+      <div class="bv2-einsatz-grid">
+        ${cards.map(c => `
+          <div class="bv2-einsatz-card ${c.done ? 'is-done' : ''}" onclick="${c.click}">
+            <div class="bv2-einsatz-card-head">
+              <span class="bv2-pill is-grey">${esc(c.eyebrow)}</span>
+              <span class="bv2-pill ${c.statusCls}">${esc(c.status || '')}</span>
+            </div>
+            <div class="bv2-einsatz-card-title">${esc(c.title)}</div>
+            <div class="bv2-einsatz-card-sub">${esc(c.sub)}</div>
+          </div>`).join('')}
       </div>`;
   }
-  return overdueHtml + todayDueHtml;
+
+  // KPI-Mini
+  const kpiEl = document.getElementById('bv2-today-kpis');
+  if (kpiEl) {
+    const kT = todayAppts.length;
+    const kE = todayDeps.length;
+    const kA = (data.tasks || []).length;
+    const kO = overdue.length;
+    kpiEl.innerHTML = `
+      <div class="bv2-kpi-mini">
+        <div class="bv2-kpi-mini-item"><div class="bv2-kpi-mini-label">Termine</div><div class="bv2-kpi-mini-value">${kT}</div></div>
+        <div class="bv2-kpi-mini-item"><div class="bv2-kpi-mini-label">Einsätze</div><div class="bv2-kpi-mini-value">${kE}</div></div>
+        <div class="bv2-kpi-mini-item"><div class="bv2-kpi-mini-label">Aufgaben</div><div class="bv2-kpi-mini-value">${kA}</div></div>
+        <div class="bv2-kpi-mini-item ${kO > 0 ? 'is-danger' : ''}"><div class="bv2-kpi-mini-label">Überfällig</div><div class="bv2-kpi-mini-value">${kO}</div></div>
+      </div>`;
+  }
+
+  // Sidebar — Überfällig
+  const overdueEl = document.getElementById('bv2-today-overdue');
+  if (overdueEl) {
+    if (overdue.length === 0) {
+      overdueEl.innerHTML = '';
+    } else {
+      const todayMs = new Date(todayISO).getTime();
+      overdueEl.innerHTML = `
+        <div class="bv2-side-block">
+          <div class="bv2-side-block-label is-danger">ÜBERFÄLLIG <span class="bv2-side-block-count">${overdue.length}</span></div>
+          ${overdue.slice(0, 5).map(t => {
+            const days = Math.max(0, Math.round((todayMs - new Date(t.faelligkeit).getTime()) / 86400000));
+            return `<label class="bv2-task-row">
+              <input type="checkbox" onchange="markTaskDoneInline('${esc(t.id)}', this.checked)">
+              <span class="bv2-task-row-title">${esc(t.titel)}</span>
+              <span class="bv2-task-row-meta">${days} T</span>
+            </label>`;
+          }).join('')}
+        </div>`;
+    }
+  }
+
+  // Sidebar — Heute fällig
+  const dueEl = document.getElementById('bv2-today-due');
+  if (dueEl) {
+    if (todayDue.length === 0) {
+      dueEl.innerHTML = '';
+    } else {
+      dueEl.innerHTML = `
+        <div class="bv2-side-block">
+          <div class="bv2-side-block-label">HEUTE FÄLLIG <span style="font-size:11px;color:var(--tertiary);font-weight:400">${todayDue.length}</span></div>
+          ${todayDue.map(t => `
+            <label class="bv2-task-row">
+              <input type="checkbox" onchange="markTaskDoneInline('${esc(t.id)}', this.checked)">
+              <span class="bv2-task-row-title">${esc(t.titel)}</span>
+            </label>`).join('')}
+        </div>`;
+    }
+  }
+
+  // Sidebar — Datenpflege (aus existing incompleteStats)
+  const dataEl = document.getElementById('bv2-today-data');
+  if (dataEl) {
+    const inc = data.incompleteStats || { companies: 0, contacts: 0 };
+    const sum = (inc.companies || 0) + (inc.contacts || 0);
+    if (sum > 0) {
+      const parts = [];
+      if (inc.companies > 0) parts.push(`${inc.companies} Firmen ohne Adresse`);
+      if (inc.contacts > 0) parts.push(`${inc.contacts} Kontakte ohne Telefon`);
+      dataEl.innerHTML = `
+        <div class="bv2-side-block is-info">
+          <div class="bv2-side-block-label">DATENPFLEGE</div>
+          <div style="font-size:12px;color:var(--status-plan-fg);line-height:1.5">${sum} Datensätze halb gefüllt — ${esc(parts.join(', '))}.</div>
+        </div>`;
+    } else {
+      dataEl.innerHTML = '';
+    }
+  }
 }
+
+function renderBriefingWoche(data) {
+  // KW + Range
+  const startISO = data.range.startISO;
+  const endISO = data.range.endISO;
+  const start = new Date(startISO + 'T00:00:00');
+  const kw = isoWeekNumber(start);
+  const fmt = (d) => `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+  const hintEl = document.getElementById('bv2-week-hint');
+  if (hintEl) hintEl.textContent = `KW ${kw} · ${fmt(start)} – ${fmt(new Date(endISO + 'T00:00:00'))}`;
+
+  // 7-Tage-Strip (Mo-So, Sa+So abgegraut wenn keine Aktivität)
+  const stripEl = document.getElementById('bv2-week-strip');
+  if (stripEl) {
+    const todayISO = toISODate(new Date());
+    const yearHolidays = new Map();
+    const days = [];
+    // Erweitere Range auf vollen Mo-So für Anzeige (auch wenn loadBriefingData scope='woche' nur Mo-Fr lädt)
+    const monStart = new Date(start);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monStart); d.setDate(monStart.getDate() + i);
+      const iso = toISODate(d);
+      const dow = d.getDay();
+      const year = d.getFullYear();
+      if (!yearHolidays.has(year)) yearHolidays.set(year, computeBwHolidays(year));
+      const isHoliday = yearHolidays.get(year).has(iso);
+      const isWeekend = dow === 0 || dow === 6;
+
+      const dayDeps = (data.deployments || []).filter(dep => {
+        const von = dep.datum_von, bis = dep.datum_bis || dep.datum_von;
+        return von <= iso && bis >= iso;
+      });
+      const dayAppts = (data.appointments || []).filter(a => a.datum === iso);
+      const sumE = dayDeps.reduce((s, dep) => s + (Number(dep.einzelpreis) || 0), 0);
+
+      let barCls = '';
+      if (isHoliday) barCls = 'is-feiertag';
+      else if (dayDeps.length > 0) barCls = 'is-einsatz';
+      else if (dayAppts.length > 0) barCls = 'is-termin';
+
+      const noActivity = dayDeps.length === 0 && dayAppts.length === 0 && !isHoliday;
+      days.push({
+        iso, dow, name: WEEKDAYS_DE[dow].substring(0, 2),
+        num: dow === 0 || dow === 6 || iso.endsWith('-01') ? d.getDate() + (iso.endsWith('-01') ? '.' + (d.getMonth() + 1) : '') : d.getDate(),
+        isToday: iso === todayISO,
+        isOff: isWeekend && noActivity,
+        barCls,
+        countText: isHoliday ? '0 · 1' : noActivity ? (isWeekend ? 'frei' : 'frei') : `${dayDeps.length} · ${dayAppts.length}`,
+        sumText: isHoliday ? 'Feiertag' : noActivity ? '—' : sumE > 0 ? formatPreis(sumE) : '—'
+      });
+    }
+    stripEl.innerHTML = `
+      <div class="bv2-week-strip">
+        ${days.map(d => `
+          <div class="bv2-week-day ${d.isToday ? 'is-today' : ''} ${d.isOff ? 'is-off' : ''}">
+            <div class="bv2-week-day-name">${esc(d.name)}</div>
+            <div class="bv2-week-day-num">${d.num}</div>
+            <div class="bv2-week-day-bar ${d.barCls}"></div>
+            <div class="bv2-week-day-count">${esc(d.countText)}</div>
+            <div class="bv2-week-day-sum">${esc(d.sumText)}</div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  // Upcoming-Liste — kommende Termine + Einsätze ab morgen
+  const upEl = document.getElementById('bv2-week-upcoming');
+  if (upEl) {
+    const todayISO = toISODate(new Date());
+    const items = [
+      ...(data.deployments || []).filter(d => d.datum_von > todayISO).map(d => ({
+        ts: d.datum_von, type: 'EINSATZ', cls: 'is-amber',
+        title: d.titel || '—',
+        sub: [d.company?.name, d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1))].filter(Boolean).join(' · '),
+        click: `navigateTo('einsatz','${d.id}')`
+      })),
+      ...(data.appointments || []).filter(a => a.datum > todayISO).map(a => ({
+        ts: a.datum + 'T' + (a.uhrzeit_von || '00:00'),
+        type: 'TERMIN', cls: 'is-blue',
+        title: a.titel || '—',
+        sub: [a.ort || (a.uhrzeit_von ? `Online · ${formatTime(a.uhrzeit_von)}` : '')].filter(Boolean).join(' · '),
+        click: `navigateTo('termin','${a.id}')`
+      }))
+    ].sort((a, b) => (a.ts || '').localeCompare(b.ts || '')).slice(0, 6);
+
+    if (items.length === 0) {
+      upEl.innerHTML = '';
+    } else {
+      upEl.innerHTML = `
+        <div class="bv2-upcoming">
+          ${items.map(it => {
+            const d = new Date(it.ts.substring(0, 10) + 'T00:00:00');
+            const dayLabel = `${WEEKDAYS_DE[d.getDay()].substring(0, 2)} · ${d.getDate()}.${d.getMonth()+1}.`;
+            return `
+              <div class="bv2-upcoming-row" onclick="${it.click}">
+                <span class="bv2-upcoming-day">${esc(dayLabel)}</span>
+                <span class="bv2-pill ${it.cls}">${esc(it.type)}</span>
+                <span class="bv2-upcoming-title">${esc(it.title)}</span>
+                <span class="bv2-upcoming-sub">${esc(it.sub || '')}</span>
+              </div>`;
+          }).join('')}
+        </div>`;
+    }
+  }
+}
+
+function renderBriefingMonat(data) {
+  const todayISO = toISODate(new Date());
+  const monthName = MONTHS_DE[new Date(todayISO).getMonth()];
+  const year = new Date(todayISO).getFullYear();
+
+  // Hint
+  const hintEl = document.getElementById('bv2-month-hint');
+  if (hintEl) {
+    const total = data.range ? Math.round((new Date(data.range.endISO) - new Date(data.range.startISO)) / 86400000) + 1 : 0;
+    hintEl.textContent = `${monthName} ${year}`;
+  }
+
+  // KPIs: Abgerechnet · Geplant · Auslastung · Pipeline
+  const deps = data.deployments || [];
+  const sumDays = (arr) => arr.reduce((s, d) => {
+    const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+    if (!von) return s;
+    const days = Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
+    return s + (Number(d.einzelpreis) || 0) * days;
+  }, 0);
+  const depsAbgerechnet = deps.filter(d => d.status === 'Abgerechnet');
+  const depsGeplant = deps.filter(d => d.status === 'Geplant' || d.status === 'Durchgeführt');
+  const umsatzAbg = sumDays(depsAbgerechnet);
+  const umsatzGep = sumDays(depsGeplant);
+
+  // Auslastung aus existing computeMonthAuslastung
+  let auslastungPct = 0, werk = 0, belegt = 0;
+  if (typeof computeMonthAuslastung === 'function') {
+    const a = computeMonthAuslastung(data, todayISO);
+    werk = a.werk; belegt = a.belegt;
+    auslastungPct = werk > 0 ? Math.round((belegt / werk) * 100) : 0;
+  }
+
+  const pipeline = data.pipelineProjects || [];
+  const pipelineSum = pipeline.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
+
+  const kpisEl = document.getElementById('bv2-month-kpis');
+  if (kpisEl) {
+    kpisEl.innerHTML = `
+      <div class="bv2-month-kpis">
+        <div class="bv2-month-kpi is-lgreen">
+          <div class="bv2-month-kpi-label">Abgerechnet</div>
+          <div class="bv2-month-kpi-value">${esc(formatPreis(umsatzAbg))}</div>
+          <div class="bv2-month-kpi-sub">${depsAbgerechnet.length} Einsätze</div>
+        </div>
+        <div class="bv2-month-kpi is-blue">
+          <div class="bv2-month-kpi-label">Geplant</div>
+          <div class="bv2-month-kpi-value">${esc(formatPreis(umsatzGep))}</div>
+          <div class="bv2-month-kpi-sub">${depsGeplant.length} Einsätze</div>
+        </div>
+        <div class="bv2-month-kpi is-amber">
+          <div class="bv2-month-kpi-label">Auslastung</div>
+          <div class="bv2-month-kpi-value">${auslastungPct} %</div>
+          <div class="bv2-month-kpi-sub">${belegt} / ${werk} Tage</div>
+        </div>
+        <div class="bv2-month-kpi is-purple">
+          <div class="bv2-month-kpi-label">Pipeline</div>
+          <div class="bv2-month-kpi-value">${esc(formatPreis(pipelineSum))}</div>
+          <div class="bv2-month-kpi-sub">${pipeline.length} Projekte</div>
+        </div>
+      </div>`;
+  }
+
+  // Chart-Card mit existing renderRevenueChart als SVG
+  const chartEl = document.getElementById('bv2-month-chart');
+  if (chartEl && typeof renderRevenueChart === 'function') {
+    const ziel = data.prevMonthsAvg && data.prevMonthsAvg > 0 ? data.prevMonthsAvg : null;
+    const inner = renderRevenueChart(data.monthDailyRevenue || [], todayISO, ziel);
+    chartEl.innerHTML = `
+      <div class="bv2-chart-card">
+        <div class="bv2-chart-head">
+          <span class="bv2-chart-title">Umsatz-Verlauf ${esc(monthName)} · kumuliert</span>
+          <span class="bv2-chart-legend">
+            <span class="bv2-legend-dot" style="background:var(--status-done-accent)"></span>Realisiert
+            <span class="bv2-legend-dot" style="background:var(--status-plan-accent);margin-left:12px"></span>Forecast
+            ${ziel ? `<span class="bv2-legend-dot" style="background:var(--tertiary);margin-left:12px"></span>Ziel ${esc(formatPreis(ziel))}` : ''}
+          </span>
+        </div>
+        ${inner}
+      </div>`;
+  }
+
+  // Bottom: Top-Kunden + Pipeline-Stages
+  const bottomEl = document.getElementById('bv2-month-bottom');
+  if (bottomEl) {
+    const topCustomers = data.topCustomers || [];
+    const maxUmsatz = topCustomers.length > 0 ? topCustomers[0].umsatz : 1;
+    const customersHtml = topCustomers.length === 0
+      ? '<div class="info-card-empty">Noch keine Umsätze.</div>'
+      : topCustomers.slice(0, 5).map(c => {
+          const heightPx = Math.max(8, Math.round((c.umsatz / maxUmsatz) * 18));
+          return `
+            <div class="bv2-top-row" onclick="navigateTo('firma','${esc(c.id)}')" style="cursor:pointer">
+              <div class="bv2-top-row-bar" style="height:${heightPx}px"></div>
+              <span class="bv2-top-row-name">${esc(c.name)}</span>
+              <span class="bv2-top-row-value">${esc(formatPreis(c.umsatz))}</span>
+            </div>`;
+        }).join('');
+
+    const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
+    const stageMap = { Lead: 'is-lead', 'Angebot': 'is-angebot', 'In Arbeit': 'is-arbeit', 'Abschlussphase': 'is-abschluss' };
+    const stagesHtml = stages.map(s => {
+      const projs = pipeline.filter(p => p.status === s);
+      const sum = projs.reduce((acc, p) => acc + (Number(p.geschaetzter_umsatz) || 0), 0);
+      return `
+        <div class="bv2-stage-row ${stageMap[s] || ''}" onclick="navigateTo('projects')" style="cursor:pointer">
+          <span class="bv2-stage-row-name">${esc(s)}</span>
+          <span>${projs.length} · ${esc(formatPreis(sum))}</span>
+        </div>`;
+    }).join('');
+
+    bottomEl.innerHTML = `
+      <div class="bv2-month-bottom">
+        <div class="bv2-top-customers">
+          <div class="bv2-top-customers-title">Top-Kunden Monat</div>
+          ${customersHtml}
+        </div>
+        <div class="bv2-pipeline-stages">
+          <div class="bv2-pipeline-stages-title">Pipeline-Stages</div>
+          ${stagesHtml}
+        </div>
+      </div>`;
+  }
+}
+
 
 /** Inline-Häkchen aus dem Briefing — markiert Aufgabe als erledigt. */
 async function markTaskDoneInline(taskId, checked) {
@@ -16250,9 +16500,28 @@ function _getFabContext() {
   return { type: null, id: null, label: '' };
 }
 
+function fabOpenArbeitsplatz() {
+  closeFabMenu();
+  // v2.0.0 Phase 9c: Kontext aus aktueller Detail-Page in den Arbeitsplatz übernehmen
+  const ctx = _getFabContext();
+  if (ctx.type) {
+    const ctxType = ctx.type === 'company' ? 'firma' : ctx.type === 'project' ? 'projekt' : ctx.type;
+    _arbeitsplatzContext = { type: ctxType, id: ctx.id, label: ctx.label.replace('für ', '').replace('diese ', '').replace('dieses ', '').replace('diesen ', '') };
+  }
+  navigateTo('arbeitsplatz');
+}
+
 async function fabAction(target) {
   closeFabMenu();
   const ctx = _getFabContext();
+  if (target === 'note') {
+    // v2.0.0 Phase 9c: + Notiz fokussiert die Notiz-Eingabe der aktuellen Detail-Page
+    if (document.getElementById('page-project-detail')?.classList.contains('active')) return focusProjectNoteInput();
+    if (document.getElementById('page-company-detail')?.classList.contains('active')) return focusCompanyNoteInput();
+    if (document.getElementById('page-contact-detail')?.classList.contains('active')) return focusContactNoteInput();
+    showToast('Notizen werden auf einer Firma/Projekt/Kontakt-Detailseite geschrieben.', false);
+    return;
+  }
 
   // Kontext-abhängige Prefill-Variablen setzen und dann das jeweilige
   // Modal öffnen.
