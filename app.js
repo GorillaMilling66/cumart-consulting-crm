@@ -1711,6 +1711,7 @@ function renderAppointmentPreview() {
     </div>`;
 
   el.innerHTML = `
+    <div class="drawer__preview-label">VORSCHAU</div>
     ${typPillHtml}
     ${titelHtml}
     ${timeHtml}
@@ -1814,6 +1815,7 @@ function renderDeploymentPreview() {
     : '';
 
   el.innerHTML = `
+    <div class="drawer__preview-label">VORSCHAU</div>
     <div>${statusPill}</div>
     ${titelHtml}
     ${timeHtml}
@@ -1900,6 +1902,7 @@ function renderTaskPreview() {
     : '';
 
   el.innerHTML = `
+    <div class="drawer__preview-label">VORSCHAU</div>
     <div>${statusPill}</div>
     ${titelHtml}
     ${faelligkeitHtml}
@@ -1980,6 +1983,7 @@ function renderCompanyPreview() {
     : '';
 
   el.innerHTML = `
+    <div class="drawer__preview-label">VORSCHAU</div>
     ${topWrap}
     ${nameHtml}
     ${brancheHtml}
@@ -2116,6 +2120,7 @@ function renderProjectPreview() {
     : '';
 
   el.innerHTML = `
+    <div class="drawer__preview-label">VORSCHAU</div>
     ${statusPill ? `<div>${statusPill}</div>` : ''}
     ${nameHtml}
     ${zeitHtml}
@@ -2969,15 +2974,39 @@ function openArbeitsplatzContextPicker() {
 
 /** Wird aus der Such-Auswahl aufgerufen, wenn Kontext-Modus aktiv ist.
  *  Pro Typ darf nur ein Eintrag existieren — eine zweite Auswahl desselben
- *  Typs ersetzt die alte Pille. */
-function setArbeitsplatzContextFromSearch(type, id, title) {
-  // Vorhandenen Eintrag desselben Typs ersetzen
+ *  Typs ersetzt die alte Pille. Lädt zusätzlich die zugehörige company_id, damit
+ *  die nächste Picker-Auswahl auf passende Treffer eingeschränkt werden kann. */
+async function setArbeitsplatzContextFromSearch(type, id, title) {
+  // Zugehörige company_id auflösen — Firma ist sich selbst, Projekt/Kontakt
+  // hängen jeweils an einer Firma.
+  let related_company_id = null;
+  if (type === 'firma') {
+    related_company_id = id;
+  } else if (type === 'projekt') {
+    const { data } = await db.from('projects').select('company_id').eq('id', id).single();
+    related_company_id = data?.company_id || null;
+  } else if (type === 'kontakt') {
+    const { data } = await db.from('contacts').select('company_id').eq('id', id).single();
+    related_company_id = data?.company_id || null;
+  }
+
+  const entry = { type, id, label: title, related_company_id };
   const idx = _arbeitsplatzContexts.findIndex(c => c.type === type);
-  if (idx >= 0) _arbeitsplatzContexts[idx] = { type, id, label: title };
-  else _arbeitsplatzContexts.push({ type, id, label: title });
+  if (idx >= 0) _arbeitsplatzContexts[idx] = entry;
+  else _arbeitsplatzContexts.push(entry);
+
   window._arbeitsplatzContextPickerActive = false;
   closeSearchOverlay();
   renderArbeitsplatzContext();
+}
+
+/** Liefert den effektiven Firma-Anker aus den aktiven Bezügen — entweder die
+ *  Firma direkt, oder die company_id eines Projekts/Kontakts. Null wenn keiner. */
+function _arbeitsplatzAnchorCompanyId() {
+  for (const c of _arbeitsplatzContexts) {
+    if (c.related_company_id) return c.related_company_id;
+  }
+  return null;
 }
 
 /** Zuletzt-bearbeitet aus localStorage (recentlyVisited). */
@@ -10488,6 +10517,9 @@ function closeSearchOverlay() {
   document.getElementById('search-overlay').classList.remove('open');
   if (searchAbortController) { try { searchAbortController.abort(); } catch {} searchAbortController = null; }
   clearTimeout(searchDebounceTimer);
+  // Picker-Modus zurücksetzen, damit ein späterer Cmd+K nicht versehentlich
+  // im Bezug-Picker-Modus startet.
+  window._arbeitsplatzContextPickerActive = false;
 }
 
 function closeSearchOverlayOnBackdrop(ev) {
@@ -10496,6 +10528,17 @@ function closeSearchOverlayOnBackdrop(ev) {
 
 function renderRecentlyVisited() {
   const container = document.getElementById('search-results');
+
+  // v2.0.2 Picker-Modus mit Anker: Recent-Liste hier ausblenden, weil sie
+  // unfilterte Treffer zeigt. Stattdessen einen Hinweis auf den Anker.
+  if (window._arbeitsplatzContextPickerActive && _arbeitsplatzAnchorCompanyId()) {
+    const anchorLabel = _arbeitsplatzContexts.map(c => c.label).join(' · ');
+    container.innerHTML = `<div class="search-hint">Tippe, um Bezüge zu „${esc(anchorLabel)}" zu suchen.</div>`;
+    searchResults = [];
+    searchActiveIndex = -1;
+    return;
+  }
+
   const recent = getRecentlyVisited();
   if (recent.length === 0) {
     container.innerHTML = '<div class="search-hint">Tippe, um zu suchen. <kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd> navigieren · <kbd class="kbd">↵</kbd> öffnen</div>';
@@ -10588,20 +10631,41 @@ async function runSearchQueries(q) {
   const safe = q.replace(/([%,\(\)])/g, '\\$1');
   const pat = `%${safe}%`;
 
+  // v2.0.2 (Punkt 5b): im Smart-Capture-Picker-Modus auf bestehende Bezüge
+  // einschränken — der Anker ist die zugehörige Firma der bereits gesetzten
+  // Pillen. Bereits genutzte Typen werden komplett ausgeblendet (max je 1 pro Typ).
+  const isPicker = !!window._arbeitsplatzContextPickerActive;
+  const anchorCompanyId = isPicker ? _arbeitsplatzAnchorCompanyId() : null;
+  const usedTypes = isPicker ? new Set(_arbeitsplatzContexts.map(c => c.type)) : new Set();
+
   try {
+    const compsQuery = db.from('companies').select('id, name, website, stadt').is('deleted_at', null)
+      .or(`name.ilike.${pat},website.ilike.${pat},stadt.ilike.${pat}`)
+      .abortSignal(signal).limit(5);
+    if (anchorCompanyId) compsQuery.eq('id', anchorCompanyId);
+
+    const contsQuery = db.from('contacts').select('id, vorname, nachname, email').is('deleted_at', null)
+      .or(`vorname.ilike.${pat},nachname.ilike.${pat},email.ilike.${pat}`)
+      .abortSignal(signal).limit(5);
+    if (anchorCompanyId) contsQuery.eq('company_id', anchorCompanyId);
+
+    const projsQuery = db.from('projects').select('id, name, beschreibung').is('deleted_at', null)
+      .or(`name.ilike.${pat},beschreibung.ilike.${pat}`)
+      .abortSignal(signal).limit(5);
+    if (anchorCompanyId) projsQuery.eq('company_id', anchorCompanyId);
+
+    const depsQuery = db.from('deployments').select('id, titel, notizen').is('deleted_at', null)
+      .or(`titel.ilike.${pat},notizen.ilike.${pat}`)
+      .abortSignal(signal).limit(5);
+    if (anchorCompanyId) depsQuery.eq('company_id', anchorCompanyId);
+
     const [comps, conts, projs, deps] = await Promise.all([
-      db.from('companies').select('id, name, website, stadt').is('deleted_at', null)
-        .or(`name.ilike.${pat},website.ilike.${pat},stadt.ilike.${pat}`)
-        .abortSignal(signal).limit(5),
-      db.from('contacts').select('id, vorname, nachname, email').is('deleted_at', null)
-        .or(`vorname.ilike.${pat},nachname.ilike.${pat},email.ilike.${pat}`)
-        .abortSignal(signal).limit(5),
-      db.from('projects').select('id, name, beschreibung').is('deleted_at', null)
-        .or(`name.ilike.${pat},beschreibung.ilike.${pat}`)
-        .abortSignal(signal).limit(5),
-      db.from('deployments').select('id, titel, notizen').is('deleted_at', null)
-        .or(`titel.ilike.${pat},notizen.ilike.${pat}`)
-        .abortSignal(signal).limit(5),
+      // Bereits genutzte Typen aus dem Picker komplett raus — max je 1 pro Typ.
+      isPicker && usedTypes.has('firma')   ? Promise.resolve({ data: [] }) : compsQuery,
+      isPicker && usedTypes.has('kontakt') ? Promise.resolve({ data: [] }) : contsQuery,
+      isPicker && usedTypes.has('projekt') ? Promise.resolve({ data: [] }) : projsQuery,
+      // Einsätze sind nie ein gültiger Smart-Capture-Bezug — im Picker raus.
+      isPicker ? Promise.resolve({ data: [] }) : depsQuery,
     ]);
     if (signal.aborted) return;
     renderSearchResults(comps, conts, projs, deps, q);

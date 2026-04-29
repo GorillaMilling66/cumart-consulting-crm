@@ -2313,30 +2313,26 @@
 <!-- ══════════════ MODALS ══════════════ -->
 
 <!-- MODAL: FIRMA -->
-<div class="modal-overlay" id="modal-company">
-  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
-    <div class="modal-title" id="modal-company-title">Neue Firma</div>
+<!-- v2.0.2: Firma-Drawer (slide-in von rechts) — Punkt 8 -->
+<div class="drawer-overlay" id="modal-company" onclick="if(event.target===this)closeCompanyModal()">
+  <aside class="drawer">
 
-    <div class="modal-3col">
-      <!-- LINKS: Preview -->
-      <aside class="modal-preview-card" id="c-preview"></aside>
+    <header class="drawer__header">
+      <div class="drawer__title" id="modal-company-title">Neue Firma</div>
+      <button type="button" class="drawer__close" onclick="closeCompanyModal()" aria-label="Schließen">×</button>
+    </header>
 
-      <!-- MITTE: Stammdaten -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-            <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-            <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-            <path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
-          </svg>
-          Stammdaten
-        </div>
+    <div class="drawer__body">
+
+      <aside class="drawer__preview" id="c-preview"></aside>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">STAMM</div>
         <div class="form-group">
           <label>Name *</label>
           <input type="text" id="c-name" placeholder="z. B. Müller Maschinenbau GmbH">
         </div>
-        <div class="form-row-2">
+        <div class="form-row-3">
           <div class="form-group">
             <label>Typ *</label>
             <select id="c-typ"></select>
@@ -2350,27 +2346,24 @@
               <option value="C">C — Geringerer strategischer Wert</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>Branche</label>
+            <input type="text" id="c-branche" placeholder="z. B. Automotive">
+          </div>
         </div>
         <div class="form-group">
-          <label>Branche</label>
-          <input type="text" id="c-branche" placeholder="z. B. Automotive">
+          <label>Website</label>
+          <input type="text" id="c-website" placeholder="www.firma.de">
         </div>
       </section>
 
-      <!-- RECHTS: Adresse & Kontakt -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-            <circle cx="12" cy="10" r="3"/>
-          </svg>
-          Adresse &amp; Kontakt
-        </div>
+      <section class="drawer__section">
+        <div class="drawer__section-label">ADRESSE</div>
         <div class="form-group">
           <label>Straße &amp; Hausnummer</label>
           <input type="text" id="c-strasse" placeholder="Hauptstraße 42">
         </div>
-        <div class="form-row-2">
+        <div class="form-row-3">
           <div class="form-group">
             <label>PLZ</label>
             <input type="text" id="c-plz" placeholder="71034"
@@ -2381,11 +2374,15 @@
             <label>Stadt</label>
             <input type="text" id="c-stadt" placeholder="Böblingen">
           </div>
+          <div class="form-group">
+            <label>Land</label>
+            <input type="text" id="c-land" placeholder="Deutschland" value="Deutschland">
+          </div>
         </div>
-        <div class="form-group">
-          <label>Land</label>
-          <input type="text" id="c-land" placeholder="Deutschland" value="Deutschland">
-        </div>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">ERREICHBARKEIT</div>
         <div class="form-row-2">
           <div class="form-group">
             <label>Telefon</label>
@@ -2400,31 +2397,29 @@
                    onblur="sanitizeEmailOnBlur(this)">
           </div>
         </div>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">NOTIZEN</div>
         <div class="form-group">
-          <label>Website</label>
-          <input type="text" id="c-website" placeholder="www.firma.de">
+          <textarea id="c-notizen" rows="3" placeholder="Freitext-Notizen zur Firma …"></textarea>
         </div>
       </section>
+
     </div>
 
-    <div class="modal-preview-footer">
-      <div class="modal-group-title collapsed">Notizen</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <textarea id="c-notizen" rows="3" placeholder="Freitext-Notizen zur Firma ..."></textarea>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="c-delete-btn"
-              onclick="deleteCompany()" style="margin-right:auto;display:none">
+    <footer class="drawer__footer">
+      <button type="button" class="btn btn-danger btn-sm" id="c-delete-btn"
+              onclick="deleteCompany()" style="display:none">
         Löschen
       </button>
-      <button class="btn" onclick="closeCompanyModal()">Abbrechen</button>
-      <button class="btn btn-primary" id="c-save-btn" onclick="saveCompany()">Anlegen</button>
-    </div>
-  </div>
+      <div class="drawer__footer-actions">
+        <button type="button" class="btn" onclick="closeCompanyModal()">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="c-save-btn" onclick="saveCompany()">Anlegen</button>
+      </div>
+    </footer>
+
+  </aside>
 </div>
 
 <!-- MODAL: KONTAKT (v1.38.0 3-Spalten mit Preview) -->
@@ -2510,58 +2505,58 @@
 </div>
 
 <!-- MODAL: TERMIN -->
-<div class="modal-overlay" id="modal-appointment">
-  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
-    <div class="modal-title" id="modal-appointment-title">Neuer Termin</div>
+<!-- v2.0.2: Termin-Drawer (slide-in von rechts) — Punkt 8 -->
+<div class="drawer-overlay" id="modal-appointment" onclick="if(event.target===this)closeAppointmentModal()">
+  <aside class="drawer">
 
-    <div class="modal-template-row" id="t-template-row" style="display:none">
-      <label>Aus Template:</label>
-      <select id="t-template-select" onchange="applyTemplateToEntity('termin', this.value)">
+    <header class="drawer__header">
+      <div class="drawer__title" id="modal-appointment-title">Neuer Termin</div>
+      <button type="button" class="drawer__close" onclick="closeAppointmentModal()" aria-label="Schließen">×</button>
+    </header>
+
+    <div class="drawer__template" id="t-template-row" style="display:none">
+      <span class="drawer__template-label">VORLAGE</span>
+      <select class="drawer__template-select" id="t-template-select" onchange="applyTemplateToEntity('termin', this.value)">
         <option value="">— Kein Template —</option>
       </select>
     </div>
 
-    <div class="modal-3col">
-      <!-- LINKS: Live-Vorschau -->
-      <aside class="modal-preview-card" id="t-preview">
-        <!-- Inhalt via renderAppointmentPreview() -->
-      </aside>
+    <div class="drawer__body">
 
-      <!-- MITTE: Stammdaten & Zeit -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="9" y1="13" x2="15" y2="13"/>
-            <line x1="9" y1="17" x2="15" y2="17"/>
-          </svg>
-          Stammdaten &amp; Zeit
-        </div>
+      <aside class="drawer__preview" id="t-preview"></aside>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">WAS</div>
         <div class="form-group">
           <label>Titel *</label>
           <input type="text" id="t-titel" placeholder="z. B. Erstberatung Heidenhain-Schulung">
         </div>
-        <div class="form-group">
-          <label>Typ *</label>
-          <div class="termin-typ-picker" id="t-typ-icons"></div>
-          <select id="t-typ" class="typ-select-secondary"></select>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Typ *</label>
+            <div class="termin-typ-picker" id="t-typ-icons"></div>
+            <select id="t-typ" class="typ-select-secondary"></select>
+          </div>
+          <div class="form-group">
+            <label>Status *</label>
+            <select id="t-status">
+              <option value="geplant">Geplant</option>
+              <option value="durchgefuehrt">Durchgeführt</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Status *</label>
-          <select id="t-status">
-            <option value="geplant">Geplant</option>
-            <option value="durchgefuehrt">Durchgeführt</option>
-          </select>
-        </div>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">WANN</div>
         <div class="form-group">
           <label>Datum *</label>
           <input type="date" id="t-datum">
           <div class="date-shortcuts" data-shortcut-target="t-datum"></div>
         </div>
         <div class="form-group">
-          <label class="ganztag-wrap" style="margin-bottom:0">
-            <input type="checkbox" id="t-ganztag" onchange="applyGanztag('t')">
+          <label class="ganztag-wrap" style="margin-bottom:0;font-weight:normal;display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="t-ganztag" onchange="applyGanztag('t')" style="width:auto;margin:0">
             Ganztag (08:00–16:00)
           </label>
         </div>
@@ -2577,87 +2572,80 @@
         </div>
       </section>
 
-      <!-- RECHTS: Zugehörigkeiten -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          Zugehörigkeiten
+      <section class="drawer__section">
+        <div class="drawer__section-label">WER &amp; WO</div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Firma</label>
+            <input id="t-company" list="t-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+            <datalist id="t-company-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Kontakt</label>
+            <input id="t-contact" list="t-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
+            <datalist id="t-contact-list"></datalist>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Firma</label>
-          <input id="t-company" list="t-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
-          <datalist id="t-company-list"></datalist>
-        </div>
-        <div class="form-group">
-          <label>Kontakt</label>
-          <input id="t-contact" list="t-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
-          <datalist id="t-contact-list"></datalist>
-          <small class="field-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</small>
-        </div>
-        <div class="form-group">
-          <label>Projekt</label>
-          <select id="t-project"></select>
-        </div>
-        <div class="form-group">
-          <label>Ort</label>
-          <input type="text" id="t-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
-          <div id="t-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
-               onclick="useCompanyAddressForOrt()"
-               title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Projekt</label>
+            <select id="t-project"></select>
+          </div>
+          <div class="form-group">
+            <label>Ort</label>
+            <input type="text" id="t-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
+            <div id="t-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+                 onclick="useCompanyAddressForOrt()"
+                 title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+            </div>
           </div>
         </div>
       </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">DOKUMENTATION</div>
+        <div id="t-documentation-block"></div>
+      </section>
+
     </div>
 
-    <div class="modal-preview-footer">
-      <!-- v1.52.0: Strukturierte Dokumentation statt freier Notizen -->
-      <div class="modal-group-title collapsed">Dokumentation</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <div id="t-documentation-block"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="t-delete-btn"
-              onclick="deleteAppointment()" style="margin-right:auto;display:none">
+    <footer class="drawer__footer">
+      <button type="button" class="btn btn-danger btn-sm" id="t-delete-btn"
+              onclick="deleteAppointment()" style="display:none">
         Löschen
       </button>
-      <button class="btn" onclick="closeAppointmentModal()">Abbrechen</button>
-      <button class="btn btn-primary" id="t-save-btn" onclick="saveAppointment()">Anlegen</button>
-    </div>
-  </div>
+      <div class="drawer__footer-actions">
+        <button type="button" class="btn" onclick="closeAppointmentModal()">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="t-save-btn" onclick="saveAppointment()">Anlegen</button>
+      </div>
+    </footer>
+
+  </aside>
 </div>
 
 <!-- MODAL: AUFGABE (v1.38.0 3-Spalten mit Preview) -->
-<div class="modal-overlay" id="modal-aufgabe">
-  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
-    <div class="modal-title" id="modal-aufgabe-title">Neue Aufgabe</div>
+<!-- v2.0.2: Aufgabe-Drawer (slide-in von rechts) — Punkt 8 -->
+<div class="drawer-overlay" id="modal-aufgabe" onclick="if(event.target===this)closeTaskModal()">
+  <aside class="drawer">
 
-    <div class="modal-template-row" id="a-template-row" style="display:none">
-      <label>Aus Template:</label>
-      <select id="a-template-select" onchange="applyTemplateToEntity('aufgabe', this.value)">
+    <header class="drawer__header">
+      <div class="drawer__title" id="modal-aufgabe-title">Neue Aufgabe</div>
+      <button type="button" class="drawer__close" onclick="closeTaskModal()" aria-label="Schließen">×</button>
+    </header>
+
+    <div class="drawer__template" id="a-template-row" style="display:none">
+      <span class="drawer__template-label">VORLAGE</span>
+      <select class="drawer__template-select" id="a-template-select" onchange="applyTemplateToEntity('aufgabe', this.value)">
         <option value="">— Kein Template —</option>
       </select>
     </div>
 
-    <div class="modal-3col">
-      <!-- LINKS: Preview -->
-      <aside class="modal-preview-card" id="a-preview"></aside>
+    <div class="drawer__body">
 
-      <!-- MITTE: Stammdaten & Zeit -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="9 11 12 14 22 4"/>
-            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-          </svg>
-          Stammdaten &amp; Zeit
-        </div>
+      <aside class="drawer__preview" id="a-preview"></aside>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">WAS</div>
         <div class="form-group">
           <label>Titel *</label>
           <input type="text" id="a-titel" placeholder="z. B. Angebot für TNC-Schulung nachfassen">
@@ -2667,51 +2655,49 @@
           <select id="a-status"></select>
         </div>
         <div class="form-group">
-          <label>Fällig am</label>
-          <input type="date" id="a-faelligkeit">
-          <div class="date-shortcuts" data-shortcut-target="a-faelligkeit"></div>
-        </div>
-        <div class="form-group">
-          <label>Zugewiesen an *</label>
-          <select id="a-assigned-to"></select>
-        </div>
-        <div class="form-group">
           <label>Beschreibung</label>
-          <textarea id="a-beschreibung" rows="5" placeholder="Was genau ist zu tun?"></textarea>
+          <textarea id="a-beschreibung" rows="3" placeholder="Was genau ist zu tun?"></textarea>
         </div>
       </section>
 
-      <!-- RECHTS: Zugehörigkeiten -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          Zugehörigkeiten
+      <section class="drawer__section">
+        <div class="drawer__section-label">WANN &amp; WER</div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Fällig am</label>
+            <input type="date" id="a-faelligkeit">
+            <div class="date-shortcuts" data-shortcut-target="a-faelligkeit"></div>
+          </div>
+          <div class="form-group">
+            <label>Zugewiesen an *</label>
+            <select id="a-assigned-to"></select>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Firma</label>
-          <input id="a-company" list="a-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
-          <datalist id="a-company-list"></datalist>
-        </div>
-        <div class="form-group">
-          <label>Kontakt</label>
-          <input id="a-contact" list="a-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
-          <datalist id="a-contact-list"></datalist>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">KONTEXT</div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Firma</label>
+            <input id="a-company" list="a-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+            <datalist id="a-company-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Kontakt</label>
+            <input id="a-contact" list="a-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
+            <datalist id="a-contact-list"></datalist>
+          </div>
         </div>
         <div class="form-group">
           <label>Projekt</label>
           <select id="a-project"></select>
         </div>
       </section>
-    </div>
 
-    <div class="modal-preview-footer">
-      <!-- Kopplung: Aufgabe→Termin (v1.40.0) -->
-      <div class="modal-group-title">Kopplung</div>
-      <div class="form-grid">
-        <div class="form-group full" id="a-appointment-sync-wrap">
+      <section class="drawer__section">
+        <div class="drawer__section-label">KOPPLUNG · Termin im Kalender</div>
+        <div class="form-group" id="a-appointment-sync-wrap">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
             <input type="checkbox" id="a-create-appointment" style="width:auto;margin:0">
             <span>Auch als Termin im Kalender eintragen</span>
@@ -2720,65 +2706,69 @@
             Erstellt parallel einen Termin am Fälligkeitsdatum (Ganztag, Typ wird automatisch gewählt). Beim Deaktivieren wird der verknüpfte Termin gelöscht.
           </span>
         </div>
-      </div>
+      </section>
 
-      <div class="modal-group-title collapsed">Notizen</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <textarea id="a-notizen" rows="2" placeholder="Interne Notizen zur Aufgabe ..."></textarea>
+      <section class="drawer__section">
+        <div class="drawer__section-label">NOTIZEN</div>
+        <div class="form-group">
+          <textarea id="a-notizen" rows="2" placeholder="Interne Notizen zur Aufgabe …"></textarea>
         </div>
-      </div>
+      </section>
+
     </div>
 
-    <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="a-delete-btn"
-              onclick="deleteTask()" style="margin-right:auto;display:none">
+    <footer class="drawer__footer">
+      <button type="button" class="btn btn-danger btn-sm" id="a-delete-btn"
+              onclick="deleteTask()" style="display:none">
         Löschen
       </button>
-      <button class="btn" onclick="closeTaskModal()">Abbrechen</button>
-      <button class="btn btn-primary" id="a-save-btn" onclick="saveTask()">Anlegen</button>
-    </div>
-  </div>
+      <div class="drawer__footer-actions">
+        <button type="button" class="btn" onclick="closeTaskModal()">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="a-save-btn" onclick="saveTask()">Anlegen</button>
+      </div>
+    </footer>
+
+  </aside>
 </div>
 
-<!-- MODAL: PROJEKT (v1.38.0 3-Spalten mit Preview) -->
-<div class="modal-overlay" id="modal-project">
-  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
-    <div class="modal-title" id="modal-project-title">Neues Projekt</div>
+<!-- v2.0.2: Projekt-Drawer (slide-in von rechts, 800 px) — Punkt 8 -->
+<div class="drawer-overlay" id="modal-project" onclick="if(event.target===this)closeProjectModal()">
+  <aside class="drawer drawer--wide">
 
-    <div class="modal-template-row" id="p-template-row" style="display:none">
-      <label>Aus Template:</label>
-      <select id="p-template-select" onchange="applyTemplateToEntity('projekt', this.value)">
+    <header class="drawer__header">
+      <div class="drawer__title" id="modal-project-title">Neues Projekt</div>
+      <button type="button" class="drawer__close" onclick="closeProjectModal()" aria-label="Schließen">×</button>
+    </header>
+
+    <div class="drawer__template" id="p-template-row" style="display:none">
+      <span class="drawer__template-label">VORLAGE</span>
+      <select class="drawer__template-select" id="p-template-select" onchange="applyTemplateToEntity('projekt', this.value)">
         <option value="">— Kein Template —</option>
       </select>
     </div>
 
-    <div class="modal-3col">
-      <!-- LINKS: Preview -->
-      <aside class="modal-preview-card" id="p-preview"></aside>
+    <div class="drawer__body">
 
-      <!-- MITTE: Stammdaten & Zeitraum -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
-          Stammdaten &amp; Zeitraum
-        </div>
+      <aside class="drawer__preview" id="p-preview"></aside>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">STAMM</div>
         <div class="form-group">
           <label>Name *</label>
           <input type="text" id="p-name" placeholder="z. B. Heidenhain Klartext Grundlagen bei Müller">
         </div>
-        <div class="form-row-2">
-          <div class="form-group">
-            <label>Status *</label>
-            <select id="p-status"></select>
-          </div>
-          <div class="form-group">
-            <label>Geschätzter Umsatz (€)</label>
-            <input type="number" id="p-umsatz" min="0" step="0.01" placeholder="0.00">
-          </div>
+        <div class="form-group">
+          <label>Status *</label>
+          <select id="p-status"></select>
         </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="p-beschreibung" rows="3" placeholder="Worum geht es bei diesem Projekt?"></textarea>
+        </div>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">ZEITPLAN</div>
         <div class="form-row-2">
           <div class="form-group">
             <label>Startdatum</label>
@@ -2790,130 +2780,137 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Beschreibung</label>
-          <textarea id="p-beschreibung" rows="4" placeholder="Worum geht es bei diesem Projekt?"></textarea>
+          <label>Geschätzter Umsatz · Paketpreis (€)</label>
+          <input type="number" id="p-umsatz" min="0" step="0.01" placeholder="0.00">
+          <small class="field-hint">Interner Aufwand wird über Einsätze getrackt — der Paketpreis ist das, was der Kunde sieht.</small>
         </div>
       </section>
 
-      <!-- RECHTS: Zugehörigkeiten -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          Zugehörigkeiten
-        </div>
-        <div class="form-group">
-          <label>Firma</label>
-          <input id="p-company" list="p-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
-          <datalist id="p-company-list"></datalist>
-          <small class="field-hint">Ohne Firma = internes Projekt.</small>
-        </div>
-        <div class="form-group">
-          <label>Hauptkontakt</label>
-          <input id="p-hauptkontakt" list="p-hauptkontakt-list" autocomplete="off" placeholder="Neuen Namen tippen …">
-          <datalist id="p-hauptkontakt-list"></datalist>
+      <section class="drawer__section">
+        <div class="drawer__section-label">WER</div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Firma</label>
+            <input id="p-company" list="p-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+            <datalist id="p-company-list"></datalist>
+            <small class="field-hint">Ohne Firma = internes Projekt.</small>
+          </div>
+          <div class="form-group">
+            <label>Hauptkontakt</label>
+            <input id="p-hauptkontakt" list="p-hauptkontakt-list" autocomplete="off" placeholder="Neuen Namen tippen …">
+            <datalist id="p-hauptkontakt-list"></datalist>
+          </div>
         </div>
         <div class="form-group">
           <label>Verantwortlich</label>
           <select id="p-verantwortlicher"></select>
         </div>
       </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">NOTIZEN</div>
+        <div class="form-group">
+          <textarea id="p-notizen" rows="3" placeholder="Freitext-Notizen zum Projekt …"></textarea>
+        </div>
+      </section>
+
+      <!-- v1.51.0: Aktivitäten-Schnellanlage, erscheint nach erstem Speichern -->
+      <section class="drawer__section" id="p-activities-section" style="display:none">
+        <div class="drawer__section-label">
+          AKTIVITÄTEN ZU DIESEM PROJEKT
+          <span class="drawer__section-label-aux">Termine · Aufgaben · Einsätze direkt anlegen</span>
+        </div>
+        <div class="p-quick-add-grid">
+          <div class="p-quick-add-card">
+            <div class="p-quick-add-title">+ Termin</div>
+            <input type="date" id="pq-termin-datum">
+            <input type="text" id="pq-termin-titel" placeholder="Titel">
+            <button type="button" class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('termin')">Anlegen</button>
+          </div>
+          <div class="p-quick-add-card">
+            <div class="p-quick-add-title">+ Aufgabe</div>
+            <input type="date" id="pq-aufgabe-faelligkeit">
+            <input type="text" id="pq-aufgabe-titel" placeholder="Titel">
+            <button type="button" class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('aufgabe')">Anlegen</button>
+          </div>
+          <div class="p-quick-add-card">
+            <div class="p-quick-add-title">+ Einsatz</div>
+            <input type="date" id="pq-einsatz-datum">
+            <input type="text" id="pq-einsatz-titel" placeholder="Titel">
+            <select id="pq-einsatz-service"><option value="">— Leistung wählen —</option></select>
+            <button type="button" class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('einsatz')">Anlegen</button>
+          </div>
+        </div>
+        <div class="p-activities-list-title" style="margin-top:12px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px">Bisherige Aktivitäten</div>
+        <div id="p-activities-list">
+          <div class="info-card-empty">Lade …</div>
+        </div>
+      </section>
+
     </div>
 
-    <div class="modal-preview-footer">
-      <div class="modal-group-title collapsed">Notizen</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <textarea id="p-notizen" rows="3" placeholder="Freitext-Notizen zum Projekt ..."></textarea>
-        </div>
-      </div>
-    </div>
-
-    <!-- v1.51.0: Aktivitäten-Bereich, erscheint nach erstem Speichern -->
-    <div id="p-activities-section" style="display:none">
-      <div class="p-activities-divider"></div>
-      <div class="p-activities-head">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="18" rx="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/>
-            <line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-          Aktivitäten zu diesem Projekt
-        </div>
-        <p class="p-activities-hint">Lege direkt hier Termine, Aufgaben und Einsätze an — das Projekt wird automatisch verknüpft.</p>
-      </div>
-      <div class="p-quick-add-grid">
-        <div class="p-quick-add-card">
-          <div class="p-quick-add-title">+ Termin</div>
-          <input type="date" id="pq-termin-datum">
-          <input type="text" id="pq-termin-titel" placeholder="Titel">
-          <button class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('termin')">Anlegen</button>
-        </div>
-        <div class="p-quick-add-card">
-          <div class="p-quick-add-title">+ Aufgabe</div>
-          <input type="date" id="pq-aufgabe-faelligkeit">
-          <input type="text" id="pq-aufgabe-titel" placeholder="Titel">
-          <button class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('aufgabe')">Anlegen</button>
-        </div>
-        <div class="p-quick-add-card">
-          <div class="p-quick-add-title">+ Einsatz</div>
-          <input type="date" id="pq-einsatz-datum">
-          <input type="text" id="pq-einsatz-titel" placeholder="Titel">
-          <select id="pq-einsatz-service"><option value="">— Leistung wählen —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="quickAddProjectActivity('einsatz')">Anlegen</button>
-        </div>
-      </div>
-      <div class="p-activities-list-title">Bisherige Aktivitäten</div>
-      <div id="p-activities-list">
-        <div class="info-card-empty">Lade ...</div>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="p-delete-btn"
-              onclick="deleteProject()" style="margin-right:auto;display:none">
+    <footer class="drawer__footer">
+      <button type="button" class="btn btn-danger btn-sm" id="p-delete-btn"
+              onclick="deleteProject()" style="display:none">
         Löschen
       </button>
-      <button class="btn" onclick="closeProjectModal()">Abbrechen</button>
-      <button class="btn btn-primary" id="p-save-btn" onclick="saveProject()">Anlegen</button>
-    </div>
-  </div>
+      <div class="drawer__footer-actions">
+        <button type="button" class="btn" onclick="closeProjectModal()">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="p-save-btn" onclick="saveProject()">Anlegen</button>
+      </div>
+    </footer>
+
+  </aside>
 </div>
 
 <!-- MODAL: EINSATZ (v1.38.0 3-Spalten mit Preview) -->
-<div class="modal-overlay" id="modal-deployment">
-  <div class="modal modal-with-preview" style="width:1280px;max-width:95vw">
-    <div class="modal-title" id="modal-deployment-title">Neuer Einsatz</div>
+<!-- v2.0.2: Einsatz-Drawer (slide-in von rechts, 800 px) — Punkt 8 -->
+<div class="drawer-overlay" id="modal-deployment" onclick="if(event.target===this)closeDeploymentModal()">
+  <aside class="drawer drawer--wide">
 
-    <div class="modal-template-row" id="d-template-row" style="display:none">
-      <label>Aus Template:</label>
-      <select id="d-template-select" onchange="applyTemplateToEntity('einsatz', this.value)">
+    <header class="drawer__header">
+      <div class="drawer__title" id="modal-deployment-title">Neuer Einsatz</div>
+      <button type="button" class="drawer__close" onclick="closeDeploymentModal()" aria-label="Schließen">×</button>
+    </header>
+
+    <div class="drawer__template" id="d-template-row" style="display:none">
+      <span class="drawer__template-label">VORLAGE</span>
+      <select class="drawer__template-select" id="d-template-select" onchange="applyTemplateToEntity('einsatz', this.value)">
         <option value="">— Kein Template —</option>
       </select>
     </div>
 
-    <div class="modal-3col">
-      <!-- LINKS: Preview -->
-      <aside class="modal-preview-card" id="d-preview"></aside>
+    <div class="drawer__body">
 
-      <!-- MITTE: Stammdaten & Leistung -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/>
-          </svg>
-          Stammdaten &amp; Leistung
-        </div>
+      <aside class="drawer__preview" id="d-preview"></aside>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">KUNDE</div>
         <div class="form-group">
-          <label>Titel</label>
-          <input type="text" id="d-titel" placeholder="Auto: Leistung × Firma × Benutzer">
+          <label>Firma *</label>
+          <input id="d-company" list="d-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
+          <datalist id="d-company-list"></datalist>
         </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Projekt</label>
+            <select id="d-project"></select>
+          </div>
+          <div class="form-group">
+            <label>Ort</label>
+            <input type="text" id="d-ort" placeholder="Vor Ort, Zoom-Link, Raum">
+            <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
+                 onclick="useCompanyAddressForDeploymentOrt()"
+                 title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">LEISTUNG</div>
         <div class="form-group">
-          <label>Leistung</label>
+          <label>Service</label>
           <select id="d-service"></select>
         </div>
         <div class="form-row-2">
@@ -2931,23 +2928,10 @@
           </div>
         </div>
         <div id="d-preis-hint" style="font-size:12px;color:var(--muted);padding:2px 0;min-height:14px"></div>
-        <div class="form-group">
-          <label>Status *</label>
-          <select id="d-status"></select>
-        </div>
       </section>
 
-      <!-- RECHTS: Zeit & Zuordnung -->
-      <section class="modal-section">
-        <div class="modal-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="18" rx="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/>
-            <line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-          Zeit &amp; Zuordnung
-        </div>
+      <section class="drawer__section">
+        <div class="drawer__section-label">ZEITRAUM</div>
         <div class="form-row-2">
           <div class="form-group">
             <label>Datum von</label>
@@ -2966,8 +2950,8 @@
           </div>
         </div>
         <div class="form-group">
-          <label class="ganztag-wrap" style="margin-bottom:0">
-            <input type="checkbox" id="d-ganztag" onchange="applyGanztag('d')">
+          <label class="ganztag-wrap" style="margin-bottom:0;font-weight:normal;display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="d-ganztag" onchange="applyGanztag('d')" style="width:auto;margin:0">
             Ganztag (08:00–16:00)
           </label>
         </div>
@@ -2982,42 +2966,40 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Firma *</label>
-          <input id="d-company" list="d-company-list" autocomplete="off" placeholder="Firma wählen oder neuen Namen tippen …">
-          <datalist id="d-company-list"></datalist>
-        </div>
-        <div class="form-group">
-          <label>Projekt</label>
-          <select id="d-project"></select>
-        </div>
-        <div class="form-group">
-          <label>Ort</label>
-          <input type="text" id="d-ort" placeholder="Vor Ort, Zoom-Link, Raum">
-          <div id="d-ort-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer"
-               onclick="useCompanyAddressForDeploymentOrt()"
-               title="Klicken, um diese Adresse ins Ort-Feld zu übernehmen">
-          </div>
+          <label>Status *</label>
+          <select id="d-status"></select>
         </div>
       </section>
-    </div>
 
-    <div class="modal-preview-footer">
-      <!-- Techniker -->
-      <div class="modal-group-title collapsed">Techniker</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
+      <section class="drawer__section">
+        <div class="drawer__section-label">TEAM</div>
+        <div class="form-group">
+          <label>Titel</label>
+          <input type="text" id="d-titel" placeholder="Auto: Leistung × Firma × Benutzer">
+        </div>
+        <div class="form-group">
           <label>Interne Techniker</label>
           <div id="d-techniker-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
         </div>
-        <div class="form-group full">
+        <div class="form-group">
           <label>Externe Techniker (Freitext)</label>
           <input type="text" id="d-externe-techniker" placeholder="z. B. Max Mustermann (extern)">
         </div>
-      </div>
-      <!-- Kopplung: Termin-Sync + Bonus-Einlösung -->
-      <div class="modal-group-title">Kopplung</div>
-      <div class="form-grid">
-        <div class="form-group full" id="d-appointment-sync-wrap">
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">
+          BEHANDELTE THEMEN
+          <span class="drawer__section-label-aux">optional jetzt · Pflicht beim Bericht-Abschluss</span>
+        </div>
+        <div id="d-themes-picker">
+          <div class="info-card-empty">Themen werden auf Projektebene definiert. Wähle erst ein Projekt aus.</div>
+        </div>
+      </section>
+
+      <section class="drawer__section">
+        <div class="drawer__section-label">KOPPLUNG · Termin-Sync · Bonus-Einlösung</div>
+        <div class="form-group" id="d-appointment-sync-wrap">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
             <input type="checkbox" id="d-create-appointment" style="width:auto;margin:0">
             <span>Auch als Termin im Kalender eintragen</span>
@@ -3027,8 +3009,7 @@
           </span>
         </div>
 
-        <!-- Einlöse-Sektion (v1.14.0) -->
-        <div class="form-group full" id="d-redeem-wrap" style="display:none">
+        <div class="form-group" id="d-redeem-wrap" style="display:none">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
             <input type="checkbox" id="d-redeem-check" style="width:auto;margin:0" onchange="onRedeemCheckToggle()">
             <span>Als Bonus-Einlösung verbuchen</span>
@@ -3036,57 +3017,43 @@
           <span style="font-size:11px;color:var(--muted);padding-left:24px" id="d-redeem-hint">
             Wähle einen offenen Bonus aus den Mitgliedschaften/Projekten dieser Firma.
           </span>
-
           <div id="d-redeem-details" style="display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px">
-            <div class="form-group full" style="margin-bottom:10px">
+            <div class="form-group" style="margin-bottom:10px">
               <label>Bonus auswählen *</label>
               <select id="d-redeem-entitlement" onchange="onRedeemEntitlementChange()"></select>
             </div>
-            <div class="form-group full" style="margin-bottom:0">
+            <div class="form-group" style="margin-bottom:0">
               <label>Einlöse-Menge</label>
               <input type="number" id="d-redeem-menge" min="0.01" step="0.01" value="1">
               <span style="font-size:11px;color:var(--muted)" id="d-redeem-menge-hint"></span>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Beschreibung (Kurzbeschreibung) — kollabiert -->
-      <div class="modal-group-title collapsed">Beschreibung</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
+      <section class="drawer__section">
+        <div class="drawer__section-label">BESCHREIBUNG &amp; DOKUMENTATION</div>
+        <div class="form-group">
+          <label>Kurz-Beschreibung</label>
           <textarea id="d-beschreibung" rows="2" placeholder="Worum geht es bei diesem Einsatz?"></textarea>
         </div>
-      </div>
+        <div id="d-documentation-block"></div>
+      </section>
 
-      <!-- v1.53.0: Themen-Picker (M:N gegen Projekt-Themen) -->
-      <div class="modal-group-title collapsed">Themen</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <div id="d-themes-picker">
-            <div class="info-card-empty">Themen werden auf Projektebene definiert. Wähle erst ein Projekt aus.</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- v1.52.0: Strukturierte Dokumentation statt freier Notizen -->
-      <div class="modal-group-title collapsed">Dokumentation</div>
-      <div class="form-grid" style="display:none">
-        <div class="form-group full">
-          <div id="d-documentation-block"></div>
-        </div>
-      </div>
     </div>
 
-    <div class="modal-footer">
-      <button class="btn btn-danger btn-sm" id="d-delete-btn"
-              onclick="deleteDeployment()" style="margin-right:auto;display:none">
+    <footer class="drawer__footer">
+      <button type="button" class="btn btn-danger btn-sm" id="d-delete-btn"
+              onclick="deleteDeployment()" style="display:none">
         Löschen
       </button>
-      <button class="btn" onclick="closeDeploymentModal()">Abbrechen</button>
-      <button class="btn btn-primary" id="d-save-btn" onclick="saveDeployment()">Anlegen</button>
-    </div>
-  </div>
+      <div class="drawer__footer-actions">
+        <button type="button" class="btn" onclick="closeDeploymentModal()">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="d-save-btn" onclick="saveDeployment()">Anlegen</button>
+      </div>
+    </footer>
+
+  </aside>
 </div>
 
 <!-- MODAL: BENUTZER -->
