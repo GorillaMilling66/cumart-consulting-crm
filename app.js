@@ -8101,7 +8101,8 @@ async function loadContactDetail(contactId) {
   trackVisit('contact', data.id,
     `${data.vorname || ''} ${data.nachname || ''}`.trim() || '—',
     data.company?.name || data.email || '');
-  initDetailTabs('contact');
+  // v2.0.0 — neues Vier-Zonen-Layout (Tabs werden über switchContactV2Tab gesetzt)
+  await renderContactV2Layout(data);
   await Promise.all([
     loadContactAppointments(contactId),
     loadContactProjects(contactId),
@@ -16790,6 +16791,142 @@ async function postCompanyNote() {
   input.value = '';
   showToast('Notiz hinzugefügt.');
   loadCompanyActivityStream(currentCompanyDetailId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.0 — KONTAKT-DETAIL V2 (Vier-Zonen-Muster, leicht)
+// ═══════════════════════════════════════════════════════════
+
+let _currentContactV2Tab = 'aktivitaeten';
+let _currentContactActivityFilter = 'alle';
+
+function switchContactV2Tab(tab) {
+  _currentContactV2Tab = tab;
+  document.querySelectorAll('#page-contact-detail .proj-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('#page-contact-detail .proj-tab-panel').forEach(p =>
+    p.style.display = p.dataset.tab === tab ? '' : 'none');
+  if (tab === 'aktivitaeten') loadContactActivityStream(currentContactDetailId);
+}
+
+async function renderContactV2Layout(k) {
+  // Hero-Metric: Position
+  document.getElementById('contact-position-value').textContent = k.position || '—';
+  document.getElementById('contact-position-sub').textContent = k.company?.name || ' ';
+
+  // Letzter Kontakt (analog Firma)
+  const healthEl = document.getElementById('contact-last-contact-value');
+  const healthSub = document.getElementById('contact-last-contact-sub');
+  if (healthEl) {
+    const { data: a } = await db.from('appointments').select('datum')
+      .is('deleted_at', null).eq('contact_id', k.id).order('datum', { ascending: false }).limit(1);
+    const lastDate = a?.[0]?.datum;
+    if (!lastDate) {
+      healthEl.textContent = 'Nie';
+      if (healthSub) healthSub.textContent = ' ';
+    } else {
+      const days = Math.round((new Date(toISODate(new Date())) - new Date(lastDate)) / 86400000);
+      healthEl.textContent = days === 0 ? 'Heute' : `vor ${days} T`;
+      if (healthSub) healthSub.textContent = formatDateDE(lastDate);
+    }
+  }
+
+  // Sidepanel: Firma
+  const firmaSide = document.getElementById('contact-side-firma');
+  if (firmaSide) {
+    if (k.company) {
+      firmaSide.innerHTML = `
+        <a class="proj-side-firma-name" onclick="navigateTo('firma','${esc(k.company.id)}')">${esc(k.company.name)}</a>
+        <div class="proj-side-firma-meta">${k.company.abc_klassifizierung ? 'Kunde · ' + esc(k.company.abc_klassifizierung) : 'Kunde'}${k.company.stadt ? ' · ' + esc(k.company.stadt) : ''}</div>`;
+    } else {
+      firmaSide.innerHTML = '<div class="info-card-empty">Ohne Firma</div>';
+    }
+  }
+
+  document.getElementById('contact-meta').innerHTML = `
+    <div>ID · ${esc(k.id.substring(0, 8))}</div>
+    <div>Erstellt · ${k.created_at ? esc(formatDateDE(k.created_at.substring(0, 10))) : '—'}</div>`;
+
+  const noteAvatar = document.getElementById('contact-note-avatar');
+  if (noteAvatar) noteAvatar.textContent = ini(currentProfile?.name || '?');
+
+  _currentContactV2Tab = 'aktivitaeten';
+  _currentContactActivityFilter = 'alle';
+  switchContactV2Tab('aktivitaeten');
+}
+
+async function loadContactActivityStream(contactId) {
+  if (!contactId) return;
+  const wrap = document.getElementById('contact-activity-stream');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="info-card-empty">Lade Aktivitäten …</div>';
+
+  const [appts, tasks, notes] = await Promise.all([
+    db.from('appointments').select('id, titel, datum, uhrzeit_von, status').is('deleted_at', null).eq('contact_id', contactId).order('datum', { ascending: false }).limit(50),
+    db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50),
+    db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50)
+  ]);
+
+  const items = [];
+  (appts.data || []).forEach(a => items.push({
+    type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
+    title: a.titel || '—', meta: a.status, kind: 'termine'
+  }));
+  (tasks.data || []).forEach(t => items.push({
+    type: 'AUFGABE', ts: t.created_at,
+    title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+    kind: 'aufgaben'
+  }));
+  (notes.data || []).forEach(n => items.push({
+    type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen'
+  }));
+
+  items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  const filtered = _currentContactActivityFilter === 'alle' ? items : items.filter(i => i.kind === _currentContactActivityFilter);
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
+    return;
+  }
+  wrap.innerHTML = filtered.map(it => `
+    <div class="proj-activity-item">
+      <div class="proj-activity-date">${esc(formatDateCompact(it.ts.substring(0, 10)))}</div>
+      <div class="proj-activity-body">
+        <div class="proj-activity-head">
+          <span class="type-pill type-pill-${it.type.toLowerCase()}">${esc(it.type)}</span>
+          <span class="proj-activity-title">${esc(it.title)}</span>
+        </div>
+        <div class="proj-activity-meta">${esc(it.meta || '')}</div>
+      </div>
+    </div>`).join('');
+}
+
+function filterContactActivity(filter) {
+  _currentContactActivityFilter = filter;
+  document.querySelectorAll('#page-contact-detail .proj-filter-pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.filter === filter));
+  loadContactActivityStream(currentContactDetailId);
+}
+
+function focusContactNoteInput() {
+  if (_currentContactV2Tab !== 'aktivitaeten') switchContactV2Tab('aktivitaeten');
+  document.getElementById('contact-note-input')?.focus();
+}
+
+async function postContactNote() {
+  const input = document.getElementById('contact-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  const { error } = await db.from('notes').insert({
+    contact_id: currentContactDetailId,
+    inhalt: text,
+    erstellt_von: currentProfile?.id || null
+  });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  input.value = '';
+  showToast('Notiz hinzugefügt.');
+  loadContactActivityStream(currentContactDetailId);
 }
 
 // ═══════════════════════════════════════════════════════════

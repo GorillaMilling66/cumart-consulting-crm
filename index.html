@@ -770,78 +770,80 @@
 
     <!-- SEITE: KONTAKT-DETAIL -->
     <div class="page" id="page-contact-detail">
-      <div class="breadcrumb">
-        <button class="breadcrumb-back" onclick="navigateTo('contacts')" aria-label="Zurück">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M15 18l-6-6 6-6"/>
-          </svg>
-        </button>
-        <a class="breadcrumb-link" onclick="navigateTo('contacts')">Kontakte</a>
-        <span class="breadcrumb-sep">/</span>
-        <span class="breadcrumb-current" id="contact-detail-name">…</span>
+      <!-- v2.0.0 — Vier-Zonen-Layout für Kontakt -->
+      <div class="proj-breadcrumb">
+        <a onclick="navigateTo('listen')">Listen</a>
+        <span class="proj-breadcrumb-sep">·</span>
+        <a onclick="navigateTo('contacts')">Kontakte</a>
+        <span class="proj-breadcrumb-sep">/</span>
+        <span class="proj-breadcrumb-current" id="contact-detail-name">…</span>
       </div>
 
-      <div class="card detail-card">
-        <div class="detail-header">
-          <div style="display:flex;align-items:flex-start;gap:14px;flex:1;min-width:0">
+      <div class="proj-hero">
+        <div class="proj-hero-head">
+          <div class="proj-hero-titles" style="display:flex;align-items:flex-start;gap:14px">
             <div class="avatar" id="contact-detail-avatar" style="width:44px;height:44px;font-size:14px;flex-shrink:0">…</div>
-            <div style="min-width:0;flex:1">
-              <h1 class="page-title" id="contact-detail-title">…</h1>
-              <div class="detail-subline" id="contact-detail-subline"></div>
-              <!-- v1.48.0: Telefon/E-Mail direkt im Header -->
+            <div style="min-width:0">
+              <h1 class="proj-hero-title" id="contact-detail-title">…</h1>
+              <div class="proj-hero-subline" id="contact-detail-subline"></div>
               <div class="detail-header-meta" id="contact-detail-meta"></div>
             </div>
           </div>
-          <div class="btn-row">
+          <div class="proj-hero-actions">
             <button class="btn-copy" id="contact-detail-copy-btn" aria-label="Kontakt kopieren" title="Kopieren">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
-                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
-            <button class="btn" id="contact-detail-edit-btn">Bearbeiten</button>
+            <button class="btn btn-sm" id="contact-detail-edit-btn">Bearbeiten</button>
+          </div>
+        </div>
+        <div class="proj-hero-metrics">
+          <div class="proj-metric">
+            <div class="proj-metric-label">Position</div>
+            <div class="proj-metric-value" id="contact-position-value">—</div>
+            <div class="proj-metric-sub" id="contact-position-sub">&nbsp;</div>
+          </div>
+          <div class="proj-metric proj-metric-clickable" id="contact-revenue-card">
+            <div class="proj-metric-label" id="contact-revenue-year-label">Umsatz Firma</div>
+            <div class="proj-metric-value" id="contact-revenue-year">—</div>
+            <div class="proj-metric-sub" id="contact-revenue-history">&nbsp;</div>
+          </div>
+          <div class="proj-metric">
+            <div class="proj-metric-label">Letzter Kontakt</div>
+            <div class="proj-metric-value" id="contact-last-contact-value">—</div>
+            <div class="proj-metric-sub" id="contact-last-contact-sub">&nbsp;</div>
           </div>
         </div>
       </div>
 
-      <!-- DETAIL-TABS (v1.23.0) -->
-      <div class="detail-tabs">
-        <button class="detail-tab active" data-tab="stammdaten" onclick="switchDetailTab('contact','stammdaten')">Stammdaten</button>
-        <button class="detail-tab" data-tab="termine" onclick="switchDetailTab('contact','termine')">Termine <span class="tab-count" id="tab-count-contact-termine" style="display:none"></span></button>
-        <button class="detail-tab" data-tab="aufgaben" onclick="switchDetailTab('contact','aufgaben')">Aufgaben <span class="tab-count" id="tab-count-contact-aufgaben" style="display:none"></span></button>
-        <button class="detail-tab" data-tab="projekte" onclick="switchDetailTab('contact','projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
+      <div class="proj-tabs">
+        <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchContactV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="stammdaten"   onclick="switchContactV2Tab('stammdaten')">Stammdaten</button>
+        <button class="proj-tab"        data-tab="projekte"     onclick="switchContactV2Tab('projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
       </div>
 
-      <!-- PANEL: Stammdaten (Dashboard v1.26.0 — an Firma-Dashboard angeglichen) -->
-      <div class="detail-tab-panel active" data-tab="stammdaten">
-        <div class="detail-dashboard">
-          <div class="dashboard-main">
-            <div class="dashboard-stats">
-              <div class="stat-card stat-card-clickable" id="contact-abc-card" title="Klick öffnet ABC-Bearbeitung der Firma">
-                <div id="contact-abc-badge" class="abc-badge abc-badge-lg abc-badge-unknown">—</div>
-                <div class="stat-card-body">
-                  <div class="stat-label" id="contact-abc-mode-label">ABC (Firma)</div>
-                  <div class="stat-value stat-value-muted" id="contact-abc-label">Nicht klassifiziert</div>
-                </div>
-              </div>
-              <div class="stat-card stat-card-clickable" id="contact-revenue-card" title="Klick öffnet die Firma">
-                <div class="stat-card-body">
-                  <div class="stat-label" id="contact-revenue-year-label">Umsatz Firma</div>
-                  <div class="stat-value" id="contact-revenue-year">—</div>
-                  <div class="stat-subline" id="contact-revenue-history">&nbsp;</div>
-                </div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-card-body">
-                  <div class="stat-label">Offene Aufgaben</div>
-                  <div class="stat-value" id="contact-open-tasks">—</div>
-                </div>
-              </div>
-            </div>
+      <div class="proj-grid">
+        <main class="proj-main">
 
-            <div class="dashboard-row-2col">
+          <div class="proj-tab-panel active" data-tab="aktivitaeten" id="contact-panel-aktivitaeten">
+            <div class="proj-filter-pills">
+              <button class="proj-filter-pill active" data-filter="alle"     onclick="filterContactActivity('alle')">Alle</button>
+              <button class="proj-filter-pill"        data-filter="termine"  onclick="filterContactActivity('termine')">Termine</button>
+              <button class="proj-filter-pill"        data-filter="aufgaben" onclick="filterContactActivity('aufgaben')">Aufgaben</button>
+              <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterContactActivity('notizen')">Notizen</button>
+            </div>
+            <div class="proj-note-input">
+              <span class="proj-note-avatar" id="contact-note-avatar">SC</span>
+              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if(event.metaKey&&event.key==='Enter')postContactNote()">
+              <span class="proj-note-hint">⌘↵</span>
+            </div>
+            <div id="contact-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
+          </div>
+
+          <div class="proj-tab-panel" data-tab="stammdaten" id="contact-panel-stammdaten" style="display:none">
+            <div class="proj-brief-2col">
               <div class="info-card">
                 <div class="info-card-title">Letzte Aktivität</div>
                 <div id="contact-last-activity"><div class="info-card-empty">Lade ...</div></div>
@@ -851,15 +853,11 @@
                 <div id="contact-upcoming-activity"><div class="info-card-empty">Lade ...</div></div>
               </div>
             </div>
-
-            <div class="info-card">
+            <div class="info-card" style="margin-top:16px">
               <div class="info-card-title">Opportunities (Hauptkontakt)</div>
               <div id="contact-opportunities"><div class="info-card-empty">Lade ...</div></div>
             </div>
-
-            <!-- v1.48.0: Kontaktdaten-Karte entfernt — Daten stehen jetzt im Header oben -->
-
-            <div class="info-card">
+            <div class="info-card" style="margin-top:16px">
               <div class="info-card-title">Notizen</div>
               <textarea class="notes-edit-area" id="contact-notes-inline"
                         placeholder="Freitext-Notizen zu diesem Kontakt ..."
@@ -868,113 +866,61 @@
             </div>
           </div>
 
-          <aside class="quick-create-panel">
-            <div class="quick-create-title">Schnell anlegen</div>
-            <button class="quick-create-btn" id="contact-quick-appointment">
-              <span class="plus-icon">+</span> Termin
-            </button>
-            <button class="quick-create-btn" id="contact-quick-task">
-              <span class="plus-icon">+</span> Aufgabe
-            </button>
-            <button class="quick-create-btn" id="contact-quick-project">
-              <span class="plus-icon">+</span> Projekt
-            </button>
-          </aside>
-        </div>
+          <div class="proj-tab-panel" data-tab="projekte" id="contact-panel-projekte" style="display:none">
+            <div class="info-card">
+              <div class="info-card-title-row">
+                <div class="info-card-title"><span id="contact-projects-count">Projekte als Hauptkontakt</span></div>
+                <button class="btn btn-sm btn-primary" id="contact-detail-add-project-btn">+ Projekt hinzufügen</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Name</th><th style="width:120px">Status</th><th class="col-tablet" style="width:110px">Start</th><th class="col-tablet" style="width:110px">Ende</th><th class="col-desktop">Umsatz</th><th class="col-action"></th></tr>
+                  </thead>
+                  <tbody id="contact-projects-body">
+                    <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </main>
+
+        <aside class="proj-side">
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">FIRMA</div>
+            <div id="contact-side-firma"><div class="info-card-empty">Ohne Firma</div></div>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">AKTIONEN</div>
+            <button class="proj-action proj-action-primary" onclick="focusContactNoteInput()">Notiz hinzufügen</button>
+            <button class="proj-action" id="contact-quick-appointment">+ Termin anlegen</button>
+            <button class="proj-action" id="contact-quick-task">+ Aufgabe anlegen</button>
+            <button class="proj-action" id="contact-quick-project">+ Projekt anlegen</button>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">META</div>
+            <div class="proj-side-meta" id="contact-meta">—</div>
+          </div>
+        </aside>
       </div>
 
-      <!-- PANEL: Termine -->
-      <div class="detail-tab-panel" data-tab="termine">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="contact-appointments-count">Termine</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="contact-detail-add-appointment-btn">
-            + Termin hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:110px">Datum</th>
-                <th style="width:90px" class="col-tablet">Uhrzeit</th>
-                <th>Titel</th>
-                <th class="col-tablet">Typ</th>
-                <th style="width:110px">Status</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="contact-appointments-body">
-              <tr><td colspan="6"><div class="empty">Lade Termine ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
+      <!-- Versteckte Felder für Backwards-Kompat -->
+      <div style="display:none">
+        <div id="contact-abc-card"></div>
+        <div id="contact-abc-badge"></div>
+        <span id="contact-abc-mode-label"></span>
+        <span id="contact-abc-label"></span>
+        <span id="contact-open-tasks"></span>
+        <div id="contact-appointments-body"></div>
+        <div id="contact-tasks-body"></div>
+        <span id="contact-appointments-count"></span>
+        <span id="contact-tasks-count"></span>
+        <span id="tab-count-contact-termine"></span>
+        <span id="tab-count-contact-aufgaben"></span>
       </div>
-      </div><!-- /panel termine -->
 
-      <!-- PANEL: Aufgaben (v1.23: vorgezogen vor Projekte) -->
-      <div class="detail-tab-panel" data-tab="aufgaben">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="contact-tasks-count">Aufgaben</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="contact-detail-add-task-btn">
-            + Aufgabe hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:36px" title="Als erledigt markieren"></th>
-                <th>Titel</th>
-                <th style="width:120px">Fällig</th>
-                <th class="col-tablet">Zugewiesen</th>
-                <th style="width:120px">Status</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="contact-tasks-body">
-              <tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </div><!-- /panel aufgaben -->
-
-      <!-- PANEL: Projekte -->
-      <div class="detail-tab-panel" data-tab="projekte">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-          <div class="card-title" style="margin:0;padding:0;border:none">
-            <span id="contact-projects-count">Projekte als Hauptkontakt</span>
-          </div>
-          <button class="btn btn-sm btn-primary" id="contact-detail-add-project-btn">
-            + Projekt hinzufügen
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th style="width:120px">Status</th>
-                <th class="col-tablet" style="width:110px">Start</th>
-                <th class="col-tablet" style="width:110px">Ende</th>
-                <th class="col-desktop">Umsatz</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="contact-projects-body">
-              <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </div><!-- /panel projekte -->
     </div><!-- /page-contact-detail -->
 
     <!-- SEITE: TERMINE (LISTE) -->
