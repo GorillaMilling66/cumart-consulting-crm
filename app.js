@@ -1,5 +1,30 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.0-pre.7 (Komplett-Redesign Phasen 0-7).
+   - Phase 0: Foundation — neue Design-Tokens (warm-creme, Pastell-
+     Themen-Palette), Top-Navigation mit Briefing/Arbeitsplatz/Listen,
+     Hash-Router-Erweiterung.
+   - Phase 1: Datenmodell-Migrationen — project_success_criteria-
+     Tabelle, tasks.deployment_id-Spalte, Themen-Farb-Palette gemappt.
+   - Phase 2: Listen-Sub-Nav als sticky Tab-Bar oberhalb der 6 Listen-
+     Pages (Firmen/Kontakte/Projekte/Termine/Einsätze/Aufgaben).
+   - Phase 3: Briefing-V2 mit Tabs Heute/Woche/Monat, dynamischer Hero-
+     Satz, KPI-Tiles, Sidebar mit Inbox/Überfällig/Heute-fällig +
+     Inline-Häkchen.
+   - Phase 4: Arbeitsplatz mit Smart-Capture (ohne NLP), Kontext-Bar,
+     8 Anlage-Kacheln, Zuletzt-bearbeitet, Heute-von-dir, Vorlagen-
+     Streifen.
+   - Phase 5: Einstellungen-Sub-Nav, Sidebar (alte) auf Desktop weg.
+   - Phase 6: Projekt-Detail-Pilot mit Vier-Zonen-Muster (Hero mit
+     Marge/Zeitplan/Health, Tabs Aktivitäten/Brief/Wirtschaftlichkeit/
+     Plan&Lieferobjekte, Sidepanel mit Beteiligte/Firma/Aktionen/Meta).
+     Aktivitäten-Tab als chronologischer Stream mit Filter-Pillen +
+     Notiz-Eingabe. Brief-Tab mit Erfolgskriterien-Checkboxen +
+     Themen + Entwicklungs-Log.
+   - Phase 7: Einsatz-Detail-Page mit eigener Route #/einsatz/:id —
+     Hero (Datum/Honorar/Leistung), Tabs (Bericht/Plan&Logistik/
+     Abrechnung). Action Items als Aufgaben mit deployment_id.
+   Backup-Tag: v1.53.0 + Branch backup/pre-v2-redesign.)
    Version 2.0.0-pre.0 (Komplett-Redesign Phase 0: Foundation).
    - Neue Design-Tokens (warm-creme Page-BG, Pastell-Themen-Palette
      in 8 Farben, Typ-Pillen für Activity-Stream, neue Radius- &
