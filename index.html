@@ -1614,6 +1614,160 @@
       </div><!-- /panel einsaetze -->
     </div><!-- /page-project-detail -->
 
+    <!-- v2.0.0 — EINSATZ-DETAIL-PAGE (eigene Page statt nur Modal) -->
+    <div class="page" id="page-deployment-detail">
+      <div class="proj-breadcrumb">
+        <a onclick="navigateTo('listen')">Listen</a>
+        <span class="proj-breadcrumb-sep">·</span>
+        <a onclick="navigateTo('deployments')">Einsätze</a>
+        <span class="proj-breadcrumb-sep">/</span>
+        <span class="proj-breadcrumb-current" id="dep-detail-name">…</span>
+      </div>
+
+      <div class="proj-hero">
+        <div class="proj-hero-head">
+          <div class="proj-hero-titles">
+            <h1 class="proj-hero-title" id="dep-detail-title">…</h1>
+            <div class="proj-hero-subline" id="dep-detail-subline"></div>
+          </div>
+          <div class="proj-hero-actions">
+            <span class="status-pill" id="dep-status-pill">…</span>
+            <button class="btn btn-sm" onclick="openDeploymentModal('edit', currentDeploymentDetailId)">Bearbeiten</button>
+          </div>
+        </div>
+        <div class="proj-hero-metrics">
+          <div class="proj-metric">
+            <div class="proj-metric-label">Datum</div>
+            <div class="proj-metric-value" id="dep-hero-datum">—</div>
+            <div class="proj-metric-sub" id="dep-hero-datum-sub">&nbsp;</div>
+          </div>
+          <div class="proj-metric">
+            <div class="proj-metric-label">Honorar</div>
+            <div class="proj-metric-value" id="dep-hero-honorar">—</div>
+            <div class="proj-metric-sub" id="dep-hero-honorar-sub">&nbsp;</div>
+          </div>
+          <div class="proj-metric">
+            <div class="proj-metric-label">Leistung</div>
+            <div class="proj-metric-value" id="dep-hero-leistung">—</div>
+            <div class="proj-metric-sub" id="dep-hero-leistung-sub">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="proj-tabs">
+        <button class="proj-tab active" data-tab="bericht"     onclick="switchDeploymentV2Tab('bericht')">Bericht</button>
+        <button class="proj-tab"        data-tab="planlogistik" onclick="switchDeploymentV2Tab('planlogistik')">Plan &amp; Logistik</button>
+        <button class="proj-tab"        data-tab="abrechnung"  onclick="switchDeploymentV2Tab('abrechnung')">Abrechnung</button>
+      </div>
+
+      <div class="proj-grid">
+        <main class="proj-main">
+
+          <!-- Bericht-Tab (Default) -->
+          <div class="proj-tab-panel active" data-tab="bericht" id="dep-panel-bericht">
+            <div class="proj-brief-section">
+              <div class="proj-brief-label-row">
+                <div class="proj-brief-label">BEHANDELTE THEMEN</div>
+                <span class="proj-brief-hint" id="dep-themes-hint">Themen werden im Projekt definiert.</span>
+              </div>
+              <div id="dep-themes-area"><div class="info-card-empty">Lade …</div></div>
+            </div>
+
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">WAS WURDE GEMACHT</div>
+              <textarea class="proj-brief-text" id="dep-bericht-was"
+                        placeholder="Bullet-Liste oder Fließtext: was haben wir konkret getan?"
+                        onblur="saveDeploymentDokuField('was_wurde_gemacht', this.value)"></textarea>
+            </div>
+
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">ERKENNTNISSE &amp; ENTWICKLUNG</div>
+              <textarea class="proj-brief-text" id="dep-bericht-erkenntnisse"
+                        placeholder="Was hat sich heute am Projekt bewegt? Welche Erkenntnis ist neu?"
+                        onblur="saveDeploymentDokuField('erkenntnisse', this.value)"></textarea>
+            </div>
+
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">LOG-EINTRAG <span style="font-weight:400;color:var(--tertiary)">· optional, kuratiert für die Projekt-Zeitleiste</span></div>
+              <textarea class="proj-brief-text" id="dep-bericht-log" rows="2"
+                        placeholder='Ein Satz für die Projekt-Zeitleiste — z. B. "Migration TNC 640 erfolgreich, erstes Probestück produziert"'
+                        onblur="saveDeploymentLogEintrag(this.value)"></textarea>
+            </div>
+
+            <div class="proj-brief-section">
+              <div class="proj-brief-label-row">
+                <div class="proj-brief-label">ACTION ITEMS · <span id="dep-action-count">0</span></div>
+                <button class="btn btn-sm btn-primary" onclick="addDeploymentActionItem()">+ Aufgabe</button>
+              </div>
+              <div id="dep-action-items"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </div>
+
+          <!-- Plan & Logistik-Tab -->
+          <div class="proj-tab-panel" data-tab="planlogistik" id="dep-panel-planlogistik" style="display:none">
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">VORBEREITUNG</div>
+              <textarea class="proj-brief-text" id="dep-plan-vorbereitung"
+                        placeholder="Was muss vor dem Einsatz geschehen?"
+                        onblur="saveDeploymentDokuField('vorbereitung', this.value)"></textarea>
+            </div>
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">TEILNEHMER</div>
+              <textarea class="proj-brief-text" id="dep-plan-teilnehmer"
+                        placeholder="Anzahl + Skill-Level + Ansprechpartner vor Ort"
+                        onblur="saveDeploymentDokuField('teilnehmer', this.value)"></textarea>
+            </div>
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">ANFAHRT &amp; STANDORT</div>
+              <textarea class="proj-brief-text" id="dep-plan-anfahrt"
+                        placeholder="Adresse, Reisezeit, Parkplatz, Empfang"
+                        onblur="saveDeploymentDokuField('anfahrt', this.value)"></textarea>
+            </div>
+          </div>
+
+          <!-- Abrechnung-Tab -->
+          <div class="proj-tab-panel" data-tab="abrechnung" id="dep-panel-abrechnung" style="display:none">
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">RECHNUNGSNUMMER</div>
+              <input type="text" class="proj-brief-text" id="dep-abr-rnummer"
+                     placeholder="z. B. 2026-0042"
+                     onblur="saveDeploymentDokuField('rechnungsnummer', this.value)" style="min-height: auto; padding: 12px 14px;">
+            </div>
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">ABRECHNUNGS-NOTIZ</div>
+              <textarea class="proj-brief-text" id="dep-abr-notiz"
+                        placeholder="Sonderkonditionen, Skonto, Anmerkungen zur Rechnung"
+                        onblur="saveDeploymentDokuField('abrechnungs_notiz', this.value)"></textarea>
+            </div>
+            <div id="dep-abr-summary" class="info-card-empty">Lade Abrechnungs-Daten …</div>
+          </div>
+
+        </main>
+
+        <aside class="proj-side">
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">PROJEKT</div>
+            <div id="dep-side-projekt"><div class="info-card-empty">Kein Projekt verknüpft.</div></div>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">FIRMA</div>
+            <div id="dep-side-firma"><div class="info-card-empty">—</div></div>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">AKTIONEN</div>
+            <button class="proj-action proj-action-primary" onclick="finishDeploymentReport()">Bericht abschließen</button>
+            <button class="proj-action" onclick="duplicateDeployment(currentDeploymentDetailId)">+ Folgeeinsatz</button>
+            <button class="proj-action" onclick="document.getElementById('dep-attach-input').click()">Datei anhängen</button>
+            <input type="file" id="dep-attach-input" style="display:none" onchange="uploadDeploymentAttachment(this.files)" multiple>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">META</div>
+            <div class="proj-side-meta" id="dep-meta">—</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
     <!-- SEITE: EINSÄTZE (LISTE) -->
     <div class="page" id="page-deployments">
       <div class="page-header">

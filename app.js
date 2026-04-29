@@ -2813,6 +2813,8 @@ function navigateTo(page, param) {
     hash = `#/projekt/${param}`;
   } else if (page === 'kontakt' && param) {
     hash = `#/kontakt/${param}`;
+  } else if (page === 'einsatz' && param) {
+    hash = `#/einsatz/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
     hash = `#/termine?firma=${param.firma}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
@@ -2931,6 +2933,19 @@ function handleHashChange() {
         loadContactDetail(id);
       } else {
         switchDetailTab('contact', getActiveDetailTab());
+      }
+      return;
+    }
+  }
+
+  // v2.0.0 — Einsatz-Detail-Page (eigene Route)
+  if (path.startsWith('#/einsatz/')) {
+    const id = path.slice('#/einsatz/'.length);
+    if (id) {
+      const key = 'einsatz:' + id;
+      if (_currentDetailKey !== key) {
+        _currentDetailKey = key;
+        loadDeploymentDetail(id);
       }
       return;
     }
@@ -16570,6 +16585,233 @@ async function renderProjectDevelopmentLog(projectId) {
         <div class="proj-log-text">${esc(it.log)}</div>
       </div>`).join('')}
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.0 — EINSATZ-DETAIL V2
+// ═══════════════════════════════════════════════════════════
+
+let currentDeploymentDetailId = null;
+let _currentDeploymentV2Tab = 'bericht';
+
+async function loadDeploymentDetail(deploymentId) {
+  currentDeploymentDetailId = deploymentId;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-deployment-detail').classList.add('active');
+  setActiveTopNavTab('deployments');
+
+  const { data: d, error } = await db.from('deployments')
+    .select('*, company:companies(id, name, abc_klassifizierung, stadt), project:projects(id, name, status), service:services(id, name)')
+    .is('deleted_at', null).eq('id', deploymentId).single();
+  if (error || !d) {
+    showToast(friendlyFetchError(error, 'Einsatz'), true);
+    return;
+  }
+
+  // Header
+  document.getElementById('dep-detail-name').textContent = d.titel || '—';
+  document.getElementById('dep-detail-title').textContent = d.titel || '—';
+
+  // Subline: Projekt-Link + Firma + Ort
+  const sublineParts = [];
+  if (d.project) sublineParts.push(`<a class="proj-link" onclick="navigateTo('projekt','${esc(d.project.id)}')">${esc(d.project.name)}</a>`);
+  if (d.company) sublineParts.push(`<a class="proj-link" onclick="navigateTo('firma','${esc(d.company.id)}')">${esc(d.company.name)}</a>`);
+  if (d.ort) sublineParts.push(esc(d.ort));
+  document.getElementById('dep-detail-subline').innerHTML = sublineParts.join(' · ') || '—';
+
+  // Status-Pille
+  const statusPill = document.getElementById('dep-status-pill');
+  if (d.status) {
+    const cls = d.status.toLowerCase().replace(/[^a-z]/g, '');
+    statusPill.textContent = d.status;
+    statusPill.className = `status-pill status-pill-${cls}`;
+  }
+
+  // Hero-Metriken
+  const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
+  const datumSub = d.datum_bis && d.datum_bis !== d.datum_von ? `bis ${formatDateDE(d.datum_bis)}` : (d.uhrzeit_von ? `${formatTime(d.uhrzeit_von)}${d.uhrzeit_bis ? '–' + formatTime(d.uhrzeit_bis) : ''}` : '');
+  document.getElementById('dep-hero-datum').textContent = datum;
+  document.getElementById('dep-hero-datum-sub').textContent = datumSub || ' ';
+
+  const honorar = (Number(d.einzelpreis) || 0) * (Number(d.menge) || 1);
+  document.getElementById('dep-hero-honorar').textContent = formatPreis(honorar);
+  document.getElementById('dep-hero-honorar-sub').textContent = `${d.menge || 1} × ${formatPreis(d.einzelpreis || 0)}`;
+
+  document.getElementById('dep-hero-leistung').textContent = d.service?.name || '—';
+  document.getElementById('dep-hero-leistung-sub').textContent = d.ganztag ? 'Ganztag' : ' ';
+
+  // Bericht-Tab Inhalte
+  const dok = d.dokumentation || {};
+  document.getElementById('dep-bericht-was').value = dok.was_wurde_gemacht || dok.durchgefuehrte_themen || '';
+  document.getElementById('dep-bericht-erkenntnisse').value = dok.erkenntnisse || '';
+  document.getElementById('dep-bericht-log').value = d.log_eintrag || '';
+  document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '';
+  document.getElementById('dep-plan-teilnehmer').value = dok.teilnehmer || '';
+  document.getElementById('dep-plan-anfahrt').value = dok.anfahrt || '';
+  document.getElementById('dep-abr-rnummer').value = dok.rechnungsnummer || '';
+  document.getElementById('dep-abr-notiz').value = dok.abrechnungs_notiz || '';
+
+  // Themen-Tags (existing project_themes via deployment_themes)
+  await renderDeploymentReportThemes(d);
+
+  // Action Items (Tasks mit deployment_id)
+  await renderDeploymentActionItems(deploymentId);
+
+  // Sidepanel
+  const projSide = document.getElementById('dep-side-projekt');
+  if (d.project) {
+    const projStatus = d.project.status || '—';
+    projSide.innerHTML = `
+      <a class="proj-side-firma-name" onclick="navigateTo('projekt','${esc(d.project.id)}')">${esc(d.project.name)}</a>
+      <div class="proj-side-firma-meta">${esc(projStatus)}</div>`;
+  } else {
+    projSide.innerHTML = '<div class="info-card-empty">Kein Projekt verknüpft.</div>';
+  }
+
+  const firmaSide = document.getElementById('dep-side-firma');
+  if (d.company) {
+    firmaSide.innerHTML = `
+      <a class="proj-side-firma-name" onclick="navigateTo('firma','${esc(d.company.id)}')">${esc(d.company.name)}</a>
+      <div class="proj-side-firma-meta">${d.company.abc_klassifizierung ? `Kunde · ${esc(d.company.abc_klassifizierung)}` : 'Kunde'}${d.company.stadt ? ' · ' + esc(d.company.stadt) : ''}</div>`;
+  }
+
+  document.getElementById('dep-meta').innerHTML = `
+    <div>ID · ${esc(deploymentId.substring(0, 8))}</div>
+    <div>Erstellt · ${d.created_at ? esc(formatDateDE(d.created_at.substring(0, 10))) : '—'}</div>`;
+
+  // Abrechnung-Summary
+  document.getElementById('dep-abr-summary').innerHTML = `
+    <div style="background:var(--bg-soft);padding:12px;border-radius:var(--radius-md);">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Honorar-Berechnung</div>
+      <div style="font-size:13px">${d.menge || 1} × ${formatPreis(d.einzelpreis || 0)} = <strong>${formatPreis(honorar)}</strong></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Status: ${esc(d.status || '—')}</div>
+    </div>`;
+
+  trackVisit('einsatz', deploymentId, d.titel || '—', d.company?.name || '');
+
+  _currentDeploymentV2Tab = 'bericht';
+  switchDeploymentV2Tab('bericht');
+}
+
+function switchDeploymentV2Tab(tab) {
+  _currentDeploymentV2Tab = tab;
+  document.querySelectorAll('#page-deployment-detail .proj-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('#page-deployment-detail .proj-tab-panel').forEach(p =>
+    p.style.display = p.dataset.tab === tab ? '' : 'none');
+}
+
+async function renderDeploymentReportThemes(d) {
+  const wrap = document.getElementById('dep-themes-area');
+  const hint = document.getElementById('dep-themes-hint');
+  if (!wrap) return;
+  if (!d.project_id) {
+    wrap.innerHTML = '<div class="info-card-empty">Kein Projekt verknüpft — Themen werden auf Projektebene definiert.</div>';
+    if (hint) hint.style.display = 'none';
+    return;
+  }
+  const themes = await loadProjectThemesData(d.project_id);
+  if (themes.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Dieses Projekt hat noch keine Themen. Lege sie auf der Projekt-Detailseite an.</div>';
+    return;
+  }
+  const { data: assigned } = await db.from('deployment_themes').select('theme_id').eq('deployment_id', d.id);
+  const assignedIds = new Set((assigned || []).map(r => r.theme_id));
+
+  wrap.innerHTML = `<div class="theme-picker-list">${themes.map(t => `
+    <label class="theme-pick-item">
+      <input type="checkbox" data-theme-id="${esc(t.id)}" ${assignedIds.has(t.id) ? 'checked' : ''}
+             onchange="toggleDeploymentReportTheme('${esc(d.id)}','${esc(t.id)}', this.checked)">
+      <span class="theme-color-dot" style="background:${esc(t.farbe || '#E6F1FB')}"></span>
+      <span class="theme-pick-name">${esc(t.name)}</span>
+    </label>`).join('')}</div>`;
+}
+
+async function toggleDeploymentReportTheme(deploymentId, themeId, checked) {
+  if (checked) {
+    await db.from('deployment_themes').insert({ deployment_id: deploymentId, theme_id: themeId });
+  } else {
+    await db.from('deployment_themes').delete()
+      .eq('deployment_id', deploymentId).eq('theme_id', themeId);
+  }
+}
+
+async function saveDeploymentDokuField(key, value) {
+  if (!currentDeploymentDetailId) return;
+  const { data: d } = await db.from('deployments').select('dokumentation').eq('id', currentDeploymentDetailId).single();
+  const dok = d?.dokumentation || {};
+  dok[key] = (value || '').trim();
+  await db.from('deployments').update({ dokumentation: dok }).eq('id', currentDeploymentDetailId);
+}
+
+async function saveDeploymentLogEintrag(value) {
+  if (!currentDeploymentDetailId) return;
+  await db.from('deployments').update({ log_eintrag: (value || '').trim() || null }).eq('id', currentDeploymentDetailId);
+}
+
+async function renderDeploymentActionItems(deploymentId) {
+  const wrap = document.getElementById('dep-action-items');
+  const counter = document.getElementById('dep-action-count');
+  if (!wrap) return;
+  const { data, error } = await db.from('tasks')
+    .select('id, titel, status, faelligkeit, assigned_to, user:user_profiles!tasks_assigned_to_fkey(name)')
+    .is('deleted_at', null).eq('deployment_id', deploymentId)
+    .order('created_at', { ascending: true });
+  if (error) { wrap.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`; return; }
+  if (counter) counter.textContent = (data || []).length;
+  if (!data || data.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Action Items. „+ Aufgabe" oben fügt eine hinzu — wird in der Aufgaben-Liste mit Verknüpfung zu diesem Einsatz sichtbar.</div>';
+    return;
+  }
+  wrap.innerHTML = data.map(t => `
+    <label class="proj-criterion ${t.status === 'erledigt' ? 'is-done' : ''}">
+      <input type="checkbox" ${t.status === 'erledigt' ? 'checked' : ''}
+             onchange="toggleDeploymentActionItem('${esc(t.id)}', this.checked)">
+      <span class="proj-criterion-text">${esc(t.titel)}</span>
+      <span class="proj-criterion-meta">
+        ${t.faelligkeit ? esc(formatDateCompact(t.faelligkeit)) : ''}
+        ${t.user?.name ? '· ' + esc(t.user.name) : ''}
+      </span>
+    </label>`).join('');
+}
+
+async function addDeploymentActionItem() {
+  if (!currentDeploymentDetailId) return;
+  const titel = prompt('Action Item:');
+  if (!titel || !titel.trim()) return;
+  // project_id und company_id aus dem aktuellen Einsatz erben
+  const { data: d } = await db.from('deployments').select('project_id, company_id').eq('id', currentDeploymentDetailId).single();
+  const { error } = await db.from('tasks').insert({
+    titel: titel.trim(),
+    status: 'offen',
+    deployment_id: currentDeploymentDetailId,
+    project_id: d?.project_id || null,
+    company_id: d?.company_id || null,
+    assigned_to: currentProfile?.id || null,
+    erstellt_von: currentProfile?.id || null
+  });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  await renderDeploymentActionItems(currentDeploymentDetailId);
+}
+
+async function toggleDeploymentActionItem(taskId, done) {
+  const payload = done
+    ? { status: 'erledigt', erledigt_am: new Date().toISOString() }
+    : { status: 'offen', erledigt_am: null };
+  await db.from('tasks').update(payload).eq('id', taskId);
+  await renderDeploymentActionItems(currentDeploymentDetailId);
+}
+
+async function finishDeploymentReport() {
+  if (!currentDeploymentDetailId) return;
+  await db.from('deployments').update({ status: 'Durchgeführt' }).eq('id', currentDeploymentDetailId);
+  showToast('Bericht abgeschlossen — Status: Durchgeführt.');
+  loadDeploymentDetail(currentDeploymentDetailId);
+}
+
+function uploadDeploymentAttachment(files) {
+  if (!files || files.length === 0) return;
+  showToast('Datei-Anhänge kommen in Phase 9 (Storage-Sub-Spec). Bis dahin: extern speichern und in der Notiz verlinken.', false);
 }
 
 // ═══════════════════════════════════════════════════════════
