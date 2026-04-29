@@ -1230,6 +1230,18 @@
               <div id="project-beschreibung-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
             </div>
 
+            <!-- v1.53.0: Themen als M:N-Strukturdaten -->
+            <div class="info-card">
+              <div class="info-card-title-row">
+                <div class="info-card-title">Themen</div>
+                <button class="btn btn-sm btn-primary" onclick="openThemeModal('new', null, currentProjectDetailId)">+ Thema</button>
+              </div>
+              <div id="project-themes-banner" style="display:none"></div>
+              <div id="project-themes-list">
+                <div class="info-card-empty">Lade ...</div>
+              </div>
+            </div>
+
             <!-- v1.52.0: Strukturierte Dokumentation (ersetzt Notizen) -->
             <div class="info-card">
               <div class="info-card-title">Dokumentation</div>
@@ -2670,6 +2682,16 @@
         </div>
       </div>
 
+      <!-- v1.53.0: Themen-Picker (M:N gegen Projekt-Themen) -->
+      <div class="modal-group-title collapsed">Themen</div>
+      <div class="form-grid" style="display:none">
+        <div class="form-group full">
+          <div id="d-themes-picker">
+            <div class="info-card-empty">Themen werden auf Projektebene definiert. Wähle erst ein Projekt aus.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- v1.52.0: Strukturierte Dokumentation statt freier Notizen -->
       <div class="modal-group-title collapsed">Dokumentation</div>
       <div class="form-grid" style="display:none">
@@ -2813,6 +2835,47 @@
       </button>
       <button class="btn" onclick="closeServiceModal()">Abbrechen</button>
       <button class="btn btn-primary" id="s-save-btn" onclick="saveService()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PROJEKT-THEMA (v1.53.0) — Präfix th-* -->
+<div class="modal-overlay" id="modal-theme">
+  <div class="modal" style="width:560px;max-width:95vw">
+    <div class="modal-title" id="modal-theme-title">Neues Thema</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Name *</label>
+        <input type="text" id="th-name" placeholder="z. B. TNC-Programmierung">
+      </div>
+      <div class="form-group full">
+        <label>Beschreibung</label>
+        <textarea id="th-beschreibung" rows="2" placeholder="Worum geht es bei diesem Thema?"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="th-status"></select>
+      </div>
+      <div class="form-group">
+        <label>Verantwortlich</label>
+        <select id="th-owner"><option value="">— Niemand —</option></select>
+      </div>
+      <div class="form-group">
+        <label>Farbe</label>
+        <input type="color" id="th-farbe" value="#1d4ed8">
+      </div>
+      <div class="form-group">
+        <label>Reihenfolge</label>
+        <input type="number" id="th-reihenfolge" min="0" step="10" value="0">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="th-delete-btn"
+              onclick="deleteTheme()" style="margin-right:auto;display:none">
+        Löschen
+      </button>
+      <button class="btn" onclick="closeThemeModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="th-save-btn" onclick="saveTheme()">Anlegen</button>
     </div>
   </div>
 </div>

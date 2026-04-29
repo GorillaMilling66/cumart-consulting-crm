@@ -1,5 +1,34 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 1.53.0 (Phase A des Master-Plan v2.1: Themen als
+   echte M:N-Strukturdaten).
+   - Neue Tabelle `project_themes` (id, project_id, name,
+     beschreibung, status, owner_id, farbe, reihenfolge,
+     deleted_at) — kanonische Themenliste pro Projekt.
+   - Neue Junction `deployment_themes` (deployment_id, theme_id)
+     — M:N zwischen Einsätzen und Themen.
+   - Themen-Sektion im Projekt-Stammdaten-Tab zwischen
+     Beschreibung und Dokumentation: CRUD-Modal mit Farbe,
+     Status (lookup_values.theme_status), Owner, Reihenfolge.
+   - Theme-Picker im Einsatz-Modal als Multi-Select-Pillen,
+     zeigt nur Themen des verknüpften Projekts. Bei keinem
+     Projekt: Disabled mit Hinweis.
+   - Confirm-Dialog beim Projekt-Wechsel eines Einsatzes mit
+     bestehenden Theme-Zuordnungen — bei OK werden die alten
+     Junctions gelöscht (keine Auto-Übernahme).
+   - Best-Effort-Migration aus dokumentation.themenwahl
+     (Splittet an Newline/Bullet/Semikolon) und
+     dokumentation.durchgefuehrte_themen (Match per case-
+     insensitivem Vergleich gegen project_themes).
+   - Hinweis-Banner im Stammdaten-Tab nach Migration —
+     dismissibles via localStorage.
+   - Migration v1.53.0_themes.sql via Management API
+     angewendet: 2 Tabellen, 4 RLS-Policies, 3 theme_status-
+     Lookups.
+   - Helper: loadProjectThemesData, renderProjectThemes,
+     openThemeModal, saveTheme, deleteTheme,
+     renderDeploymentThemePicker, fetchDeploymentThemeIds,
+     confirmDeploymentProjectSwitch, syncDeploymentThemes.)
    Version 1.52.0 (Strukturierte Dokumentation für Projekt /
    Termin / Einsatz). Neue jsonb-Spalte `dokumentation` auf den
    drei Tabellen, Daten-Migration: notizen → dokumentation.
@@ -3986,6 +4015,300 @@ async function saveDocumentationFieldInline(entityType, id, key, el) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  PROJEKT-THEMEN (v1.53.0 — Phase A des Master-Plan v2.1)
+// ═══════════════════════════════════════════════════════════
+//
+// Themen sind projektlokal — pro Projekt eine kanonische Liste,
+// gegen die Einsätze taggen können. Cache pro Projekt-ID, wird
+// nach Theme-CRUD oder Project-Refresh invalidiert.
+
+let themesCacheByProject = {};      // projectId → [{id, name, status, owner_id, farbe, reihenfolge, einsatz_count}]
+let editingThemeId = null;
+let editingThemeProjectId = null;
+
+function invalidateThemesCache(projectId) {
+  if (projectId) delete themesCacheByProject[projectId];
+  else themesCacheByProject = {};
+}
+
+/** Lädt Themen eines Projekts inkl. Einsatz-Anzahl pro Thema. */
+async function loadProjectThemesData(projectId) {
+  if (themesCacheByProject[projectId]) return themesCacheByProject[projectId];
+
+  const { data: themes, error } = await db.from('project_themes')
+    .select('id, name, beschreibung, status, owner_id, farbe, reihenfolge, owner:user_profiles!project_themes_owner_id_fkey(id, name)')
+    .is('deleted_at', null).eq('project_id', projectId)
+    .order('reihenfolge').order('name');
+  if (error) return [];
+
+  // Einsatz-Anzahl pro Thema (Junction-Aggregation)
+  const themeIds = (themes || []).map(t => t.id);
+  let countMap = {};
+  if (themeIds.length > 0) {
+    const { data: junctions } = await db.from('deployment_themes')
+      .select('theme_id').in('theme_id', themeIds);
+    (junctions || []).forEach(j => {
+      countMap[j.theme_id] = (countMap[j.theme_id] || 0) + 1;
+    });
+  }
+  const result = (themes || []).map(t => ({ ...t, einsatz_count: countMap[t.id] || 0 }));
+  themesCacheByProject[projectId] = result;
+  return result;
+}
+
+/** Rendert die Themen-Sektion im Projekt-Stammdaten-Tab. */
+async function renderProjectThemes(projectId) {
+  const list = document.getElementById('project-themes-list');
+  const banner = document.getElementById('project-themes-banner');
+  if (!list) return;
+
+  const themes = await loadProjectThemesData(projectId);
+
+  // Banner: zeigen wenn migrierte Freitext-Themen existieren UND noch nicht vom User akzeptiert
+  // (heuristisch: Projekt hat alte themenwahl im JSONB UND mindestens 1 Theme automatisch importiert
+  //  UND localStorage hat den Banner für dieses Projekt nicht ausgeblendet)
+  const seenKey = `themes_banner_seen_${projectId}`;
+  const seen = (() => { try { return localStorage.getItem(seenKey) === '1'; } catch { return false; } })();
+  if (banner) {
+    if (themes.length > 0 && !seen) {
+      banner.style.display = '';
+      banner.innerHTML = `
+        <div class="themes-banner">
+          <span>Bestehende Themen wurden automatisch importiert — bitte prüfe die Liste und passe sie ggf. an.</span>
+          <button class="themes-banner-close" type="button" onclick="dismissThemesBanner('${esc(projectId)}')" aria-label="Banner schließen">×</button>
+        </div>`;
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  if (themes.length === 0) {
+    list.innerHTML = '<div class="info-card-empty">Noch keine Themen. Klicke oben auf „+ Thema", um die kanonische Themen-Liste für dieses Projekt anzulegen — Einsätze taggen später dagegen.</div>';
+    return;
+  }
+
+  list.innerHTML = `<div class="themes-list">${themes.map(t => renderThemeRow(t, projectId)).join('')}</div>`;
+}
+
+function dismissThemesBanner(projectId) {
+  try { localStorage.setItem(`themes_banner_seen_${projectId}`, '1'); } catch {}
+  const banner = document.getElementById('project-themes-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function renderThemeRow(t, projectId) {
+  const ownerName = t.owner?.name || '';
+  const ownerInitials = ownerName ? ini(ownerName) : '';
+  const farbe = t.farbe || '#1d4ed8';
+  const statusLabel = (t.status || 'offen').replace('_', ' ');
+  const einsatzText = t.einsatz_count === 0
+    ? 'kein Einsatz'
+    : `${t.einsatz_count} Einsa${t.einsatz_count === 1 ? 'tz' : 'tze'}`;
+  return `
+    <div class="theme-row" onclick="openThemeModal('edit','${esc(t.id)}','${esc(projectId)}')">
+      <span class="theme-color-dot" style="background:${esc(farbe)}"></span>
+      <div class="theme-row-body">
+        <div class="theme-row-name">${esc(t.name)}</div>
+        ${t.beschreibung ? `<div class="theme-row-desc">${esc(t.beschreibung)}</div>` : ''}
+      </div>
+      <span class="theme-row-status status-${esc(t.status || 'offen')}">${esc(statusLabel)}</span>
+      <span class="theme-row-meta">
+        ${ownerInitials ? `<span class="theme-row-owner" title="${esc(ownerName)}">${esc(ownerInitials)}</span>` : ''}
+        <span class="theme-row-count">${esc(einsatzText)}</span>
+      </span>
+    </div>`;
+}
+
+/** Öffnet das Theme-Modal — Anlage oder Bearbeiten. */
+async function openThemeModal(mode, themeId, projectId) {
+  if (!projectId) { showToast('Kein Projekt-Kontext.', true); return; }
+  editingThemeId = themeId;
+  editingThemeProjectId = projectId;
+  document.getElementById('modal-theme-title').textContent = mode === 'edit' ? 'Thema bearbeiten' : 'Neues Thema';
+  document.getElementById('th-save-btn').textContent = mode === 'edit' ? 'Speichern' : 'Anlegen';
+  document.getElementById('th-delete-btn').style.display = mode === 'edit' ? 'inline-block' : 'none';
+
+  // Status-Lookup laden
+  const { data: statusOpts } = await db.from('lookup_values')
+    .select('wert').eq('kategorie', 'theme_status').eq('ist_aktiv', true)
+    .order('reihenfolge');
+  const statusSel = document.getElementById('th-status');
+  statusSel.innerHTML = (statusOpts || []).map(o =>
+    `<option value="${esc(o.wert)}">${esc(o.wert.replace('_', ' '))}</option>`).join('');
+
+  // User-Liste für Owner
+  const { data: users } = await db.from('user_profiles')
+    .select('id, name').eq('ist_aktiv', true).order('name');
+  const ownerSel = document.getElementById('th-owner');
+  ownerSel.innerHTML = '<option value="">— Niemand —</option>' +
+    (users || []).map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
+
+  // Defaults / Edit-Daten
+  document.getElementById('th-name').value = '';
+  document.getElementById('th-beschreibung').value = '';
+  document.getElementById('th-farbe').value = '#1d4ed8';
+  document.getElementById('th-reihenfolge').value = 0;
+  statusSel.value = 'offen';
+  ownerSel.value = '';
+
+  if (mode === 'edit' && themeId) {
+    const { data: t, error } = await db.from('project_themes')
+      .select('*').eq('id', themeId).single();
+    if (error || !t) { showToast('Thema nicht gefunden.', true); return; }
+    document.getElementById('th-name').value = t.name || '';
+    document.getElementById('th-beschreibung').value = t.beschreibung || '';
+    document.getElementById('th-farbe').value = t.farbe || '#1d4ed8';
+    document.getElementById('th-reihenfolge').value = t.reihenfolge ?? 0;
+    if (t.status) statusSel.value = t.status;
+    if (t.owner_id) ownerSel.value = t.owner_id;
+  }
+
+  document.getElementById('modal-theme').classList.add('open');
+}
+
+function closeThemeModal() {
+  document.getElementById('modal-theme').classList.remove('open');
+  editingThemeId = null;
+  editingThemeProjectId = null;
+}
+
+async function saveTheme() {
+  const name = document.getElementById('th-name').value.trim();
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+  const payload = {
+    name,
+    beschreibung: document.getElementById('th-beschreibung').value.trim() || null,
+    status: document.getElementById('th-status').value,
+    owner_id: document.getElementById('th-owner').value || null,
+    farbe: document.getElementById('th-farbe').value || null,
+    reihenfolge: Number(document.getElementById('th-reihenfolge').value) || 0
+  };
+
+  let error;
+  if (editingThemeId) {
+    ({ error } = await db.from('project_themes').update(payload).eq('id', editingThemeId));
+  } else {
+    payload.project_id = editingThemeProjectId;
+    ({ error } = await db.from('project_themes').insert(payload));
+  }
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+
+  showToast(editingThemeId ? 'Thema aktualisiert.' : 'Thema angelegt.');
+  invalidateThemesCache(editingThemeProjectId);
+  const projectId = editingThemeProjectId;
+  closeThemeModal();
+  if (projectId === currentProjectDetailId) await renderProjectThemes(projectId);
+}
+
+async function deleteTheme() {
+  if (!editingThemeId) return;
+  const ok = await confirmDialog({
+    title: 'Thema löschen?',
+    message: 'Das Thema wird soft-gelöscht. Bestehende Einsatz-Zuordnungen werden beibehalten, das Thema erscheint aber nicht mehr in der Liste.',
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+  const { error } = await db.from('project_themes')
+    .update({ deleted_at: new Date().toISOString() }).eq('id', editingThemeId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Thema gelöscht.');
+  invalidateThemesCache(editingThemeProjectId);
+  const projectId = editingThemeProjectId;
+  closeThemeModal();
+  if (projectId === currentProjectDetailId) await renderProjectThemes(projectId);
+}
+
+// ─── Theme-Picker fürs Einsatz-Modal ────────────────────────
+//
+// Picker zeigt nur Themen des verknüpften Projekts. State liegt
+// in zwei Modul-Variablen, damit Save-Diff sauber läuft.
+
+let _deploymentSelectedThemeIds = new Set();
+let _deploymentInitialThemeIds  = new Set();
+let _deploymentLastProjectId    = null;
+
+/** Initialisiert den Theme-Picker beim Modal-Öffnen oder Projekt-Wechsel. */
+async function renderDeploymentThemePicker(projectId, selectedIds) {
+  const wrap = document.getElementById('d-themes-picker');
+  if (!wrap) return;
+  _deploymentSelectedThemeIds = new Set(selectedIds || []);
+  _deploymentLastProjectId    = projectId || null;
+
+  if (!projectId) {
+    wrap.innerHTML = '<div class="info-card-empty">Themen werden auf Projektebene definiert. Wähle erst ein Projekt aus.</div>';
+    return;
+  }
+
+  const themes = await loadProjectThemesData(projectId);
+  if (themes.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Dieses Projekt hat noch keine Themen. Lege sie auf der Projekt-Detailseite an, dann kannst du hier taggen.</div>';
+    return;
+  }
+
+  wrap.innerHTML = `<div class="theme-picker-list">${themes.map(t => {
+    const checked = _deploymentSelectedThemeIds.has(t.id) ? 'checked' : '';
+    const farbe = t.farbe || '#1d4ed8';
+    return `
+      <label class="theme-pick-item">
+        <input type="checkbox" data-theme-id="${esc(t.id)}" ${checked}
+               onchange="toggleDeploymentTheme('${esc(t.id)}', this.checked)">
+        <span class="theme-color-dot" style="background:${esc(farbe)}"></span>
+        <span class="theme-pick-name">${esc(t.name)}</span>
+      </label>`;
+  }).join('')}</div>`;
+}
+
+function toggleDeploymentTheme(themeId, checked) {
+  if (checked) _deploymentSelectedThemeIds.add(themeId);
+  else _deploymentSelectedThemeIds.delete(themeId);
+}
+
+/** Lädt die zugeordneten Themen eines Einsatzes (für Edit-Modus). */
+async function fetchDeploymentThemeIds(deploymentId) {
+  const { data } = await db.from('deployment_themes')
+    .select('theme_id').eq('deployment_id', deploymentId);
+  return (data || []).map(r => r.theme_id);
+}
+
+/** Confirm-Dialog beim Projekt-Wechsel mit existierenden Theme-Zuordnungen.
+ *  Aufgerufen aus dem onchange-Handler von d-project.
+ *  Returns: true → Wechsel ok, false → Wechsel abbrechen. */
+async function confirmDeploymentProjectSwitch(newProjectId) {
+  // Wenn keine Themen ausgewählt sind, ist der Wechsel kostenlos
+  if (_deploymentSelectedThemeIds.size === 0) return true;
+  // Wenn Projekt-ID gleich bleibt, kein Wechsel
+  if (_deploymentLastProjectId === newProjectId) return true;
+
+  const ok = await confirmDialog({
+    title: 'Projekt wechseln?',
+    message: `Dieser Einsatz hat ${_deploymentSelectedThemeIds.size} Themen-Zuordnung${_deploymentSelectedThemeIds.size === 1 ? '' : 'en'} aus dem alten Projekt. Beim Wechsel werden diese gelöscht — die Themen am alten Projekt bleiben unverändert. Themen am neuen Projekt sind dann manuell zu taggen.`,
+    confirmLabel: 'Wechseln', cancelLabel: 'Abbrechen', danger: false
+  });
+  return ok;
+}
+
+/** Sync-Diff der deployment_themes nach erfolgreichem Save. */
+async function syncDeploymentThemes(deploymentId) {
+  const wanted = new Set(_deploymentSelectedThemeIds);
+  const initial = new Set(_deploymentInitialThemeIds);
+  const toAdd    = [...wanted].filter(id => !initial.has(id));
+  const toRemove = [...initial].filter(id => !wanted.has(id));
+
+  if (toAdd.length > 0) {
+    const rows = toAdd.map(theme_id => ({ deployment_id: deploymentId, theme_id }));
+    await db.from('deployment_themes').insert(rows);
+  }
+  if (toRemove.length > 0) {
+    await db.from('deployment_themes').delete()
+      .eq('deployment_id', deploymentId).in('theme_id', toRemove);
+  }
+  // Cache pro Projekt invalidieren (Einsatz-Counts ändern sich)
+  if (_deploymentLastProjectId) invalidateThemesCache(_deploymentLastProjectId);
+  // Initial-Set auf neuen Stand setzen — falls der User direkt weiterspeichert
+  _deploymentInitialThemeIds = new Set(wanted);
+}
+
+// ═══════════════════════════════════════════════════════════
 //  MITGLIEDSCHAFTS-PROGRAMME (v1.12.0)
 // ═══════════════════════════════════════════════════════════
 
@@ -6948,6 +7271,10 @@ function renderProjectDetail(p) {
 
   // Dashboard-Stats asynchron laden (v1.30)
   loadProjectDashboard(p);
+
+  // v1.53.0: Themen-Sektion rendern
+  invalidateThemesCache(p.id);
+  renderProjectThemes(p.id);
 }
 
 async function loadProjectAppointments(projectId) {
@@ -7910,6 +8237,18 @@ async function openDeploymentModal(mode, deploymentId = null) {
   renderDeploymentPreview();           // v1.38
 
   await populateTemplateDropdown('einsatz', mode);
+
+  // v1.53.0: Theme-Picker initialisieren — Edit-Modus mit existierenden Themen,
+  // New-Modus leer. _deploymentInitialThemeIds spiegelt den DB-Stand für Save-Diff.
+  const _projectSel = document.getElementById('d-project');
+  const _initialProjectId = _projectSel ? (_projectSel.value || null) : null;
+  let _initialThemeIds = [];
+  if (mode === 'edit' && deploymentId) {
+    _initialThemeIds = await fetchDeploymentThemeIds(deploymentId);
+  }
+  _deploymentInitialThemeIds = new Set(_initialThemeIds);
+  await renderDeploymentThemePicker(_initialProjectId, _initialThemeIds);
+
   document.getElementById('modal-deployment').classList.add('open');
   setTimeout(() => document.getElementById('d-titel').focus(), 100);
 }
@@ -7945,7 +8284,18 @@ function setupDeploymentModalListeners() {
     await refreshRedeemSection();  // v1.14.0
   };
 
-  document.getElementById('d-project').onchange = () => {
+  // v1.53.0: Projekt-Wechsel mit existierenden Theme-Zuordnungen → Confirm-Dialog
+  const projectSel = document.getElementById('d-project');
+  projectSel.onchange = async () => {
+    const newProjectId = projectSel.value || null;
+    const ok = await confirmDeploymentProjectSwitch(newProjectId);
+    if (!ok) {
+      projectSel.value = _deploymentLastProjectId || '';
+      return;
+    }
+    _deploymentSelectedThemeIds = new Set();
+    _deploymentInitialThemeIds  = new Set();
+    await renderDeploymentThemePicker(newProjectId, []);
     updateDeploymentPriceHint();
   };
 
@@ -8214,6 +8564,13 @@ async function saveDeployment() {
         console.warn('Techniker konnten nicht gespeichert werden:', techErr.message);
         showToast('Einsatz gespeichert, Techniker-Zuordnung fehlgeschlagen.', true);
       }
+    }
+
+    // ──────── v1.53.0: Themen-Zuordnung syncen ────────
+    try {
+      await syncDeploymentThemes(saved.id);
+    } catch (e) {
+      console.warn('Themen-Zuordnung konnte nicht synchronisiert werden:', e.message);
     }
 
     // ──────── Termin-Kopplung ────────
