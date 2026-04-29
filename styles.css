@@ -505,6 +505,185 @@ body {
 }
 .listen-tab.active .listen-tab-count { color: var(--text); }
 
+/* v2.0.0 — Briefing-V2 (Heute/Woche/Monat-Layout) */
+.briefing-v2 {
+  background: var(--bg-soft);
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--border);
+}
+.briefing-v2-tabs {
+  display: flex; gap: 4px;
+  margin-bottom: 16px;
+}
+.briefing-v2-tab {
+  padding: 6px 14px;
+  background: transparent;
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: inherit; font-size: 14px; font-weight: 400;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.briefing-v2-tab:hover { background: var(--surface); color: var(--text); }
+.briefing-v2-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+  font-weight: 500;
+}
+.briefing-v2-hero-text {
+  font-size: 16px;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.briefing-v2-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+}
+@media (max-width: 1024px) {
+  .briefing-v2-grid { grid-template-columns: 1fr; }
+}
+.briefing-v2-main { display: flex; flex-direction: column; gap: 12px; }
+.briefing-v2-aside { display: flex; flex-direction: column; gap: 12px; }
+
+/* Hero-Card (aktueller Einsatz heute) */
+.briefing-v2-hero-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--status-plan-accent);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+.briefing-v2-hero-card-pills {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+.briefing-v2-hero-card-eyebrow {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.4px;
+  color: var(--status-plan-fg);
+  background: var(--status-plan-bg);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+}
+.briefing-v2-hero-card-title {
+  font-size: 16px; font-weight: 500; color: var(--text);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.briefing-v2-hero-card-meta {
+  font-size: 13px; color: var(--muted);
+}
+
+/* Folge-Karten (Termine/Einsätze nach dem Hauptevent) */
+.briefing-v2-follow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+@media (max-width: 700px) {
+  .briefing-v2-follow-grid { grid-template-columns: 1fr; }
+}
+.briefing-v2-follow-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.briefing-v2-follow-eyebrow {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.3px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.briefing-v2-follow-title {
+  font-size: 14px; font-weight: 500; color: var(--text);
+  margin-bottom: 2px;
+}
+.briefing-v2-follow-meta {
+  font-size: 12px; color: var(--muted);
+}
+
+/* KPI-Tiles */
+.briefing-v2-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+@media (max-width: 700px) {
+  .briefing-v2-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.briefing-v2-kpi {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.briefing-v2-kpi.is-overdue {
+  background: var(--status-overdue-bg);
+  border-color: var(--status-overdue-bg);
+}
+.briefing-v2-kpi-label {
+  font-size: 11px; font-weight: 400;
+  color: var(--muted);
+}
+.briefing-v2-kpi.is-overdue .briefing-v2-kpi-label { color: var(--status-overdue-fg); }
+.briefing-v2-kpi-value {
+  font-size: 22px; font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.briefing-v2-kpi.is-overdue .briefing-v2-kpi-value { color: var(--status-overdue-fg); }
+
+/* Side-Cards (Inbox / Überfällig / Heute fällig) */
+.briefing-v2-side-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.briefing-v2-side-title {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.4px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.briefing-v2-side-title.is-danger { color: var(--status-overdue-fg); }
+.briefing-v2-side-item {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.briefing-v2-side-item input[type=checkbox] { margin: 0; cursor: pointer; }
+.briefing-v2-side-item-label { color: var(--text); }
+.briefing-v2-side-item-meta { font-size: 11px; color: var(--status-overdue-accent); font-variant-numeric: tabular-nums; }
+.briefing-v2-side-empty { font-size: 13px; color: var(--muted); font-style: italic; }
+
+/* Status-Pillen (allgemeine Komponente — wird auch andernorts genutzt) */
+.status-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.status-pill-geplant       { background: var(--status-plan-bg);    color: var(--status-plan-fg); }
+.status-pill-durchgefhrt   { background: var(--status-done-bg);    color: var(--status-done-fg); }
+.status-pill-abgerechnet   { background: var(--status-billed-bg);  color: var(--status-billed-fg); }
+.status-pill-storniert     { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
+
 /* v2.0.0 — Stub-Layout für leere Bereiche während Phasen-Roll-out */
 .redesign-stub {
   max-width: 720px;

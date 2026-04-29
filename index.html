@@ -348,8 +348,21 @@
 
     <!-- v2.0.0 — BRIEFING (Hauptbereich 1) -->
     <div class="page" id="page-briefing">
-      <div id="briefing-v2-container">
-        <div class="info-card-empty">Lade Briefing …</div>
+      <div class="briefing-v2">
+        <div class="briefing-v2-tabs">
+          <button class="briefing-v2-tab active" data-scope="heute" onclick="switchBriefingV2('heute')">Heute</button>
+          <button class="briefing-v2-tab"        data-scope="woche" onclick="switchBriefingV2('woche')">Diese Woche</button>
+          <button class="briefing-v2-tab"        data-scope="monat" onclick="switchBriefingV2('monat')">Dieser Monat</button>
+        </div>
+
+        <div class="briefing-v2-hero" id="briefing-v2-hero">
+          <div class="info-card-empty">Lade …</div>
+        </div>
+
+        <div class="briefing-v2-grid">
+          <div class="briefing-v2-main" id="briefing-v2-main"></div>
+          <aside class="briefing-v2-aside" id="briefing-v2-aside"></aside>
+        </div>
       </div>
     </div>
 

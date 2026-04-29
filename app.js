@@ -2282,16 +2282,206 @@ function showPage(name) {
 // Loader-Stubs. In Phase 0 zeigen sie Übergangs-Inhalte; werden
 // in Phasen 2-5 mit echten Inhalten gefüllt.
 
+let _briefingV2Scope = 'heute';
+
 async function loadBriefingV2() {
-  const c = document.getElementById('briefing-v2-container');
-  if (!c) return;
-  c.innerHTML = `
-    <div class="redesign-stub">
-      <div class="redesign-stub-eyebrow">BEREICH 1</div>
-      <h1 class="redesign-stub-title">Briefing — was muss ich tun</h1>
-      <p class="redesign-stub-hint">Wird in Phase 3 gebaut. Bis dahin findest du das tägliche Briefing in der Sidebar unter „Dein Tag".</p>
-      <button class="btn btn-primary" onclick="navigateTo('heute')">Zum aktuellen Briefing →</button>
+  const userId = currentProfile?.id;
+  if (!userId) return;
+  const heroEl  = document.getElementById('briefing-v2-hero');
+  const mainEl  = document.getElementById('briefing-v2-main');
+  const asideEl = document.getElementById('briefing-v2-aside');
+  if (!heroEl || !mainEl || !asideEl) return;
+
+  // Tab-Active-Setzung
+  document.querySelectorAll('.briefing-v2-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.scope === _briefingV2Scope);
+  });
+
+  heroEl.innerHTML  = '<div class="info-card-empty">Lade …</div>';
+  mainEl.innerHTML  = '';
+  asideEl.innerHTML = '';
+
+  try {
+    const data = await loadBriefingData(userId, _briefingV2Scope);
+    heroEl.innerHTML  = renderBriefingV2Hero(data, _briefingV2Scope);
+    mainEl.innerHTML  = renderBriefingV2Main(data, _briefingV2Scope);
+    asideEl.innerHTML = renderBriefingV2Aside(data, _briefingV2Scope);
+  } catch (e) {
+    heroEl.innerHTML = `<div class="info-card-empty" style="color:var(--danger)">Fehler: ${esc(e.message)}</div>`;
+  }
+}
+
+function switchBriefingV2(scope) {
+  _briefingV2Scope = scope;
+  loadBriefingV2();
+}
+
+/** Dynamischer Eröffnungssatz je nach Tageskontext. */
+function renderBriefingV2Hero(data, scope) {
+  const firstName = (currentProfile?.name || '').split(' ')[0] || 'Selcuk';
+  const todayISO = toISODate(new Date());
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 11) return 'Guten Morgen';
+    if (h < 18) return 'Hallo';
+    return 'Guten Abend';
+  })();
+
+  if (scope === 'heute') {
+    const todayDeps = (data.deployments || []).filter(d =>
+      d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
+    const todayAppts = (data.appointments || []).filter(a => a.datum === todayISO);
+    const overdue = (data.overdueTasks || []).length;
+    const overdueSuffix = overdue > 0 ? ` — <strong>${overdue}</strong> überfällige Aufgaben.` : '.';
+
+    let lead = '';
+    if (todayDeps.length > 0) {
+      const firma = todayDeps[0].company?.name || '—';
+      lead = `Heute bist du im Einsatz bei <strong>${esc(firma)}</strong>${overdueSuffix}`;
+    } else if (todayAppts.length > 0) {
+      lead = `Heute hast du <strong>${todayAppts.length}</strong> Termin${todayAppts.length === 1 ? '' : 'e'}${overdueSuffix}`;
+    } else {
+      lead = `Heute keine festen Termine — guter Slot für Akquise oder Aufholarbeit${overdueSuffix}`;
+    }
+    return `<div class="briefing-v2-hero-text">${greeting}, ${esc(firstName)}. ${lead}</div>`;
+  }
+
+  if (scope === 'woche') {
+    const term = (data.appointments || []).length;
+    const eins = (data.deployments || []).length;
+    return `<div class="briefing-v2-hero-text">${greeting}, ${esc(firstName)}. Diese Woche: <strong>${term}</strong> Termin${term === 1 ? '' : 'e'} und <strong>${eins}</strong> Einsatz${eins === 1 ? '' : 'sätze'}.</div>`;
+  }
+
+  // monat
+  const term = (data.appointments || []).length;
+  const eins = (data.deployments || []).length;
+  return `<div class="briefing-v2-hero-text">${greeting}, ${esc(firstName)}. Dieser Monat: <strong>${term}</strong> Termine und <strong>${eins}</strong> Einsätze.</div>`;
+}
+
+/** Hauptbereich — Hero-Card des aktuellen Einsatzes (wenn vorhanden) +
+ *  Folge-Karten für weitere heutige Aktivitäten + KPI-Tiles unten. */
+function renderBriefingV2Main(data, scope) {
+  const todayISO = toISODate(new Date());
+  const todayDeps = scope === 'heute'
+    ? (data.deployments || []).filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO)
+    : [];
+  const todayAppts = scope === 'heute'
+    ? (data.appointments || []).filter(a => a.datum === todayISO)
+    : [];
+  const otherDeps = scope === 'heute'
+    ? (data.deployments || []).filter(d => !todayDeps.includes(d) && d.datum_von >= todayISO).slice(0, 2)
+    : [];
+  const otherAppts = scope === 'heute'
+    ? todayAppts.slice(0, 2)
+    : [];
+
+  // Hero-Card: erster heutiger Einsatz, sonst erster Termin, sonst nichts
+  let heroCardHtml = '';
+  if (todayDeps.length > 0) {
+    const dep = todayDeps[0];
+    const status = (dep.status || 'Geplant');
+    const statusKey = status.toLowerCase().replace(/[^a-z]/g, '');
+    const preis = (Number(dep.einzelpreis) || 0) * (Number(dep.menge) || 1);
+    heroCardHtml = `
+      <div class="briefing-v2-hero-card">
+        <div class="briefing-v2-hero-card-pills">
+          <span class="briefing-v2-hero-card-eyebrow">JETZT · VOR-ORT</span>
+          <span class="status-pill status-pill-${esc(statusKey)}">${esc(status)}</span>
+        </div>
+        <div class="briefing-v2-hero-card-title">${esc(dep.company?.name || dep.titel || '—')}</div>
+        <div class="briefing-v2-hero-card-meta">${esc(dep.titel || dep.service?.name || '')} · ${esc(dep.ort || '')} · ${esc(formatPreis(preis))}</div>
+      </div>`;
+  }
+
+  // Folge-Karten (kompakt, nebeneinander)
+  const followCards = [
+    ...otherDeps.map(d => ({
+      eyebrow: 'EINSATZ',
+      time: formatTime(d.uhrzeit_von) || formatDateCompact(d.datum_von),
+      title: d.company?.name || d.titel || '—',
+      meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · ')
+    })),
+    ...otherAppts.map(a => ({
+      eyebrow: a.typ?.wert || 'TERMIN',
+      time: formatTime(a.uhrzeit_von) || formatDateCompact(a.datum),
+      title: a.titel || '—',
+      meta: [a.ort, a.contact ? [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ') : null].filter(Boolean).join(' · ')
+    }))
+  ].slice(0, 3);
+  const followCardsHtml = followCards.length === 0 ? '' : `
+    <div class="briefing-v2-follow-grid">
+      ${followCards.map(c => `
+        <div class="briefing-v2-follow-card">
+          <div class="briefing-v2-follow-eyebrow">${esc(c.eyebrow)} · ${esc(c.time || '')}</div>
+          <div class="briefing-v2-follow-title">${esc(c.title)}</div>
+          <div class="briefing-v2-follow-meta">${esc(c.meta || '')}</div>
+        </div>`).join('')}
     </div>`;
+
+  // KPI-Tiles unten
+  const kpiTermine   = (data.appointments || []).length;
+  const kpiEinsaetze = (data.deployments || []).length;
+  const kpiAufgaben  = (data.tasks || []).length;
+  const kpiOverdue   = (data.overdueTasks || []).length;
+  const kpiHtml = `
+    <div class="briefing-v2-kpi-grid">
+      <div class="briefing-v2-kpi"><div class="briefing-v2-kpi-label">Termine</div><div class="briefing-v2-kpi-value">${kpiTermine}</div></div>
+      <div class="briefing-v2-kpi"><div class="briefing-v2-kpi-label">Einsätze</div><div class="briefing-v2-kpi-value">${kpiEinsaetze}</div></div>
+      <div class="briefing-v2-kpi"><div class="briefing-v2-kpi-label">Aufgaben</div><div class="briefing-v2-kpi-value">${kpiAufgaben}</div></div>
+      <div class="briefing-v2-kpi ${kpiOverdue > 0 ? 'is-overdue' : ''}"><div class="briefing-v2-kpi-label">Überfällig</div><div class="briefing-v2-kpi-value">${kpiOverdue}</div></div>
+    </div>`;
+
+  return heroCardHtml + followCardsHtml + kpiHtml;
+}
+
+/** Sidebar: INBOX (neue Aufgaben), ÜBERFÄLLIG, HEUTE FÄLLIG. */
+function renderBriefingV2Aside(data, scope) {
+  const todayISO = toISODate(new Date());
+  const overdue = data.overdueTasks || [];
+  const todayDue = (data.tasks || []).filter(t => t.faelligkeit === todayISO);
+
+  const overdueHtml = overdue.length === 0 ? '' : `
+    <div class="briefing-v2-side-card">
+      <div class="briefing-v2-side-title is-danger">ÜBERFÄLLIG · ${overdue.length}</div>
+      ${overdue.slice(0, 5).map(t => {
+        const days = Math.max(0, Math.round((new Date(todayISO) - new Date(t.faelligkeit)) / 86400000));
+        return `
+          <label class="briefing-v2-side-item">
+            <input type="checkbox" onchange="markTaskDoneInline('${esc(t.id)}', this.checked)">
+            <span class="briefing-v2-side-item-label">${esc(t.titel)}</span>
+            <span class="briefing-v2-side-item-meta">${days}T</span>
+          </label>`;
+      }).join('')}
+    </div>`;
+
+  const todayDueHtml = todayDue.length === 0 ? '' : `
+    <div class="briefing-v2-side-card">
+      <div class="briefing-v2-side-title">HEUTE FÄLLIG · ${todayDue.length}</div>
+      ${todayDue.map(t => `
+        <label class="briefing-v2-side-item">
+          <input type="checkbox" onchange="markTaskDoneInline('${esc(t.id)}', this.checked)">
+          <span class="briefing-v2-side-item-label">${esc(t.titel)}</span>
+        </label>`).join('')}
+    </div>`;
+
+  if (overdue.length === 0 && todayDue.length === 0) {
+    return `
+      <div class="briefing-v2-side-card">
+        <div class="briefing-v2-side-empty">Alles im Griff. Keine überfälligen, keine fälligen Aufgaben.</div>
+      </div>`;
+  }
+  return overdueHtml + todayDueHtml;
+}
+
+/** Inline-Häkchen aus dem Briefing — markiert Aufgabe als erledigt. */
+async function markTaskDoneInline(taskId, checked) {
+  if (!checked) return;
+  const { error } = await db.from('tasks')
+    .update({ status: 'erledigt', erledigt_am: new Date().toISOString() })
+    .eq('id', taskId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Aufgabe erledigt.');
+  loadBriefingV2();
 }
 
 async function loadArbeitsplatz() {
