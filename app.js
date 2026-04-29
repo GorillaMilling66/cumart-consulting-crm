@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.0 (Komplett-Redesign — alle Phasen 0-9 live).
+   Drei-Bereiche-Architektur (Briefing · Arbeitsplatz · Listen) plus
+   Einstellungen via Zahnrad. Vier-Zonen-Detail-Pages für Firma,
+   Kontakt, Projekt, Einsatz, Termin (Hero · Tabs · Hauptbereich +
+   Sidepanel). Activity-Streams mit Filter-Pillen + Notiz-Eingabe
+   (⌘↵). Themen als M:N gegen Projekte. Erfolgskriterien als
+   eigene Tabelle mit Inline-Häkchen. Action Items im Einsatz/
+   Termin als Aufgaben mit deployment_id/task_id. Inline-Expand
+   abgelöst durch echte Detail-Pages (Klick → Detail-Page;
+   Aufgabe → Modal). FAB schlanker (4 Aktionen + Arbeitsplatz-
+   Bridge). Mobile-Bottom-Nav neu. Listen-Tab-Counts mit
+   Filter-Reaktivität. Backup: Tag v1.53.0 + Branch
+   backup/pre-v2-redesign.
    Version 2.0.0-pre.7 (Komplett-Redesign Phasen 0-7).
    - Phase 0: Foundation — neue Design-Tokens (warm-creme, Pastell-
      Themen-Palette), Top-Navigation mit Briefing/Arbeitsplatz/Listen,
