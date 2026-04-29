@@ -651,6 +651,54 @@ body {
 .bv2-kpi-mini-value { font-size: 18px; font-weight: 500; margin-top: 2px; color: var(--text); font-variant-numeric: tabular-nums; }
 .bv2-kpi-mini-item.is-danger .bv2-kpi-mini-value { color: var(--danger); }
 
+/* Chronologische Tagesliste (ersetzt KPI-Tiles in HEUTE / Tagesplan-Tafel). */
+.bv2-today-list {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+.bv2-today-list-summary {
+  font-size: 11px; color: var(--muted);
+  padding: 6px 4px 10px;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.bv2-today-list-row {
+  display: grid;
+  grid-template-columns: 80px 80px 1fr;
+  gap: 12px; align-items: center;
+  padding: 10px 4px;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.bv2-today-list-row:last-child { border-bottom: none; }
+.bv2-today-list-row:hover { background: var(--page-bg); }
+.bv2-today-list-time {
+  font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.bv2-today-list-body { min-width: 0; }
+.bv2-today-list-title {
+  font-size: 13px; color: var(--text); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bv2-today-list-sub {
+  font-size: 11px; color: var(--muted); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bv2-today-list-empty {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: 16px 12px;
+  font-size: 12px; color: var(--muted);
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .bv2-today-list-row { grid-template-columns: 64px 72px 1fr; gap: 8px; }
+}
+
 .bv2-side-block {
   background: var(--surface);
   border-radius: var(--radius-md);
@@ -703,11 +751,44 @@ body {
   border-radius: var(--radius-md);
   padding: 10px 8px;
   text-align: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
+.bv2-week-day:hover { background: var(--page-bg); }
 .bv2-week-day.is-today {
   border: 1.5px solid var(--status-plan-accent);
 }
+.bv2-week-day.is-active {
+  border: 1.5px solid var(--text);
+  background: var(--page-bg);
+}
 .bv2-week-day.is-off { opacity: 0.5; }
+
+/* Tagesplan-Tafel unter dem Wochen-Strip (v2.0.1, Punkt 4) */
+.bv2-day-plan {
+  margin-top: 12px;
+}
+.bv2-day-plan-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 8px; padding: 0 4px;
+}
+.bv2-day-plan-label {
+  font-size: 11px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.bv2-day-plan-date {
+  font-size: 13px; color: var(--text); font-weight: 500;
+}
+.bv2-day-plan-reset {
+  margin-left: auto;
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px; color: var(--muted);
+  cursor: pointer;
+}
+.bv2-day-plan-reset:hover { color: var(--text); border-color: var(--text); }
 .bv2-week-day-name {
   font-size: 10px; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.3px;
@@ -1187,11 +1268,15 @@ body {
   display: grid;
   grid-template-columns: 50px 70px 1fr;
   gap: 10px; align-items: center;
-  padding: 6px 0;
+  padding: 6px 8px;
   font-size: 13px;
   border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
 }
 .arbeitsplatz-today-row:last-child { border-bottom: none; }
+.arbeitsplatz-today-row:hover { background: var(--page-bg); }
 .arbeitsplatz-today-time {
   font-size: 11px; color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1434,6 +1519,29 @@ body {
   border-color: var(--text); font-weight: 500;
 }
 
+/* Schnelleingabe-Typ-Pillen über dem Notiz-Input (v2.0.1, Punkt 7a) */
+.proj-note-types {
+  display: flex; gap: 6px;
+  margin-bottom: 6px;
+}
+.proj-note-type {
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px; font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.proj-note-type:hover { color: var(--text); border-color: var(--text); }
+.proj-note-type.is-active {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+}
+
 .proj-note-input {
   display: grid;
   grid-template-columns: 28px 1fr auto;
@@ -1459,6 +1567,19 @@ body {
 .proj-note-hint {
   font-size: 11px; color: var(--tertiary);
   font-variant-numeric: tabular-nums;
+}
+.proj-note-hint-btn {
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.proj-note-hint-btn:hover {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
 }
 
 .proj-activity-item {
@@ -3887,7 +4008,7 @@ tr.expanded-row > td {
 .calendar-bar {
   position: fixed;
   bottom: 0;
-  left: 220px;               /* rechts neben der Sidebar */
+  left: 0;                   /* v2.0.1: volle Breite — alte Sidebar gibt es nicht mehr */
   right: 0;
   z-index: 90;
   background: var(--surface);
@@ -4147,13 +4268,15 @@ tr.expanded-row > td {
   margin-top: 8px;
 }
 
-/* Main-Content bekommt padding-bottom, damit der letzte Inhalt nicht unter der Kalender-Bar verschwindet */
-.main { padding-bottom: 160px; }
+/* Main-Content bekommt padding-bottom, damit der letzte Inhalt nicht unter der Kalender-Bar verschwindet.
+   v2.0.1, Punkt 1: nur wenn die Bar tatsächlich sichtbar ist (= nur unter Briefing). */
+.main { padding-bottom: 0; }
+body.has-calendar .main { padding-bottom: 160px; }
 
 @media (max-width: 900px) {
   .calendar-bar,
   .calendar-popover { display: none !important; }
-  .main { padding-bottom: 80px; }
+  body.has-calendar .main { padding-bottom: 80px; }
 }
 
 /* ═══════════════════════════════════════════════════════════

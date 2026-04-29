@@ -391,6 +391,7 @@
         <span class="bv2-divider-hint" id="bv2-week-hint">&nbsp;</span>
       </div>
       <div id="bv2-week-strip"></div>
+      <div id="bv2-day-plan"></div>
       <div id="bv2-week-upcoming"></div>
 
       <!-- DIESER MONAT -->
@@ -421,7 +422,6 @@
             <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
               <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
             </span>
-            <span class="arbeitsplatz-capture-hint">⌘↵</span>
           </div>
         </div>
 
@@ -433,7 +433,6 @@
           <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('firma')">+ Firma</button>
           <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('kontakt')">+ Kontakt</button>
           <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('notiz')">+ Notiz</button>
-          <button class="arbeitsplatz-tile arbeitsplatz-tile-template" onclick="arbeitsplatzOpenTemplatePicker()">Aus Template</button>
         </div>
 
         <div class="arbeitsplatz-grid">
@@ -1219,11 +1218,16 @@
               <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterProjectActivity('notizen')">Notizen</button>
             </div>
 
-            <!-- Notiz-Eingabe -->
+            <!-- Schnelleingabe (v2.0.1, Punkt 7a): Typ-Pillen + Eingabefeld -->
+            <div class="proj-note-types">
+              <button class="proj-note-type is-active" data-type="notiz" onclick="setProjectQuickInputType('notiz')">Notiz</button>
+              <button class="proj-note-type" data-type="folgetermin" onclick="setProjectQuickInputType('folgetermin')">+ Folgetermin</button>
+              <button class="proj-note-type" data-type="aufgabe" onclick="setProjectQuickInputType('aufgabe')">+ Aufgabe</button>
+            </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="project-note-avatar">SC</span>
-              <input type="text" id="project-note-input" placeholder="Notiz hinzufügen oder Update zum Projekt schreiben …" onkeydown="if(event.metaKey&&event.key==='Enter')postProjectNote()">
-              <span class="proj-note-hint">⌘↵</span>
+              <input type="text" id="project-note-input" placeholder="Notiz hinzufügen oder Update zum Projekt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postProjectQuickInput();}">
+              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postProjectQuickInput()" title="Eingabe speichern (⌘↵)">⌘↵</button>
             </div>
 
             <!-- Activity-Stream -->

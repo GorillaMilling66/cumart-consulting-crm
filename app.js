@@ -758,6 +758,12 @@ let pendingDeploymentsFilter = null;
 // Pending filter für Aufgaben (z.B. #/aufgaben?firma=…&scope=all_open)
 let pendingTasksFilter = null;
 let pendingCompaniesFilter = null;
+let pendingProjectsFilter = null;
+
+// Briefing v2: Cache der zuletzt geladenen Wochen-Daten + ausgewählter Tag der
+// Tagesplan-Tafel (default: heute). Wird beim ersten Render-Durchlauf gesetzt.
+let _briefingWeekData = null;
+let _bv2SelectedDayISO = null;
 // Aktiver Projekt-Filter (kein UI-Dropdown, nur per URL-Param)
 let tasksProjectFilterActive = null;
 
@@ -2455,20 +2461,12 @@ function renderBriefingHeute(data) {
       </div>`;
   }
 
-  // KPI-Mini
+  // Chronologische Tagesliste (ersetzt die KPI-Tiles).
+  // Reihenfolge: Einsätze zuerst, dann Termine nach Uhrzeit. Aufgaben bleiben in
+  // der Sidebar (Heute fällig / Überfällig).
   const kpiEl = document.getElementById('bv2-today-kpis');
   if (kpiEl) {
-    const kT = todayAppts.length;
-    const kE = todayDeps.length;
-    const kA = (data.tasks || []).length;
-    const kO = overdue.length;
-    kpiEl.innerHTML = `
-      <div class="bv2-kpi-mini">
-        <div class="bv2-kpi-mini-item"><div class="bv2-kpi-mini-label">Termine</div><div class="bv2-kpi-mini-value">${kT}</div></div>
-        <div class="bv2-kpi-mini-item"><div class="bv2-kpi-mini-label">Einsätze</div><div class="bv2-kpi-mini-value">${kE}</div></div>
-        <div class="bv2-kpi-mini-item"><div class="bv2-kpi-mini-label">Aufgaben</div><div class="bv2-kpi-mini-value">${kA}</div></div>
-        <div class="bv2-kpi-mini-item ${kO > 0 ? 'is-danger' : ''}"><div class="bv2-kpi-mini-label">Überfällig</div><div class="bv2-kpi-mini-value">${kO}</div></div>
-      </div>`;
+    kpiEl.innerHTML = renderTodayChronoList(todayDeps, todayAppts);
   }
 
   // Sidebar — Überfällig
@@ -2531,7 +2529,116 @@ function renderBriefingHeute(data) {
   }
 }
 
+/** Tag-Klick im Wochen-Strip — speichert Auswahl und re-rendert Strip + Tafel. */
+function selectBriefingDay(iso) {
+  if (!iso || !_briefingWeekData) return;
+  _bv2SelectedDayISO = iso;
+  renderBriefingWoche(_briefingWeekData);
+}
+
+/** Tagesplan-Tafel unter dem Wochen-Strip (v2.0.1, Punkt 4).
+ *  Filtert die Wochen-Daten auf den gewählten Tag und nutzt dieselbe Liste wie
+ *  HEUTE. Wenn der Tag „heute" ist, blenden wir die Tafel aus — das HEUTE-Block
+ *  zeigt dieselben Items bereits prominenter. */
+function renderBriefingDayPlan() {
+  const planEl = document.getElementById('bv2-day-plan');
+  if (!planEl || !_briefingWeekData || !_bv2SelectedDayISO) return;
+
+  const todayISO = toISODate(new Date());
+  if (_bv2SelectedDayISO === todayISO) {
+    // Heute steht oben im HEUTE-Block — keine Doppelung
+    planEl.innerHTML = '';
+    return;
+  }
+
+  const iso = _bv2SelectedDayISO;
+  const data = _briefingWeekData;
+  const dayDeps  = (data.deployments  || []).filter(d => {
+    const von = d.datum_von, bis = d.datum_bis || d.datum_von;
+    return von <= iso && bis >= iso;
+  });
+  const dayAppts = (data.appointments || []).filter(a => a.datum === iso);
+
+  const dt = new Date(iso + 'T00:00:00');
+  const dayLabel = `${WEEKDAYS_DE[dt.getDay()]}, ${dt.getDate()}. ${MONTHS_DE[dt.getMonth()]}`;
+
+  planEl.innerHTML = `
+    <div class="bv2-day-plan">
+      <div class="bv2-day-plan-head">
+        <span class="bv2-day-plan-label">TAGESPLAN</span>
+        <span class="bv2-day-plan-date">${esc(dayLabel)}</span>
+        <button class="bv2-day-plan-reset" onclick="selectBriefingDay('${esc(todayISO)}')">Zurück zu heute</button>
+      </div>
+      ${renderTodayChronoList(dayDeps, dayAppts)}
+    </div>`;
+}
+
+/** Chronologische Tagesliste für HEUTE / Wochen-Tag-Tafel (v2.0.1).
+ *  Reihenfolge: Einsätze zuerst (alle, sortiert nach uhrzeit_von), dann Termine
+ *  (nach uhrzeit_von). Aufgaben werden hier bewusst NICHT mitgezeigt — sie
+ *  liegen in der Sidebar unter „Heute fällig" und sollen nicht doppelt
+ *  erscheinen. Klick auf Zeile → jeweilige Detail-Page.
+ *  @param {Array} deps  Einsätze des Tages (datum_von..datum_bis enthält Tag)
+ *  @param {Array} appts Termine des Tages (datum === Tag)
+ *  @returns {string} HTML-String */
+function renderTodayChronoList(deps, appts) {
+  const items = [];
+  (deps || []).forEach(d => {
+    const time = d.uhrzeit_von ? formatTime(d.uhrzeit_von) : 'ganztags';
+    items.push({
+      kind: 'einsatz', sortGroup: 0, sortTime: d.uhrzeit_von || '00:00',
+      time, type: 'EINSATZ', typeCls: 'type-pill-einsatz',
+      title: d.titel || d.company?.name || '—',
+      sub: [d.company?.name, d.ort].filter(Boolean).join(' · '),
+      click: `navigateTo('einsatz','${esc(d.id)}')`
+    });
+  });
+  (appts || []).forEach(a => {
+    const time = a.uhrzeit_von ? formatTime(a.uhrzeit_von) : 'ganztags';
+    items.push({
+      kind: 'termin', sortGroup: 1, sortTime: a.uhrzeit_von || '23:59',
+      time, type: 'TERMIN', typeCls: 'type-pill-termin',
+      title: a.titel || '—',
+      sub: [a.company?.name, a.ort].filter(Boolean).join(' · '),
+      click: `navigateTo('termin','${esc(a.id)}')`
+    });
+  });
+
+  if (items.length === 0) {
+    return '<div class="bv2-today-list-empty">Heute liegen keine Termine oder Einsätze an.</div>';
+  }
+
+  // Sortieren: erst Gruppe (Einsatz < Termin), dann Uhrzeit
+  items.sort((a, b) => a.sortGroup - b.sortGroup || a.sortTime.localeCompare(b.sortTime));
+
+  const counts = {
+    einsatz: items.filter(i => i.kind === 'einsatz').length,
+    termin: items.filter(i => i.kind === 'termin').length
+  };
+  const summary = [
+    `${counts.einsatz} Einsa${counts.einsatz === 1 ? 'tz' : 'tze'}`,
+    `${counts.termin} Termin${counts.termin === 1 ? '' : 'e'}`
+  ].join(' · ');
+
+  return `
+    <div class="bv2-today-list">
+      <div class="bv2-today-list-summary">${esc(summary)}</div>
+      ${items.map(it => `
+        <div class="bv2-today-list-row" onclick="${it.click}">
+          <span class="bv2-today-list-time">${esc(it.time)}</span>
+          <span class="type-pill ${it.typeCls}">${esc(it.type)}</span>
+          <div class="bv2-today-list-body">
+            <div class="bv2-today-list-title">${esc(it.title)}</div>
+            ${it.sub ? `<div class="bv2-today-list-sub">${esc(it.sub)}</div>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
 function renderBriefingWoche(data) {
+  // Cache für Tagesplan-Tafel-Re-Render bei Tag-Klick
+  _briefingWeekData = data;
+
   // KW + Range
   const startISO = data.range.startISO;
   const endISO = data.range.endISO;
@@ -2540,6 +2647,9 @@ function renderBriefingWoche(data) {
   const fmt = (d) => `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
   const hintEl = document.getElementById('bv2-week-hint');
   if (hintEl) hintEl.textContent = `KW ${kw} · ${fmt(start)} – ${fmt(new Date(endISO + 'T00:00:00'))}`;
+
+  const todayISO_ = toISODate(new Date());
+  if (!_bv2SelectedDayISO) _bv2SelectedDayISO = todayISO_;
 
   // 7-Tage-Strip (Mo-So, Sa+So abgegraut wenn keine Aktivität)
   const stripEl = document.getElementById('bv2-week-strip');
@@ -2584,7 +2694,7 @@ function renderBriefingWoche(data) {
     stripEl.innerHTML = `
       <div class="bv2-week-strip">
         ${days.map(d => `
-          <div class="bv2-week-day ${d.isToday ? 'is-today' : ''} ${d.isOff ? 'is-off' : ''}">
+          <div class="bv2-week-day ${d.isToday ? 'is-today' : ''} ${d.isOff ? 'is-off' : ''} ${d.iso === _bv2SelectedDayISO ? 'is-active' : ''}" onclick="selectBriefingDay('${esc(d.iso)}')">
             <div class="bv2-week-day-name">${esc(d.name)}</div>
             <div class="bv2-week-day-num">${d.num}</div>
             <div class="bv2-week-day-bar ${d.barCls}"></div>
@@ -2593,6 +2703,9 @@ function renderBriefingWoche(data) {
           </div>`).join('')}
       </div>`;
   }
+
+  // Tagesplan-Tafel unter dem Wochen-Strip
+  renderBriefingDayPlan();
 
   // Upcoming-Liste — kommende Termine + Einsätze ab morgen
   const upEl = document.getElementById('bv2-week-upcoming');
@@ -2740,7 +2853,7 @@ function renderBriefingMonat(data) {
       const projs = pipeline.filter(p => p.status === s);
       const sum = projs.reduce((acc, p) => acc + (Number(p.geschaetzter_umsatz) || 0), 0);
       return `
-        <div class="bv2-stage-row ${stageMap[s] || ''}" onclick="navigateTo('projects')" style="cursor:pointer">
+        <div class="bv2-stage-row ${stageMap[s] || ''}" onclick="navigateTo('projects', { status: '${esc(s)}' })" style="cursor:pointer">
           <span class="bv2-stage-row-name">${esc(s)}</span>
           <span>${projs.length} · ${esc(formatPreis(sum))}</span>
         </div>`;
@@ -2773,7 +2886,10 @@ async function markTaskDoneInline(taskId, checked) {
 }
 
 // v2.0.0 — Arbeitsplatz-State (überlebt Modal-Wechsel innerhalb der Seite)
-let _arbeitsplatzContext = null;  // { type, id, label }
+// v2.0.1 (Punkt 5): Mehrere Bezüge gleichzeitig — Array mit max. einem Eintrag
+// pro Typ (firma/projekt/kontakt), da das Datenmodell pro Entität nur eine FK
+// pro Typ zulässt.
+let _arbeitsplatzContexts = [];  // Array<{ type, id, label }>
 let _arbeitsplatzCaptureText = '';
 
 async function loadArbeitsplatz() {
@@ -2805,20 +2921,40 @@ async function loadArbeitsplatz() {
 function renderArbeitsplatzContext() {
   const area = document.getElementById('arbeitsplatz-context-pill-area');
   if (!area) return;
-  if (!_arbeitsplatzContext) {
+
+  const ctxs = _arbeitsplatzContexts;
+  const usedTypes = new Set(ctxs.map(c => c.type));
+  const canAddMore = usedTypes.size < 3;  // max je 1× firma/projekt/kontakt
+
+  if (ctxs.length === 0) {
     area.innerHTML = `<button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>`;
     return;
   }
-  area.innerHTML = `
+
+  const pillsHtml = ctxs.map((c, i) => `
     <span class="arbeitsplatz-context-pill">
-      ${esc(_arbeitsplatzContext.label)}
-      <button class="arbeitsplatz-context-clear" onclick="clearArbeitsplatzContext()" aria-label="Kontext entfernen">×</button>
-    </span>
-    <span class="arbeitsplatz-context-hint">(Kontext bleibt für mehrere Anlagen)</span>`;
+      ${esc(c.label)}
+      <button class="arbeitsplatz-context-clear" onclick="clearArbeitsplatzContextAt(${i})" aria-label="Kontext entfernen">×</button>
+    </span>`).join('');
+  const addBtn = canAddMore
+    ? `<button class="arbeitsplatz-context-set arbeitsplatz-context-add" onclick="openArbeitsplatzContextPicker()">+ Weiteren Bezug</button>`
+    : '';
+  area.innerHTML = `
+    ${pillsHtml}
+    ${addBtn}
+    <span class="arbeitsplatz-context-hint">(Bezüge bleiben für mehrere Anlagen)</span>`;
 }
 
+/** Entfernt einen einzelnen Bezug aus der Liste. */
+function clearArbeitsplatzContextAt(index) {
+  if (index < 0 || index >= _arbeitsplatzContexts.length) return;
+  _arbeitsplatzContexts.splice(index, 1);
+  renderArbeitsplatzContext();
+}
+
+/** Entfernt alle Bezüge (z. B. nach erfolgreicher Anlage). */
 function clearArbeitsplatzContext() {
-  _arbeitsplatzContext = null;
+  _arbeitsplatzContexts = [];
   renderArbeitsplatzContext();
 }
 
@@ -2830,9 +2966,14 @@ function openArbeitsplatzContextPicker() {
   openSearchOverlay();
 }
 
-/** Wird aus der Such-Auswahl aufgerufen, wenn Kontext-Modus aktiv ist. */
+/** Wird aus der Such-Auswahl aufgerufen, wenn Kontext-Modus aktiv ist.
+ *  Pro Typ darf nur ein Eintrag existieren — eine zweite Auswahl desselben
+ *  Typs ersetzt die alte Pille. */
 function setArbeitsplatzContextFromSearch(type, id, title) {
-  _arbeitsplatzContext = { type, id, label: title };
+  // Vorhandenen Eintrag desselben Typs ersetzen
+  const idx = _arbeitsplatzContexts.findIndex(c => c.type === type);
+  if (idx >= 0) _arbeitsplatzContexts[idx] = { type, id, label: title };
+  else _arbeitsplatzContexts.push({ type, id, label: title });
   window._arbeitsplatzContextPickerActive = false;
   closeSearchOverlay();
   renderArbeitsplatzContext();
@@ -2890,10 +3031,10 @@ async function renderArbeitsplatzToday() {
   ]);
 
   const items = [
-    ...((apptRes.data) || []).map(a => ({ type: 'TERMIN',  ts: a.created_at, label: a.titel })),
-    ...((depRes.data) || []).map(d => ({ type: 'EINSATZ', ts: d.created_at, label: d.titel })),
-    ...((taskRes.data) || []).map(t => ({ type: 'AUFGABE', ts: t.created_at, label: t.titel })),
-    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${t.titel} → erledigt` }))
+    ...((apptRes.data) || []).map(a => ({ type: 'TERMIN',  ts: a.created_at, label: a.titel, id: a.id, click: `navigateTo('termin','${esc(a.id)}')` })),
+    ...((depRes.data) || []).map(d => ({ type: 'EINSATZ', ts: d.created_at, label: d.titel, id: d.id, click: `navigateTo('einsatz','${esc(d.id)}')` })),
+    ...((taskRes.data) || []).map(t => ({ type: 'AUFGABE', ts: t.created_at, label: t.titel, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` })),
+    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${t.titel} → erledigt`, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` }))
   ].filter(i => i.ts).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 6);
 
   if (counter) counter.textContent = `${items.length} Aktion${items.length === 1 ? '' : 'en'}`;
@@ -2908,7 +3049,7 @@ async function renderArbeitsplatzToday() {
     const cls = it.type.toLowerCase();
     const pill = it.type.charAt(0) + it.type.slice(1).toLowerCase();
     return `
-      <div class="arbeitsplatz-today-row">
+      <div class="arbeitsplatz-today-row" onclick="${it.click}">
         <span class="arbeitsplatz-today-time">${esc(time)}</span>
         <span class="type-pill type-pill-${esc(cls)}">${esc(pill)}</span>
         <span class="arbeitsplatz-today-label">${esc(it.label || '—')}</span>
@@ -2943,9 +3084,8 @@ async function renderArbeitsplatzTemplates() {
  *  Firma/Projekt/Kontakt-Vorbelegung. */
 async function arbeitsplatzCreate(typ) {
   const captureText = (_arbeitsplatzCaptureText || '').trim();
-  // Kontext-Vorbelegung
-  const ctx = _arbeitsplatzContext;
-  if (ctx) {
+  // Kontext-Vorbelegung — alle aktiven Bezüge anwenden
+  for (const ctx of _arbeitsplatzContexts) {
     if (ctx.type === 'firma') {
       appointmentModalPrefillCompanyId = ctx.id;
       taskModalPrefillCompanyId = ctx.id;
@@ -3088,6 +3228,24 @@ function setMobileNav(pageName) {
   } else {
     document.getElementById('m-nav-more')?.classList.add('active');
   }
+
+  // v2.0.1 Punkt 1: Kalender-Streifen nur unter Briefing permanent sichtbar
+  setCalendarBarVisibility(pageName);
+}
+
+/** Zeigt die Kalender-Bar nur auf der Briefing-Seite an. Toggle die Body-Klasse
+ *  `has-calendar`, damit die `.main`-Padding nicht auf anderen Seiten 160 px
+ *  Leere am Boden lässt. Schließt das Tages-Popover beim Verlassen. */
+function setCalendarBarVisibility(pageName) {
+  const bar = document.getElementById('calendar-bar');
+  if (!bar) return;
+  const visible = pageName === 'briefing' || pageName === 'heute';
+  bar.style.display = visible ? '' : 'none';
+  document.body.classList.toggle('has-calendar', visible);
+  if (!visible) {
+    const pop = document.getElementById('calendar-popover');
+    if (pop) pop.style.display = 'none';
+  }
 }
 
 function toggleSettings() {
@@ -3141,6 +3299,9 @@ function navigateTo(page, param) {
     hash = '#/termine';
   } else if (page === 'tasks') {
     hash = '#/aufgaben';
+  } else if (page === 'projects' && param && typeof param === 'object') {
+    pendingProjectsFilter = { ...(pendingProjectsFilter || {}), ...param };
+    hash = '#/projekte';
   } else if (page === 'projects') {
     hash = '#/projekte';
   } else if (page === 'deployments') {
@@ -7543,6 +7704,13 @@ async function loadProjects() {
   if (error) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`; return; }
 
   projectsCache = data || [];
+
+  // Pending-Filter aus navigateTo-Param applizieren (z.B. Klick auf Pipeline-Stage)
+  if (pendingProjectsFilter) {
+    if (pendingProjectsFilter.status) statusFilter.value = pendingProjectsFilter.status;
+    pendingProjectsFilter = null;
+  }
+
   filterProjects();
 }
 
@@ -11442,12 +11610,12 @@ async function preserveExpandedRowAcross(fn) {
 /** Auto-Expand (v1.27.1, generalisiert v1.28): Wenn in einem Sub-Tab genau ein Eintrag
  *  angezeigt wird, klappt die einzige Zeile automatisch auf — spart den manuellen Klick.
  *  Greift nicht auf Mobile (dort würde das Klick→Modal-Verhalten ungewöhnlich brechen). */
-function autoExpandSingleRow(tbody, entityType, items) {
-  if (!tbody || !Array.isArray(items) || items.length !== 1) return;
-  if (isMobileForExpand()) return;
-  const firstRow = tbody.querySelector('tr');
-  if (!firstRow) return;
-  toggleRowExpand(entityType, items[0].id, firstRow);
+function autoExpandSingleRow(_tbody, _entityType, _items) {
+  // v2.0.0 Phase 9: Inline-Expand abgelöst — Termin/Einsatz haben eigene
+  // Detail-Pages, Aufgabe öffnet das Bearbeiten-Modal. Beim Auto-Expand
+  // einer Liste mit genau einer Zeile würde sonst beim Öffnen der
+  // Projekt-/Firma-/Kontakt-Detail-Page ungefragt das Aufgabe-Modal
+  // aufspringen. No-Op statt überall die Aufrufstellen zu entfernen.
 }
 
 // In-Memory-Cache für die gerenderte Detail-HTML der Inline-Expand-Dashboards (v1.38.1).
@@ -12522,11 +12690,11 @@ function computeBwHolidays(year) {
   return holidays;
 }
 
-/** Initialisiert die Kalender-Bar nach dem Login. */
+/** Initialisiert die Kalender-Bar nach dem Login. Sichtbarkeit selbst wird vom
+ *  Hash-Router via setCalendarBarVisibility gesteuert (nur unter Briefing). */
 async function initCalendarBar() {
   const bar = document.getElementById('calendar-bar');
   if (!bar) return;
-  bar.style.display = '';
 
   await loadUserProfilesCache();
   const select = document.getElementById('calendar-user-select');
@@ -13991,7 +14159,7 @@ function renderPipelineStages(pipelineProjects) {
     const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
     const weight = Math.round((PIPELINE_FORECAST_WEIGHT[stage] || 0) * 100);
     return `
-      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
+      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects', { status: '${esc(stage)}' })">
         <span class="pipeline-stage-name">${esc(stage)} <span class="pipeline-stage-weight">${weight}%</span></span>
         <span class="pipeline-stage-count">${projs.length}</span>
         <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
@@ -14264,7 +14432,7 @@ function _renderBriefingMonthDashboard_legacy(data) {
     const projs = pipelineProjects.filter(p => p.status === stage);
     const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
     return `
-      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects')">
+      <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects', { status: '${esc(stage)}' })">
         <span class="pipeline-stage-name">${esc(stage)}</span>
         <span class="pipeline-stage-count">${projs.length}</span>
         <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
@@ -16536,7 +16704,11 @@ function fabOpenArbeitsplatz() {
   const ctx = _getFabContext();
   if (ctx.type) {
     const ctxType = ctx.type === 'company' ? 'firma' : ctx.type === 'project' ? 'projekt' : ctx.type;
-    _arbeitsplatzContext = { type: ctxType, id: ctx.id, label: ctx.label.replace('für ', '').replace('diese ', '').replace('dieses ', '').replace('diesen ', '') };
+    const cleanLabel = ctx.label.replace('für ', '').replace('diese ', '').replace('dieses ', '').replace('diesen ', '');
+    // Vorhandenen Eintrag desselben Typs ersetzen, sonst hinzufügen
+    const idx = _arbeitsplatzContexts.findIndex(c => c.type === ctxType);
+    if (idx >= 0) _arbeitsplatzContexts[idx] = { type: ctxType, id: ctx.id, label: cleanLabel };
+    else _arbeitsplatzContexts.push({ type: ctxType, id: ctx.id, label: cleanLabel });
   }
   navigateTo('arbeitsplatz');
 }
@@ -16816,6 +16988,55 @@ async function postProjectNote() {
   input.value = '';
   showToast('Notiz hinzugefügt.');
   loadProjectActivityStream(currentProjectDetailId);
+}
+
+// Schnelleingabe-Typ pro Detail-Page (v2.0.1, Punkt 7a). Default 'notiz'.
+let _projectQuickInputType = 'notiz';
+
+const _PROJECT_QI_PLACEHOLDER = {
+  notiz:        'Notiz hinzufügen oder Update zum Projekt schreiben …',
+  folgetermin:  'Worüber soll der Folgetermin sein? (Titel) — ⌘↵ öffnet das Termin-Modal',
+  aufgabe:      'Was muss erledigt werden? (Aufgabe-Titel) — ⌘↵ öffnet das Aufgabe-Modal'
+};
+
+/** Setzt den Schnelleingabe-Typ + ändert Placeholder + markiert die aktive Pille. */
+function setProjectQuickInputType(type) {
+  if (!_PROJECT_QI_PLACEHOLDER[type]) return;
+  _projectQuickInputType = type;
+  document.querySelectorAll('.proj-note-types .proj-note-type').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.type === type));
+  const input = document.getElementById('project-note-input');
+  if (input) input.placeholder = _PROJECT_QI_PLACEHOLDER[type];
+}
+
+/** Dispatcher für ⌘↵ / Send-Button im Activity-Stream. Routet je nach
+ *  ausgewähltem Typ: Notiz speichert direkt, Folgetermin/Aufgabe öffnen das
+ *  Modal mit project_id und Titel vorbelegt. */
+async function postProjectQuickInput() {
+  const input = document.getElementById('project-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (_projectQuickInputType === 'notiz') return postProjectNote();
+
+  if (_projectQuickInputType === 'folgetermin') {
+    appointmentModalPrefillProjectId = currentProjectDetailId;
+    input.value = '';
+    await openAppointmentModal('new');
+    const titel = document.getElementById('t-titel');
+    if (titel) titel.value = text;
+    return;
+  }
+
+  if (_projectQuickInputType === 'aufgabe') {
+    taskModalPrefillProjectId = currentProjectDetailId;
+    input.value = '';
+    await openTaskModal('new');
+    const titel = document.getElementById('a-titel');
+    if (titel) titel.value = text;
+    return;
+  }
 }
 
 /** Brief-Tab — Ziel + Erfolgskriterien + Themen + Entwicklungs-Log. */
