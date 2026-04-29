@@ -2251,8 +2251,9 @@ function showPage(name) {
   const navBtn = document.getElementById('nav-' + name);
   if (navBtn) navBtn.classList.add('active');
 
-  // v2.0.0 — Top-Nav-Tab-Activation
+  // v2.0.0 — Top-Nav-Tab-Activation + Listen-Sub-Nav
   setActiveTopNavTab(name);
+  updateListenTabBar(name);
 
   setMobileNav(name);
 
@@ -2305,14 +2306,31 @@ async function loadArbeitsplatz() {
 }
 
 async function loadListenPage() {
+  // v2.0.0 — /listen ist nur ein Default-Redirect auf Firmen (siehe navigateTo).
+  // Diese Funktion wird beim direkten Aufruf von showPage('listen') ausgeführt
+  // und blendet einen Hinweis ein, weil der Hash-Router auf /firmen umlenkt.
   const c = document.getElementById('listen-container');
   if (!c) return;
   c.innerHTML = `
     <div class="redesign-stub">
-      <div class="redesign-stub-eyebrow">BEREICH 3</div>
-      <h1 class="redesign-stub-title">Listen — wo ich finde</h1>
-      <p class="redesign-stub-hint">Wird in Phase 2 gebaut. Bis dahin findest du alle Listen in der Sidebar (Firmen / Kontakte / Projekte / Termine / Einsätze / Aufgaben).</p>
+      <div class="redesign-stub-eyebrow">LISTEN</div>
+      <h1 class="redesign-stub-title">Wähle eine Liste oben</h1>
+      <p class="redesign-stub-hint">Firmen, Kontakte, Projekte, Termine, Einsätze oder Aufgaben.</p>
     </div>`;
+}
+
+/** v2.0.0 — Sub-Nav für Listen ein-/ausblenden + aktiven Tab markieren. */
+const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
+function updateListenTabBar(pageName) {
+  const bar = document.getElementById('listen-tab-bar');
+  if (!bar) return;
+  const inListen = LISTEN_PAGES.includes(pageName);
+  bar.style.display = inListen ? 'flex' : 'none';
+  if (inListen) {
+    bar.querySelectorAll('.listen-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.page === pageName);
+    });
+  }
 }
 
 async function loadEinstellungen() {
@@ -2420,7 +2438,8 @@ function navigateTo(page, param) {
   } else if (page === 'arbeitsplatz') {
     hash = '#/arbeitsplatz';
   } else if (page === 'listen') {
-    hash = '#/listen';
+    // v2.0.0 — /listen ohne Sub-Tab leitet auf Firmen weiter (sinnvoller Default)
+    hash = '#/firmen';
   } else if (page === 'einstellungen') {
     hash = '#/einstellungen';
   } else {

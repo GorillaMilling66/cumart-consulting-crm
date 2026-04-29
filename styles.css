@@ -464,6 +464,47 @@ body {
 /* Backwards-Kompat: alte .app-header-Klassen verlinken auf neue Top-Nav */
 .app-header { display: none; }
 
+/* v2.0.0 — Listen-Sub-Navigation (Firmen/Kontakte/Projekte/Termine/Einsätze/Aufgaben) */
+.listen-tab-bar {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0 16px;
+  margin: -16px 0 16px;
+  border-bottom: 0.5px solid var(--border);
+  z-index: 10;
+  flex-wrap: wrap;
+}
+.listen-tab {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background .12s, color .12s;
+}
+.listen-tab:hover { background: var(--bg-soft); color: var(--text); }
+.listen-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  border: 0.5px solid var(--border);
+}
+.listen-tab-count {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.listen-tab.active .listen-tab-count { color: var(--text); }
+
 /* v2.0.0 — Stub-Layout für leere Bereiche während Phasen-Roll-out */
 .redesign-stub {
   max-width: 720px;
