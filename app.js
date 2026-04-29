@@ -727,6 +727,7 @@ let editingTaskId = null;
 let taskModalPrefillCompanyId = null;
 let taskModalPrefillProjectId = null;
 let taskModalPrefillContactId = null;
+let taskModalPrefillDeploymentId = null;  // v2.0.2: Action-Items am Einsatz
 
 let companiesCache   = [];
 let contactsCache    = [];
@@ -16239,6 +16240,8 @@ async function openTaskModal(mode, taskId = null) {
     document.getElementById('a-notizen').value      = data.notizen || '';
     statusSelect.value   = data.status || 'offen';
     if (data.assigned_to) assigneeSelect.value = data.assigned_to;
+    // v2.0.2: deployment_id beim Edit erhalten — sonst geht der Bezug zum Einsatz verloren
+    if (data.deployment_id) taskModalPrefillDeploymentId = data.deployment_id;
     if (data.company_id) {
       setCompanyComboboxValue('a-company', 'a-company-list', data.company_id);
       await rebuildContactDropdownForTask(data.company_id);
@@ -16281,6 +16284,7 @@ function closeTaskModal() {
   taskModalPrefillCompanyId = null;
   taskModalPrefillProjectId = null;
   taskModalPrefillContactId = null;
+  taskModalPrefillDeploymentId = null;
 }
 
 async function rebuildContactDropdownForTask(companyId) {
@@ -16358,6 +16362,7 @@ async function saveTask() {
       status, erledigt_am,
       assigned_to,
       company_id, contact_id, project_id,
+      deployment_id: taskModalPrefillDeploymentId || null,  // v2.0.2: Action-Items
       notizen: notizen || null
     };
     if (!editingTaskId) payload.erstellt_von = currentProfile?.id || null;
@@ -16675,6 +16680,9 @@ async function _refreshTaskContext() {
     await loadProjectTasks(currentProjectDetailId);
   } else if (hash.startsWith('#/kontakt/') && currentContactDetailId) {
     await loadContactTasks(currentContactDetailId);
+  } else if (hash.startsWith('#/einsatz/') && currentDeploymentDetailId) {
+    // v2.0.2: Action-Items-Liste am Einsatz-Detail refreshen
+    await renderDeploymentActionItems(currentDeploymentDetailId);
   }
 }
 
@@ -17924,23 +17932,22 @@ async function renderDeploymentActionItems(deploymentId) {
     </label>`).join('');
 }
 
+/** v2.0.2: Öffnet das Aufgabe-Drawer mit deployment_id vorbelegt (Action Item).
+ *  project_id und company_id werden aus dem aktuellen Einsatz geerbt, damit der
+ *  Bezug konsistent bleibt. Nach dem Speichern aktualisiert _refreshTaskContext
+ *  die Action-Items-Liste automatisch (siehe Hash-Branch für #/einsatz/). */
 async function addDeploymentActionItem() {
   if (!currentDeploymentDetailId) return;
-  const titel = prompt('Action Item:');
-  if (!titel || !titel.trim()) return;
-  // project_id und company_id aus dem aktuellen Einsatz erben
-  const { data: d } = await db.from('deployments').select('project_id, company_id').eq('id', currentDeploymentDetailId).single();
-  const { error } = await db.from('tasks').insert({
-    titel: titel.trim(),
-    status: 'offen',
-    deployment_id: currentDeploymentDetailId,
-    project_id: d?.project_id || null,
-    company_id: d?.company_id || null,
-    assigned_to: currentProfile?.id || null,
-    erstellt_von: currentProfile?.id || null
-  });
-  if (error) { showToast('Fehler: ' + error.message, true); return; }
-  await renderDeploymentActionItems(currentDeploymentDetailId);
+  // Bezüge aus dem aktuellen Einsatz übernehmen
+  const { data: d } = await db.from('deployments')
+    .select('project_id, company_id')
+    .eq('id', currentDeploymentDetailId).single();
+
+  taskModalPrefillDeploymentId = currentDeploymentDetailId;
+  if (d?.company_id) taskModalPrefillCompanyId = d.company_id;
+  if (d?.project_id) taskModalPrefillProjectId = d.project_id;
+
+  await openTaskModal('new');
 }
 
 async function toggleDeploymentActionItem(taskId, done) {
