@@ -2728,15 +2728,27 @@ async function loadListenPage() {
 
 /** v2.0.0 — Sub-Nav für Listen ein-/ausblenden + aktiven Tab markieren. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users'];
 function updateListenTabBar(pageName) {
-  const bar = document.getElementById('listen-tab-bar');
-  if (!bar) return;
-  const inListen = LISTEN_PAGES.includes(pageName);
-  bar.style.display = inListen ? 'flex' : 'none';
-  if (inListen) {
-    bar.querySelectorAll('.listen-tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.page === pageName);
-    });
+  const listenBar = document.getElementById('listen-tab-bar');
+  const settingsBar = document.getElementById('einstellungen-tab-bar');
+  if (listenBar) {
+    const inListen = LISTEN_PAGES.includes(pageName);
+    listenBar.style.display = inListen ? 'flex' : 'none';
+    if (inListen) {
+      listenBar.querySelectorAll('.listen-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.page === pageName);
+      });
+    }
+  }
+  if (settingsBar) {
+    const inSettings = EINSTELLUNGEN_PAGES.includes(pageName);
+    settingsBar.style.display = inSettings ? 'flex' : 'none';
+    if (inSettings) {
+      settingsBar.querySelectorAll('.listen-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.page === pageName);
+      });
+    }
   }
 }
 
@@ -2848,7 +2860,8 @@ function navigateTo(page, param) {
     // v2.0.0 — /listen ohne Sub-Tab leitet auf Firmen weiter (sinnvoller Default)
     hash = '#/firmen';
   } else if (page === 'einstellungen') {
-    hash = '#/einstellungen';
+    // v2.0.0 — Default Sub-Tab beim Klick auf Zahnrad
+    hash = '#/stammdaten';
   } else {
     hash = '#/firmen';
   }

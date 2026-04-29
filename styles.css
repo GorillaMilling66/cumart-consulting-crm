@@ -97,12 +97,15 @@ body {
 /* ── LAYOUT ── */
 .app { display: flex; min-height: 100vh; }
 
-/* ── DESKTOP-SIDEBAR (v1.36.0 neu: Logo + Branding + Trennlinie) ── */
+/* ── DESKTOP-SIDEBAR (v1.36.0; v2.0.0 ausgeblendet — Top-Nav übernimmt) ── */
 .sidebar {
+  display: none;   /* v2.0.0 Phase 5: ersetzt durch Top-Nav + Sub-Nav-Bars */
+}
+/* Klassenfolge bleibt für mögliche Mobile-Logik intakt */
+.sidebar-fallback {
   width: 220px;
   background: var(--surface);
   border-right: 1px solid var(--border);
-  display: flex;
   flex-direction: column;
   padding: 0;
   flex-shrink: 0;
@@ -369,7 +372,7 @@ body {
 .app-topnav {
   position: fixed;
   top: 0;
-  left: 220px;          /* Sidebar bleibt vorerst — Phase 5 entfernt sie */
+  left: 0;              /* v2.0.0 Phase 5: Sidebar entfernt, Top-Nav full-width */
   right: 0;
   height: var(--topnav-height);
   background: var(--bg);
@@ -959,9 +962,12 @@ body {
 /* ── MAIN CONTENT ── */
 .main {
   flex: 1;
-  margin-left: 220px;          /* Sidebar bleibt bis Phase 5 */
+  margin-left: 0;              /* v2.0.0 Phase 5: Sidebar entfernt */
   padding: 80px 32px 32px;     /* 80px top = 56px Top-Nav + 24px Abstand */
   min-height: 100vh;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
 }
 .page { display: none; }
 .page.active { display: block; }
