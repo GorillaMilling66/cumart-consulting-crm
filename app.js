@@ -5986,7 +5986,8 @@ async function loadCompanyDetail(companyId) {
 
   renderCompanyDetail(data);
   trackVisit('company', data.id, data.name, [data.stadt, data.branche].filter(Boolean).join(' · '));
-  initDetailTabs('company');
+  // v2.0.0 — neues Vier-Zonen-Layout (kein switchDetailTab mehr — Tabs werden über switchCompanyV2Tab gesetzt)
+  await renderCompanyV2Layout(data);
   await loadCompanyContacts(companyId);
   await loadCompanyAppointments(companyId);
   await loadCompanyProjects(companyId);
@@ -16610,6 +16611,185 @@ async function renderProjectDevelopmentLog(projectId) {
         <div class="proj-log-text">${esc(it.log)}</div>
       </div>`).join('')}
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.0 — FIRMA-DETAIL V2 (Vier-Zonen-Muster)
+// ═══════════════════════════════════════════════════════════
+
+let _currentCompanyV2Tab = 'aktivitaeten';
+let _currentCompanyActivityFilter = 'alle';
+
+function switchCompanyV2Tab(tab) {
+  _currentCompanyV2Tab = tab;
+  document.querySelectorAll('#page-company-detail .proj-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('#page-company-detail .proj-tab-panel').forEach(p =>
+    p.style.display = p.dataset.tab === tab ? '' : 'none');
+  if (tab === 'aktivitaeten') loadCompanyActivityStream(currentCompanyDetailId);
+}
+
+/** Hero-Zone + Sidepanel der Firma-Detail-Page befüllen. */
+async function renderCompanyV2Layout(c) {
+  // ABC-Hero-Metric: Klick öffnet existing ABC-Edit-Popover
+  const abcCard = document.getElementById('company-abc-card');
+  const abcValue = document.getElementById('company-abc-value');
+  const abcModeLabel = document.getElementById('company-abc-mode-label');
+  if (abcCard) {
+    abcCard.onclick = () => openCompanyAbcPopover?.(c.id);
+  }
+  if (abcValue) abcValue.textContent = c.abc_klassifizierung || '—';
+  if (abcModeLabel) {
+    abcModeLabel.textContent = c.abc_klassifizierung_mode === 'manuell' ? 'manuell' : 'auto';
+  }
+
+  // Health: letzter Kontakt = neuestes Termin/Einsatz
+  const healthEl = document.getElementById('company-health-value');
+  const healthSub = document.getElementById('company-health-sub');
+  if (healthEl) {
+    const [a, d] = await Promise.all([
+      db.from('appointments').select('datum').is('deleted_at', null).eq('company_id', c.id).order('datum', { ascending: false }).limit(1),
+      db.from('deployments').select('datum_von').is('deleted_at', null).eq('company_id', c.id).order('datum_von', { ascending: false }).limit(1)
+    ]);
+    const lastDates = [a.data?.[0]?.datum, d.data?.[0]?.datum_von].filter(Boolean);
+    const lastDate = lastDates.sort().reverse()[0];
+    let label, dots, color;
+    if (!lastDate) { label = 'Noch kein Kontakt'; dots = 1; color = 'var(--muted)'; }
+    else {
+      const days = Math.round((new Date(toISODate(new Date())) - new Date(lastDate)) / 86400000);
+      if (days <= 14)      { label = 'Aktiv';     dots = 3; color = 'var(--success)'; }
+      else if (days <= 60) { label = 'Pflege';    dots = 2; color = 'var(--warning)'; }
+      else                 { label = 'Verwaist'; dots = 1; color = 'var(--danger)'; }
+      if (healthSub) healthSub.textContent = `Letzter Kontakt vor ${days} ${days === 1 ? 'Tag' : 'Tagen'}`;
+    }
+    healthEl.innerHTML = `${label} <span class="proj-health-dots" style="color:${color}">${'●'.repeat(dots)}${'○'.repeat(3 - dots)}</span>`;
+  }
+
+  // Sidepanel: Hauptkontakt — erster Kontakt der Firma als Default
+  const hkEl = document.getElementById('company-side-hauptkontakt');
+  if (hkEl) {
+    const { data: contacts } = await db.from('contacts').select('id, vorname, nachname, position, email, telefon')
+      .is('deleted_at', null).eq('company_id', c.id).order('nachname').limit(1);
+    const k = contacts?.[0];
+    if (k) {
+      const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
+      hkEl.innerHTML = `
+        <div class="proj-side-person" onclick="navigateTo('kontakt','${esc(k.id)}')">
+          <span class="proj-side-avatar">${esc(ini(fullName))}</span>
+          <div>
+            <div class="proj-side-name">${esc(fullName)}</div>
+            <div class="proj-side-role">${esc(k.position || 'Kontakt')}</div>
+          </div>
+        </div>`;
+    } else {
+      hkEl.innerHTML = '<div class="info-card-empty">Noch kein Kontakt angelegt.</div>';
+    }
+  }
+
+  // Sidepanel: Meta
+  const metaEl = document.getElementById('company-meta');
+  if (metaEl) {
+    metaEl.innerHTML = `
+      <div>ID · ${esc(c.id.substring(0, 8))}</div>
+      <div>Erstellt · ${c.created_at ? esc(formatDateDE(c.created_at.substring(0, 10))) : '—'}</div>`;
+  }
+
+  // Avatar in Notiz-Eingabe
+  const noteAvatar = document.getElementById('company-note-avatar');
+  if (noteAvatar) noteAvatar.textContent = ini(currentProfile?.name || '?');
+
+  _currentCompanyV2Tab = 'aktivitaeten';
+  _currentCompanyActivityFilter = 'alle';
+  switchCompanyV2Tab('aktivitaeten');
+}
+
+async function loadCompanyActivityStream(companyId) {
+  if (!companyId) return;
+  const wrap = document.getElementById('company-activity-stream');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="info-card-empty">Lade Aktivitäten …</div>';
+
+  const [appts, deps, tasks, notes] = await Promise.all([
+    db.from('appointments').select('id, titel, datum, uhrzeit_von, status').is('deleted_at', null).eq('company_id', companyId).order('datum', { ascending: false }).limit(50),
+    db.from('deployments').select('id, titel, datum_von, status, ort, einzelpreis, menge').is('deleted_at', null).eq('company_id', companyId).order('datum_von', { ascending: false }).limit(50),
+    db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('company_id', companyId).order('created_at', { ascending: false }).limit(50),
+    db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('company_id', companyId).order('created_at', { ascending: false }).limit(50)
+  ]);
+
+  const items = [];
+  (appts.data || []).forEach(a => items.push({
+    id: a.id, type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
+    title: a.titel || '—', meta: a.status, kind: 'termine'
+  }));
+  (deps.data || []).forEach(d => items.push({
+    id: d.id, type: 'EINSATZ', ts: (d.datum_von || '') + 'T00:00:00',
+    title: d.titel || '—',
+    meta: [d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1)), d.status].filter(Boolean).join(' · '),
+    kind: 'einsaetze',
+    onclick: `navigateTo('einsatz','${d.id}')`
+  }));
+  (tasks.data || []).forEach(t => items.push({
+    id: t.id, type: 'AUFGABE', ts: t.created_at,
+    title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+    kind: 'aufgaben'
+  }));
+  (notes.data || []).forEach(n => items.push({
+    id: n.id, type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen'
+  }));
+
+  items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+
+  const filtered = _currentCompanyActivityFilter === 'alle'
+    ? items : items.filter(i => i.kind === _currentCompanyActivityFilter);
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
+    return;
+  }
+
+  wrap.innerHTML = filtered.map(it => {
+    const cls = it.type.toLowerCase();
+    const click = it.onclick ? `onclick="${it.onclick}"` : '';
+    return `
+      <div class="proj-activity-item" ${click} ${it.onclick ? 'style="cursor:pointer"' : ''}>
+        <div class="proj-activity-date">${esc(formatDateCompact(it.ts.substring(0, 10)))}</div>
+        <div class="proj-activity-body">
+          <div class="proj-activity-head">
+            <span class="type-pill type-pill-${cls}">${esc(it.type)}</span>
+            <span class="proj-activity-title">${esc(it.title)}</span>
+          </div>
+          <div class="proj-activity-meta">${esc(it.meta || '')}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterCompanyActivity(filter) {
+  _currentCompanyActivityFilter = filter;
+  document.querySelectorAll('#page-company-detail .proj-filter-pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.filter === filter));
+  loadCompanyActivityStream(currentCompanyDetailId);
+}
+
+function focusCompanyNoteInput() {
+  if (_currentCompanyV2Tab !== 'aktivitaeten') switchCompanyV2Tab('aktivitaeten');
+  document.getElementById('company-note-input')?.focus();
+}
+
+async function postCompanyNote() {
+  const input = document.getElementById('company-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  const { error } = await db.from('notes').insert({
+    company_id: currentCompanyDetailId,
+    inhalt: text,
+    erstellt_von: currentProfile?.id || null
+  });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  input.value = '';
+  showToast('Notiz hinzugefügt.');
+  loadCompanyActivityStream(currentCompanyDetailId);
 }
 
 // ═══════════════════════════════════════════════════════════
