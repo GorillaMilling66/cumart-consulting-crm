@@ -2484,15 +2484,232 @@ async function markTaskDoneInline(taskId, checked) {
   loadBriefingV2();
 }
 
+// v2.0.0 — Arbeitsplatz-State (überlebt Modal-Wechsel innerhalb der Seite)
+let _arbeitsplatzContext = null;  // { type, id, label }
+let _arbeitsplatzCaptureText = '';
+
 async function loadArbeitsplatz() {
-  const c = document.getElementById('arbeitsplatz-container');
-  if (!c) return;
-  c.innerHTML = `
-    <div class="redesign-stub">
-      <div class="redesign-stub-eyebrow">BEREICH 2</div>
-      <h1 class="redesign-stub-title">Arbeitsplatz — wo ich erschaffe</h1>
-      <p class="redesign-stub-hint">Wird in Phase 4 gebaut. Bis dahin nutze das FAB-Plus-Menü unten rechts oder die Sidebar-Listen.</p>
-    </div>`;
+  // Datum oben rechts
+  const dateEl = document.getElementById('arbeitsplatz-date');
+  if (dateEl) {
+    const d = new Date();
+    dateEl.textContent = `${WEEKDAYS_DE[d.getDay()]}, ${d.getDate()}. ${MONTHS_DE[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  // Capture-Feld an State binden
+  const captureInput = document.getElementById('arbeitsplatz-capture-input');
+  if (captureInput) {
+    captureInput.value = _arbeitsplatzCaptureText;
+    captureInput.oninput = () => { _arbeitsplatzCaptureText = captureInput.value; };
+  }
+
+  // Kontext-Pille rendern
+  renderArbeitsplatzContext();
+
+  // Drei Lazy-Loads
+  await Promise.all([
+    renderArbeitsplatzRecent(),
+    renderArbeitsplatzToday(),
+    renderArbeitsplatzTemplates()
+  ]);
+}
+
+function renderArbeitsplatzContext() {
+  const area = document.getElementById('arbeitsplatz-context-pill-area');
+  if (!area) return;
+  if (!_arbeitsplatzContext) {
+    area.innerHTML = `<button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>`;
+    return;
+  }
+  area.innerHTML = `
+    <span class="arbeitsplatz-context-pill">
+      ${esc(_arbeitsplatzContext.label)}
+      <button class="arbeitsplatz-context-clear" onclick="clearArbeitsplatzContext()" aria-label="Kontext entfernen">×</button>
+    </span>
+    <span class="arbeitsplatz-context-hint">(Kontext bleibt für mehrere Anlagen)</span>`;
+}
+
+function clearArbeitsplatzContext() {
+  _arbeitsplatzContext = null;
+  renderArbeitsplatzContext();
+}
+
+/** Öffnet die globale Suche und übergibt Auswahl zurück als Kontext. */
+function openArbeitsplatzContextPicker() {
+  // Wir nutzen die existierende Suche und definieren einen Callback,
+  // der statt Navigation den Kontext setzt.
+  window._arbeitsplatzContextPickerActive = true;
+  openSearchOverlay();
+}
+
+/** Wird aus der Such-Auswahl aufgerufen, wenn Kontext-Modus aktiv ist. */
+function setArbeitsplatzContextFromSearch(type, id, title) {
+  _arbeitsplatzContext = { type, id, label: title };
+  window._arbeitsplatzContextPickerActive = false;
+  closeSearchOverlay();
+  renderArbeitsplatzContext();
+}
+
+/** Zuletzt-bearbeitet aus localStorage (recentlyVisited). */
+async function renderArbeitsplatzRecent() {
+  const wrap = document.getElementById('arbeitsplatz-recent');
+  if (!wrap) return;
+  const list = getRecentlyVisited();
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Noch nichts besucht. Sobald du eine Detailseite öffnest, taucht sie hier auf.</div>';
+    return;
+  }
+  wrap.innerHTML = list.map(e => {
+    const label = TYPE_LABELS_FOR_ARBEITSPLATZ[e.type] || e.type;
+    const typClass = (e.type === 'firma' ? 'firma' : e.type === 'kontakt' ? 'kontakt' : e.type === 'projekt' ? 'projekt' : 'einsatz');
+    return `
+      <button class="arbeitsplatz-recent-row" onclick="arbeitsplatzOpenRecent('${esc(e.type)}','${esc(e.id)}')">
+        <span class="type-pill type-pill-${typClass}">${esc(label)}</span>
+        <span class="arbeitsplatz-recent-title">${esc(e.title)}</span>
+      </button>`;
+  }).join('');
+}
+
+const TYPE_LABELS_FOR_ARBEITSPLATZ = {
+  firma: 'FIRMA', kontakt: 'KONTAKT', projekt: 'PROJEKT', einsatz: 'EINSATZ', termin: 'TERMIN'
+};
+
+function arbeitsplatzOpenRecent(type, id) {
+  navigateTo(type, id);
+}
+
+/** Heute-von-dir: Aktionen heute, aggregiert aus mehreren Tabellen. */
+async function renderArbeitsplatzToday() {
+  const wrap = document.getElementById('arbeitsplatz-today');
+  const counter = document.getElementById('arbeitsplatz-today-count');
+  if (!wrap) return;
+  const userId = currentProfile?.id;
+  if (!userId) return;
+
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayStartISO = todayStart.toISOString();
+
+  // Parallel-Queries: heute erstellte Termine, Einsätze, Aufgaben, erledigte Aufgaben
+  const [apptRes, depRes, taskRes, taskDoneRes] = await Promise.all([
+    db.from('appointments').select('id, titel, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+    db.from('deployments').select('id, titel, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+    db.from('tasks').select('id, titel, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+    db.from('tasks').select('id, titel, erledigt_am').is('deleted_at', null)
+      .eq('status', 'erledigt').gte('erledigt_am', todayStartISO).order('erledigt_am', { ascending: false }).limit(20)
+  ]);
+
+  const items = [
+    ...((apptRes.data) || []).map(a => ({ type: 'TERMIN',  ts: a.created_at, label: a.titel })),
+    ...((depRes.data) || []).map(d => ({ type: 'EINSATZ', ts: d.created_at, label: d.titel })),
+    ...((taskRes.data) || []).map(t => ({ type: 'AUFGABE', ts: t.created_at, label: t.titel })),
+    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${t.titel} → erledigt` }))
+  ].filter(i => i.ts).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 6);
+
+  if (counter) counter.textContent = `${items.length} Aktion${items.length === 1 ? '' : 'en'}`;
+
+  if (items.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Heute noch nichts angelegt. Leg los — die Kacheln oben warten.</div>';
+    return;
+  }
+
+  wrap.innerHTML = items.map(it => {
+    const time = new Date(it.ts).toTimeString().substring(0, 5);
+    const cls = it.type.toLowerCase();
+    const pill = it.type.charAt(0) + it.type.slice(1).toLowerCase();
+    return `
+      <div class="arbeitsplatz-today-row">
+        <span class="arbeitsplatz-today-time">${esc(time)}</span>
+        <span class="type-pill type-pill-${esc(cls)}">${esc(pill)}</span>
+        <span class="arbeitsplatz-today-label">${esc(it.label || '—')}</span>
+      </div>`;
+  }).join('');
+}
+
+/** Templates-Streifen: häufig genutzte Vorlagen. */
+async function renderArbeitsplatzTemplates() {
+  const wrap = document.getElementById('arbeitsplatz-template-grid');
+  if (!wrap) return;
+  // Lade aktive Templates aller 4 Typen
+  const types = ['einsatz','projekt','aufgabe','termin'];
+  const results = await Promise.all(types.map(t => fetchActiveTemplates(t)));
+  const all = [];
+  results.forEach((tpls, idx) => {
+    (tpls || []).slice(0, 1).forEach(t => all.push({ ...t, _typ: types[idx] }));
+  });
+  if (all.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine aktiven Templates angelegt. Erstelle welche unter „Templates".</div>';
+    return;
+  }
+  wrap.innerHTML = all.slice(0, 4).map(t => `
+    <button class="arbeitsplatz-template-card" onclick="arbeitsplatzApplyTemplate('${esc(t._typ)}','${esc(t.id)}')">
+      <div class="arbeitsplatz-template-name">${esc(t.name)}</div>
+      <div class="arbeitsplatz-template-typ">${esc(t._typ.charAt(0).toUpperCase() + t._typ.slice(1))}</div>
+    </button>`).join('');
+}
+
+/** Eine Anlage starten — öffnet das passende Modal mit
+ *  Capture-Text als Titel-Vorschlag und Arbeitsplatz-Kontext als
+ *  Firma/Projekt/Kontakt-Vorbelegung. */
+async function arbeitsplatzCreate(typ) {
+  const captureText = (_arbeitsplatzCaptureText || '').trim();
+  // Kontext-Vorbelegung
+  const ctx = _arbeitsplatzContext;
+  if (ctx) {
+    if (ctx.type === 'firma') {
+      appointmentModalPrefillCompanyId = ctx.id;
+      taskModalPrefillCompanyId = ctx.id;
+      deploymentModalPrefillCompanyId = ctx.id;
+    } else if (ctx.type === 'projekt') {
+      appointmentModalPrefillProjectId = ctx.id;
+      taskModalPrefillProjectId = ctx.id;
+      deploymentModalPrefillProjectId = ctx.id;
+    } else if (ctx.type === 'kontakt') {
+      appointmentModalPrefillContactId = ctx.id;
+      taskModalPrefillContactId = ctx.id;
+    }
+  }
+
+  // Modal je Typ öffnen
+  if (typ === 'aufgabe')      await openTaskModal('new');
+  else if (typ === 'termin')  await openAppointmentModal('new');
+  else if (typ === 'einsatz') await openDeploymentModal('new');
+  else if (typ === 'projekt') await openProjectModal('new');
+  else if (typ === 'firma')   await openCompanyModal('new');
+  else if (typ === 'kontakt') await openContactModal('new');
+  else if (typ === 'notiz')   { showToast('Notizen kommen über die Detail-Page eines Projekts/einer Firma.', false); return; }
+
+  // Capture-Text in Titel-Feld kopieren wenn leer
+  if (captureText) {
+    const titelMap = {
+      aufgabe: 'a-titel', termin: 't-titel', einsatz: 'd-titel', projekt: 'p-name', firma: 'c-name', kontakt: 'k-name'
+    };
+    const id = titelMap[typ];
+    if (id) {
+      const el = document.getElementById(id);
+      if (el && !el.value) el.value = captureText;
+    }
+  }
+
+  // Capture leeren NACH dem Anlegen — passiert beim nächsten loadArbeitsplatz()
+  // weil wir nicht wissen ob der User cancelt. Heuristik: Capture wird nach
+  // erfolgreicher Anlage (close+refresh) sowieso überschrieben.
+}
+
+function arbeitsplatzOpenTemplatePicker() {
+  showToast('Wähle ein Template aus der Vorlagen-Liste unten.', false);
+  document.getElementById('arbeitsplatz-template-grid')?.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function arbeitsplatzApplyTemplate(typ, templateId) {
+  // Modal öffnen, dann Template anwenden
+  if (typ === 'aufgabe')      await openTaskModal('new');
+  else if (typ === 'termin')  await openAppointmentModal('new');
+  else if (typ === 'einsatz') await openDeploymentModal('new');
+  else if (typ === 'projekt') await openProjectModal('new');
+  await applyTemplateToEntity(typ, templateId);
 }
 
 async function loadListenPage() {
@@ -9806,6 +10023,12 @@ function wireSearchItemClicks() {
 
 function openSearchResult(entry) {
   if (!entry) return;
+  // v2.0.0 — Arbeitsplatz-Kontext-Picker-Modus: Auswahl setzt Kontext statt Navigation
+  if (window._arbeitsplatzContextPickerActive) {
+    const typeMap = { company: 'firma', contact: 'kontakt', project: 'projekt' };
+    const ctxType = typeMap[entry.type];
+    if (ctxType) { setArbeitsplatzContextFromSearch(ctxType, entry.id, entry.title); return; }
+  }
   pushRecentlyVisited(entry);
   closeSearchOverlay();
   if (entry.type === 'company')         location.hash = '#/firma/'   + entry.id;

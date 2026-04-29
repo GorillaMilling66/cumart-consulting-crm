@@ -368,8 +368,64 @@
 
     <!-- v2.0.0 — ARBEITSPLATZ (Hauptbereich 2) -->
     <div class="page" id="page-arbeitsplatz">
-      <div id="arbeitsplatz-container">
-        <div class="info-card-empty">Lade Arbeitsplatz …</div>
+      <div class="arbeitsplatz">
+        <div class="arbeitsplatz-head">
+          <div class="arbeitsplatz-eyebrow">ARBEITSPLATZ</div>
+          <div class="arbeitsplatz-date" id="arbeitsplatz-date"></div>
+        </div>
+        <h1 class="arbeitsplatz-title">Was möchtest du anlegen?</h1>
+
+        <div class="arbeitsplatz-capture">
+          <input type="text" id="arbeitsplatz-capture-input"
+                 placeholder='z. B. „Telefonat mit Müller morgen 10 Uhr" · „Neue Firma Schmid GmbH" · „Aufgabe: Angebot Heidenhain bis Freitag" …'
+                 autocomplete="off">
+          <div class="arbeitsplatz-context-row">
+            <span class="arbeitsplatz-context-label">Bezogen auf</span>
+            <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
+              <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
+            </span>
+            <span class="arbeitsplatz-capture-hint">⌘↵</span>
+          </div>
+        </div>
+
+        <div class="arbeitsplatz-tiles">
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('aufgabe')">+ Aufgabe</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('termin')">+ Termin</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('einsatz')">+ Einsatz</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('projekt')">+ Projekt</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('firma')">+ Firma</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('kontakt')">+ Kontakt</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('notiz')">+ Notiz</button>
+          <button class="arbeitsplatz-tile arbeitsplatz-tile-template" onclick="arbeitsplatzOpenTemplatePicker()">Aus Template</button>
+        </div>
+
+        <div class="arbeitsplatz-grid">
+          <div class="arbeitsplatz-side">
+            <div class="arbeitsplatz-side-title">ZULETZT BEARBEITET</div>
+            <div id="arbeitsplatz-recent">
+              <div class="info-card-empty">Lade …</div>
+            </div>
+          </div>
+          <div class="arbeitsplatz-side">
+            <div class="arbeitsplatz-side-title-row">
+              <div class="arbeitsplatz-side-title">HEUTE VON DIR</div>
+              <span class="arbeitsplatz-side-counter" id="arbeitsplatz-today-count">0 Aktionen</span>
+            </div>
+            <div id="arbeitsplatz-today">
+              <div class="info-card-empty">Lade …</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arbeitsplatz-templates">
+          <div class="arbeitsplatz-side-title-row">
+            <div class="arbeitsplatz-side-title">VORLAGEN · HÄUFIG GENUTZT</div>
+            <a class="arbeitsplatz-side-link" onclick="navigateTo('templates')">Alle Templates →</a>
+          </div>
+          <div class="arbeitsplatz-template-grid" id="arbeitsplatz-template-grid">
+            <div class="info-card-empty">Lade …</div>
+          </div>
+        </div>
       </div>
     </div>
 
