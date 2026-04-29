@@ -1467,6 +1467,102 @@
       </div><!-- /panel einsaetze -->
     </div><!-- /page-project-detail -->
 
+    <!-- v2.0.0 — TERMIN-LIGHT-DETAIL-PAGE -->
+    <div class="page" id="page-appointment-detail">
+      <div class="proj-breadcrumb">
+        <a onclick="navigateTo('listen')">Listen</a>
+        <span class="proj-breadcrumb-sep">·</span>
+        <a onclick="navigateTo('appointments')">Termine</a>
+        <span class="proj-breadcrumb-sep">/</span>
+        <span class="proj-breadcrumb-current" id="appt-detail-name">…</span>
+      </div>
+
+      <div class="proj-hero">
+        <div class="proj-hero-head">
+          <div class="proj-hero-titles">
+            <h1 class="proj-hero-title" id="appt-detail-title">…</h1>
+            <div class="proj-hero-subline" id="appt-detail-subline"></div>
+          </div>
+          <div class="proj-hero-actions">
+            <span class="status-pill" id="appt-status-pill">…</span>
+            <button class="btn btn-sm" onclick="openAppointmentModal('edit', currentAppointmentDetailId)">Bearbeiten</button>
+          </div>
+        </div>
+        <div class="proj-hero-metrics">
+          <div class="proj-metric">
+            <div class="proj-metric-label">Datum</div>
+            <div class="proj-metric-value" id="appt-hero-datum">—</div>
+            <div class="proj-metric-sub" id="appt-hero-datum-sub">&nbsp;</div>
+          </div>
+          <div class="proj-metric">
+            <div class="proj-metric-label">Zeit</div>
+            <div class="proj-metric-value" id="appt-hero-zeit">—</div>
+            <div class="proj-metric-sub" id="appt-hero-zeit-sub">&nbsp;</div>
+          </div>
+          <div class="proj-metric">
+            <div class="proj-metric-label">Typ</div>
+            <div class="proj-metric-value" id="appt-hero-typ">—</div>
+            <div class="proj-metric-sub" id="appt-hero-typ-sub">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="proj-tabs">
+        <button class="proj-tab active" data-tab="inhalt"   onclick="switchAppointmentV2Tab('inhalt')">Inhalt</button>
+        <button class="proj-tab"        data-tab="anhaenge" onclick="switchAppointmentV2Tab('anhaenge')">Anhänge</button>
+      </div>
+
+      <div class="proj-grid">
+        <main class="proj-main">
+
+          <div class="proj-tab-panel active" data-tab="inhalt" id="appt-panel-inhalt">
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">VORBEREITUNG</div>
+              <textarea class="proj-brief-text" id="appt-vorbereitung"
+                        placeholder="Was muss vor dem Termin geschehen?"
+                        onblur="saveAppointmentDokuField('vorbereitung', this.value)"></textarea>
+            </div>
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">GESPRÄCHSNOTIZEN</div>
+              <textarea class="proj-brief-text" id="appt-gespraechsnotizen"
+                        placeholder="Was wurde besprochen, vereinbart, festgehalten?"
+                        onblur="saveAppointmentDokuField('gespraechsinhalt', this.value)"></textarea>
+            </div>
+            <div class="proj-brief-section">
+              <div class="proj-brief-label-row">
+                <div class="proj-brief-label">ACTION ITEMS · <span id="appt-action-count">0</span></div>
+                <button class="btn btn-sm btn-primary" onclick="addAppointmentActionItem()">+ Aufgabe</button>
+              </div>
+              <div id="appt-action-items"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </div>
+
+          <div class="proj-tab-panel" data-tab="anhaenge" id="appt-panel-anhaenge" style="display:none">
+            <div class="info-card-empty">Datei-Anhänge kommen in Phase 9 (Storage-Sub-Spec).</div>
+          </div>
+
+        </main>
+
+        <aside class="proj-side">
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">VERKNÜPFUNGEN</div>
+            <div id="appt-side-verknuepfungen"><div class="info-card-empty">—</div></div>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">AKTIONEN</div>
+            <button class="proj-action proj-action-primary" onclick="markAppointmentDone()">Als durchgeführt markieren</button>
+            <button class="proj-action" onclick="createFollowupAppointment()">+ Folgetermin (+ 1 Woche)</button>
+            <button class="proj-action" onclick="createTaskFromAppointment()">+ Aufgabe aus Termin</button>
+            <button class="proj-action" onclick="createDeploymentFromAppointment()">+ Einsatz aus Termin</button>
+          </div>
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">META</div>
+            <div class="proj-side-meta" id="appt-meta">—</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
     <!-- v2.0.0 — EINSATZ-DETAIL-PAGE (eigene Page statt nur Modal) -->
     <div class="page" id="page-deployment-detail">
       <div class="proj-breadcrumb">

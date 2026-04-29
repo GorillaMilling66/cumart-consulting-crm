@@ -2840,6 +2840,8 @@ function navigateTo(page, param) {
     hash = `#/kontakt/${param}`;
   } else if (page === 'einsatz' && param) {
     hash = `#/einsatz/${param}`;
+  } else if (page === 'termin' && param) {
+    hash = `#/termin/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
     hash = `#/termine?firma=${param.firma}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
@@ -2971,6 +2973,19 @@ function handleHashChange() {
       if (_currentDetailKey !== key) {
         _currentDetailKey = key;
         loadDeploymentDetail(id);
+      }
+      return;
+    }
+  }
+
+  // v2.0.0 — Termin-Detail-Page (eigene Route)
+  if (path.startsWith('#/termin/')) {
+    const id = path.slice('#/termin/'.length);
+    if (id) {
+      const key = 'termin:' + id;
+      if (_currentDetailKey !== key) {
+        _currentDetailKey = key;
+        loadAppointmentDetail(id);
       }
       return;
     }
@@ -16927,6 +16942,207 @@ async function postContactNote() {
   input.value = '';
   showToast('Notiz hinzugefügt.');
   loadContactActivityStream(currentContactDetailId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.0 — TERMIN-LIGHT-DETAIL V2
+// ═══════════════════════════════════════════════════════════
+
+let currentAppointmentDetailId = null;
+let _currentAppointmentV2Tab = 'inhalt';
+
+async function loadAppointmentDetail(appointmentId) {
+  currentAppointmentDetailId = appointmentId;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-appointment-detail').classList.add('active');
+  setActiveTopNavTab('appointments');
+
+  const { data: a, error } = await db.from('appointments')
+    .select('*, company:companies(id, name), project:projects(id, name), contact:contacts(id, vorname, nachname), typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
+    .is('deleted_at', null).eq('id', appointmentId).single();
+  if (error || !a) {
+    showToast(friendlyFetchError(error, 'Termin'), true);
+    return;
+  }
+
+  document.getElementById('appt-detail-name').textContent = a.titel || '—';
+  document.getElementById('appt-detail-title').textContent = a.titel || '—';
+
+  const sublineParts = [];
+  if (a.company) sublineParts.push(`<a class="proj-link" onclick="navigateTo('firma','${esc(a.company.id)}')">${esc(a.company.name)}</a>`);
+  if (a.project) sublineParts.push(`<a class="proj-link" onclick="navigateTo('projekt','${esc(a.project.id)}')">${esc(a.project.name)}</a>`);
+  if (a.contact) {
+    const kn = [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ');
+    sublineParts.push(`<a class="proj-link" onclick="navigateTo('kontakt','${esc(a.contact.id)}')">${esc(kn)}</a>`);
+  }
+  if (a.ort) sublineParts.push(esc(a.ort));
+  document.getElementById('appt-detail-subline').innerHTML = sublineParts.join(' · ') || '—';
+
+  // Status-Pille
+  const statusPill = document.getElementById('appt-status-pill');
+  if (a.status) {
+    statusPill.textContent = a.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant';
+    const cls = a.status === 'durchgefuehrt' ? 'durchgefhrt' : 'geplant';
+    statusPill.className = `status-pill status-pill-${cls}`;
+  }
+
+  // Hero-Metriken
+  document.getElementById('appt-hero-datum').textContent = a.datum ? formatDateDE(a.datum).split(',')[0] : '—';
+  document.getElementById('appt-hero-datum-sub').textContent = a.datum ? formatDateDE(a.datum).split(',')[1]?.trim() || ' ' : ' ';
+
+  const zeit = a.uhrzeit_von
+    ? `${formatTime(a.uhrzeit_von)}${a.uhrzeit_bis ? '–' + formatTime(a.uhrzeit_bis) : ''}`
+    : 'Ganztags';
+  document.getElementById('appt-hero-zeit').textContent = zeit;
+  document.getElementById('appt-hero-zeit-sub').textContent = a.ort || ' ';
+
+  document.getElementById('appt-hero-typ').textContent = a.typ?.wert || '—';
+  document.getElementById('appt-hero-typ-sub').textContent = a.contact ? [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ') : ' ';
+
+  // Inhalt-Tab
+  const dok = a.dokumentation || {};
+  document.getElementById('appt-vorbereitung').value = dok.vorbereitung || '';
+  document.getElementById('appt-gespraechsnotizen').value = dok.gespraechsinhalt || '';
+
+  // Action Items aus Aufgaben mit task_id auf Termin oder Aufgaben aus diesem Termin
+  await renderAppointmentActionItems(appointmentId);
+
+  // Sidepanel: Verknüpfungen
+  const verkn = document.getElementById('appt-side-verknuepfungen');
+  const rows = [];
+  if (a.company) rows.push(`<div class="proj-side-firma-meta"><strong>Firma:</strong> <a class="proj-link" onclick="navigateTo('firma','${esc(a.company.id)}')">${esc(a.company.name)}</a></div>`);
+  if (a.project) rows.push(`<div class="proj-side-firma-meta"><strong>Projekt:</strong> <a class="proj-link" onclick="navigateTo('projekt','${esc(a.project.id)}')">${esc(a.project.name)}</a></div>`);
+  if (a.contact) {
+    const kn = [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ');
+    rows.push(`<div class="proj-side-firma-meta"><strong>Kontakt:</strong> <a class="proj-link" onclick="navigateTo('kontakt','${esc(a.contact.id)}')">${esc(kn)}</a></div>`);
+  }
+  verkn.innerHTML = rows.length === 0 ? '<div class="info-card-empty">Keine Verknüpfungen.</div>' : rows.join('');
+
+  document.getElementById('appt-meta').innerHTML = `
+    <div>ID · ${esc(appointmentId.substring(0, 8))}</div>
+    <div>Erstellt · ${a.created_at ? esc(formatDateDE(a.created_at.substring(0, 10))) : '—'}</div>`;
+
+  trackVisit('termin', appointmentId, a.titel || '—', a.company?.name || '');
+
+  _currentAppointmentV2Tab = 'inhalt';
+  switchAppointmentV2Tab('inhalt');
+}
+
+function switchAppointmentV2Tab(tab) {
+  _currentAppointmentV2Tab = tab;
+  document.querySelectorAll('#page-appointment-detail .proj-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('#page-appointment-detail .proj-tab-panel').forEach(p =>
+    p.style.display = p.dataset.tab === tab ? '' : 'none');
+}
+
+async function saveAppointmentDokuField(key, value) {
+  if (!currentAppointmentDetailId) return;
+  const { data: a } = await db.from('appointments').select('dokumentation').eq('id', currentAppointmentDetailId).single();
+  const dok = a?.dokumentation || {};
+  dok[key] = (value || '').trim();
+  await db.from('appointments').update({ dokumentation: dok }).eq('id', currentAppointmentDetailId);
+}
+
+async function renderAppointmentActionItems(appointmentId) {
+  const wrap = document.getElementById('appt-action-items');
+  const counter = document.getElementById('appt-action-count');
+  if (!wrap) return;
+  // Aufgaben mit task_id == this appointment (Termin-Kopplung von Aufgaben aus v1.40)
+  const { data, error } = await db.from('tasks')
+    .select('id, titel, status, faelligkeit, user:user_profiles!tasks_assigned_to_fkey(name)')
+    .is('deleted_at', null).eq('task_id', appointmentId)
+    .order('created_at', { ascending: true });
+  // Falls task_id-FK in Tasks nicht existiert, fängt error das ab — wir nutzen alternativ keine Anzeige
+  const list = error ? [] : (data || []);
+  if (counter) counter.textContent = list.length;
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Action Items zu diesem Termin.</div>';
+    return;
+  }
+  wrap.innerHTML = list.map(t => `
+    <label class="proj-criterion ${t.status === 'erledigt' ? 'is-done' : ''}">
+      <input type="checkbox" ${t.status === 'erledigt' ? 'checked' : ''}
+             onchange="toggleAppointmentActionItem('${esc(t.id)}', this.checked)">
+      <span class="proj-criterion-text">${esc(t.titel)}</span>
+    </label>`).join('');
+}
+
+async function addAppointmentActionItem() {
+  if (!currentAppointmentDetailId) return;
+  const titel = prompt('Action Item:');
+  if (!titel || !titel.trim()) return;
+  const { data: a } = await db.from('appointments').select('project_id, company_id, contact_id').eq('id', currentAppointmentDetailId).single();
+  await db.from('tasks').insert({
+    titel: titel.trim(),
+    status: 'offen',
+    project_id: a?.project_id || null,
+    company_id: a?.company_id || null,
+    contact_id: a?.contact_id || null,
+    assigned_to: currentProfile?.id || null,
+    erstellt_von: currentProfile?.id || null
+  });
+  await renderAppointmentActionItems(currentAppointmentDetailId);
+}
+
+async function toggleAppointmentActionItem(taskId, done) {
+  await db.from('tasks').update(done
+    ? { status: 'erledigt', erledigt_am: new Date().toISOString() }
+    : { status: 'offen', erledigt_am: null }).eq('id', taskId);
+  await renderAppointmentActionItems(currentAppointmentDetailId);
+}
+
+async function markAppointmentDone() {
+  if (!currentAppointmentDetailId) return;
+  await db.from('appointments').update({ status: 'durchgefuehrt' }).eq('id', currentAppointmentDetailId);
+  showToast('Termin als durchgeführt markiert.');
+  loadAppointmentDetail(currentAppointmentDetailId);
+}
+
+async function createFollowupAppointment() {
+  if (!currentAppointmentDetailId) return;
+  const { data: a } = await db.from('appointments').select('*').eq('id', currentAppointmentDetailId).single();
+  if (!a) return;
+  appointmentModalPrefillCompanyId = a.company_id;
+  appointmentModalPrefillContactId = a.contact_id;
+  appointmentModalPrefillProjectId = a.project_id;
+  await openAppointmentModal('new');
+  // Datum +7 Tage setzen
+  if (a.datum) {
+    const next = new Date(a.datum); next.setDate(next.getDate() + 7);
+    document.getElementById('t-datum').value = toISODate(next);
+  }
+  if (a.uhrzeit_von) document.getElementById('t-uhrzeit-von').value = a.uhrzeit_von.substring(0, 5);
+  if (a.uhrzeit_bis) document.getElementById('t-uhrzeit-bis').value = a.uhrzeit_bis.substring(0, 5);
+  if (a.titel) document.getElementById('t-titel').value = a.titel;
+}
+
+async function createTaskFromAppointment() {
+  if (!currentAppointmentDetailId) return;
+  const { data: a } = await db.from('appointments').select('titel, company_id, contact_id, project_id').eq('id', currentAppointmentDetailId).single();
+  if (!a) return;
+  taskModalPrefillCompanyId = a.company_id;
+  taskModalPrefillContactId = a.contact_id;
+  taskModalPrefillProjectId = a.project_id;
+  await openTaskModal('new');
+  if (a.titel) document.getElementById('a-titel').value = `Aus Termin: ${a.titel}`;
+}
+
+async function createDeploymentFromAppointment() {
+  if (!currentAppointmentDetailId) return;
+  const { data: a } = await db.from('appointments').select('titel, datum, ort, company_id, project_id, uhrzeit_von, uhrzeit_bis').eq('id', currentAppointmentDetailId).single();
+  if (!a) return;
+  deploymentModalPrefillCompanyId = a.company_id;
+  deploymentModalPrefillProjectId = a.project_id;
+  await openDeploymentModal('new');
+  if (a.titel) document.getElementById('d-titel').value = a.titel;
+  if (a.datum) {
+    document.getElementById('d-datum-von').value = a.datum;
+    document.getElementById('d-datum-bis').value = a.datum;
+  }
+  if (a.uhrzeit_von) document.getElementById('d-uhrzeit-von').value = a.uhrzeit_von.substring(0, 5);
+  if (a.uhrzeit_bis) document.getElementById('d-uhrzeit-bis').value = a.uhrzeit_bis.substring(0, 5);
+  if (a.ort) document.getElementById('d-ort').value = a.ort;
 }
 
 // ═══════════════════════════════════════════════════════════
