@@ -7726,7 +7726,7 @@ async function loadProjectDetail(projectId) {
   await loadProjectTasks(projectId);
 }
 
-function renderProjectDetail(p) {
+async function renderProjectDetail(p) {
   document.getElementById('project-detail-name').textContent = p.name;
   document.getElementById('project-detail-title').textContent = p.name;
 
@@ -7811,12 +7811,18 @@ function renderProjectDetail(p) {
   const qcTask = document.getElementById('project-quick-task');
   if (qcTask) qcTask.onclick = () => { taskModalPrefillProjectId = p.id; openTaskModal('new'); };
 
-  // Dashboard-Stats asynchron laden (v1.30)
+  // Dashboard-Stats asynchron laden (v1.30 — schreibt in versteckte Backwards-Kompat-Felder)
   loadProjectDashboard(p);
 
   // v1.53.0: Themen-Sektion rendern
   invalidateThemesCache(p.id);
   renderProjectThemes(p.id);
+
+  // v2.0.0 — neues Layout: Hero, Sidepanel, Activity-Stream, Default-Tab
+  await renderProjectV2Layout(p);
+  _currentProjectV2Tab = 'aktivitaeten';
+  _currentProjectActivityFilter = 'alle';
+  switchProjectV2Tab('aktivitaeten');
 }
 
 async function loadProjectAppointments(projectId) {
@@ -16262,6 +16268,309 @@ document.addEventListener('keydown', (ev) => {
   ev.preventDefault();
   toggleFabMenu();
 });
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.0 — PROJEKT-DETAIL V2 (Vier-Zonen-Muster)
+// ═══════════════════════════════════════════════════════════
+
+let _currentProjectV2Tab = 'aktivitaeten';
+let _currentProjectActivityFilter = 'alle';
+
+function switchProjectV2Tab(tab) {
+  _currentProjectV2Tab = tab;
+  document.querySelectorAll('.proj-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  document.querySelectorAll('.proj-tab-panel').forEach(p => {
+    p.style.display = p.dataset.tab === tab ? '' : 'none';
+  });
+  // Lazy-Render: Brief / Plan-Tabs werden erst beim Anzeigen geladen
+  if (tab === 'brief')   renderProjectBriefTab(currentProjectDetailId);
+  if (tab === 'aktivitaeten') loadProjectActivityStream(currentProjectDetailId);
+}
+
+/** Hero-Zone mit Marge / Zeitplan / Health befüllen + Sidepanel. */
+async function renderProjectV2Layout(p) {
+  // Status-Pille rechts oben
+  const statusPill = document.getElementById('project-status-pill');
+  if (statusPill && p.status) {
+    const statusKey = p.status.toLowerCase().replace(/[^a-z]/g, '');
+    statusPill.textContent = p.status;
+    statusPill.className = `status-pill status-pill-${statusKey}`;
+  }
+
+  // Subline: Firma · Verantwortlich
+  const subline = document.getElementById('project-detail-subline');
+  if (subline) {
+    const firma = p.company ? `<a class="proj-link" onclick="navigateTo('firma','${esc(p.company.id)}')">${esc(p.company.name)}</a>` : '<span class="muted">Ohne Firma</span>';
+    const ver = p.verantwortlicher ? esc(p.verantwortlicher.name) : '—';
+    subline.innerHTML = `${firma} · Verantwortlich <strong>${ver}</strong>`;
+  }
+
+  // Health berechnen: letzte Aktivität < 7T = grün, < 30T = gelb, sonst rot
+  const healthEl = document.getElementById('project-health-value');
+  const healthSub = document.getElementById('project-health-sub');
+  if (healthEl) {
+    const { data: lastDep } = await db.from('deployments')
+      .select('datum_von, created_at').is('deleted_at', null).eq('project_id', p.id)
+      .order('created_at', { ascending: false }).limit(1);
+    const lastTs = lastDep?.[0]?.created_at || p.updated_at || p.created_at;
+    const ageDays = lastTs ? Math.round((Date.now() - new Date(lastTs).getTime()) / 86400000) : 999;
+    let label, dots, color;
+    if (ageDays <= 7)       { label = 'Gut';        dots = 3; color = 'var(--success)'; }
+    else if (ageDays <= 30) { label = 'Achtung';    dots = 2; color = 'var(--warning)'; }
+    else                    { label = 'Verwaist';  dots = 1; color = 'var(--danger)'; }
+    healthEl.innerHTML = `${label} <span class="proj-health-dots" style="color:${color}">${'●'.repeat(dots)}${'○'.repeat(3 - dots)}</span>`;
+    if (healthSub) healthSub.textContent = ageDays === 999 ? '—' : `Aktivität vor ${ageDays === 0 ? '<1' : ageDays} ${ageDays === 1 ? 'Tag' : 'Tagen'}`;
+  }
+
+  // Sidepanel: Beteiligte
+  const beteiligteEl = document.getElementById('project-beteiligte');
+  if (beteiligteEl) {
+    const rows = [];
+    if (p.verantwortlicher) {
+      rows.push(`<div class="proj-side-person"><span class="proj-side-avatar">${esc(ini(p.verantwortlicher.name))}</span><div><div class="proj-side-name">${esc(p.verantwortlicher.name)}</div><div class="proj-side-role">Verantwortlich</div></div></div>`);
+    }
+    if (p.hauptkontakt) {
+      const kname = [p.hauptkontakt.vorname, p.hauptkontakt.nachname].filter(Boolean).join(' ');
+      rows.push(`<div class="proj-side-person" onclick="navigateTo('kontakt','${esc(p.hauptkontakt.id)}')"><span class="proj-side-avatar">${esc(ini(kname))}</span><div><div class="proj-side-name">${esc(kname)}</div><div class="proj-side-role">Hauptkontakt</div></div></div>`);
+    }
+    beteiligteEl.innerHTML = rows.length === 0 ? '<div class="info-card-empty">—</div>' : rows.join('');
+  }
+
+  // Sidepanel: Firma
+  const firmaCard = document.getElementById('project-firma-card');
+  if (firmaCard && p.company) {
+    firmaCard.innerHTML = `
+      <a class="proj-side-firma-name" onclick="navigateTo('firma','${esc(p.company.id)}')">${esc(p.company.name)}</a>
+      <div class="proj-side-firma-meta">${p.company.abc_klassifizierung ? `Kunde · ${esc(p.company.abc_klassifizierung)}` : 'Kunde'}${p.company.stadt ? ' · ' + esc(p.company.stadt) : ''}</div>`;
+  } else if (firmaCard) {
+    firmaCard.innerHTML = '<div class="info-card-empty">Keine Firma verknüpft.</div>';
+  }
+
+  // Sidepanel: Meta
+  const metaEl = document.getElementById('project-meta');
+  if (metaEl) {
+    metaEl.innerHTML = `
+      <div>ID · ${esc(p.id.substring(0, 8))}</div>
+      <div>Erstellt · ${p.created_at ? esc(formatDateDE(p.created_at.substring(0, 10))) : '—'}</div>`;
+  }
+
+  // Avatar in Notiz-Eingabe
+  const noteAvatar = document.getElementById('project-note-avatar');
+  if (noteAvatar) noteAvatar.textContent = ini(currentProfile?.name || '?');
+}
+
+/** Aggregiert Termine, Einsätze, Aufgaben, Notizen zu einem Stream und rendert. */
+async function loadProjectActivityStream(projectId) {
+  if (!projectId) return;
+  const wrap = document.getElementById('project-activity-stream');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="info-card-empty">Lade Aktivitäten …</div>';
+
+  const [appts, deps, tasks, notes] = await Promise.all([
+    db.from('appointments').select('id, titel, datum, uhrzeit_von, status, created_at').is('deleted_at', null).eq('project_id', projectId).order('datum', { ascending: false }).limit(50),
+    db.from('deployments').select('id, titel, datum_von, status, ort, einzelpreis, menge, created_at').is('deleted_at', null).eq('project_id', projectId).order('datum_von', { ascending: false }).limit(50),
+    db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
+    db.from('notes').select('id, inhalt, created_at, erstellt_von, user:user_profiles!notes_erstellt_von_fkey(name)').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50)
+  ]);
+
+  const items = [];
+  (appts.data || []).forEach(a => items.push({
+    type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
+    title: a.titel || '—', meta: a.status, kind: 'termine'
+  }));
+  (deps.data || []).forEach(d => items.push({
+    type: 'EINSATZ', ts: (d.datum_von || d.created_at?.substring(0, 10)) + 'T00:00:00',
+    title: d.titel || '—',
+    meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1)), d.status].filter(Boolean).join(' · '),
+    kind: 'einsaetze'
+  }));
+  (tasks.data || []).forEach(t => {
+    items.push({
+      type: 'AUFGABE', ts: t.created_at,
+      title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+      kind: 'aufgaben'
+    });
+  });
+  (notes.data || []).forEach(n => items.push({
+    type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen'
+  }));
+
+  // Sortierung neueste zuerst
+  items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+
+  // Filter anwenden
+  const filtered = _currentProjectActivityFilter === 'alle'
+    ? items
+    : items.filter(i => i.kind === _currentProjectActivityFilter);
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
+    return;
+  }
+
+  wrap.innerHTML = filtered.map(it => {
+    const cls = it.type.toLowerCase();
+    return `
+      <div class="proj-activity-item">
+        <div class="proj-activity-date">${esc(formatDateCompact(it.ts.substring(0, 10)))}</div>
+        <div class="proj-activity-body">
+          <div class="proj-activity-head">
+            <span class="type-pill type-pill-${cls}">${esc(it.type)}</span>
+            <span class="proj-activity-title">${esc(it.title)}</span>
+          </div>
+          <div class="proj-activity-meta">${esc(it.meta || '')}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterProjectActivity(filter) {
+  _currentProjectActivityFilter = filter;
+  document.querySelectorAll('.proj-filter-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.filter === filter);
+  });
+  loadProjectActivityStream(currentProjectDetailId);
+}
+
+function focusProjectNoteInput() {
+  if (_currentProjectV2Tab !== 'aktivitaeten') switchProjectV2Tab('aktivitaeten');
+  const input = document.getElementById('project-note-input');
+  if (input) input.focus();
+}
+
+async function postProjectNote() {
+  const input = document.getElementById('project-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  const { error } = await db.from('notes').insert({
+    project_id: currentProjectDetailId,
+    inhalt: text,
+    erstellt_von: currentProfile?.id || null
+  });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  input.value = '';
+  showToast('Notiz hinzugefügt.');
+  loadProjectActivityStream(currentProjectDetailId);
+}
+
+/** Brief-Tab — Ziel + Erfolgskriterien + Themen + Entwicklungs-Log. */
+async function renderProjectBriefTab(projectId) {
+  if (!projectId) return;
+  const { data: p } = await db.from('projects').select('id, dokumentation').eq('id', projectId).single();
+  const dok = p?.dokumentation || {};
+
+  const setField = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  setField('project-brief-ziel', dok.kundenherausforderung || dok.ziel || '');
+  setField('project-brief-herausforderungen', dok.herausforderungen || '');
+  setField('project-brief-loesungsansatz', dok.loesungsansatz || '');
+
+  await renderProjectSuccessCriteria(projectId);
+  await renderProjectThemes(projectId);
+  await renderProjectDevelopmentLog(projectId);
+}
+
+async function saveProjectBriefField(key, value) {
+  if (!currentProjectDetailId) return;
+  const { data: p } = await db.from('projects').select('dokumentation').eq('id', currentProjectDetailId).single();
+  const dok = p?.dokumentation || {};
+  // Mapping: ziel landet als kundenherausforderung (semantisch nah, kompat zu v1.52)
+  if (key === 'ziel') dok.kundenherausforderung = value || '';
+  else dok[key] = value || '';
+  await db.from('projects').update({ dokumentation: dok }).eq('id', currentProjectDetailId);
+}
+
+/** Erfolgskriterien — Checkbox-Liste mit eigener Tabelle. */
+async function renderProjectSuccessCriteria(projectId) {
+  const wrap = document.getElementById('project-success-criteria');
+  if (!wrap) return;
+  const { data, error } = await db.from('project_success_criteria')
+    .select('*').is('deleted_at', null).eq('project_id', projectId)
+    .order('reihenfolge').order('created_at');
+  if (error) { wrap.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`; return; }
+  if (!data || data.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Noch keine Erfolgskriterien. Klicke oben auf „+ Kriterium".</div>';
+    return;
+  }
+  wrap.innerHTML = data.map(c => `
+    <label class="proj-criterion ${c.ist_erreicht ? 'is-done' : ''}">
+      <input type="checkbox" ${c.ist_erreicht ? 'checked' : ''} onchange="toggleProjectSuccessCriterion('${esc(c.id)}', this.checked)">
+      <span class="proj-criterion-text" oncontextmenu="event.preventDefault(); deleteProjectSuccessCriterion('${esc(c.id)}')">${esc(c.text)}</span>
+    </label>`).join('');
+}
+
+async function addProjectSuccessCriterion() {
+  if (!currentProjectDetailId) return;
+  const text = prompt('Neues Erfolgskriterium:');
+  if (!text || !text.trim()) return;
+  const { error } = await db.from('project_success_criteria').insert({
+    project_id: currentProjectDetailId,
+    text: text.trim(),
+    reihenfolge: 0
+  });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  await renderProjectSuccessCriteria(currentProjectDetailId);
+}
+
+async function toggleProjectSuccessCriterion(id, done) {
+  const payload = { ist_erreicht: done };
+  if (done) {
+    payload.erreicht_am = new Date().toISOString();
+    payload.erreicht_von = currentProfile?.id || null;
+  } else {
+    payload.erreicht_am = null;
+    payload.erreicht_von = null;
+  }
+  const { error } = await db.from('project_success_criteria').update(payload).eq('id', id);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  await renderProjectSuccessCriteria(currentProjectDetailId);
+}
+
+async function deleteProjectSuccessCriterion(id) {
+  if (!confirm('Erfolgskriterium löschen?')) return;
+  await db.from('project_success_criteria').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  await renderProjectSuccessCriteria(currentProjectDetailId);
+}
+
+/** Entwicklungs-Log — automatisch aus Einsatz-log_eintrag. */
+async function renderProjectDevelopmentLog(projectId) {
+  const wrap = document.getElementById('project-development-log');
+  if (!wrap) return;
+  const { data: deps } = await db.from('deployments')
+    .select('id, titel, datum_von, dokumentation, deployment_themes(theme:project_themes(name, farbe))')
+    .is('deleted_at', null).eq('project_id', projectId)
+    .order('datum_von', { ascending: false });
+
+  // Filter: nur Einsätze mit log_eintrag oder erkenntnisse
+  const items = (deps || []).map(d => {
+    const log = d.dokumentation?.log_eintrag || (d.dokumentation?.erkenntnisse || '').substring(0, 140);
+    return {
+      id: d.id,
+      datum: d.datum_von,
+      log,
+      themen: (d.deployment_themes || []).map(dt => dt.theme).filter(Boolean)
+    };
+  }).filter(i => i.log && i.log.trim());
+
+  if (items.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Wird automatisch aus den Erkenntnissen oder dem Log-Eintrag deiner Einsätze gefüllt.</div>';
+    return;
+  }
+
+  wrap.innerHTML = `<div class="proj-log-table">
+    ${items.map(it => `
+      <div class="proj-log-row">
+        <div class="proj-log-date">${esc(formatDateCompact(it.datum))}</div>
+        <div class="proj-log-themes">${it.themen.map(t => `<span class="theme-pill" style="background:${esc(t.farbe||'#E6F1FB')}">${esc(t.name)}</span>`).join('')}</div>
+        <div class="proj-log-text">${esc(it.log)}</div>
+      </div>`).join('')}
+  </div>`;
+}
 
 // ═══════════════════════════════════════════════════════════
 //  INITIALIZATION
