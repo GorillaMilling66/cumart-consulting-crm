@@ -11250,6 +11250,12 @@ function lookupExpandHint(type, id, rowEl) {
 }
 
 async function toggleRowExpand(entityType, entityId, rowEl) {
+  // v2.0.0 Phase 9a/9b — Inline-Expand abgelöst durch echte Detail-Pages.
+  // Termin → /termin/:id, Einsatz → /einsatz/:id, Aufgabe → Bearbeiten-Modal.
+  if (entityType === 'appointment') return navigateTo('termin', entityId);
+  if (entityType === 'deployment')  return navigateTo('einsatz', entityId);
+  if (entityType === 'task')        return openTaskModal('edit', entityId);
+
   if (isMobileForExpand()) {
     if (entityType === 'appointment') return openAppointmentModal('edit', entityId);
     if (entityType === 'deployment')  return openDeploymentModal('edit', entityId);
