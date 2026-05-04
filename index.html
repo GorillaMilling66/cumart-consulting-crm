@@ -638,7 +638,7 @@
             </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="company-note-avatar">SC</span>
-              <input type="text" id="company-note-input" placeholder="Notiz hinzufügen oder Update zu dieser Firma schreiben …" onkeydown="if(event.metaKey&&event.key==='Enter')postCompanyNote()">
+              <input type="text" id="company-note-input" placeholder="Notiz hinzufügen oder Update zu dieser Firma schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postCompanyNote();}">
               <span class="proj-note-hint">⌘↵</span>
             </div>
             <div id="company-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
@@ -863,7 +863,7 @@
             </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="contact-note-avatar">SC</span>
-              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if(event.metaKey&&event.key==='Enter')postContactNote()">
+              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postContactNote();}">
               <span class="proj-note-hint">⌘↵</span>
             </div>
             <div id="contact-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
