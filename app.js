@@ -1,5 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.5 (Notes-Bugfix). notes.titel war NOT NULL, aber
+   postCompanyNote / postProjectNote setzen nur inhalt — Activity-
+   Stream-Notizen schlugen daher seit v2.0.0 still fehl (Toast
+   tauchte oft nicht auf). Migration v2.0.5_notes_titel_nullable
+   macht titel nullable; UI-Code unverändert.
    Version 2.0.4 (Detail-Page Speed). Sub-Sektionen der Detail-
    Pages laufen jetzt parallel statt seriell:
    - loadCompanyDetail: 7 Sub-Loader in Promise.all (vorher ~840 ms
