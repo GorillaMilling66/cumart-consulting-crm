@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.4 (Detail-Page Speed). Sub-Sektionen der Detail-
+   Pages laufen jetzt parallel statt seriell:
+   - loadCompanyDetail: 7 Sub-Loader in Promise.all (vorher ~840 ms
+     reine Latenz, jetzt limitiert auf die langsamste Query).
+   - loadProjectDetail: loadProjektStatus parallel zur Hauptquery,
+     drei Sub-Loader (Termine/Einsätze/Aufgaben) in Promise.all.
+   - loadContactDetail: race-condition-Workaround entfernt
+     (loadProjektStatus zuerst, dann alles parallel inkl. Layout).
+   - renderWorkflowChecklist akzeptiert jetzt einen optionalen
+     prefetchedState-Parameter — die Hero-Pille beim Page-Load
+     macht keinen extra DB-Trip mehr, weil workflow_state schon
+     im SELECT * der Detail-Query enthalten ist.
    Version 2.0.3 (Workflow-Checklisten — Punkt 9 des UX-Refactors).
    Pro Detail-Page eine Schritt-für-Schritt-Checkliste:
    - Termin → "Termin vorbereiten" (4 Schritte)
@@ -6482,14 +6494,17 @@ async function loadCompanyDetail(companyId) {
 
   renderCompanyDetail(data);
   trackVisit('company', data.id, data.name, [data.stadt, data.branche].filter(Boolean).join(' · '));
-  // v2.0.0 — neues Vier-Zonen-Layout (kein switchDetailTab mehr — Tabs werden über switchCompanyV2Tab gesetzt)
-  await renderCompanyV2Layout(data);
-  await loadCompanyContacts(companyId);
-  await loadCompanyAppointments(companyId);
-  await loadCompanyProjects(companyId);
-  await loadCompanyDeployments(companyId);
-  await renderCompanyMemberships(companyId);
-  await loadCompanyTasks(companyId);
+  // v2.0.4: Sub-Sektionen parallel statt seriell (vorher 7 Roundtrips à ~120 ms = ~840 ms,
+  // jetzt limitiert durch die langsamste Query).
+  await Promise.all([
+    renderCompanyV2Layout(data),
+    loadCompanyContacts(companyId),
+    loadCompanyAppointments(companyId),
+    loadCompanyProjects(companyId),
+    loadCompanyDeployments(companyId),
+    renderCompanyMemberships(companyId),
+    loadCompanyTasks(companyId)
+  ]);
 }
 
 function renderCompanyDetail(c) {
@@ -8245,11 +8260,14 @@ async function loadProjectDetail(projectId) {
   const pTasksBody = document.getElementById('project-tasks-body');
   if (pTasksBody) pTasksBody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Aufgaben ...</div></td></tr>';
 
-  await loadProjektStatus();
-
-  const { data, error } = await db.from('projects')
-    .select('*, company:companies(id, name), hauptkontakt:contacts(id, vorname, nachname, email, telefon), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name, email)').is('deleted_at', null)
-    .eq('id', projectId).single();
+  // v2.0.4: Status-Lookup parallel zur Hauptquery (gecached nach erstem Call).
+  const [, projectsRes] = await Promise.all([
+    loadProjektStatus(),
+    db.from('projects')
+      .select('*, company:companies(id, name), hauptkontakt:contacts(id, vorname, nachname, email, telefon), verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(id, name, email)').is('deleted_at', null)
+      .eq('id', projectId).single()
+  ]);
+  const { data, error } = projectsRes;
 
   if (error || !data) {
     const msg = friendlyFetchError(error, 'Projekt');
@@ -8268,9 +8286,12 @@ async function loadProjectDetail(projectId) {
   renderProjectDetail(data);
   trackVisit('project', data.id, data.name, data.company?.name || '');
   initDetailTabs('project');
-  await loadProjectAppointments(projectId);
-  await loadProjectDeployments(projectId);
-  await loadProjectTasks(projectId);
+  // v2.0.4: Sub-Tabs parallel statt seriell.
+  await Promise.all([
+    loadProjectAppointments(projectId),
+    loadProjectDeployments(projectId),
+    loadProjectTasks(projectId)
+  ]);
 }
 
 async function renderProjectDetail(p) {
@@ -8368,9 +8389,10 @@ async function renderProjectDetail(p) {
   // v2.0.0 — neues Layout: Hero, Sidepanel, Activity-Stream, Default-Tab
   await renderProjectV2Layout(p);
 
-  // v2.0.3: Vorbereitungs-Pille im Hero pre-rendern
+  // v2.0.3: Vorbereitungs-Pille im Hero pre-rendern. v2.0.4: workflow_state
+  // aus dem schon geladenen Projekt-Datensatz durchreichen (kein extra DB-Trip).
   renderWorkflowChecklist('project_prepare', 'project', p.id,
-    'project-workflow-checklist', 'project-workflow-pill');
+    'project-workflow-checklist', 'project-workflow-pill', p.workflow_state);
 
   _currentProjectV2Tab = 'aktivitaeten';
   _currentProjectActivityFilter = 'alle';
@@ -8612,16 +8634,15 @@ async function loadContactDetail(contactId) {
   trackVisit('contact', data.id,
     `${data.vorname || ''} ${data.nachname || ''}`.trim() || '—',
     data.company?.name || data.email || '');
-  // v2.0.0 — neues Vier-Zonen-Layout (Tabs werden über switchContactV2Tab gesetzt)
-  await renderContactV2Layout(data);
+  // v2.0.4: Status-Lookup zuerst (loadContactProjects braucht die Farben),
+  // dann Rest parallel. Eliminiert den race-condition-Workaround.
+  await loadProjektStatus();
   await Promise.all([
+    renderContactV2Layout(data),
     loadContactAppointments(contactId),
     loadContactProjects(contactId),
-    loadContactTasks(contactId),
-    loadProjektStatus()
+    loadContactTasks(contactId)
   ]);
-  // Projekte nochmal rendern, falls sie vor projektStatus fertig waren
-  await loadContactProjects(contactId);
 }
 
 function renderContactDetail(k) {
@@ -17646,9 +17667,10 @@ async function loadAppointmentDetail(appointmentId) {
 
   trackVisit('termin', appointmentId, a.titel || '—', a.company?.name || '');
 
-  // v2.0.3: Hero-Pill „✓ Vorbereitet" pre-rendern (auch wenn Tab nicht offen)
+  // v2.0.3: Hero-Pill „✓ Vorbereitet" pre-rendern (auch wenn Tab nicht offen).
+  // v2.0.4: State aus geladenem Datensatz durchreichen.
   renderWorkflowChecklist('appointment_prepare', 'appointment', appointmentId,
-    'appt-workflow-checklist', 'appt-workflow-pill');
+    'appt-workflow-checklist', 'appt-workflow-pill', a.workflow_state);
 
   _currentAppointmentV2Tab = 'inhalt';
   switchAppointmentV2Tab('inhalt');
@@ -17878,9 +17900,10 @@ async function loadDeploymentDetail(deploymentId) {
 
   trackVisit('einsatz', deploymentId, d.titel || '—', d.company?.name || '');
 
-  // v2.0.3: Dokumentations-Checkliste + Hero-Pille rendern
+  // v2.0.3: Dokumentations-Checkliste + Hero-Pille rendern.
+  // v2.0.4: State aus geladenem Datensatz durchreichen.
   renderWorkflowChecklist('deployment_document', 'deployment', deploymentId,
-    'dep-workflow-checklist', 'dep-workflow-pill');
+    'dep-workflow-checklist', 'dep-workflow-pill', d.workflow_state);
 
   _currentDeploymentV2Tab = 'bericht';
   switchDeploymentV2Tab('bericht');
@@ -18087,14 +18110,19 @@ async function _saveWorkflowStep(entityType, entityId, workflowKey, stepId, chec
 }
 
 /** Rendert die Checkliste in `containerId` und befüllt die Hero-Pille
- *  `pillId` (optional), wenn alle Schritte abgehakt sind. */
-async function renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId) {
+ *  `pillId` (optional), wenn alle Schritte abgehakt sind.
+ *  v2.0.4: `prefetchedState` (optional) erlaubt es dem Caller, den schon
+ *  geladenen workflow_state aus dem Detail-Page-SELECT durchzureichen, um
+ *  einen extra Roundtrip beim Hero-Pre-Render zu sparen. */
+async function renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId, prefetchedState) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const def = WORKFLOW_STEPS[workflowKey];
   if (!def) { container.innerHTML = ''; return; }
 
-  const state = await _loadWorkflowState(entityType, entityId);
+  const state = prefetchedState !== undefined
+    ? (prefetchedState || {})
+    : await _loadWorkflowState(entityType, entityId);
   const wfState = state[workflowKey] || {};
   const done = def.steps.filter(s => wfState[s.id]).length;
   const total = def.steps.length;
