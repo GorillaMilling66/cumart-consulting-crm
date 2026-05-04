@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.3 (Workflow-Checklisten — Punkt 9 des UX-Refactors).
+   Pro Detail-Page eine Schritt-für-Schritt-Checkliste:
+   - Termin → "Termin vorbereiten" (4 Schritte)
+   - Einsatz → "Einsatz dokumentieren" (5 Schritte)
+   - Projekt → "Projekt vorbereiten" (4 Schritte)
+   State liegt in jsonb-Spalte `workflow_state` der jeweiligen
+   Tabelle (Migration v2.0.3); Schritt-Definitionen sind hartcodiert
+   in WORKFLOW_STEPS. Hero-Pille "✓ Vorbereitet" / "✓ Dokumentiert"
+   erscheint, sobald alle Schritte abgehakt sind.
+   Version 2.0.2 — Drawer-Refactor (Anlage-Modale als Right-Side-
+   Drawer) + Smart-Capture-Filter + Action-Items-Verknüpfung am
+   Einsatz fix.
+   Version 2.0.1 — UX-Feinschliff (Bugs, klickbare Listen,
+   Schnelleingabe-Pillen, Kalender unter Briefing).
    Version 2.0.0 (Komplett-Redesign — alle Phasen 0-9 live).
    Drei-Bereiche-Architektur (Briefing · Arbeitsplatz · Listen) plus
    Einstellungen via Zahnrad. Vier-Zonen-Detail-Pages für Firma,
@@ -8353,6 +8367,11 @@ async function renderProjectDetail(p) {
 
   // v2.0.0 — neues Layout: Hero, Sidepanel, Activity-Stream, Default-Tab
   await renderProjectV2Layout(p);
+
+  // v2.0.3: Vorbereitungs-Pille im Hero pre-rendern
+  renderWorkflowChecklist('project_prepare', 'project', p.id,
+    'project-workflow-checklist', 'project-workflow-pill');
+
   _currentProjectV2Tab = 'aktivitaeten';
   _currentProjectActivityFilter = 'alle';
   switchProjectV2Tab('aktivitaeten');
@@ -16894,6 +16913,10 @@ function switchProjectV2Tab(tab) {
   // Lazy-Render: Brief / Plan-Tabs werden erst beim Anzeigen geladen
   if (tab === 'brief')   renderProjectBriefTab(currentProjectDetailId);
   if (tab === 'aktivitaeten') loadProjectActivityStream(currentProjectDetailId);
+  if (tab === 'vorbereitung' && currentProjectDetailId) {
+    renderWorkflowChecklist('project_prepare', 'project', currentProjectDetailId,
+      'project-workflow-checklist', 'project-workflow-pill');
+  }
 }
 
 /** Hero-Zone mit Marge / Zeitplan / Health befüllen + Sidepanel. */
@@ -17623,6 +17646,10 @@ async function loadAppointmentDetail(appointmentId) {
 
   trackVisit('termin', appointmentId, a.titel || '—', a.company?.name || '');
 
+  // v2.0.3: Hero-Pill „✓ Vorbereitet" pre-rendern (auch wenn Tab nicht offen)
+  renderWorkflowChecklist('appointment_prepare', 'appointment', appointmentId,
+    'appt-workflow-checklist', 'appt-workflow-pill');
+
   _currentAppointmentV2Tab = 'inhalt';
   switchAppointmentV2Tab('inhalt');
 }
@@ -17633,6 +17660,11 @@ function switchAppointmentV2Tab(tab) {
     t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('#page-appointment-detail .proj-tab-panel').forEach(p =>
     p.style.display = p.dataset.tab === tab ? '' : 'none');
+  // v2.0.3: Workflow-Tab lazy laden
+  if (tab === 'vorbereitung' && currentAppointmentDetailId) {
+    renderWorkflowChecklist('appointment_prepare', 'appointment', currentAppointmentDetailId,
+      'appt-workflow-checklist', 'appt-workflow-pill');
+  }
 }
 
 async function saveAppointmentDokuField(key, value) {
@@ -17846,6 +17878,10 @@ async function loadDeploymentDetail(deploymentId) {
 
   trackVisit('einsatz', deploymentId, d.titel || '—', d.company?.name || '');
 
+  // v2.0.3: Dokumentations-Checkliste + Hero-Pille rendern
+  renderWorkflowChecklist('deployment_document', 'deployment', deploymentId,
+    'dep-workflow-checklist', 'dep-workflow-pill');
+
   _currentDeploymentV2Tab = 'bericht';
   switchDeploymentV2Tab('bericht');
 }
@@ -17968,6 +18004,134 @@ async function finishDeploymentReport() {
 function uploadDeploymentAttachment(files) {
   if (!files || files.length === 0) return;
   showToast('Datei-Anhänge kommen in Phase 9 (Storage-Sub-Spec). Bis dahin: extern speichern und in der Notiz verlinken.', false);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.0.3 — WORKFLOW-CHECKLISTEN (Punkt 9)
+//  Vorbereitung / Dokumentation als Schritt-für-Schritt-Tab pro Detail-Page.
+//  State liegt in der jsonb-Spalte workflow_state (Migration v2.0.3) der
+//  jeweiligen Tabelle, Definition der Schritte ist hier hartcodiert — sie
+//  ändern sich selten und sind eng an die UI-Texte gekoppelt.
+// ═══════════════════════════════════════════════════════════
+
+const WORKFLOW_STEPS = {
+  appointment_prepare: {
+    title: 'Termin vorbereiten',
+    completedLabel: 'Vorbereitet',
+    intro: 'Vor dem Termin abhaken, was bereits erledigt ist.',
+    steps: [
+      { id: 'anfahrt',     label: 'Anfahrt / Zugangsdaten geprüft' },
+      { id: 'teilnehmer',  label: 'Teilnehmer bestätigt (Antwort liegt vor)' },
+      { id: 'unterlagen',  label: 'Unterlagen versendet' },
+      { id: 'agenda',      label: 'Agenda gesetzt' }
+    ]
+  },
+  deployment_document: {
+    title: 'Einsatz dokumentieren',
+    completedLabel: 'Dokumentiert',
+    intro: 'Nach dem Einsatz abhaken, was im Bericht festgehalten ist.',
+    steps: [
+      { id: 'themen',          label: 'Behandelte Themen erfasst' },
+      { id: 'teilnehmer',      label: 'Teilnehmer notiert' },
+      { id: 'erkenntnisse',    label: 'Erkenntnisse festgehalten' },
+      { id: 'folgemassnahmen', label: 'Folgemaßnahmen abgeleitet' },
+      { id: 'status_done',     label: 'Status auf „Durchgeführt" gesetzt' }
+    ]
+  },
+  project_prepare: {
+    title: 'Projekt vorbereiten',
+    completedLabel: 'Vorbereitet',
+    intro: 'Beim Anlegen / vor dem Kickoff abhaken, was geklärt ist.',
+    steps: [
+      { id: 'ziel',             label: 'Ziel / Kundenherausforderung formuliert' },
+      { id: 'erfolgskriterien', label: 'Erfolgskriterien definiert' },
+      { id: 'themen',           label: 'Themen festgelegt' },
+      { id: 'aktivitaeten',     label: 'Erste Termine / Einsätze eingeplant' }
+    ]
+  }
+};
+
+const WORKFLOW_TABLE_MAP = {
+  appointment: 'appointments',
+  deployment:  'deployments',
+  project:     'projects'
+};
+
+/** Ist die Workflow-Checkliste vollständig? */
+function _isWorkflowComplete(workflowKey, state) {
+  const def = WORKFLOW_STEPS[workflowKey];
+  if (!def || !state) return false;
+  return def.steps.every(s => !!state[s.id]);
+}
+
+/** Lädt den workflow_state aus der DB für eine Entität. */
+async function _loadWorkflowState(entityType, entityId) {
+  const table = WORKFLOW_TABLE_MAP[entityType];
+  if (!table || !entityId) return {};
+  const { data, error } = await db.from(table)
+    .select('workflow_state').eq('id', entityId).single();
+  if (error) return {};
+  return data?.workflow_state || {};
+}
+
+/** Schreibt eine Step-Änderung in den jsonb-State zurück. */
+async function _saveWorkflowStep(entityType, entityId, workflowKey, stepId, checked) {
+  const table = WORKFLOW_TABLE_MAP[entityType];
+  if (!table || !entityId) return;
+  const state = await _loadWorkflowState(entityType, entityId);
+  if (!state[workflowKey]) state[workflowKey] = {};
+  state[workflowKey][stepId] = !!checked;
+  const { error } = await db.from(table).update({ workflow_state: state }).eq('id', entityId);
+  if (error) { showToast('Fehler: ' + error.message, true); return null; }
+  return state;
+}
+
+/** Rendert die Checkliste in `containerId` und befüllt die Hero-Pille
+ *  `pillId` (optional), wenn alle Schritte abgehakt sind. */
+async function renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const def = WORKFLOW_STEPS[workflowKey];
+  if (!def) { container.innerHTML = ''; return; }
+
+  const state = await _loadWorkflowState(entityType, entityId);
+  const wfState = state[workflowKey] || {};
+  const done = def.steps.filter(s => wfState[s.id]).length;
+  const total = def.steps.length;
+  const allDone = done === total;
+
+  container.innerHTML = `
+    <div class="workflow-checklist">
+      <div class="workflow-head">
+        <div class="workflow-title">${esc(def.title)}</div>
+        <div class="workflow-progress">${done} / ${total}${allDone ? ` · <strong>${esc(def.completedLabel)}</strong>` : ''}</div>
+      </div>
+      <div class="workflow-intro">${esc(def.intro)}</div>
+      <div class="workflow-steps">
+        ${def.steps.map(s => `
+          <label class="workflow-step ${wfState[s.id] ? 'is-done' : ''}">
+            <input type="checkbox" ${wfState[s.id] ? 'checked' : ''}
+                   onchange="onWorkflowStepToggle('${esc(workflowKey)}','${esc(entityType)}','${esc(entityId)}','${esc(s.id)}',this.checked,'${esc(containerId)}','${esc(pillId || '')}')">
+            <span class="workflow-step-label">${esc(s.label)}</span>
+          </label>`).join('')}
+      </div>
+    </div>`;
+
+  // Hero-Pille toggeln (wenn vorhanden)
+  if (pillId) {
+    const pill = document.getElementById(pillId);
+    if (pill) {
+      pill.style.display = allDone ? '' : 'none';
+      pill.textContent = '✓ ' + def.completedLabel;
+    }
+  }
+}
+
+/** Handler für ⏰ Klick auf Step-Checkbox. */
+async function onWorkflowStepToggle(workflowKey, entityType, entityId, stepId, checked, containerId, pillId) {
+  await _saveWorkflowStep(entityType, entityId, workflowKey, stepId, checked);
+  // Re-render mit aktualisiertem State (für Progress-Counter und Hero-Pille)
+  await renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId);
 }
 
 // ═══════════════════════════════════════════════════════════

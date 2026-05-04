@@ -1174,6 +1174,7 @@
           </div>
           <div class="proj-hero-actions">
             <span class="status-pill" id="project-status-pill">…</span>
+            <span class="workflow-status-pill" id="project-workflow-pill" style="display:none">✓ Vorbereitet</span>
             <button class="btn btn-sm" id="project-detail-edit-btn">Bearbeiten</button>
           </div>
         </div>
@@ -1199,6 +1200,7 @@
       <!-- Tabs -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten"     onclick="switchProjectV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="vorbereitung"     onclick="switchProjectV2Tab('vorbereitung')">Vorbereitung</button>
         <button class="proj-tab"        data-tab="brief"            onclick="switchProjectV2Tab('brief')">Brief</button>
         <button class="proj-tab"        data-tab="wirtschaftlichkeit" onclick="switchProjectV2Tab('wirtschaftlichkeit')">Wirtschaftlichkeit</button>
         <button class="proj-tab"        data-tab="plan"             onclick="switchProjectV2Tab('plan')">Plan &amp; Lieferobjekte</button>
@@ -1234,6 +1236,11 @@
             <div id="project-activity-stream">
               <div class="info-card-empty">Lade Aktivitäten …</div>
             </div>
+          </div>
+
+          <!-- v2.0.3: Vorbereitung-Tab (Punkt 9) -->
+          <div class="proj-tab-panel" data-tab="vorbereitung" id="project-panel-vorbereitung" style="display:none">
+            <div id="project-workflow-checklist"><div class="info-card-empty">Lade Checkliste …</div></div>
           </div>
 
           <!-- Brief-Tab -->
@@ -1517,6 +1524,7 @@
           </div>
           <div class="proj-hero-actions">
             <span class="status-pill" id="appt-status-pill">…</span>
+            <span class="workflow-status-pill" id="appt-workflow-pill" style="display:none">✓ Vorbereitet</span>
             <button class="btn btn-sm" onclick="openAppointmentModal('edit', currentAppointmentDetailId)">Bearbeiten</button>
           </div>
         </div>
@@ -1540,8 +1548,9 @@
       </div>
 
       <div class="proj-tabs">
-        <button class="proj-tab active" data-tab="inhalt"   onclick="switchAppointmentV2Tab('inhalt')">Inhalt</button>
-        <button class="proj-tab"        data-tab="anhaenge" onclick="switchAppointmentV2Tab('anhaenge')">Anhänge</button>
+        <button class="proj-tab active" data-tab="inhalt"       onclick="switchAppointmentV2Tab('inhalt')">Inhalt</button>
+        <button class="proj-tab"        data-tab="vorbereitung" onclick="switchAppointmentV2Tab('vorbereitung')">Vorbereitung</button>
+        <button class="proj-tab"        data-tab="anhaenge"     onclick="switchAppointmentV2Tab('anhaenge')">Anhänge</button>
       </div>
 
       <div class="proj-grid">
@@ -1567,6 +1576,10 @@
               </div>
               <div id="appt-action-items"><div class="info-card-empty">Lade …</div></div>
             </div>
+          </div>
+
+          <div class="proj-tab-panel" data-tab="vorbereitung" id="appt-panel-vorbereitung" style="display:none">
+            <div id="appt-workflow-checklist"><div class="info-card-empty">Lade Checkliste …</div></div>
           </div>
 
           <div class="proj-tab-panel" data-tab="anhaenge" id="appt-panel-anhaenge" style="display:none">
@@ -1613,6 +1626,7 @@
           </div>
           <div class="proj-hero-actions">
             <span class="status-pill" id="dep-status-pill">…</span>
+            <span class="workflow-status-pill" id="dep-workflow-pill" style="display:none">✓ Dokumentiert</span>
             <button class="btn btn-sm" onclick="openDeploymentModal('edit', currentDeploymentDetailId)">Bearbeiten</button>
           </div>
         </div>
@@ -1646,6 +1660,9 @@
 
           <!-- Bericht-Tab (Default) -->
           <div class="proj-tab-panel active" data-tab="bericht" id="dep-panel-bericht">
+            <!-- v2.0.3: Dokumentations-Checkliste oben im Bericht -->
+            <div id="dep-workflow-checklist" style="margin-bottom:20px"></div>
+
             <div class="proj-brief-section">
               <div class="proj-brief-label-row">
                 <div class="proj-brief-label">BEHANDELTE THEMEN</div>

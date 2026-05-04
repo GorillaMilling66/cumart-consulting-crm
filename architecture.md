@@ -165,6 +165,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | erstellt_von   | uuid         | YES      |                |                                    |
 | created_at     | timestamptz  | YES      | now()          |                                    |
 | deleted_at     | timestamptz  | YES      |                | Soft-Delete (v1.16)                |
+| workflow_state | jsonb        | NO       | '{}'::jsonb    | Vorbereitungs-Checkliste (v2.0.3, siehe §8.11) |
 
 ### 4.5 `projects`
 
@@ -184,6 +185,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | erstellt_von        | uuid         |              |                                    |
 | created_at          | timestamptz  | now()        |                                    |
 | deleted_at          | timestamptz  |              | Soft-Delete (v1.16)                |
+| workflow_state      | jsonb (NOT NULL) | '{}'::jsonb | Vorbereitungs-Checkliste (v2.0.3, siehe §8.11) |
 
 **Projekt-Status-Werte** (Lookup `projekt_status`): Lead, Angebot, In Arbeit, Abschlussphase, Abgeschlossen, Verloren. Drei aktive Status werden automatisch gewechselt (siehe 8.5).
 
@@ -210,6 +212,7 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | erstellt_von      | uuid         | YES      |           |                                    |
 | created_at        | timestamptz  | YES      | now()     |                                    |
 | deleted_at        | timestamptz  | YES      |           | Soft-Delete (v1.16)                |
+| workflow_state    | jsonb        | NO       | '{}'::jsonb | Dokumentations-Checkliste (v2.0.3, siehe §8.11) |
 
 **Constraints:** `deployments_datum_consistency`: Entweder beide Datumsfelder NULL oder beide gesetzt mit `datum_bis >= datum_von`
 
@@ -802,6 +805,32 @@ End-to-End-Workflow in drei Stufen:
 
 `save<X>` und `delete<X>` prüfen, welche Detail-Page aktiv ist, und refreshen nur die relevante Sektion. Memberships-Sektion wird automatisch mit aktualisiert, wenn ein Einsatz einer Firma gespeichert/gelöscht wird (damit Fortschritt live sichtbar ist).
 
+### 8.11 Workflow-Checklisten (v2.0.3)
+
+Punkt 9 des UX-Refactors: pro Detail-Page eine Schritt-für-Schritt-Checkliste, die im Hero einen Status („✓ Vorbereitet" / „✓ Dokumentiert") zeigt sobald alle Schritte abgehakt sind. State liegt in der jsonb-Spalte `workflow_state` der jeweiligen Tabelle (`appointments`, `deployments`, `projects`); Schritt-Definitionen sind in `app.js` hartcodiert (`WORKFLOW_STEPS`-Konstante), weil sie eng an UI-Texte gekoppelt sind und sich selten ändern.
+
+| Workflow-Key           | Entität     | Schritte                                                                               | Hero-Pille      |
+|------------------------|-------------|----------------------------------------------------------------------------------------|-----------------|
+| `appointment_prepare`  | appointment | anfahrt · teilnehmer · unterlagen · agenda                                             | ✓ Vorbereitet   |
+| `deployment_document`  | deployment  | themen · teilnehmer · erkenntnisse · folgemassnahmen · status_done                     | ✓ Dokumentiert  |
+| `project_prepare`      | project     | ziel · erfolgskriterien · themen · aktivitaeten                                        | ✓ Vorbereitet   |
+
+**Schema-Form** (Beispiel deployment-Zeile):
+```json
+{
+  "deployment_document": { "themen": true, "teilnehmer": false, ... }
+}
+```
+
+**Helper:**
+- `renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId)` — rendert die Checklist im Vorbereitung-/Dokumentation-Tab und toggelt die Hero-Pille.
+- `_loadWorkflowState` / `_saveWorkflowStep` — Direct-Update gegen jsonb-Spalte (Read-Modify-Write, kein RPC).
+- `onWorkflowStepToggle(...)` — Inline-Handler, schreibt sofort beim Klick und re-rendert.
+
+**Lazy-Render:** Die Pille im Hero wird beim Laden der Detail-Page sofort gerendert (damit "✓"-Status auch ohne Tab-Wechsel sichtbar ist). Die Checklist im Tab selbst lädt erst beim Tab-Switch.
+
+**Aufgaben** brauchen keinen Workflow-State — ihr Modell (offen ↔ erledigt) ist schon im `status`-Feld abgebildet.
+
 ---
 
 ## 9. Input-Validierung
@@ -867,6 +896,9 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 
 | Version | Datum       | Highlights                                                         |
 |---------|-------------|--------------------------------------------------------------------|
+| **v2.0.3** | **04.05.2026** | **Workflow-Checklisten (Punkt 9 des UX-Refactors).** Pro Detail-Page eine Schritt-für-Schritt-Checkliste mit Hero-Pille beim vollständigen Abhaken: Termin → „✓ Vorbereitet" (anfahrt/teilnehmer/unterlagen/agenda), Einsatz → „✓ Dokumentiert" (themen/teilnehmer/erkenntnisse/folgemassnahmen/status_done), Projekt → „✓ Vorbereitet" (ziel/erfolgskriterien/themen/aktivitaeten). State in neuer jsonb-Spalte `workflow_state` (DEFAULT `{}`) auf `appointments`/`deployments`/`projects`; Schritt-Definitionen hartcodiert in `WORKFLOW_STEPS` weil eng an UI-Texte gekoppelt. Pill rendert beim Laden der Detail-Page sofort (auch ohne Tab-Wechsel sichtbar), Checklist im Tab lazy beim Switch. Helper: `renderWorkflowChecklist`, `_loadWorkflowState`, `_saveWorkflowStep`, `onWorkflowStepToggle`. Aufgaben bleiben außen vor (offen↔erledigt-Modell reicht). Migration `migrations/v2.0.3_workflow_state.sql`. |
+| v2.0.2 | 30.04.2026 | **Drawer-Refactor + Action-Items-Fix.** Alle 6 Anlage-Modale (Firma, Kontakt, Termin, Einsatz, Projekt, Aufgabe) als Right-Side-Drawer statt Center-Modal, einheitliches Verhalten + Smart-Capture-Filter. Bugfix: Action Items am Einsatz werden jetzt korrekt mit `deployment_id` verknüpft. Pilot des Drawer-Systems begann mit Kontakt-Modal, dann komplette Migration. |
+| v2.0.1 | 29.04.2026 | **UX-Feinschliff.** Bugs aus v2.0.0, klickbare Listen-Zeilen (Titel-Klick → Detail-Page), Schnelleingabe-Pillen für Status/Typ in den Anlage-Modals, Kalender-Bar unter Briefing eingebettet (vorher überall). |
 | v1.0.0 – v1.5.0 | Apr 2026 | CRM-Grundstruktur, Auth, Firmen, RLS-Hardening         |
 | v1.6.x – v1.8.0 | Apr 2026 | Phase 3a-b: Termine, Projekte, Kontakt-Detail          |
 | v1.9.0  | Apr 2026    | Phase 3c: Einsätze mit Termin-Kopplung                             |
@@ -1114,6 +1146,12 @@ SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
              AND indexname IN ('idx_companies_active','idx_contacts_active',
                                'idx_appointments_active','idx_projects_active',
                                'idx_deployments_active','idx_memberships_active')) = 6
+       THEN 'OK' ELSE 'TEILWEISE' END
+UNION ALL
+SELECT 'workflow_state auf appointments/deployments/projects (v2.0.3, Soll=3)',
+       CASE WHEN (SELECT COUNT(*) FROM information_schema.columns
+           WHERE table_schema='public' AND column_name='workflow_state'
+             AND table_name IN ('appointments','deployments','projects')) = 3
        THEN 'OK' ELSE 'TEILWEISE' END;
 ```
 
@@ -1135,4 +1173,4 @@ SELECT 'Partial-Indexe idx_<table>_active (v1.16, Soll=6)',
 
 ---
 
-*Ende der Dokumentation · Cumart CRM v1.21.0*
+*Ende der Dokumentation · Cumart CRM v2.0.3*
