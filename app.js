@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.6 (Race-Fix Detail-Pages). Wenn der User schnell
+   von Firma A zu Firma B navigiert, lief A's Promise-Kette
+   weiter und schrieb später zurückkommende Daten in B's DOM —
+   man sah Aufgaben/Termine der falschen Firma. Neuer Helper
+   isStillOnDetail(entityType, id) wird in jedem Sub-Loader
+   und Activity-Stream direkt vor dem DOM-Update geprüft; bei
+   Mismatch früher Return. Geguarded sind: 3 Activity-Streams +
+   3 Tasks-Loader + 2 Appointments-Loader + 2 Deployments-Loader
+   + Contacts/Projects/Memberships/Dashboards (Firma+Projekt) =
+   17 kritische Stellen.
    Version 2.0.5 (Notes-Bugfix). notes.titel war NOT NULL, aber
    postCompanyNote / postProjectNote setzen nur inhalt — Activity-
    Stream-Notizen schlugen daher seit v2.0.0 still fehl (Toast
@@ -743,6 +753,18 @@ let inPasswordRecovery = false;
 let currentCompanyDetailId = null;
 let currentProjectDetailId = null;
 let currentContactDetailId = null;
+
+// v2.0.6 — Race-Guard für Detail-Page-Sub-Loader. Wenn der User schnell von
+// Firma A zu Firma B navigiert, läuft A's Promise-Kette weiter und kommt
+// nach B's zurück. Ohne Guard würde A's Daten in B's UI landen. Jeder
+// Sub-Loader ruft direkt vor dem DOM-Update isStillOnDetail(...) und
+// returnt früh, wenn die User-Page sich geändert hat.
+function isStillOnDetail(entityType, id) {
+  if (entityType === 'company') return currentCompanyDetailId === id;
+  if (entityType === 'project') return currentProjectDetailId === id;
+  if (entityType === 'contact') return currentContactDetailId === id;
+  return true;
+}
 let contactModalPrefillCompanyId = null;
 let appointmentModalPrefillCompanyId = null;
 let appointmentModalPrefillProjectId = null;
@@ -5721,6 +5743,7 @@ async function renderCompanyMemberships(companyId) {
     `).is('deleted_at', null)
     .eq('company_id', companyId)
     .order('start_datum', { ascending: false });
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   if (error) {
     container.innerHTML = `<div class="empty">Fehler: ${esc(error.message)}</div>`;
@@ -6655,6 +6678,7 @@ async function loadCompanyContacts(companyId) {
 
   const { data, error } = await db.from('contacts')
     .select('*').is('deleted_at', null).eq('company_id', companyId).order('nachname').order('vorname');
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   if (error) {
     if (list) list.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`;
@@ -6708,6 +6732,7 @@ async function loadCompanyAppointments(companyId) {
   const { data, error } = await db.from('appointments')
     .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe), contact:contacts(id, vorname, nachname)').is('deleted_at', null)
     .eq('company_id', companyId);
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -8414,6 +8439,7 @@ async function loadProjectAppointments(projectId) {
   const { data, error } = await db.from('appointments')
     .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)').is('deleted_at', null)
     .eq('project_id', projectId);
+  if (!isStillOnDetail('project', projectId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -8505,6 +8531,7 @@ async function loadCompanyProjects(companyId) {
   const { data, error } = await db.from('projects')
     .select('*').is('deleted_at', null).eq('company_id', companyId)
     .order('startdatum', { ascending: false, nullsFirst: false });
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -8767,6 +8794,7 @@ async function loadContactAppointments(contactId) {
   const { data, error } = await db.from('appointments')
     .select('*, typ:lookup_values!appointments_typ_id_fkey(id, wert, farbe)').is('deleted_at', null)
     .eq('contact_id', contactId);
+  if (!isStillOnDetail('contact', contactId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -8839,6 +8867,7 @@ async function loadContactProjects(contactId) {
   const { data, error } = await db.from('projects')
     .select('*').is('deleted_at', null).eq('hauptkontakt_id', contactId)
     .order('startdatum', { ascending: false, nullsFirst: false });
+  if (!isStillOnDetail('contact', contactId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -10092,6 +10121,7 @@ async function loadCompanyDeployments(companyId) {
     .eq('company_id', companyId)
     .order('datum_von', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false });
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -10160,6 +10190,7 @@ async function loadProjectDeployments(projectId) {
     .eq('project_id', projectId)
     .order('datum_von', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
+  if (!isStillOnDetail('project', projectId)) return;  // v2.0.6: race-guard
 
   if (error) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
@@ -11027,6 +11058,7 @@ async function loadCompanyDashboard(companyId, manualAbc) {
       .eq('company_id', companyId).in('status', ['Lead', 'Angebot'])
       .order('enddatum', { ascending: true, nullsFirst: false })
   ]);
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   // ── UMSATZ KALENDERJAHR ───────────────────────────────────
   const inYear = (dateStr) => dateStr && dateStr >= yearStart && dateStr <= yearEnd;
@@ -11457,6 +11489,7 @@ async function loadProjectDashboard(p) {
       .eq('project_id', p.id).eq('status', 'Geplant')
       .gte('datum_von', todayISO).order('datum_von', { ascending: true }).limit(2)
   ]);
+  if (!isStillOnDetail('project', p.id)) return;  // v2.0.6: race-guard
 
   // ── FINANCE-CARD: Soll vs. Ist + Marge ─────────────────────
   const aufwand = (depsResult.data || [])
@@ -16621,6 +16654,7 @@ async function loadCompanyTasks(companyId) {
   const { data, error } = await db.from('tasks')
     .select('*, assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)').is('deleted_at', null)
     .eq('company_id', companyId);
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     countEl.textContent = 'Aufgaben';
@@ -16637,6 +16671,7 @@ async function loadContactTasks(contactId) {
   const { data, error } = await db.from('tasks')
     .select('*, assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)').is('deleted_at', null)
     .eq('contact_id', contactId);
+  if (!isStillOnDetail('contact', contactId)) return;  // v2.0.6: race-guard
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     countEl.textContent = 'Aufgaben';
@@ -16653,6 +16688,7 @@ async function loadProjectTasks(projectId) {
   const { data, error } = await db.from('tasks')
     .select('*, assigned:user_profiles!tasks_assigned_to_fkey(id, name, email)').is('deleted_at', null)
     .eq('project_id', projectId);
+  if (!isStillOnDetail('project', projectId)) return;  // v2.0.6: race-guard
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     countEl.textContent = 'Aufgaben';
@@ -17033,6 +17069,7 @@ async function loadProjectActivityStream(projectId) {
     db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
     db.from('notes').select('id, inhalt, created_at, erstellt_von, user:user_profiles!notes_erstellt_von_fkey(name)').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50)
   ]);
+  if (!isStillOnDetail('project', projectId)) return;  // v2.0.6: race-guard
 
   const items = [];
   (appts.data || []).forEach(a => items.push({
@@ -17382,6 +17419,7 @@ async function loadCompanyActivityStream(companyId) {
     db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('company_id', companyId).order('created_at', { ascending: false }).limit(50),
     db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('company_id', companyId).order('created_at', { ascending: false }).limit(50)
   ]);
+  if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
   const items = [];
   (appts.data || []).forEach(a => items.push({
@@ -17532,6 +17570,7 @@ async function loadContactActivityStream(contactId) {
     db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50),
     db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50)
   ]);
+  if (!isStillOnDetail('contact', contactId)) return;  // v2.0.6: race-guard
 
   const items = [];
   (appts.data || []).forEach(a => items.push({
