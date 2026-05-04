@@ -6494,10 +6494,12 @@ async function loadCompanyDetail(companyId) {
 
   renderCompanyDetail(data);
   trackVisit('company', data.id, data.name, [data.stadt, data.branche].filter(Boolean).join(' · '));
-  // v2.0.4: Sub-Sektionen parallel statt seriell (vorher 7 Roundtrips à ~120 ms = ~840 ms,
-  // jetzt limitiert durch die langsamste Query).
+  // v2.0.4: Layout zuerst (es triggert intern den Activity-Stream über
+  // switchCompanyV2Tab am Ende — wenn parallel zu den Sub-Loadern, gab's
+  // Connection-Bottleneck mit ~20 simultanen Supabase-Calls). Danach die
+  // 6 unabhängigen Sub-Loader parallel.
+  await renderCompanyV2Layout(data);
   await Promise.all([
-    renderCompanyV2Layout(data),
     loadCompanyContacts(companyId),
     loadCompanyAppointments(companyId),
     loadCompanyProjects(companyId),
@@ -8634,11 +8636,12 @@ async function loadContactDetail(contactId) {
   trackVisit('contact', data.id,
     `${data.vorname || ''} ${data.nachname || ''}`.trim() || '—',
     data.company?.name || data.email || '');
-  // v2.0.4: Status-Lookup zuerst (loadContactProjects braucht die Farben),
-  // dann Rest parallel. Eliminiert den race-condition-Workaround.
+  // v2.0.4: Status-Lookup + Layout zuerst (Layout triggert Activity-Stream
+  // intern, soll nicht mit Sub-Loadern um Connections kämpfen). Dann die
+  // unabhängigen Sub-Loader parallel.
   await loadProjektStatus();
+  await renderContactV2Layout(data);
   await Promise.all([
-    renderContactV2Layout(data),
     loadContactAppointments(contactId),
     loadContactProjects(contactId),
     loadContactTasks(contactId)
