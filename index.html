@@ -636,10 +636,17 @@
               <button class="proj-filter-pill"        data-filter="aufgaben" onclick="filterCompanyActivity('aufgaben')">Aufgaben</button>
               <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterCompanyActivity('notizen')">Notizen</button>
             </div>
+
+            <!-- Schnelleingabe (v2.0.8): Typ-Pillen + Eingabefeld -->
+            <div class="proj-note-types">
+              <button class="proj-note-type is-active" data-type="notiz" onclick="setCompanyQuickInputType('notiz')">Notiz</button>
+              <button class="proj-note-type" data-type="folgetermin" onclick="setCompanyQuickInputType('folgetermin')">+ Folgetermin</button>
+              <button class="proj-note-type" data-type="aufgabe" onclick="setCompanyQuickInputType('aufgabe')">+ Aufgabe</button>
+            </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="company-note-avatar">SC</span>
-              <input type="text" id="company-note-input" placeholder="Notiz hinzufügen oder Update zu dieser Firma schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postCompanyNote();}">
-              <span class="proj-note-hint">⌘↵</span>
+              <input type="text" id="company-note-input" placeholder="Notiz hinzufügen oder Update zu dieser Firma schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postCompanyQuickInput();}">
+              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postCompanyQuickInput()" title="Eingabe speichern (⌘↵)">⌘↵</button>
             </div>
             <div id="company-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
           </div>
@@ -861,10 +868,17 @@
               <button class="proj-filter-pill"        data-filter="aufgaben" onclick="filterContactActivity('aufgaben')">Aufgaben</button>
               <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterContactActivity('notizen')">Notizen</button>
             </div>
+
+            <!-- Schnelleingabe (v2.0.8): Typ-Pillen + Eingabefeld -->
+            <div class="proj-note-types">
+              <button class="proj-note-type is-active" data-type="notiz" onclick="setContactQuickInputType('notiz')">Notiz</button>
+              <button class="proj-note-type" data-type="folgetermin" onclick="setContactQuickInputType('folgetermin')">+ Folgetermin</button>
+              <button class="proj-note-type" data-type="aufgabe" onclick="setContactQuickInputType('aufgabe')">+ Aufgabe</button>
+            </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="contact-note-avatar">SC</span>
-              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postContactNote();}">
-              <span class="proj-note-hint">⌘↵</span>
+              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postContactQuickInput();}">
+              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postContactQuickInput()" title="Eingabe speichern (⌘↵)">⌘↵</button>
             </div>
             <div id="contact-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
           </div>

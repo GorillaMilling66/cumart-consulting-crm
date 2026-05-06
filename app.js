@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.8 (Schnelleingabe-Pillen auf Firma/Kontakt + NaN-
+   Date-Fix). Die Quick-Input-Pillen "Notiz / + Folgetermin /
+   + Aufgabe" gab's nur im Projekt-Aktivitäten-Tab — jetzt auch
+   auf Firma- und Kontakt-Detail mit demselben Pattern: Pille
+   wählen, Titel ins Inputfeld, ⌘↵ öffnet das passende Modal mit
+   Prefill (company_id bzw. contact_id) und Titel vorbelegt.
+   Neue Helper: setCompany/ContactQuickInputType(type),
+   postCompany/ContactQuickInput().
+   Bugfix: formatDateCompact / formatDateDE haben Timestamps
+   wie '2026-04-28T14:30:00Z' nicht akzeptiert (parseLocalDate
+   splittet auf '-' und kriegt '28T14:30:00Z' als Tag → Invalid
+   Date → "Erledigt undefined NaN.NaN.N" im Activity-Stream bei
+   erledigten Aufgaben). Beide Funktionen ziehen jetzt nur den
+   Datums-Teil (substring 0,10) und prüfen isNaN(d.getTime()).
+   Version 2.0.7 (Note-Handler — preventDefault + Strg+Enter).
    Version 2.0.6 (Race-Fix Detail-Pages). Wenn der User schnell
    von Firma A zu Firma B navigiert, lief A's Promise-Kette
    weiter und schrieb später zurückkommende Daten in B's DOM —
@@ -1594,30 +1609,36 @@ function toISODate(date) {
 
 function formatDateDE(isoDateStr) {
   if (!isoDateStr) return '—';
+  // Auch Timestamps wie '2026-04-28T14:30:00Z' akzeptieren — nur Datums-Teil nehmen.
+  const dateOnly = String(isoDateStr).substring(0, 10);
   try {
-    const d = parseLocalDate(isoDateStr);
+    const d = parseLocalDate(dateOnly);
+    if (isNaN(d.getTime())) return '—';
     const wd = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()];
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${wd}, ${day}.${month}.${year}`;
   } catch {
-    return isoDateStr;
+    return '—';
   }
 }
 
 /** Kompaktere Version für Firmen-Liste: "Di 21.04.26" */
 function formatDateCompact(isoDateStr) {
   if (!isoDateStr) return '—';
+  // Auch Timestamps wie '2026-04-28T14:30:00Z' akzeptieren — nur Datums-Teil nehmen.
+  const dateOnly = String(isoDateStr).substring(0, 10);
   try {
-    const d = parseLocalDate(isoDateStr);
+    const d = parseLocalDate(dateOnly);
+    if (isNaN(d.getTime())) return '—';
     const wd = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()];
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = String(d.getFullYear()).slice(2);
     return `${wd} ${day}.${month}.${year}`;
   } catch {
-    return isoDateStr;
+    return '—';
   }
 }
 
@@ -17497,6 +17518,45 @@ async function postCompanyNote() {
   loadCompanyActivityStream(currentCompanyDetailId);
 }
 
+// v2.0.8: Quick-Input-Pillen analog zum Projekt-Aktivitäten-Tab
+let _companyQuickInputType = 'notiz';
+const _COMPANY_QI_PLACEHOLDER = {
+  notiz:        'Notiz hinzufügen oder Update zu dieser Firma schreiben …',
+  folgetermin:  'Worüber soll der Folgetermin sein? (Titel) — ⌘↵ öffnet das Termin-Modal',
+  aufgabe:      'Was muss erledigt werden? (Aufgabe-Titel) — ⌘↵ öffnet das Aufgabe-Modal'
+};
+function setCompanyQuickInputType(type) {
+  if (!_COMPANY_QI_PLACEHOLDER[type]) return;
+  _companyQuickInputType = type;
+  document.querySelectorAll('#company-panel-aktivitaeten .proj-note-types .proj-note-type').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.type === type));
+  const input = document.getElementById('company-note-input');
+  if (input) input.placeholder = _COMPANY_QI_PLACEHOLDER[type];
+}
+async function postCompanyQuickInput() {
+  const input = document.getElementById('company-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (_companyQuickInputType === 'notiz') return postCompanyNote();
+  if (_companyQuickInputType === 'folgetermin') {
+    appointmentModalPrefillCompanyId = currentCompanyDetailId;
+    input.value = '';
+    await openAppointmentModal('new');
+    const titel = document.getElementById('t-titel');
+    if (titel) titel.value = text;
+    return;
+  }
+  if (_companyQuickInputType === 'aufgabe') {
+    taskModalPrefillCompanyId = currentCompanyDetailId;
+    input.value = '';
+    await openTaskModal('new');
+    const titel = document.getElementById('a-titel');
+    if (titel) titel.value = text;
+    return;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════
 //  v2.0.0 — KONTAKT-DETAIL V2 (Vier-Zonen-Muster, leicht)
 // ═══════════════════════════════════════════════════════════
@@ -17632,6 +17692,45 @@ async function postContactNote() {
   input.value = '';
   showToast('Notiz hinzugefügt.');
   loadContactActivityStream(currentContactDetailId);
+}
+
+// v2.0.8: Quick-Input-Pillen analog zum Projekt/Firma-Aktivitäten-Tab
+let _contactQuickInputType = 'notiz';
+const _CONTACT_QI_PLACEHOLDER = {
+  notiz:        'Notiz hinzufügen oder Update zu diesem Kontakt schreiben …',
+  folgetermin:  'Worüber soll der Folgetermin sein? (Titel) — ⌘↵ öffnet das Termin-Modal',
+  aufgabe:      'Was muss erledigt werden? (Aufgabe-Titel) — ⌘↵ öffnet das Aufgabe-Modal'
+};
+function setContactQuickInputType(type) {
+  if (!_CONTACT_QI_PLACEHOLDER[type]) return;
+  _contactQuickInputType = type;
+  document.querySelectorAll('#contact-panel-aktivitaeten .proj-note-types .proj-note-type').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.type === type));
+  const input = document.getElementById('contact-note-input');
+  if (input) input.placeholder = _CONTACT_QI_PLACEHOLDER[type];
+}
+async function postContactQuickInput() {
+  const input = document.getElementById('contact-note-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (_contactQuickInputType === 'notiz') return postContactNote();
+  if (_contactQuickInputType === 'folgetermin') {
+    appointmentModalPrefillContactId = currentContactDetailId;
+    input.value = '';
+    await openAppointmentModal('new');
+    const titel = document.getElementById('t-titel');
+    if (titel) titel.value = text;
+    return;
+  }
+  if (_contactQuickInputType === 'aufgabe') {
+    taskModalPrefillContactId = currentContactDetailId;
+    input.value = '';
+    await openTaskModal('new');
+    const titel = document.getElementById('a-titel');
+    if (titel) titel.value = text;
+    return;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
