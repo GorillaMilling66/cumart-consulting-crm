@@ -1,5 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.1.1 (Vorbefüllte Felder im Plan/Vorbereitung-Tab).
+   Detail-Page-Tabs „Plan & Logistik" (Einsatz) und „Vorbereitung"
+   (Termin):
+   - Vorbereitung + Teilnehmer starten leer mit Bullet-Prefix "• ",
+     damit der User direkt im Listenstil weiterschreiben kann
+   - Anfahrt & Standort startet leer mit der Firmenadresse
+     (`formatCompanyAddress(c)`-Helper), kann ergänzt werden
+   - saveXDokuField behandelt einen rein-Bullet-Eintrag als leer und
+     persistiert ihn nicht — keine Phantom-Inhalte in der DB
    Version 2.1.0 (Activity-Stream-UX-Pack — vier Reibungs-Fixes).
    1. Sidepanel-Aktionen (+ Termin / + Aufgabe / + Einsatz / + Projekt
       anlegen) auf Firma/Kontakt/Projekt übernehmen schon getippten
@@ -820,6 +829,14 @@ async function openModalWithNoteAsTitle(noteInputId, openerFn, titleFieldId) {
     const titel = document.getElementById(titleFieldId);
     if (titel) titel.value = text;
   }
+}
+
+// v2.1.1 — Hilfsformatierer für Firmenadresse als Vor-Ort-Text.
+function formatCompanyAddress(c) {
+  if (!c) return '';
+  const parts = [c.strasse, [c.plz, c.stadt].filter(Boolean).join(' '), c.land && c.land !== 'Deutschland' ? c.land : null]
+    .filter(Boolean);
+  return parts.join(', ');
 }
 
 // v2.1.0 — Activity-Stream in "Bevorstehend" + "Geschehen" splitten.
@@ -17960,7 +17977,8 @@ async function loadAppointmentDetail(appointmentId) {
 
   // Inhalt-Tab
   const dok = a.dokumentation || {};
-  document.getElementById('appt-vorbereitung').value = dok.vorbereitung || '';
+  // v2.1.1: leeres Vorbereitung-Feld bekommt Bullet-Prefix
+  document.getElementById('appt-vorbereitung').value = dok.vorbereitung || '• ';
   document.getElementById('appt-gespraechsnotizen').value = dok.gespraechsinhalt || '';
 
   // Action Items aus Aufgaben mit task_id auf Termin oder Aufgaben aus diesem Termin
@@ -18009,7 +18027,9 @@ async function saveAppointmentDokuField(key, value) {
   if (!currentAppointmentDetailId) return;
   const { data: a } = await db.from('appointments').select('dokumentation').eq('id', currentAppointmentDetailId).single();
   const dok = a?.dokumentation || {};
-  dok[key] = (value || '').trim();
+  // v2.1.1: leerer Bullet-Default ("• ") soll nicht persistiert werden
+  const cleaned = (value || '').trim();
+  dok[key] = cleaned === '•' ? '' : cleaned;
   await db.from('appointments').update({ dokumentation: dok }).eq('id', currentAppointmentDetailId);
 }
 
@@ -18172,9 +18192,11 @@ async function loadDeploymentDetail(deploymentId) {
   document.getElementById('dep-bericht-was').value = dok.was_wurde_gemacht || dok.durchgefuehrte_themen || '';
   document.getElementById('dep-bericht-erkenntnisse').value = dok.erkenntnisse || '';
   document.getElementById('dep-bericht-log').value = d.log_eintrag || '';
-  document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '';
-  document.getElementById('dep-plan-teilnehmer').value = dok.teilnehmer || '';
-  document.getElementById('dep-plan-anfahrt').value = dok.anfahrt || '';
+  // v2.1.1: leeres Vorbereitung/Teilnehmer-Feld bekommt Bullet-Prefix,
+  // leeres Anfahrt-Feld bekommt die Firma-Adresse als Default.
+  document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '• ';
+  document.getElementById('dep-plan-teilnehmer').value = dok.teilnehmer || '• ';
+  document.getElementById('dep-plan-anfahrt').value = dok.anfahrt || formatCompanyAddress(d.company);
   document.getElementById('dep-abr-rnummer').value = dok.rechnungsnummer || '';
   document.getElementById('dep-abr-notiz').value = dok.abrechnungs_notiz || '';
 
@@ -18272,7 +18294,9 @@ async function saveDeploymentDokuField(key, value) {
   if (!currentDeploymentDetailId) return;
   const { data: d } = await db.from('deployments').select('dokumentation').eq('id', currentDeploymentDetailId).single();
   const dok = d?.dokumentation || {};
-  dok[key] = (value || '').trim();
+  // v2.1.1: leerer Bullet-Default ("• ") soll nicht persistiert werden
+  const cleaned = (value || '').trim();
+  dok[key] = cleaned === '•' ? '' : cleaned;
   await db.from('deployments').update({ dokumentation: dok }).eq('id', currentDeploymentDetailId);
 }
 
