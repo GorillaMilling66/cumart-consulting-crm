@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.0.9 (Detail-Page-Buttons defensiv verdrahten).
+   Beim Page-Render wurden Onclick-Handler auf IDs gesetzt, die
+   im V2-HTML teils nicht mehr existieren (z.B. contact-detail-
+   add-appointment-btn). getElementById gab null zurück, .onclick
+   schmierte mit TypeError und brach den ganzen Render-Pfad ab —
+   Folge: V2-Layout-Hero blieb leer (POSITION/UMSATZ/HEALTH "—"),
+   AKTIONEN-Sidebar nicht verkabelt, Stammdaten-Dashboard zeigt
+   ewig "Lade …", Sidepanel "Ohne Firma" obwohl Firma da ist.
+   Fix: kleiner Helper wire(id, handler), der vor dem .onclick
+   nullt-checkt. Eingebaut in renderCompanyDetail, renderContact-
+   Detail, renderProjectDetail.
    Version 2.0.8 (Schnelleingabe-Pillen auf Firma/Kontakt + NaN-
    Date-Fix). Die Quick-Input-Pillen "Notiz / + Folgetermin /
    + Aufgabe" gab's nur im Projekt-Aktivitäten-Tab — jetzt auch
@@ -6577,59 +6588,58 @@ function renderCompanyDetail(c) {
   const editBtn = document.getElementById('company-detail-edit-btn');
   editBtn.onclick = () => openCompanyModal('edit', c.id);
 
-  const copyBtn = document.getElementById('company-detail-copy-btn');
-  copyBtn.onclick = () => copyCompanyById(c.id);
+  // Buttons defensiv verdrahten — V2 hat einige v1-Buttons entfernt,
+  // ungeprüftes .onclick auf null schmierte und brach den Rest ab.
+  const wire = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.onclick = handler;
+  };
 
-  // Bestehende Sektion-Add-Buttons (+ Kontakt hinzufügen etc.) im jeweiligen Tab-Panel
-  document.getElementById('company-detail-add-contact-btn').onclick = () => {
+  wire('company-detail-copy-btn', () => copyCompanyById(c.id));
+
+  wire('company-detail-add-contact-btn', () => {
     contactModalPrefillCompanyId = c.id;
     openContactModal('new');
-  };
-
-  document.getElementById('company-detail-add-appointment-btn').onclick = () => {
+  });
+  wire('company-detail-add-appointment-btn', () => {
     appointmentModalPrefillCompanyId = c.id;
     openAppointmentModal('new');
-  };
-
-  document.getElementById('company-detail-add-project-btn').onclick = () => {
+  });
+  wire('company-detail-add-project-btn', () => {
     projectModalPrefillCompanyId = c.id;
     openProjectModal('new');
-  };
-
-  document.getElementById('company-detail-add-deployment-btn').onclick = () => {
+  });
+  wire('company-detail-add-deployment-btn', () => {
     deploymentModalPrefillCompanyId = c.id;
     openDeploymentModal('new');
-  };
-
-  document.getElementById('company-detail-add-membership-btn').onclick = () => {
+  });
+  wire('company-detail-add-membership-btn', () => {
     openMembershipModal('new', null, c.id);
-  };
-
-  const addTaskBtn = document.getElementById('company-detail-add-task-btn');
-  if (addTaskBtn) addTaskBtn.onclick = () => {
+  });
+  wire('company-detail-add-task-btn', () => {
     taskModalPrefillCompanyId = c.id;
     openTaskModal('new');
-  };
+  });
 
-  // Quick-Create-Panel im Stammdaten-Tab (v1.24.0)
-  document.getElementById('company-quick-contact').onclick = () => {
+  // V2-Sidepanel-Aktionen (gleiche IDs wie altes Quick-Create-Panel)
+  wire('company-quick-contact', () => {
     contactModalPrefillCompanyId = c.id; openContactModal('new');
-  };
-  document.getElementById('company-quick-appointment').onclick = () => {
+  });
+  wire('company-quick-appointment', () => {
     appointmentModalPrefillCompanyId = c.id; openAppointmentModal('new');
-  };
-  document.getElementById('company-quick-task').onclick = () => {
+  });
+  wire('company-quick-task', () => {
     taskModalPrefillCompanyId = c.id; openTaskModal('new');
-  };
-  document.getElementById('company-quick-deployment').onclick = () => {
+  });
+  wire('company-quick-deployment', () => {
     deploymentModalPrefillCompanyId = c.id; openDeploymentModal('new');
-  };
-  document.getElementById('company-quick-project').onclick = () => {
+  });
+  wire('company-quick-project', () => {
     projectModalPrefillCompanyId = c.id; openProjectModal('new');
-  };
-  document.getElementById('company-quick-membership').onclick = () => {
+  });
+  wire('company-quick-membership', () => {
     openMembershipModal('new', null, c.id);
-  };
+  });
 
   // ABC-Klick öffnet Edit-Modal (v1.25)
   const abcCard = document.getElementById('company-abc-card');
@@ -8361,25 +8371,27 @@ async function renderProjectDetail(p) {
   }
   subline.innerHTML = sublineParts.join('');
 
-  const editBtn = document.getElementById('project-detail-edit-btn');
-  editBtn.onclick = () => openProjectModal('edit', p.id);
-
-  document.getElementById('project-detail-add-appointment-btn').onclick = () => {
-    appointmentModalPrefillProjectId = p.id;
-    openAppointmentModal('new');
+  // Buttons defensiv verdrahten (analog zu Firma/Kontakt — schützt vor
+  // TypeError, falls eine ID im V2-HTML entfernt wurde).
+  const wire = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.onclick = handler;
   };
 
-  document.getElementById('project-detail-add-deployment-btn').onclick = () => {
+  wire('project-detail-edit-btn', () => openProjectModal('edit', p.id));
+  wire('project-detail-add-appointment-btn', () => {
+    appointmentModalPrefillProjectId = p.id;
+    openAppointmentModal('new');
+  });
+  wire('project-detail-add-deployment-btn', () => {
     deploymentModalPrefillProjectId = p.id;
     deploymentModalPrefillCompanyId = p.company?.id || null;
     openDeploymentModal('new');
-  };
-
-  const addTaskBtn = document.getElementById('project-detail-add-task-btn');
-  if (addTaskBtn) addTaskBtn.onclick = () => {
+  });
+  wire('project-detail-add-task-btn', () => {
     taskModalPrefillProjectId = p.id;
     openTaskModal('new');
-  };
+  });
 
   const hauptkontaktName = p.hauptkontakt
     ? [p.hauptkontakt.vorname, p.hauptkontakt.nachname].filter(Boolean).join(' ')
@@ -8718,36 +8730,41 @@ function renderContactDetail(k) {
   }
   subline.innerHTML = sublineParts.join('');
 
-  // Buttons verdrahten
-  document.getElementById('contact-detail-edit-btn').onclick = () => openContactModal('edit', k.id);
-  document.getElementById('contact-detail-copy-btn').onclick = () => copyContactById(k.id);
+  // Buttons verdrahten — defensiv (v1-Buttons wurden in V2 teils entfernt,
+  // sodass getElementById null zurückgibt und .onclick schmierte und alles
+  // danach abbrach — V2-Layout, Aktionen, Dashboard)
+  const wire = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.onclick = handler;
+  };
 
-  document.getElementById('contact-detail-add-appointment-btn').onclick = () => {
+  wire('contact-detail-edit-btn', () => openContactModal('edit', k.id));
+  wire('contact-detail-copy-btn', () => copyContactById(k.id));
+
+  wire('contact-detail-add-appointment-btn', () => {
     appointmentModalPrefillContactId = k.id;
     openAppointmentModal('new');
-  };
-
-  document.getElementById('contact-detail-add-project-btn').onclick = () => {
+  });
+  wire('contact-detail-add-project-btn', () => {
     projectModalPrefillHauptkontaktId = k.id;
     openProjectModal('new');
-  };
-
-  const addTaskBtn = document.getElementById('contact-detail-add-task-btn');
-  if (addTaskBtn) addTaskBtn.onclick = () => {
+  });
+  wire('contact-detail-add-task-btn', () => {
     taskModalPrefillContactId = k.id;
     openTaskModal('new');
-  };
+  });
 
-  // Quick-Create-Panel im Stammdaten-Tab (v1.24.0)
-  document.getElementById('contact-quick-appointment').onclick = () => {
+  // V2-Sidepanel-Aktionen (gleiche IDs wie altes Quick-Create-Panel,
+  // werden im V2-Layout im Sidepanel rechts verwendet).
+  wire('contact-quick-appointment', () => {
     appointmentModalPrefillContactId = k.id; openAppointmentModal('new');
-  };
-  document.getElementById('contact-quick-task').onclick = () => {
+  });
+  wire('contact-quick-task', () => {
     taskModalPrefillContactId = k.id; openTaskModal('new');
-  };
-  document.getElementById('contact-quick-project').onclick = () => {
+  });
+  wire('contact-quick-project', () => {
     projectModalPrefillHauptkontaktId = k.id; openProjectModal('new');
-  };
+  });
 
   // ABC-Card: Klick öffnet Firma-ABC-Edit (Kontakt spiegelt die Firma-Klassifizierung).
   const abcCard = document.getElementById('contact-abc-card');
