@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.3.2 (Recently-Visited validieren + Listen-Tab-Counts
+   proaktiv).
+   - Recently-Visited (localStorage `cumart_recent_visits`) zeigte
+     nach dem Wipe noch tote Einträge — der Browser-Cache wusste
+     nichts von den DB-Löschungen. Helper `validateRecentEntries`
+     prüft pro Typ-Tabelle die IDs gegen die DB und filtert tote
+     raus; `renderArbeitsplatzRecent` und `renderRecentlyVisited`
+     (Search-Overlay) nutzen ihn jetzt und persistieren die
+     bereinigte Liste zurück.
+   - Listen-Sub-Nav: Tab-Counts erschienen nur für den aktiven Tab,
+     weil `setListenTabCount` nur vom jeweiligen Loader gerufen
+     wird. Neuer Helper `loadAllListenTabCounts` zählt parallel
+     alle 6 Tabellen und füllt alle Counts beim Wechsel in den
+     Listen-Bereich.
    Version 2.3.0 (Arbeitsplatz: Pins + Inbox + Datenpflege).
    Drei neue Sektionen auf dem Arbeitsplatz:
    - ANGEHEFTET: User pinnt Firmen/Projekte/Kontakte über ⭐ auf
@@ -3601,7 +3615,14 @@ function _arbeitsplatzAnchorCompanyId() {
 async function renderArbeitsplatzRecent() {
   const wrap = document.getElementById('arbeitsplatz-recent');
   if (!wrap) return;
-  const list = getRecentlyVisited();
+  const raw = getRecentlyVisited();
+  if (raw.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Noch nichts besucht. Sobald du eine Detailseite öffnest, taucht sie hier auf.</div>';
+    return;
+  }
+  // v2.3.2: tote Einträge gegen die DB validieren (Wipe / Soft-Delete)
+  const list = await validateRecentEntries(raw);
+  if (list.length !== raw.length) setRecentlyVisited(list);
   if (list.length === 0) {
     wrap.innerHTML = '<div class="info-card-empty">Noch nichts besucht. Sobald du eine Detailseite öffnest, taucht sie hier auf.</div>';
     return;
@@ -3863,7 +3884,9 @@ function setListenTabCount(page, count) {
   el.textContent = `· ${count}`;
 }
 
-/** v2.0.0 — Sub-Nav für Listen ein-/ausblenden + aktiven Tab markieren. */
+/** v2.0.0 — Sub-Nav für Listen ein-/ausblenden + aktiven Tab markieren.
+ *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
+ *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
 const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users'];
 function updateListenTabBar(pageName) {
@@ -3876,6 +3899,8 @@ function updateListenTabBar(pageName) {
       listenBar.querySelectorAll('.listen-tab').forEach(t => {
         t.classList.toggle('active', t.dataset.page === pageName);
       });
+      // v2.3.2: alle Counts proaktiv laden, damit auch inaktive Tabs Zahlen zeigen
+      loadAllListenTabCounts();
     }
   }
   if (settingsBar) {
@@ -3887,6 +3912,22 @@ function updateListenTabBar(pageName) {
       });
     }
   }
+}
+
+// v2.3.2 — Counts für alle 6 Listen-Tabs parallel zählen.
+// Greift jedes Mal beim Wechsel in den Listen-Bereich, sodass die Zahlen
+// nach jeder CRUD-Aktion ungefähr aktuell bleiben (der aktive Tab
+// überschreibt seinen Count exakt nach dem Render).
+async function loadAllListenTabCounts() {
+  const tableMap = {
+    companies: 'companies', contacts: 'contacts', projects: 'projects',
+    appointments: 'appointments', deployments: 'deployments', tasks: 'tasks'
+  };
+  await Promise.all(Object.entries(tableMap).map(async ([page, table]) => {
+    const { count } = await db.from(table).select('id', { count: 'exact', head: true })
+      .is('deleted_at', null);
+    setListenTabCount(page, count == null ? '' : count);
+  }));
 }
 
 async function loadEinstellungen() {
@@ -11233,6 +11274,39 @@ function pushRecentlyVisited(entry) {
   try { localStorage.setItem(RECENT_VISITS_KEY, JSON.stringify(list)); } catch {}
 }
 
+function setRecentlyVisited(list) {
+  try { localStorage.setItem(RECENT_VISITS_KEY, JSON.stringify(list || [])); } catch {}
+}
+
+// v2.3.2 — Tote Einträge im Recently-Visited-Storage gegen die DB validieren
+// und rausfiltern (z.B. nach einem Wipe oder Soft-Delete).
+async function validateRecentEntries(list) {
+  if (!list || list.length === 0) return [];
+  const RECENT_TABLE_MAP = {
+    firma: 'companies',   company: 'companies',
+    kontakt: 'contacts',  contact: 'contacts',
+    projekt: 'projects',  project: 'projects',
+    einsatz: 'deployments', deployment: 'deployments',
+    termin: 'appointments', appointment: 'appointments'
+  };
+  const byTable = {};
+  list.forEach(e => {
+    const table = RECENT_TABLE_MAP[e.type];
+    if (!table) return;
+    if (!byTable[table]) byTable[table] = new Set();
+    byTable[table].add(e.id);
+  });
+  const liveByTable = {};
+  await Promise.all(Object.entries(byTable).map(async ([table, ids]) => {
+    const { data } = await db.from(table).select('id').is('deleted_at', null).in('id', [...ids]);
+    liveByTable[table] = new Set((data || []).map(r => r.id));
+  }));
+  return list.filter(e => {
+    const table = RECENT_TABLE_MAP[e.type];
+    return table && liveByTable[table]?.has(e.id);
+  });
+}
+
 function trackVisit(type, id, title, subtitle) {
   pushRecentlyVisited({ type, id, title, subtitle });
 }
@@ -11298,18 +11372,26 @@ function renderRecentlyVisited() {
     }
   }
 
-  const recent = getRecentlyVisited();
-  if (recent.length === 0) {
+  const raw = getRecentlyVisited();
+  if (raw.length === 0) {
     container.innerHTML = '<div class="search-hint">Tippe, um zu suchen. <kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd> navigieren · <kbd class="kbd">↵</kbd> öffnen</div>';
     searchResults = [];
     return;
   }
-  searchResults = recent;
-  searchActiveIndex = 0;
-  const html = `<div class="search-group-header">Zuletzt besucht</div>` +
-    recent.map((e, i) => renderSearchItem(e, i)).join('');
-  container.innerHTML = html;
-  wireSearchItemClicks();
+  // v2.3.2: tote Einträge gegen DB validieren (Wipe/Soft-Delete)
+  validateRecentEntries(raw).then(recent => {
+    if (recent.length !== raw.length) setRecentlyVisited(recent);
+    if (recent.length === 0) {
+      container.innerHTML = '<div class="search-hint">Tippe, um zu suchen.</div>';
+      searchResults = [];
+      return;
+    }
+    searchResults = recent;
+    searchActiveIndex = 0;
+    container.innerHTML = `<div class="search-group-header">Zuletzt besucht</div>` +
+      recent.map((e, i) => renderSearchItem(e, i)).join('');
+    wireSearchItemClicks();
+  });
 }
 
 // v2.2.0 — Anchor-Suggestions: zeige Kontakte + Projekte der Anker-Firma,
