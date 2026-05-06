@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.1.0 (Activity-Stream-UX-Pack — vier Reibungs-Fixes).
+   1. Sidepanel-Aktionen (+ Termin / + Aufgabe / + Einsatz / + Projekt
+      anlegen) auf Firma/Kontakt/Projekt übernehmen schon getippten
+      Notiz-Text als Modal-Titel. Helper: openModalWithNoteAsTitle.
+   2. Esc schließt das oberste offene Modal — Lookup-Map MODAL_CLOSERS
+      mappt jede Modal-ID auf ihre close-Funktion (saubere Reset
+      von editing<X>Id, kein Stale-State).
+   3. Activity-Stream in zwei Sektionen aufgeteilt: "Bevorstehend"
+      (Datum >= heute, aufsteigend) und "Geschehen" (Datum < heute,
+      absteigend). Helper: renderActivityStreamSections / _split-
+      Activities. CSS: .activity-section-header.
+   4. Aktivitäts-Titel klickbar — Termin/Einsatz springen zur Detail-
+      Page, Aufgabe öffnet das Aufgabe-Modal (edit), Notiz öffnet
+      neues Notiz-Edit-Modal (modal-notiz, openNotizModal /
+      saveNotizFromModal / deleteNotizFromModal).
    Version 2.0.9 (Detail-Page-Buttons defensiv verdrahten).
    Beim Page-Render wurden Onclick-Handler auf IDs gesetzt, die
    im V2-HTML teils nicht mehr existieren (z.B. contact-detail-
@@ -791,6 +806,136 @@ function isStillOnDetail(entityType, id) {
   if (entityType === 'contact') return currentContactDetailId === id;
   return true;
 }
+
+// v2.1.0 — Helper: schon getippten Notiztext beim Sidepanel-Klick als
+// Modal-Titel übernehmen. Reduziert Reibung: User schreibt erst im Stream
+// drauf los, entscheidet dann per Klick "ist eigentlich ein Termin/Aufgabe/
+// Einsatz/Projekt". Wenn das Notiz-Input leer ist, normales Verhalten.
+async function openModalWithNoteAsTitle(noteInputId, openerFn, titleFieldId) {
+  const input = document.getElementById(noteInputId);
+  const text = input?.value.trim() || '';
+  await openerFn();
+  if (text && input) input.value = '';
+  if (text && titleFieldId) {
+    const titel = document.getElementById(titleFieldId);
+    if (titel) titel.value = text;
+  }
+}
+
+// v2.1.0 — Activity-Stream in "Bevorstehend" + "Geschehen" splitten.
+// Bevorstehend: alle items mit ts >= heute, aufsteigend (nächstes oben).
+// Geschehen: alle items mit ts < heute (oder ohne ts), absteigend (neuestes oben).
+function _splitActivities(items) {
+  const today = toISODate(new Date());
+  const future = [], past = [];
+  items.forEach(it => {
+    const itDate = (it.ts || '').substring(0, 10);
+    if (itDate && itDate >= today) future.push(it);
+    else past.push(it);
+  });
+  future.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+  past.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  return { future, past };
+}
+
+function _activityItemHTML(it) {
+  const cls = it.type.toLowerCase();
+  // v2.1.0: nur der Titel ist klickbar (nicht das ganze Item — sonst
+  // greift der Klick auch auf Datum/Type-Pille). Click-Quelle: it.click.
+  const titleHtml = it.click
+    ? `<a class="proj-activity-title proj-link" onclick="${it.click}">${esc(it.title)}</a>`
+    : `<span class="proj-activity-title">${esc(it.title)}</span>`;
+  return `
+    <div class="proj-activity-item">
+      <div class="proj-activity-date">${esc(formatDateCompact((it.ts || '').substring(0, 10)))}</div>
+      <div class="proj-activity-body">
+        <div class="proj-activity-head">
+          <span class="type-pill type-pill-${cls}">${esc(it.type)}</span>
+          ${titleHtml}
+        </div>
+        <div class="proj-activity-meta">${esc(it.meta || '')}</div>
+      </div>
+    </div>`;
+}
+
+// v2.1.0 — NOTIZ-EDIT-MODAL: Klick auf Notiz im Activity-Stream öffnet
+// dieses Modal mit dem Inhalt vorbelegt; speichern aktualisiert die Notiz,
+// löschen entfernt sie (notes hat kein deleted_at, also echter DELETE).
+let _editingNotizId = null;
+let _editingNotizContext = null; // 'company' | 'project' | 'contact'
+
+async function openNotizModal(notizId, context) {
+  _editingNotizId = notizId;
+  _editingNotizContext = context;
+  const { data, error } = await db.from('notes')
+    .select('inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)')
+    .eq('id', notizId).single();
+  if (error || !data) {
+    showToast('Notiz nicht gefunden: ' + (error?.message || ''), true);
+    return;
+  }
+  document.getElementById('n-inhalt').value = data.inhalt || '';
+  const meta = document.getElementById('n-meta');
+  if (meta) {
+    const who = data.user?.name || '—';
+    const when = data.created_at ? formatDateDE(data.created_at.substring(0, 10)) : '—';
+    meta.textContent = `Erstellt von ${who} · ${when}`;
+  }
+  document.getElementById('modal-notiz').classList.add('open');
+  setTimeout(() => document.getElementById('n-inhalt')?.focus(), 50);
+}
+
+function closeNotizModal() {
+  document.getElementById('modal-notiz').classList.remove('open');
+  _editingNotizId = null;
+  _editingNotizContext = null;
+}
+
+async function saveNotizFromModal() {
+  if (!_editingNotizId) return;
+  const text = document.getElementById('n-inhalt').value.trim();
+  if (!text) { showToast('Notiz darf nicht leer sein.', true); return; }
+  const { error } = await db.from('notes').update({ inhalt: text }).eq('id', _editingNotizId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  const ctx = _editingNotizContext;
+  closeNotizModal();
+  showToast('Notiz aktualisiert.');
+  // Stream der jeweiligen Detail-Page neu laden
+  if (ctx === 'company' && currentCompanyDetailId) loadCompanyActivityStream(currentCompanyDetailId);
+  else if (ctx === 'project' && currentProjectDetailId) loadProjectActivityStream(currentProjectDetailId);
+  else if (ctx === 'contact' && currentContactDetailId) loadContactActivityStream(currentContactDetailId);
+}
+
+async function deleteNotizFromModal() {
+  if (!_editingNotizId) return;
+  const ok = await confirmDialog({ title: 'Notiz löschen?', message: 'Diese Aktion kann nicht rückgängig gemacht werden.', okLabel: 'Löschen', isDanger: true });
+  if (!ok) return;
+  const { error } = await db.from('notes').delete().eq('id', _editingNotizId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  const ctx = _editingNotizContext;
+  closeNotizModal();
+  showToast('Notiz gelöscht.');
+  if (ctx === 'company' && currentCompanyDetailId) loadCompanyActivityStream(currentCompanyDetailId);
+  else if (ctx === 'project' && currentProjectDetailId) loadProjectActivityStream(currentProjectDetailId);
+  else if (ctx === 'contact' && currentContactDetailId) loadContactActivityStream(currentContactDetailId);
+}
+
+function renderActivityStreamSections(filtered) {
+  if (filtered.length === 0) {
+    return '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
+  }
+  const { future, past } = _splitActivities(filtered);
+  const parts = [];
+  if (future.length > 0) {
+    parts.push('<div class="activity-section-header">Bevorstehend</div>');
+    parts.push(future.map(_activityItemHTML).join(''));
+  }
+  if (past.length > 0) {
+    parts.push('<div class="activity-section-header">Geschehen</div>');
+    parts.push(past.map(_activityItemHTML).join(''));
+  }
+  return parts.join('');
+}
 let contactModalPrefillCompanyId = null;
 let appointmentModalPrefillCompanyId = null;
 let appointmentModalPrefillProjectId = null;
@@ -1040,12 +1185,44 @@ document.addEventListener('click', (ev) => {
   if (ev.target.closest('#kebab-menu') || ev.target.closest('.kebab-btn')) return;
   closeKebabMenu();
 });
+// v2.1.0: Lookup-Map aller Modal-Close-Funktionen, damit der globale
+// Escape-Handler das oberste offene Modal sauber schließen kann
+// (inkl. Reset von editing<X>Id, sodass keine Stale-IDs zurückbleiben).
+const MODAL_CLOSERS = {
+  'modal-company':       () => closeCompanyModal(),
+  'modal-contact':       () => closeContactModal(),
+  'modal-appointment':   () => closeAppointmentModal(),
+  'modal-deployment':    () => closeDeploymentModal(),
+  'modal-project':       () => closeProjectModal(),
+  'modal-task':          () => closeTaskModal(),
+  'modal-membership':    () => closeMembershipModal(),
+  'modal-service':       () => closeServiceModal(),
+  'modal-lookup':        () => closeLookupModal(),
+  'modal-theme':         () => closeThemeModal(),
+  'modal-template':      () => closeTemplateModal(),
+  'modal-program':       () => closeProgramModal(),
+  'modal-user':          () => closeUserModal(),
+  'modal-credentials':   () => closeCredentialsModal(),
+  'modal-abc-edit':      () => closeAbcEditModal(),
+  'modal-quickactions':  () => closeQuickActionsModal(),
+  'modal-notiz':         () => closeNotizModal()
+};
+
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
   if (_kebabOpenFor) { ev.preventDefault(); closeKebabMenu(); return; }
   if (document.getElementById('modal-confirm')?.classList.contains('open')) {
-    ev.preventDefault(); _closeConfirm(false);
+    ev.preventDefault(); _closeConfirm(false); return;
   }
+  // v2.1.0: oberstes offenes Modal schließen (das im DOM zuletzt mit .open kommt
+  // ist üblicherweise das visuell oberste — z.B. Edit auf einer offenen Page)
+  const open = document.querySelectorAll('.modal.open');
+  if (open.length === 0) return;
+  const topmost = open[open.length - 1];
+  ev.preventDefault();
+  const closer = MODAL_CLOSERS[topmost.id];
+  if (closer) closer();
+  else topmost.classList.remove('open'); // Fallback für unbekannte Modale
 });
 window.addEventListener('scroll', () => closeKebabMenu(), true);
 window.addEventListener('resize', () => closeKebabMenu());
@@ -6621,21 +6798,26 @@ function renderCompanyDetail(c) {
     openTaskModal('new');
   });
 
-  // V2-Sidepanel-Aktionen (gleiche IDs wie altes Quick-Create-Panel)
+  // V2-Sidepanel-Aktionen (gleiche IDs wie altes Quick-Create-Panel) —
+  // wenn schon was im Notiz-Input getippt ist, wandert das als Modal-Titel rüber
   wire('company-quick-contact', () => {
     contactModalPrefillCompanyId = c.id; openContactModal('new');
   });
   wire('company-quick-appointment', () => {
-    appointmentModalPrefillCompanyId = c.id; openAppointmentModal('new');
+    appointmentModalPrefillCompanyId = c.id;
+    openModalWithNoteAsTitle('company-note-input', () => openAppointmentModal('new'), 't-titel');
   });
   wire('company-quick-task', () => {
-    taskModalPrefillCompanyId = c.id; openTaskModal('new');
+    taskModalPrefillCompanyId = c.id;
+    openModalWithNoteAsTitle('company-note-input', () => openTaskModal('new'), 'a-titel');
   });
   wire('company-quick-deployment', () => {
-    deploymentModalPrefillCompanyId = c.id; openDeploymentModal('new');
+    deploymentModalPrefillCompanyId = c.id;
+    openModalWithNoteAsTitle('company-note-input', () => openDeploymentModal('new'), 'd-titel');
   });
   wire('company-quick-project', () => {
-    projectModalPrefillCompanyId = c.id; openProjectModal('new');
+    projectModalPrefillCompanyId = c.id;
+    openModalWithNoteAsTitle('company-note-input', () => openProjectModal('new'), 'p-name');
   });
   wire('company-quick-membership', () => {
     openMembershipModal('new', null, c.id);
@@ -8432,17 +8614,23 @@ async function renderProjectDetail(p) {
     });
   }
 
-  // Quick-Create-Panel (v1.30) — ersetzt die Einzelbuttons im Header der Sub-Tabs
+  // Quick-Create-Panel (v1.30, v2.1.0: Notiz-Text als Modal-Titel)
   const qcAppt = document.getElementById('project-quick-appointment');
-  if (qcAppt) qcAppt.onclick = () => { appointmentModalPrefillProjectId = p.id; openAppointmentModal('new'); };
+  if (qcAppt) qcAppt.onclick = () => {
+    appointmentModalPrefillProjectId = p.id;
+    openModalWithNoteAsTitle('project-note-input', () => openAppointmentModal('new'), 't-titel');
+  };
   const qcDep = document.getElementById('project-quick-deployment');
   if (qcDep) qcDep.onclick = () => {
     deploymentModalPrefillProjectId = p.id;
     deploymentModalPrefillCompanyId = p.company?.id || null;
-    openDeploymentModal('new');
+    openModalWithNoteAsTitle('project-note-input', () => openDeploymentModal('new'), 'd-titel');
   };
   const qcTask = document.getElementById('project-quick-task');
-  if (qcTask) qcTask.onclick = () => { taskModalPrefillProjectId = p.id; openTaskModal('new'); };
+  if (qcTask) qcTask.onclick = () => {
+    taskModalPrefillProjectId = p.id;
+    openModalWithNoteAsTitle('project-note-input', () => openTaskModal('new'), 'a-titel');
+  };
 
   // Dashboard-Stats asynchron laden (v1.30 — schreibt in versteckte Backwards-Kompat-Felder)
   loadProjectDashboard(p);
@@ -8757,13 +8945,16 @@ function renderContactDetail(k) {
   // V2-Sidepanel-Aktionen (gleiche IDs wie altes Quick-Create-Panel,
   // werden im V2-Layout im Sidepanel rechts verwendet).
   wire('contact-quick-appointment', () => {
-    appointmentModalPrefillContactId = k.id; openAppointmentModal('new');
+    appointmentModalPrefillContactId = k.id;
+    openModalWithNoteAsTitle('contact-note-input', () => openAppointmentModal('new'), 't-titel');
   });
   wire('contact-quick-task', () => {
-    taskModalPrefillContactId = k.id; openTaskModal('new');
+    taskModalPrefillContactId = k.id;
+    openModalWithNoteAsTitle('contact-note-input', () => openTaskModal('new'), 'a-titel');
   });
   wire('contact-quick-project', () => {
-    projectModalPrefillHauptkontaktId = k.id; openProjectModal('new');
+    projectModalPrefillHauptkontaktId = k.id;
+    openModalWithNoteAsTitle('contact-note-input', () => openProjectModal('new'), 'p-name');
   });
 
   // ABC-Card: Klick öffnet Firma-ABC-Edit (Kontakt spiegelt die Firma-Klassifizierung).
@@ -17112,23 +17303,27 @@ async function loadProjectActivityStream(projectId) {
   const items = [];
   (appts.data || []).forEach(a => items.push({
     type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
-    title: a.titel || '—', meta: a.status, kind: 'termine'
+    title: a.titel || '—', meta: a.status, kind: 'termine',
+    click: `navigateTo('termin','${esc(a.id)}')`
   }));
   (deps.data || []).forEach(d => items.push({
     type: 'EINSATZ', ts: (d.datum_von || d.created_at?.substring(0, 10)) + 'T00:00:00',
     title: d.titel || '—',
     meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1)), d.status].filter(Boolean).join(' · '),
-    kind: 'einsaetze'
+    kind: 'einsaetze',
+    click: `navigateTo('einsatz','${esc(d.id)}')`
   }));
   (tasks.data || []).forEach(t => {
     items.push({
       type: 'AUFGABE', ts: t.created_at,
       title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
-      kind: 'aufgaben'
+      kind: 'aufgaben',
+      click: `openTaskModal('edit','${esc(t.id)}')`
     });
   });
   (notes.data || []).forEach(n => items.push({
-    type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen'
+    type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
+    click: `openNotizModal('${esc(n.id)}','project')`
   }));
 
   // Sortierung neueste zuerst
@@ -17139,25 +17334,8 @@ async function loadProjectActivityStream(projectId) {
     ? items
     : items.filter(i => i.kind === _currentProjectActivityFilter);
 
-  if (filtered.length === 0) {
-    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
-    return;
-  }
-
-  wrap.innerHTML = filtered.map(it => {
-    const cls = it.type.toLowerCase();
-    return `
-      <div class="proj-activity-item">
-        <div class="proj-activity-date">${esc(formatDateCompact(it.ts.substring(0, 10)))}</div>
-        <div class="proj-activity-body">
-          <div class="proj-activity-head">
-            <span class="type-pill type-pill-${cls}">${esc(it.type)}</span>
-            <span class="proj-activity-title">${esc(it.title)}</span>
-          </div>
-          <div class="proj-activity-meta">${esc(it.meta || '')}</div>
-        </div>
-      </div>`;
-  }).join('');
+  // v2.1.0: Bevorstehend / Geschehen-Sektionen statt linearem Stream
+  wrap.innerHTML = renderActivityStreamSections(filtered);
 }
 
 function filterProjectActivity(filter) {
@@ -17462,22 +17640,25 @@ async function loadCompanyActivityStream(companyId) {
   const items = [];
   (appts.data || []).forEach(a => items.push({
     id: a.id, type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
-    title: a.titel || '—', meta: a.status, kind: 'termine'
+    title: a.titel || '—', meta: a.status, kind: 'termine',
+    click: `navigateTo('termin','${esc(a.id)}')`
   }));
   (deps.data || []).forEach(d => items.push({
     id: d.id, type: 'EINSATZ', ts: (d.datum_von || '') + 'T00:00:00',
     title: d.titel || '—',
     meta: [d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1)), d.status].filter(Boolean).join(' · '),
     kind: 'einsaetze',
-    onclick: `navigateTo('einsatz','${d.id}')`
+    click: `navigateTo('einsatz','${esc(d.id)}')`
   }));
   (tasks.data || []).forEach(t => items.push({
     id: t.id, type: 'AUFGABE', ts: t.created_at,
     title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
-    kind: 'aufgaben'
+    kind: 'aufgaben',
+    click: `openTaskModal('edit','${esc(t.id)}')`
   }));
   (notes.data || []).forEach(n => items.push({
-    id: n.id, type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen'
+    id: n.id, type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
+    click: `openNotizModal('${esc(n.id)}','company')`
   }));
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
@@ -17485,26 +17666,8 @@ async function loadCompanyActivityStream(companyId) {
   const filtered = _currentCompanyActivityFilter === 'alle'
     ? items : items.filter(i => i.kind === _currentCompanyActivityFilter);
 
-  if (filtered.length === 0) {
-    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
-    return;
-  }
-
-  wrap.innerHTML = filtered.map(it => {
-    const cls = it.type.toLowerCase();
-    const click = it.onclick ? `onclick="${it.onclick}"` : '';
-    return `
-      <div class="proj-activity-item" ${click} ${it.onclick ? 'style="cursor:pointer"' : ''}>
-        <div class="proj-activity-date">${esc(formatDateCompact(it.ts.substring(0, 10)))}</div>
-        <div class="proj-activity-body">
-          <div class="proj-activity-head">
-            <span class="type-pill type-pill-${cls}">${esc(it.type)}</span>
-            <span class="proj-activity-title">${esc(it.title)}</span>
-          </div>
-          <div class="proj-activity-meta">${esc(it.meta || '')}</div>
-        </div>
-      </div>`;
-  }).join('');
+  // v2.1.0: Bevorstehend / Geschehen-Sektionen
+  wrap.innerHTML = renderActivityStreamSections(filtered);
 }
 
 function filterCompanyActivity(filter) {
@@ -17652,35 +17815,25 @@ async function loadContactActivityStream(contactId) {
   const items = [];
   (appts.data || []).forEach(a => items.push({
     type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
-    title: a.titel || '—', meta: a.status, kind: 'termine'
+    title: a.titel || '—', meta: a.status, kind: 'termine',
+    click: `navigateTo('termin','${esc(a.id)}')`
   }));
   (tasks.data || []).forEach(t => items.push({
     type: 'AUFGABE', ts: t.created_at,
     title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
-    kind: 'aufgaben'
+    kind: 'aufgaben',
+    click: `openTaskModal('edit','${esc(t.id)}')`
   }));
   (notes.data || []).forEach(n => items.push({
-    type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen'
+    type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
+    click: `openNotizModal('${esc(n.id)}','contact')`
   }));
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
   const filtered = _currentContactActivityFilter === 'alle' ? items : items.filter(i => i.kind === _currentContactActivityFilter);
 
-  if (filtered.length === 0) {
-    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
-    return;
-  }
-  wrap.innerHTML = filtered.map(it => `
-    <div class="proj-activity-item">
-      <div class="proj-activity-date">${esc(formatDateCompact(it.ts.substring(0, 10)))}</div>
-      <div class="proj-activity-body">
-        <div class="proj-activity-head">
-          <span class="type-pill type-pill-${it.type.toLowerCase()}">${esc(it.type)}</span>
-          <span class="proj-activity-title">${esc(it.title)}</span>
-        </div>
-        <div class="proj-activity-meta">${esc(it.meta || '')}</div>
-      </div>
-    </div>`).join('');
+  // v2.1.0: Bevorstehend / Geschehen-Sektionen
+  wrap.innerHTML = renderActivityStreamSections(filtered);
 }
 
 function filterContactActivity(filter) {

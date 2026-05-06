@@ -1590,6 +1590,18 @@ body {
   border-bottom: 0.5px solid var(--border);
 }
 .proj-activity-item:last-child { border-bottom: none; }
+/* v2.1.0: Section-Header für Bevorstehend / Geschehen */
+.activity-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 14px 0 6px;
+  margin-top: 4px;
+  border-bottom: 0.5px solid var(--border);
+}
+.activity-section-header:first-child { margin-top: 0; padding-top: 6px; }
 .proj-activity-date {
   font-size: 11px; color: var(--muted);
   font-variant-numeric: tabular-nums;

@@ -2341,6 +2341,24 @@
   </div>
 </div>
 
+<!-- v2.1.0: NOTIZ-EDIT-MODAL — Klick auf Notiz im Activity-Stream öffnet das hier -->
+<div class="modal-overlay" id="modal-notiz" onclick="if(event.target===this)closeNotizModal()">
+  <div class="modal" style="width:560px">
+    <div class="modal-title">Notiz bearbeiten</div>
+    <div class="form-group">
+      <textarea id="n-inhalt" rows="6" style="width:100%;font-size:14px;line-height:1.5"></textarea>
+      <small class="field-hint" id="n-meta" style="color:var(--muted)"></small>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between">
+      <button class="btn btn-danger" onclick="deleteNotizFromModal()">Löschen</button>
+      <div>
+        <button class="btn" onclick="closeNotizModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveNotizFromModal()">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ MODALS ══════════════ -->
 
 <!-- MODAL: FIRMA -->
