@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.3.0 (Arbeitsplatz: Pins + Inbox + Datenpflege).
+   Drei neue Sektionen auf dem Arbeitsplatz:
+   - ANGEHEFTET: User pinnt Firmen/Projekte/Kontakte über ⭐ auf
+     der Detail-Page; sie erscheinen oben als Karten. Tabelle `pins`
+     (Migration v2.3.0_pins.sql) per-user, RLS-Pattern wie sonst.
+   - DRANBLEIBEN (Inbox): überfällige + heute fällige Aufgaben +
+     Termine heute + Termine morgen + durchgeführte aber nicht
+     abgerechnete Einsätze, jeweils ein Klick zum Öffnen.
+   - DATENPFLEGE: Zähler "X Firmen ohne Adresse · Y Termine ohne
+     Doku · Z Einsätze ohne Bericht", Klick führt zur Liste.
+   Helper: togglePin, isItemPinned, applyPinButtonState,
+   loadPinsForCurrentUser, renderArbeitsplatzPins/Inbox/Care.
    Version 2.2.1 (Login-Landing auf Briefing-V2). Login und leere
    Hashes leiteten bisher auf #/heute (alte v1.42-Dashboard-Page,
    Vorgänger des V2-Designs). Jetzt auf #/briefing. Alte Bookmarks
@@ -3263,10 +3275,241 @@ async function loadArbeitsplatz() {
 
   // Drei Lazy-Loads
   await Promise.all([
+    renderArbeitsplatzPins(),       // v2.3.0
+    renderArbeitsplatzInbox(),      // v2.3.0
+    renderArbeitsplatzCare(),       // v2.3.0
     renderArbeitsplatzRecent(),
     renderArbeitsplatzToday(),
     renderArbeitsplatzTemplates()
   ]);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.3.0 — PINS / FAVORITEN
+//  User pinnt Firmen/Projekte/Kontakte, sie erscheinen oben im
+//  Arbeitsplatz. Pins liegen in der `pins`-Tabelle (per-user).
+// ═══════════════════════════════════════════════════════════
+
+async function applyPinButtonState(btnId, entityType, entityId) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.dataset.pinBtn = `${entityType}:${entityId}`;
+  const pinned = await isItemPinned(entityType, entityId);
+  btn.dataset.pinned = pinned.toString();
+  btn.title = pinned ? 'Angeheftet — klicken zum Entfernen' : 'Anheften';
+}
+
+async function loadPinsForCurrentUser() {
+  if (!currentProfile?.id) return [];
+  const { data, error } = await db.from('pins')
+    .select('id, entity_type, entity_id, created_at')
+    .eq('user_id', currentProfile.id)
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return data || [];
+}
+
+async function isItemPinned(entityType, entityId) {
+  if (!currentProfile?.id) return false;
+  const { data } = await db.from('pins').select('id')
+    .eq('user_id', currentProfile.id)
+    .eq('entity_type', entityType).eq('entity_id', entityId).limit(1);
+  return (data || []).length > 0;
+}
+
+async function togglePin(entityType, entityId, label) {
+  if (!currentProfile?.id) return;
+  const pinned = await isItemPinned(entityType, entityId);
+  if (pinned) {
+    await db.from('pins').delete()
+      .eq('user_id', currentProfile.id)
+      .eq('entity_type', entityType).eq('entity_id', entityId);
+    showToast(`„${label || 'Eintrag'}" entfernt.`);
+  } else {
+    const { error } = await db.from('pins').insert({
+      user_id: currentProfile.id, entity_type: entityType, entity_id: entityId
+    });
+    if (error) { showToast('Fehler: ' + error.message, true); return; }
+    showToast(`„${label || 'Eintrag'}" angeheftet.`);
+  }
+  // UI aktualisieren wo nötig
+  if (document.getElementById('page-arbeitsplatz')?.classList.contains('active')) {
+    renderArbeitsplatzPins();
+  }
+  // Pin-Buttons auf Detail-Pages aktualisieren
+  document.querySelectorAll(`[data-pin-btn="${entityType}:${entityId}"]`).forEach(btn => {
+    btn.dataset.pinned = (!pinned).toString();
+    btn.title = !pinned ? 'Angeheftet — klicken zum Entfernen' : 'Anheften';
+  });
+}
+
+async function renderArbeitsplatzPins() {
+  const wrap = document.getElementById('arbeitsplatz-pins');
+  const block = document.getElementById('arbeitsplatz-pins-block');
+  if (!wrap || !block) return;
+  const pins = await loadPinsForCurrentUser();
+  if (pins.length === 0) {
+    block.style.display = 'none';
+    return;
+  }
+  block.style.display = '';
+
+  // Items pro Typ nachladen
+  const byType = { company: [], project: [], contact: [] };
+  pins.forEach(p => byType[p.entity_type]?.push(p.entity_id));
+
+  const [companies, projects, contacts] = await Promise.all([
+    byType.company.length > 0
+      ? db.from('companies').select('id, name, abc_klassifizierung').is('deleted_at', null).in('id', byType.company)
+      : Promise.resolve({ data: [] }),
+    byType.project.length > 0
+      ? db.from('projects').select('id, name, status').is('deleted_at', null).in('id', byType.project)
+      : Promise.resolve({ data: [] }),
+    byType.contact.length > 0
+      ? db.from('contacts').select('id, vorname, nachname, position').is('deleted_at', null).in('id', byType.contact)
+      : Promise.resolve({ data: [] })
+  ]);
+
+  const companyMap = new Map((companies.data || []).map(c => [c.id, c]));
+  const projectMap = new Map((projects.data || []).map(p => [p.id, p]));
+  const contactMap = new Map((contacts.data || []).map(k => [k.id, k]));
+
+  const cards = pins.map(p => {
+    if (p.entity_type === 'company') {
+      const c = companyMap.get(p.entity_id);
+      if (!c) return '';
+      const abc = c.abc_klassifizierung ? ` · ${esc(c.abc_klassifizierung)}` : '';
+      return `<button class="arbeitsplatz-pin-card" onclick="navigateTo('firma','${esc(c.id)}')">
+        <span class="arbeitsplatz-pin-type">FIRMA${esc(abc)}</span>
+        <span class="arbeitsplatz-pin-title">${esc(c.name)}</span>
+      </button>`;
+    }
+    if (p.entity_type === 'project') {
+      const pr = projectMap.get(p.entity_id);
+      if (!pr) return '';
+      return `<button class="arbeitsplatz-pin-card" onclick="navigateTo('projekt','${esc(pr.id)}')">
+        <span class="arbeitsplatz-pin-type">PROJEKT · ${esc(pr.status || '')}</span>
+        <span class="arbeitsplatz-pin-title">${esc(pr.name)}</span>
+      </button>`;
+    }
+    if (p.entity_type === 'contact') {
+      const k = contactMap.get(p.entity_id);
+      if (!k) return '';
+      const fullName = [k.vorname, k.nachname].filter(Boolean).join(' ');
+      return `<button class="arbeitsplatz-pin-card" onclick="navigateTo('kontakt','${esc(k.id)}')">
+        <span class="arbeitsplatz-pin-type">KONTAKT${k.position ? ' · ' + esc(k.position) : ''}</span>
+        <span class="arbeitsplatz-pin-title">${esc(fullName)}</span>
+      </button>`;
+    }
+    return '';
+  }).filter(Boolean).join('');
+
+  wrap.innerHTML = cards || '<div class="info-card-empty">Pins zeigen — pinne Firmen/Projekte/Kontakte über das ⭐ auf der Detail-Page.</div>';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.3.0 — INBOX / DRANBLEIBEN
+//  Was ist heute zu tun? Überfällige + heute fällige Aufgaben,
+//  bevorstehende Termine 24h, durchgeführte aber nicht abgerechnete
+//  Einsätze. Klick öffnet das Item.
+// ═══════════════════════════════════════════════════════════
+
+async function renderArbeitsplatzInbox() {
+  const wrap = document.getElementById('arbeitsplatz-inbox');
+  if (!wrap) return;
+  const todayISO = toISODate(new Date());
+  const tomorrowISO = toISODate(new Date(Date.now() + 86400000));
+
+  const [overdueTasks, todayTasks, todayAppts, tomorrowAppts, doneDeps] = await Promise.all([
+    db.from('tasks').select('id, titel, faelligkeit')
+      .is('deleted_at', null).neq('status', 'erledigt')
+      .lt('faelligkeit', todayISO).order('faelligkeit', { ascending: true }).limit(10),
+    db.from('tasks').select('id, titel, faelligkeit')
+      .is('deleted_at', null).neq('status', 'erledigt')
+      .eq('faelligkeit', todayISO).order('faelligkeit', { ascending: true }).limit(10),
+    db.from('appointments').select('id, titel, datum, uhrzeit_von, company:companies(name)')
+      .is('deleted_at', null).eq('status', 'geplant').eq('datum', todayISO)
+      .order('uhrzeit_von', { ascending: true, nullsFirst: false }),
+    db.from('appointments').select('id, titel, datum, uhrzeit_von, company:companies(name)')
+      .is('deleted_at', null).eq('status', 'geplant').eq('datum', tomorrowISO)
+      .order('uhrzeit_von', { ascending: true, nullsFirst: false }),
+    db.from('deployments').select('id, titel, datum_von, company:companies(name)')
+      .is('deleted_at', null).eq('status', 'Durchgeführt')
+      .order('datum_von', { ascending: false, nullsFirst: false }).limit(10)
+  ]);
+
+  const sections = [];
+  const renderTaskRow = (t, badge) => `
+    <button class="arbeitsplatz-inbox-row" onclick="openTaskModal('edit','${esc(t.id)}')">
+      <span class="arbeitsplatz-inbox-badge ${badge.cls}">${esc(badge.label)}</span>
+      <span class="arbeitsplatz-inbox-title">${esc(t.titel || '—')}</span>
+      ${t.faelligkeit ? `<span class="arbeitsplatz-inbox-meta">${esc(formatDateCompact(t.faelligkeit))}</span>` : ''}
+    </button>`;
+  const renderApptRow = (a, badge) => `
+    <button class="arbeitsplatz-inbox-row" onclick="navigateTo('termin','${esc(a.id)}')">
+      <span class="arbeitsplatz-inbox-badge ${badge.cls}">${esc(badge.label)}</span>
+      <span class="arbeitsplatz-inbox-title">${esc(a.titel || '—')}</span>
+      <span class="arbeitsplatz-inbox-meta">${esc([a.uhrzeit_von ? a.uhrzeit_von.substring(0,5) : '', a.company?.name].filter(Boolean).join(' · '))}</span>
+    </button>`;
+  const renderDepRow = (d) => `
+    <button class="arbeitsplatz-inbox-row" onclick="navigateTo('einsatz','${esc(d.id)}')">
+      <span class="arbeitsplatz-inbox-badge is-warn">Abrechnen</span>
+      <span class="arbeitsplatz-inbox-title">${esc(d.titel || '—')}</span>
+      <span class="arbeitsplatz-inbox-meta">${esc([d.datum_von ? formatDateCompact(d.datum_von) : '', d.company?.name].filter(Boolean).join(' · '))}</span>
+    </button>`;
+
+  (overdueTasks.data || []).forEach(t => sections.push(renderTaskRow(t, { cls: 'is-overdue', label: 'Überfällig' })));
+  (todayTasks.data   || []).forEach(t => sections.push(renderTaskRow(t, { cls: 'is-today',   label: 'Heute fällig' })));
+  (todayAppts.data   || []).forEach(a => sections.push(renderApptRow(a, { cls: 'is-today',   label: 'Termin heute' })));
+  (tomorrowAppts.data|| []).forEach(a => sections.push(renderApptRow(a, { cls: 'is-soon',    label: 'Morgen' })));
+  (doneDeps.data     || []).forEach(d => sections.push(renderDepRow(d)));
+
+  if (sections.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Nichts liegt an. Saubere Sache.</div>';
+    return;
+  }
+  wrap.innerHTML = sections.join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.3.0 — DATENPFLEGE-HINWEISE
+//  Lücken im Stammdaten-Bestand zählen + zu den Listen verlinken.
+// ═══════════════════════════════════════════════════════════
+
+async function renderArbeitsplatzCare() {
+  const wrap = document.getElementById('arbeitsplatz-care');
+  const block = document.getElementById('arbeitsplatz-care-block');
+  if (!wrap || !block) return;
+
+  const [companiesIncomplete, apptsNoDoc, depsNoReport] = await Promise.all([
+    // Firmen ohne Adresse — alle drei Felder leer (strasse + plz + stadt)
+    db.from('companies').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null).is('strasse', null).is('plz', null).is('stadt', null),
+    // Durchgeführte Termine ohne Doku (gespraechsinhalt leer)
+    db.from('appointments').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null).eq('status', 'durchgefuehrt')
+      .or('dokumentation->>gespraechsinhalt.is.null,dokumentation->>gespraechsinhalt.eq.'),
+    // Durchgeführte Einsätze ohne Bericht (was_wurde_gemacht leer)
+    db.from('deployments').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null).in('status', ['Durchgeführt','Abgerechnet'])
+      .or('dokumentation->>was_wurde_gemacht.is.null,dokumentation->>was_wurde_gemacht.eq.')
+  ]);
+
+  const items = [];
+  const cIncomplete = companiesIncomplete.count || 0;
+  const aNoDoc      = apptsNoDoc.count || 0;
+  const dNoReport   = depsNoReport.count || 0;
+
+  if (cIncomplete > 0) items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('companies')" title="Zur Firmen-Liste">${cIncomplete} Firmen ohne Adresse</button>`);
+  if (aNoDoc > 0)      items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('appointments')" title="Zur Termin-Liste">${aNoDoc} Termine ohne Doku</button>`);
+  if (dNoReport > 0)   items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('deployments')" title="Zur Einsatz-Liste">${dNoReport} Einsätze ohne Bericht</button>`);
+
+  if (items.length === 0) {
+    block.style.display = 'none';
+    return;
+  }
+  block.style.display = '';
+  wrap.innerHTML = items.join('');
 }
 
 function renderArbeitsplatzContext() {
@@ -6941,6 +7184,8 @@ function renderCompanyDetail(c) {
   };
 
   wire('company-detail-copy-btn', () => copyCompanyById(c.id));
+  wire('company-detail-pin-btn', () => togglePin('company', c.id, c.name));
+  applyPinButtonState('company-detail-pin-btn', 'company', c.id);
 
   wire('company-detail-add-contact-btn', () => {
     contactModalPrefillCompanyId = c.id;
@@ -8727,6 +8972,8 @@ async function renderProjectDetail(p) {
   };
 
   wire('project-detail-edit-btn', () => openProjectModal('edit', p.id));
+  wire('project-detail-pin-btn', () => togglePin('project', p.id, p.name));
+  applyPinButtonState('project-detail-pin-btn', 'project', p.id);
   wire('project-detail-add-appointment-btn', () => {
     appointmentModalPrefillProjectId = p.id;
     openAppointmentModal('new');
@@ -9097,6 +9344,8 @@ function renderContactDetail(k) {
 
   wire('contact-detail-edit-btn', () => openContactModal('edit', k.id));
   wire('contact-detail-copy-btn', () => copyContactById(k.id));
+  wire('contact-detail-pin-btn', () => togglePin('contact', k.id, [k.vorname, k.nachname].filter(Boolean).join(' ')));
+  applyPinButtonState('contact-detail-pin-btn', 'contact', k.id);
 
   wire('contact-detail-add-appointment-btn', () => {
     appointmentModalPrefillContactId = k.id;

@@ -443,6 +443,30 @@
           <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('projekt')">📦 Projekt-Briefing starten</button>
         </div>
 
+        <!-- v2.3.0: Angeheftet (Pins) -->
+        <div class="arbeitsplatz-pins-block" id="arbeitsplatz-pins-block">
+          <div class="arbeitsplatz-section-eyebrow">ANGEHEFTET</div>
+          <div class="arbeitsplatz-pins" id="arbeitsplatz-pins">
+            <div class="info-card-empty">Lade …</div>
+          </div>
+        </div>
+
+        <!-- v2.3.0: Dranbleiben (Inbox) -->
+        <div class="arbeitsplatz-inbox-block">
+          <div class="arbeitsplatz-section-eyebrow">DRANBLEIBEN</div>
+          <div id="arbeitsplatz-inbox">
+            <div class="info-card-empty">Lade …</div>
+          </div>
+        </div>
+
+        <!-- v2.3.0: Datenpflege-Hinweise -->
+        <div class="arbeitsplatz-care-block" id="arbeitsplatz-care-block">
+          <div class="arbeitsplatz-section-eyebrow">DATENPFLEGE</div>
+          <div class="arbeitsplatz-care" id="arbeitsplatz-care">
+            <div class="info-card-empty">Lade …</div>
+          </div>
+        </div>
+
         <div class="arbeitsplatz-grid">
           <div class="arbeitsplatz-side">
             <div class="arbeitsplatz-side-title">ZULETZT BEARBEITET</div>
@@ -594,6 +618,7 @@
             <div class="detail-header-meta" id="company-detail-meta"></div>
           </div>
           <div class="proj-hero-actions">
+            <button class="btn-pin" id="company-detail-pin-btn" aria-label="Anheften" title="Anheften">⭐</button>
             <button class="btn-copy" id="company-detail-copy-btn" aria-label="Firmendaten kopieren" title="Kopieren">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -833,6 +858,7 @@
             </div>
           </div>
           <div class="proj-hero-actions">
+            <button class="btn-pin" id="contact-detail-pin-btn" aria-label="Anheften" title="Anheften">⭐</button>
             <button class="btn-copy" id="contact-detail-copy-btn" aria-label="Kontakt kopieren" title="Kopieren">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -1199,6 +1225,7 @@
           <div class="proj-hero-actions">
             <span class="status-pill" id="project-status-pill">…</span>
             <span class="workflow-status-pill" id="project-workflow-pill" style="display:none">✓ Vorbereitet</span>
+            <button class="btn-pin" id="project-detail-pin-btn" aria-label="Anheften" title="Anheften">⭐</button>
             <button class="btn btn-sm" id="project-detail-edit-btn">Bearbeiten</button>
           </div>
         </div>

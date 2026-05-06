@@ -1221,6 +1221,92 @@ body {
 }
 .arbeitsplatz-tile-secondary:hover { color: var(--text); }
 
+/* v2.3.0: Angeheftet (Pins) */
+.arbeitsplatz-pins-block { margin-bottom: 24px; }
+.arbeitsplatz-pins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.arbeitsplatz-pin-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--warning, #f59e0b);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px;
+  transition: background .12s, border-color .12s;
+}
+.arbeitsplatz-pin-card:hover { background: var(--bg-soft); }
+.arbeitsplatz-pin-type {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--muted); text-transform: uppercase;
+}
+.arbeitsplatz-pin-title { font-size: 13px; font-weight: 500; color: var(--text); }
+
+/* v2.3.0: Dranbleiben (Inbox) */
+.arbeitsplatz-inbox-block { margin-bottom: 24px; }
+.arbeitsplatz-inbox-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px; align-items: center;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 0.5px solid var(--border);
+  padding: 10px 0;
+  text-align: left;
+  font-family: inherit; font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.arbeitsplatz-inbox-row:hover { background: var(--bg-soft); }
+.arbeitsplatz-inbox-row:last-child { border-bottom: none; }
+.arbeitsplatz-inbox-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 3px 8px; border-radius: 4px;
+  text-transform: uppercase;
+}
+.arbeitsplatz-inbox-badge.is-overdue { background: #fee2e2; color: #991b1b; }
+.arbeitsplatz-inbox-badge.is-today   { background: #fef3c7; color: #92400e; }
+.arbeitsplatz-inbox-badge.is-soon    { background: #e0e7ff; color: #3730a3; }
+.arbeitsplatz-inbox-badge.is-warn    { background: #fef3c7; color: #92400e; }
+.arbeitsplatz-inbox-title { font-weight: 500; }
+.arbeitsplatz-inbox-meta { font-size: 11px; color: var(--muted); }
+
+/* v2.3.0: Datenpflege */
+.arbeitsplatz-care-block { margin-bottom: 24px; }
+.arbeitsplatz-care {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.arbeitsplatz-care-item {
+  background: transparent;
+  border: 0.5px dashed var(--border-strong, #cbd5e1);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-family: inherit; font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.arbeitsplatz-care-item:hover { color: var(--text); border-color: var(--text); }
+
+/* v2.3.0: Pin-Button auf Detail-Pages */
+.btn-pin {
+  background: transparent;
+  border: 0;
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  filter: grayscale(1) opacity(0.4);
+  transition: filter 0.12s, transform 0.08s;
+}
+.btn-pin:hover { filter: grayscale(0) opacity(1); transform: scale(1.1); }
+.btn-pin[data-pinned="true"] { filter: grayscale(0) opacity(1); }
+
 .arbeitsplatz-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
   margin-bottom: 24px;
