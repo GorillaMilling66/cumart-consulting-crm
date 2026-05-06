@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.1.4 (Drawer-Section-Header stärker hervorgehoben +
+   Notiz-Direct-Insert vom Arbeitsplatz). In den Anlage-Drawern
+   (Firma, Kontakt, Termin, Einsatz, Projekt, Aufgabe) sahen die
+   Section-Header (WAS / WANN / KONTEXT / NOTIZEN …) wie normale
+   Field-Labels aus — alles klein und grau. Jetzt kräftiger
+   13px/700/uppercase + farbiger Punkt davor + Trennlinie drunter,
+   plus subtil alternierender Hintergrund pro Sektion. Außerdem:
+   Arbeitsplatz „+ Notiz"-Kachel legt jetzt direkt eine Notiz an,
+   wenn Capture-Text + min. ein Bezug gesetzt sind (vorher nur
+   Toast-Hinweis).
+   Version 2.1.3 (Anfahrt-Default vollständige Adresse).
    Version 2.1.2 (Kontext-Icons im Stream + Modal-Ort-Auto-Fill,
    Bullet-Defaults wieder weg).
    - Activity-Stream-Eingabe auf Firma/Kontakt/Projekt: statt der
@@ -3449,7 +3460,30 @@ async function arbeitsplatzCreate(typ) {
   else if (typ === 'projekt') await openProjectModal('new');
   else if (typ === 'firma')   await openCompanyModal('new');
   else if (typ === 'kontakt') await openContactModal('new');
-  else if (typ === 'notiz')   { showToast('Notizen kommen über die Detail-Page eines Projekts/einer Firma.', false); return; }
+  else if (typ === 'notiz') {
+    // v2.2.0: Notiz direkt anlegen — Capture-Text + min. ein Bezug nötig
+    if (!captureText) {
+      showToast('Tippe zuerst einen Notiztext oben ein.', false);
+      return;
+    }
+    if (_arbeitsplatzContexts.length === 0) {
+      showToast('Setze einen Bezug (Firma · Projekt · Kontakt) für die Notiz.', false);
+      return;
+    }
+    const payload = { inhalt: captureText, erstellt_von: currentProfile?.id || null };
+    for (const ctx of _arbeitsplatzContexts) {
+      if (ctx.type === 'firma') payload.company_id = ctx.id;
+      else if (ctx.type === 'projekt') payload.project_id = ctx.id;
+      else if (ctx.type === 'kontakt') payload.contact_id = ctx.id;
+    }
+    const { error } = await db.from('notes').insert(payload);
+    if (error) { showToast('Fehler: ' + error.message, true); return; }
+    _arbeitsplatzCaptureText = '';
+    const captureInput = document.getElementById('arbeitsplatz-capture-input');
+    if (captureInput) captureInput.value = '';
+    showToast('Notiz angelegt.');
+    return;
+  }
 
   // Capture-Text in Titel-Feld kopieren wenn leer
   if (captureText) {

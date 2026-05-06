@@ -6508,23 +6508,44 @@ select.typ-select-secondary {
 .drawer__preview-title { font-size: 13px; font-weight: 500; margin-bottom: 3px; color: var(--text); }
 .drawer__preview-sub { font-size: 11px; color: var(--muted); }
 
-/* Sektion = vertikale Gruppe von Feldern mit Label oben */
+/* Sektion = vertikale Gruppe von Feldern mit Label oben.
+   v2.2.0: deutlich stärkere visuelle Hierarchie — Section-Header
+   sollen sich klar von Field-Labels abheben. */
 .drawer__section {
-  padding: 20px 24px;
+  padding: 22px 24px 24px;
   border-bottom: 0.5px solid var(--border);
+  background: var(--surface);
+}
+.drawer__section:nth-of-type(even) {
+  background: color-mix(in srgb, var(--surface) 92%, var(--text));
 }
 .drawer__section:last-of-type { border-bottom: none; }
+
 .drawer__section-label {
-  font-size: 11px; font-weight: 500; letter-spacing: 0.6px;
-  color: var(--muted);
-  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  margin: 0 0 16px;
   text-transform: uppercase;
-  display: flex; align-items: baseline; gap: 8px;
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.drawer__section-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary, #1e40af);
+  flex-shrink: 0;
 }
 .drawer__section-label-aux {
-  font-size: 10px; font-weight: 400; letter-spacing: 0.3px;
+  font-size: 11px; font-weight: 400; letter-spacing: 0.3px;
   color: var(--tertiary);
   text-transform: none;
+  margin-left: auto;
 }
 
 /* Form-Felder im Drawer — eigene, leichte Variante. Bestehende
