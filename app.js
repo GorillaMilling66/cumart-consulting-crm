@@ -18182,7 +18182,7 @@ async function loadDeploymentDetail(deploymentId) {
   setActiveTopNavTab('deployments');
 
   const { data: d, error } = await db.from('deployments')
-    .select('*, company:companies(id, name, abc_klassifizierung, stadt), project:projects(id, name, status), service:services(id, name)')
+    .select('*, company:companies(id, name, abc_klassifizierung, strasse, plz, stadt, land), project:projects(id, name, status), service:services(id, name)')
     .is('deleted_at', null).eq('id', deploymentId).single();
   if (error || !d) {
     showToast(friendlyFetchError(error, 'Einsatz'), true);
