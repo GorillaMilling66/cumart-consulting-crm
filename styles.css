@@ -1208,6 +1208,18 @@ body {
 .arbeitsplatz-tile-template {
   background: var(--bg-soft);
 }
+/* v2.2.0: Vorbereiten/Fortführen-Tiles dezenter, Eyebrow oben drüber */
+.arbeitsplatz-section-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 8px 0 8px;
+}
+.arbeitsplatz-tile-secondary {
+  background: transparent;
+  border-style: dashed;
+  color: var(--muted);
+}
+.arbeitsplatz-tile-secondary:hover { color: var(--text); }
 
 .arbeitsplatz-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px;

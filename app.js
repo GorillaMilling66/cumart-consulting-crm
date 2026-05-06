@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.2.0 (Arbeitsplatz-Pack — Vorbereiten-Tiles +
+   proaktive Bezugs-Vorschläge).
+   Drei neue Tiles im Arbeitsplatz unter "FORTFÜHREN":
+   - Termin vorbereiten   → öffnet Picker mit den nächsten geplanten
+     Terminen, Klick öffnet Termin-Detail mit Tab "Vorbereitung"
+   - Einsatz vorbereiten  → analog mit "Plan & Logistik"-Tab
+   - Projekt-Briefing     → analog mit "Brief"-Tab
+   Mechanik: arbeitsplatzPrepare(typ) öffnet das Such-Overlay im
+   Prepare-Mode, _searchPrepareTyp filtert auf den Typ. Beim Klick
+   auf ein Item setzt _pendingDetailTab den Ziel-Tab; loadXDetail
+   greift den auf statt seinem Default.
+   Zusätzlich: Bezugs-Picker im Arbeitsplatz zeigt jetzt proaktiv
+   Vorschläge — wenn schon ein Bezug aktiv ist, lädt das Such-
+   Overlay automatisch die Kontakte und Projekte der Anker-Firma;
+   ohne Anker die zuletzt besuchten Items. User muss nicht mehr
+   tippen, um den nächsten Bezug zu wählen.
+   Helper: arbeitsplatzPrepare, loadPrepareSuggestions, PREPARE_LABELS,
+   loadAnchoredSuggestions.
    Version 2.1.4 (Drawer-Section-Header stärker hervorgehoben +
    Notiz-Direct-Insert vom Arbeitsplatz). In den Anlage-Drawern
    (Firma, Kontakt, Termin, Einsatz, Projekt, Aufgabe) sahen die
@@ -3435,6 +3453,63 @@ async function renderArbeitsplatzTemplates() {
 /** Eine Anlage starten — öffnet das passende Modal mit
  *  Capture-Text als Titel-Vorschlag und Arbeitsplatz-Kontext als
  *  Firma/Projekt/Kontakt-Vorbelegung. */
+// v2.2.0 — Vorbereiten-Picker: drei neue Tiles "Termin / Einsatz / Projekt
+// vorbereiten" öffnen das Such-Overlay im Prepare-Mode mit Typ-Filter. Beim
+// Klick auf ein Item: navigateTo + setze _pendingDetailTab, der vom
+// switchXV2Tab-Aufruf des Detail-Loaders aufgegriffen wird.
+let _searchPrepareTyp = null;       // 'termin' | 'einsatz' | 'projekt' | null
+let _searchPrepareItems = null;     // Original-Liste der Prepare-Suggestions (für Filter)
+let _pendingDetailTab = null;        // gewünschter Tab-Name nach Page-Load
+
+async function arbeitsplatzPrepare(typ) {
+  _searchPrepareTyp = typ;
+  openSearchOverlay();
+}
+
+const PREPARE_LABELS = {
+  termin:  { plural: 'Bevorstehende Termine',  goal: 'vorbereiten',  tab: 'vorbereitung' },
+  einsatz: { plural: 'Bevorstehende Einsätze', goal: 'vorbereiten',  tab: 'planlogistik' },
+  projekt: { plural: 'Aktive Projekte',         goal: 'briefen',      tab: 'brief' }
+};
+
+async function loadPrepareSuggestions(typ) {
+  const todayISO = toISODate(new Date());
+  if (typ === 'termin') {
+    const { data } = await db.from('appointments')
+      .select('id, titel, datum, status, company:companies(name)').is('deleted_at', null)
+      .eq('status', 'geplant').gte('datum', todayISO)
+      .order('datum', { ascending: true }).limit(15);
+    return (data || []).map(a => ({
+      type: 'appointment', id: a.id,
+      title: a.titel || '—',
+      subtitle: [formatDateCompact(a.datum), a.company?.name].filter(Boolean).join(' · ')
+    }));
+  }
+  if (typ === 'einsatz') {
+    const { data } = await db.from('deployments')
+      .select('id, titel, datum_von, status, company:companies(name)').is('deleted_at', null)
+      .eq('status', 'Geplant').gte('datum_von', todayISO)
+      .order('datum_von', { ascending: true }).limit(15);
+    return (data || []).map(d => ({
+      type: 'deployment', id: d.id,
+      title: d.titel || '—',
+      subtitle: [formatDateCompact(d.datum_von), d.company?.name].filter(Boolean).join(' · ')
+    }));
+  }
+  if (typ === 'projekt') {
+    const { data } = await db.from('projects')
+      .select('id, name, status, company:companies(name)').is('deleted_at', null)
+      .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'])
+      .order('created_at', { ascending: false }).limit(15);
+    return (data || []).map(p => ({
+      type: 'project', id: p.id,
+      title: p.name,
+      subtitle: [p.status, p.company?.name].filter(Boolean).join(' · ')
+    }));
+  }
+  return [];
+}
+
 async function arbeitsplatzCreate(typ) {
   const captureText = (_arbeitsplatzCaptureText || '').trim();
   // Kontext-Vorbelegung — alle aktiven Bezüge anwenden
@@ -8728,9 +8803,12 @@ async function renderProjectDetail(p) {
   renderWorkflowChecklist('project_prepare', 'project', p.id,
     'project-workflow-checklist', 'project-workflow-pill', p.workflow_state);
 
-  _currentProjectV2Tab = 'aktivitaeten';
+  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang vor Default
+  const projTab = _pendingDetailTab || 'aktivitaeten';
+  _pendingDetailTab = null;
+  _currentProjectV2Tab = projTab;
   _currentProjectActivityFilter = 'alle';
-  switchProjectV2Tab('aktivitaeten');
+  switchProjectV2Tab(projTab);
 }
 
 async function loadProjectAppointments(projectId) {
@@ -10917,6 +10995,8 @@ function closeSearchOverlay() {
   // Picker-Modus zurücksetzen, damit ein späterer Cmd+K nicht versehentlich
   // im Bezug-Picker-Modus startet.
   window._arbeitsplatzContextPickerActive = false;
+  _searchPrepareTyp = null;  // v2.2.0
+  _searchPrepareItems = null;
 }
 
 function closeSearchOverlayOnBackdrop(ev) {
@@ -10926,14 +11006,37 @@ function closeSearchOverlayOnBackdrop(ev) {
 function renderRecentlyVisited() {
   const container = document.getElementById('search-results');
 
-  // v2.0.2 Picker-Modus mit Anker: Recent-Liste hier ausblenden, weil sie
-  // unfilterte Treffer zeigt. Stattdessen einen Hinweis auf den Anker.
-  if (window._arbeitsplatzContextPickerActive && _arbeitsplatzAnchorCompanyId()) {
-    const anchorLabel = _arbeitsplatzContexts.map(c => c.label).join(' · ');
-    container.innerHTML = `<div class="search-hint">Tippe, um Bezüge zu „${esc(anchorLabel)}" zu suchen.</div>`;
-    searchResults = [];
-    searchActiveIndex = -1;
+  // v2.2.0: Prepare-Mode → Liste der nächsten Items des Typs
+  if (_searchPrepareTyp) {
+    const meta = PREPARE_LABELS[_searchPrepareTyp];
+    container.innerHTML = `<div class="search-hint">Lade …</div>`;
+    loadPrepareSuggestions(_searchPrepareTyp).then(items => {
+      if (!_searchPrepareTyp) return; // race-guard: User hat zwischenzeitlich geschlossen
+      _searchPrepareItems = items;  // Original für Filter behalten
+      searchResults = items;
+      searchActiveIndex = items.length > 0 ? 0 : -1;
+      if (items.length === 0) {
+        container.innerHTML = `<div class="search-hint">Keine ${esc(meta.plural.toLowerCase())} gefunden.</div>`;
+        return;
+      }
+      container.innerHTML =
+        `<div class="search-group-header">${esc(meta.plural)} — auswählen zum ${esc(meta.goal)}</div>` +
+        items.map((e, i) => renderSearchItem(e, i)).join('');
+      wireSearchItemClicks();
+    });
     return;
+  }
+
+  // v2.2.0: Picker-Modus mit Anker → proaktive Vorschläge der zugehörigen
+  // Firma (Kontakte + Projekte), kein Tippen nötig
+  if (window._arbeitsplatzContextPickerActive) {
+    const anchorId = _arbeitsplatzAnchorCompanyId();
+    if (anchorId) {
+      const anchorLabel = _arbeitsplatzContexts.map(c => c.label).join(' · ');
+      container.innerHTML = `<div class="search-hint">Vorschläge zu „${esc(anchorLabel)}" — oder tippen, um anders zu suchen.</div>`;
+      loadAnchoredSuggestions(anchorId, anchorLabel);
+      return;
+    }
   }
 
   const recent = getRecentlyVisited();
@@ -10950,18 +11053,59 @@ function renderRecentlyVisited() {
   wireSearchItemClicks();
 }
 
+// v2.2.0 — Anchor-Suggestions: zeige Kontakte + Projekte der Anker-Firma,
+// damit der User nichts tippen muss, um den nächsten Bezug zu wählen.
+async function loadAnchoredSuggestions(companyId, anchorLabel) {
+  const container = document.getElementById('search-results');
+  const usedTypes = new Set(_arbeitsplatzContexts.map(c => c.type));
+  const queries = [];
+  if (!usedTypes.has('kontakt')) {
+    queries.push(db.from('contacts').select('id, vorname, nachname, position').is('deleted_at', null).eq('company_id', companyId).order('nachname').limit(8));
+  } else { queries.push(Promise.resolve({ data: [] })); }
+  if (!usedTypes.has('projekt')) {
+    queries.push(db.from('projects').select('id, name, status').is('deleted_at', null).eq('company_id', companyId).order('created_at', { ascending: false }).limit(8));
+  } else { queries.push(Promise.resolve({ data: [] })); }
+
+  const [contactsRes, projectsRes] = await Promise.all(queries);
+  // Race-Guard: Overlay zwischenzeitlich geschlossen
+  if (!window._arbeitsplatzContextPickerActive) return;
+
+  const items = [];
+  (contactsRes.data || []).forEach(c => items.push({
+    type: 'contact', id: c.id,
+    title: [c.vorname, c.nachname].filter(Boolean).join(' ') || '—',
+    subtitle: c.position || ''
+  }));
+  (projectsRes.data || []).forEach(p => items.push({
+    type: 'project', id: p.id,
+    title: p.name,
+    subtitle: p.status || ''
+  }));
+  searchResults = items;
+  searchActiveIndex = items.length > 0 ? 0 : -1;
+  if (items.length === 0) {
+    container.innerHTML = `<div class="search-hint">Keine weiteren Bezüge zu „${esc(anchorLabel)}" — oder tippen, um anders zu suchen.</div>`;
+    return;
+  }
+  container.innerHTML =
+    `<div class="search-group-header">Vorschläge zu „${esc(anchorLabel)}"</div>` +
+    items.map((e, i) => renderSearchItem(e, i)).join('');
+  wireSearchItemClicks();
+}
+
 function searchIconForType(type) {
   const icons = {
     company: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/></svg>`,
     contact: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 22v-1a7 7 0 0 1 16 0v1"/></svg>`,
     project: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>`,
     deployment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0L21 4.3A6 6 0 0 1 13 13l-7 7a2.1 2.1 0 0 1-3-3l7-7A6 6 0 0 1 19 2.6Z"/></svg>`,
+    appointment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   };
   return icons[type] || '';
 }
 
 function searchTypeLabel(type) {
-  return { company: 'Firma', contact: 'Kontakt', project: 'Projekt', deployment: 'Einsatz' }[type] || type;
+  return { company: 'Firma', contact: 'Kontakt', project: 'Projekt', deployment: 'Einsatz', appointment: 'Termin' }[type] || type;
 }
 
 function renderSearchItem(entry, idx) {
@@ -10993,22 +11137,46 @@ function openSearchResult(entry) {
     const ctxType = typeMap[entry.type];
     if (ctxType) { setArbeitsplatzContextFromSearch(ctxType, entry.id, entry.title); return; }
   }
+  // v2.2.0 — Prepare-Mode: Detail-Page mit passendem Tab öffnen
+  const prepareTyp = _searchPrepareTyp;
+  if (prepareTyp) {
+    const meta = PREPARE_LABELS[prepareTyp];
+    if (meta) _pendingDetailTab = meta.tab;
+  }
   pushRecentlyVisited(entry);
   closeSearchOverlay();
   if (entry.type === 'company')         location.hash = '#/firma/'   + entry.id;
   else if (entry.type === 'contact')    location.hash = '#/kontakt/' + entry.id;
   else if (entry.type === 'project')    location.hash = '#/projekt/' + entry.id;
-  else if (entry.type === 'deployment') {
-    // Einsatz hat keine Detail-Route → Liste + Modal
-    if (location.hash === '#/einsaetze') openDeploymentModal('edit', entry.id);
-    else { location.hash = '#/einsaetze'; setTimeout(() => openDeploymentModal('edit', entry.id), 120); }
-  }
+  else if (entry.type === 'appointment') location.hash = '#/termin/' + entry.id;
+  else if (entry.type === 'deployment') location.hash = '#/einsatz/' + entry.id;
 }
 
 function onSearchInput() {
   const q = document.getElementById('search-input').value.trim();
   clearTimeout(searchDebounceTimer);
   if (q.length === 0) { renderRecentlyVisited(); return; }
+  // v2.2.0: Prepare-Mode → die schon geladene Suggestion-Liste clientside filtern.
+  // Original-Liste in _searchPrepareItems halten, damit "ab" → "abc" → "ab" wieder
+  // alles zurückbringt.
+  if (_searchPrepareTyp && _searchPrepareItems) {
+    const ql = q.toLowerCase();
+    const filtered = _searchPrepareItems.filter(it =>
+      (it.title || '').toLowerCase().includes(ql) ||
+      (it.subtitle || '').toLowerCase().includes(ql)
+    );
+    const container = document.getElementById('search-results');
+    if (filtered.length === 0) {
+      container.innerHTML = `<div class="search-hint">Kein Treffer für „${esc(q)}".</div>`;
+      searchResults = []; searchActiveIndex = -1;
+      return;
+    }
+    container.innerHTML = filtered.map((e, i) => renderSearchItem(e, i)).join('');
+    searchResults = filtered;
+    searchActiveIndex = 0;
+    wireSearchItemClicks();
+    return;
+  }
   if (q.length < 2) {
     document.getElementById('search-results').innerHTML = '<div class="search-hint">Mindestens 2 Zeichen eingeben.</div>';
     searchResults = []; searchActiveIndex = -1;
@@ -18076,8 +18244,11 @@ async function loadAppointmentDetail(appointmentId) {
   renderWorkflowChecklist('appointment_prepare', 'appointment', appointmentId,
     'appt-workflow-checklist', 'appt-workflow-pill', a.workflow_state);
 
-  _currentAppointmentV2Tab = 'inhalt';
-  switchAppointmentV2Tab('inhalt');
+  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang
+  const apptTab = _pendingDetailTab || 'inhalt';
+  _pendingDetailTab = null;
+  _currentAppointmentV2Tab = apptTab;
+  switchAppointmentV2Tab(apptTab);
 }
 
 function switchAppointmentV2Tab(tab) {
@@ -18311,8 +18482,11 @@ async function loadDeploymentDetail(deploymentId) {
   renderWorkflowChecklist('deployment_document', 'deployment', deploymentId,
     'dep-workflow-checklist', 'dep-workflow-pill', d.workflow_state);
 
-  _currentDeploymentV2Tab = 'bericht';
-  switchDeploymentV2Tab('bericht');
+  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang
+  const depTab = _pendingDetailTab || 'bericht';
+  _pendingDetailTab = null;
+  _currentDeploymentV2Tab = depTab;
+  switchDeploymentV2Tab(depTab);
 }
 
 function switchDeploymentV2Tab(tab) {
