@@ -1542,6 +1542,29 @@ body {
   border-color: var(--text);
 }
 
+/* v2.1.2: Kontext-Icons (Call / Mail / Meeting / Chat) über dem Notiz-Input */
+.proj-note-icons {
+  display: flex; gap: 6px;
+  margin-bottom: 6px;
+}
+.proj-note-icon {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+  font-family: inherit;
+}
+.proj-note-icon:hover {
+  background: var(--bg-subtle, #f0f0f0);
+  border-color: var(--text);
+  transform: scale(1.05);
+}
+.proj-note-icon:active { transform: scale(0.95); }
+
 .proj-note-input {
   display: grid;
   grid-template-columns: 28px 1fr auto;

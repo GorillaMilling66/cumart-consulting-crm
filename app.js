@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.1.2 (Kontext-Icons im Stream + Modal-Ort-Auto-Fill,
+   Bullet-Defaults wieder weg).
+   - Activity-Stream-Eingabe auf Firma/Kontakt/Projekt: statt der
+     "+ Folgetermin / + Aufgabe"-Pillen jetzt vier Kontext-Icons
+     📞 / ✉️ / 🤝 / 💬, die per Klick "Call: " / "Mail: " /
+     "Meeting: " / "Chat: " als Prefix in den Input schreiben.
+     Helper: setNoteContext(inputId, prefix). Anlegen via Sidepanel
+     (+ Termin / + Aufgabe / + Einsatz / + Projekt) zieht den Notiz-
+     Text als Titel, also kein Funktionsverlust.
+   - Termin-/Einsatz-Modal: Ort-Feld wird beim Öffnen mit Firmen-
+     Prefill und beim Firma-Wechsel automatisch mit der Firmen-
+     Adresse vorbelegt (Typ-Check "Vor Ort" entfernt — User kann die
+     Adresse löschen wenn nicht relevant).
+   - Bullet-Defaults aus v2.1.1 wieder entfernt.
    Version 2.1.1 (Vorbefüllte Felder im Plan/Vorbereitung-Tab).
    Detail-Page-Tabs „Plan & Logistik" (Einsatz) und „Vorbereitung"
    (Termin):
@@ -837,6 +851,24 @@ function formatCompanyAddress(c) {
   const parts = [c.strasse, [c.plz, c.stadt].filter(Boolean).join(' '), c.land && c.land !== 'Deutschland' ? c.land : null]
     .filter(Boolean);
   return parts.join(', ');
+}
+
+// v2.1.2 — Kontext-Icons im Activity-Stream-Eingabefeld:
+// Klick auf 📞/✉️/🤝/💬 schreibt "Call: " / "Mail: " / "Meeting: " / "Chat: "
+// als Prefix in den Input. Schon vorhandene bekannte Prefixe werden ersetzt
+// (nicht doppelt). Cursor landet ans Ende, Input bekommt Fokus.
+const _NOTE_CONTEXT_PREFIXES = ['Call: ', 'Mail: ', 'Meeting: ', 'Chat: '];
+function setNoteContext(inputId, prefix) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  let text = input.value || '';
+  for (const p of _NOTE_CONTEXT_PREFIXES) {
+    if (text.startsWith(p)) { text = text.slice(p.length); break; }
+  }
+  input.value = prefix + text;
+  input.focus();
+  const len = input.value.length;
+  if (typeof input.setSelectionRange === 'function') input.setSelectionRange(len, len);
 }
 
 // v2.1.0 — Activity-Stream in "Bevorstehend" + "Geschehen" splitten.
@@ -7513,6 +7545,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
       await rebuildContactDropdownForAppointment(appointmentModalPrefillCompanyId);
       await rebuildProjectDropdownForAppointment(appointmentModalPrefillCompanyId);
       updateOrtHint();
+      autoFillOrtIfAppropriate();  // v2.1.2: Firma-Adresse direkt ins Ort-Feld
       appointmentModalPrefillCompanyId = null;
     }
 
@@ -7546,6 +7579,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
           await rebuildContactDropdownForAppointment(k.company_id);
           await rebuildProjectDropdownForAppointment(k.company_id);
           updateOrtHint();
+          autoFillOrtIfAppropriate();  // v2.1.2: Firma-Adresse direkt ins Ort-Feld
         }
         setContactComboboxValue('t-contact', 't-contact-list', k.id);
       }
@@ -7631,23 +7665,19 @@ function useCompanyAddressForOrt() {
 }
 
 function autoFillOrtIfAppropriate() {
-  const typSelect = document.getElementById('t-typ');
-  const typOption = typSelect.options[typSelect.selectedIndex];
-  if (!typOption) return;
-  const typName = (typOption.textContent || '').toLowerCase();
-  if (!typName.includes('vor ort')) return;
-
+  // v2.1.2: Typ-Check entfernt — Firma-Adresse wird IMMER vorbelegt,
+  // wenn das Ort-Feld leer ist (oder noch den letzten Auto-Fill enthält).
+  // Falls der Termin nicht vor Ort ist (Call/Online), löscht der User die
+  // Adresse einfach.
   const ortInput = document.getElementById('t-ort');
-  // Nur auto-fillen, wenn Feld leer ist oder noch den letzten Auto-Fill enthält
   if (ortInput.value !== '' && ortInput.value !== lastAutoFilledOrt) return;
 
   const companyId = getCompanyComboboxId('t-company', 't-company-list');
   if (!companyId) return;
   const company = companiesCache.find(c => c.id === companyId);
   if (!company) return;
-  const parts = [company.strasse, [company.plz, company.stadt].filter(Boolean).join(' ')].filter(Boolean);
-  if (parts.length === 0) return;
-  const address = parts.join(', ');
+  const address = formatCompanyAddress(company);
+  if (!address) return;
   ortInput.value = address;
   lastAutoFilledOrt = address;
 }
@@ -9553,6 +9583,13 @@ async function openDeploymentModal(mode, deploymentId = null) {
       setCompanyComboboxValue('d-company', 'd-company-list', deploymentModalPrefillCompanyId);
       await rebuildProjectDropdownForDeployment(deploymentModalPrefillCompanyId);
       updateDeploymentOrtHint();
+      // v2.1.2: Firma-Adresse direkt ins Ort-Feld
+      const ortInput = document.getElementById('d-ort');
+      if (!ortInput.value.trim()) {
+        const company = companiesCache.find(c => c.id === deploymentModalPrefillCompanyId);
+        const addr = formatCompanyAddress(company);
+        if (addr) ortInput.value = addr;
+      }
       deploymentModalPrefillCompanyId = null;
     }
     if (deploymentModalPrefillProjectId) {
@@ -17977,8 +18014,7 @@ async function loadAppointmentDetail(appointmentId) {
 
   // Inhalt-Tab
   const dok = a.dokumentation || {};
-  // v2.1.1: leeres Vorbereitung-Feld bekommt Bullet-Prefix
-  document.getElementById('appt-vorbereitung').value = dok.vorbereitung || '• ';
+  document.getElementById('appt-vorbereitung').value = dok.vorbereitung || '';
   document.getElementById('appt-gespraechsnotizen').value = dok.gespraechsinhalt || '';
 
   // Action Items aus Aufgaben mit task_id auf Termin oder Aufgaben aus diesem Termin
@@ -18027,9 +18063,7 @@ async function saveAppointmentDokuField(key, value) {
   if (!currentAppointmentDetailId) return;
   const { data: a } = await db.from('appointments').select('dokumentation').eq('id', currentAppointmentDetailId).single();
   const dok = a?.dokumentation || {};
-  // v2.1.1: leerer Bullet-Default ("• ") soll nicht persistiert werden
-  const cleaned = (value || '').trim();
-  dok[key] = cleaned === '•' ? '' : cleaned;
+  dok[key] = (value || '').trim();
   await db.from('appointments').update({ dokumentation: dok }).eq('id', currentAppointmentDetailId);
 }
 
@@ -18192,10 +18226,10 @@ async function loadDeploymentDetail(deploymentId) {
   document.getElementById('dep-bericht-was').value = dok.was_wurde_gemacht || dok.durchgefuehrte_themen || '';
   document.getElementById('dep-bericht-erkenntnisse').value = dok.erkenntnisse || '';
   document.getElementById('dep-bericht-log').value = d.log_eintrag || '';
-  // v2.1.1: leeres Vorbereitung/Teilnehmer-Feld bekommt Bullet-Prefix,
-  // leeres Anfahrt-Feld bekommt die Firma-Adresse als Default.
-  document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '• ';
-  document.getElementById('dep-plan-teilnehmer').value = dok.teilnehmer || '• ';
+  // v2.1.2: leeres Anfahrt-Feld bekommt Firma-Adresse als Default
+  // (Bullet-Defaults aus v2.1.1 wieder entfernt — bringen nichts).
+  document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '';
+  document.getElementById('dep-plan-teilnehmer').value = dok.teilnehmer || '';
   document.getElementById('dep-plan-anfahrt').value = dok.anfahrt || formatCompanyAddress(d.company);
   document.getElementById('dep-abr-rnummer').value = dok.rechnungsnummer || '';
   document.getElementById('dep-abr-notiz').value = dok.abrechnungs_notiz || '';
@@ -18294,9 +18328,7 @@ async function saveDeploymentDokuField(key, value) {
   if (!currentDeploymentDetailId) return;
   const { data: d } = await db.from('deployments').select('dokumentation').eq('id', currentDeploymentDetailId).single();
   const dok = d?.dokumentation || {};
-  // v2.1.1: leerer Bullet-Default ("• ") soll nicht persistiert werden
-  const cleaned = (value || '').trim();
-  dok[key] = cleaned === '•' ? '' : cleaned;
+  dok[key] = (value || '').trim();
   await db.from('deployments').update({ dokumentation: dok }).eq('id', currentDeploymentDetailId);
 }
 

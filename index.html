@@ -637,16 +637,17 @@
               <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterCompanyActivity('notizen')">Notizen</button>
             </div>
 
-            <!-- Schnelleingabe (v2.0.8): Typ-Pillen + Eingabefeld -->
-            <div class="proj-note-types">
-              <button class="proj-note-type is-active" data-type="notiz" onclick="setCompanyQuickInputType('notiz')">Notiz</button>
-              <button class="proj-note-type" data-type="folgetermin" onclick="setCompanyQuickInputType('folgetermin')">+ Folgetermin</button>
-              <button class="proj-note-type" data-type="aufgabe" onclick="setCompanyQuickInputType('aufgabe')">+ Aufgabe</button>
+            <!-- Schnelleingabe (v2.1.2): Kontext-Icons + Eingabefeld -->
+            <div class="proj-note-icons">
+              <button type="button" class="proj-note-icon" title="Call (Telefonat)" onclick="setNoteContext('company-note-input','Call: ')">📞</button>
+              <button type="button" class="proj-note-icon" title="Mail" onclick="setNoteContext('company-note-input','Mail: ')">✉️</button>
+              <button type="button" class="proj-note-icon" title="Meeting" onclick="setNoteContext('company-note-input','Meeting: ')">🤝</button>
+              <button type="button" class="proj-note-icon" title="Chat / WhatsApp" onclick="setNoteContext('company-note-input','Chat: ')">💬</button>
             </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="company-note-avatar">SC</span>
-              <input type="text" id="company-note-input" placeholder="Notiz hinzufügen oder Update zu dieser Firma schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postCompanyQuickInput();}">
-              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postCompanyQuickInput()" title="Eingabe speichern (⌘↵)">⌘↵</button>
+              <input type="text" id="company-note-input" placeholder="Notiz hinzufügen oder Update zu dieser Firma schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postCompanyNote();}">
+              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postCompanyNote()" title="Eingabe speichern (⌘↵)">⌘↵</button>
             </div>
             <div id="company-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
           </div>
@@ -869,16 +870,17 @@
               <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterContactActivity('notizen')">Notizen</button>
             </div>
 
-            <!-- Schnelleingabe (v2.0.8): Typ-Pillen + Eingabefeld -->
-            <div class="proj-note-types">
-              <button class="proj-note-type is-active" data-type="notiz" onclick="setContactQuickInputType('notiz')">Notiz</button>
-              <button class="proj-note-type" data-type="folgetermin" onclick="setContactQuickInputType('folgetermin')">+ Folgetermin</button>
-              <button class="proj-note-type" data-type="aufgabe" onclick="setContactQuickInputType('aufgabe')">+ Aufgabe</button>
+            <!-- Schnelleingabe (v2.1.2): Kontext-Icons + Eingabefeld -->
+            <div class="proj-note-icons">
+              <button type="button" class="proj-note-icon" title="Call (Telefonat)" onclick="setNoteContext('contact-note-input','Call: ')">📞</button>
+              <button type="button" class="proj-note-icon" title="Mail" onclick="setNoteContext('contact-note-input','Mail: ')">✉️</button>
+              <button type="button" class="proj-note-icon" title="Meeting" onclick="setNoteContext('contact-note-input','Meeting: ')">🤝</button>
+              <button type="button" class="proj-note-icon" title="Chat / WhatsApp" onclick="setNoteContext('contact-note-input','Chat: ')">💬</button>
             </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="contact-note-avatar">SC</span>
-              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postContactQuickInput();}">
-              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postContactQuickInput()" title="Eingabe speichern (⌘↵)">⌘↵</button>
+              <input type="text" id="contact-note-input" placeholder="Notiz hinzufügen oder Update zu diesem Kontakt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postContactNote();}">
+              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postContactNote()" title="Eingabe speichern (⌘↵)">⌘↵</button>
             </div>
             <div id="contact-activity-stream"><div class="info-card-empty">Lade Aktivitäten …</div></div>
           </div>
@@ -1234,16 +1236,17 @@
               <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterProjectActivity('notizen')">Notizen</button>
             </div>
 
-            <!-- Schnelleingabe (v2.0.1, Punkt 7a): Typ-Pillen + Eingabefeld -->
-            <div class="proj-note-types">
-              <button class="proj-note-type is-active" data-type="notiz" onclick="setProjectQuickInputType('notiz')">Notiz</button>
-              <button class="proj-note-type" data-type="folgetermin" onclick="setProjectQuickInputType('folgetermin')">+ Folgetermin</button>
-              <button class="proj-note-type" data-type="aufgabe" onclick="setProjectQuickInputType('aufgabe')">+ Aufgabe</button>
+            <!-- Schnelleingabe (v2.1.2): Kontext-Icons + Eingabefeld -->
+            <div class="proj-note-icons">
+              <button type="button" class="proj-note-icon" title="Call (Telefonat)" onclick="setNoteContext('project-note-input','Call: ')">📞</button>
+              <button type="button" class="proj-note-icon" title="Mail" onclick="setNoteContext('project-note-input','Mail: ')">✉️</button>
+              <button type="button" class="proj-note-icon" title="Meeting" onclick="setNoteContext('project-note-input','Meeting: ')">🤝</button>
+              <button type="button" class="proj-note-icon" title="Chat / WhatsApp" onclick="setNoteContext('project-note-input','Chat: ')">💬</button>
             </div>
             <div class="proj-note-input">
               <span class="proj-note-avatar" id="project-note-avatar">SC</span>
-              <input type="text" id="project-note-input" placeholder="Notiz hinzufügen oder Update zum Projekt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postProjectQuickInput();}">
-              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postProjectQuickInput()" title="Eingabe speichern (⌘↵)">⌘↵</button>
+              <input type="text" id="project-note-input" placeholder="Notiz hinzufügen oder Update zum Projekt schreiben …" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();postProjectNote();}">
+              <button type="button" class="proj-note-hint proj-note-hint-btn" onclick="postProjectNote()" title="Eingabe speichern (⌘↵)">⌘↵</button>
             </div>
 
             <!-- Activity-Stream -->
