@@ -1,5 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.2.1 (Login-Landing auf Briefing-V2). Login und leere
+   Hashes leiteten bisher auf #/heute (alte v1.42-Dashboard-Page,
+   Vorgänger des V2-Designs). Jetzt auf #/briefing. Alte Bookmarks
+   auf #/heute werden im Hash-Router umgeleitet.
    Version 2.2.0 (Arbeitsplatz-Pack — Vorbereiten-Tiles +
    proaktive Bezugs-Vorschläge).
    Drei neue Tiles im Arbeitsplatz unter "FORTFÜHREN":
@@ -3898,9 +3902,11 @@ function handleHashChange() {
     return;
   }
 
+  // v2.2.1: '#/heute' war das alte Dashboard (v1.42). Login + leere Hashes
+  // gehen jetzt zum Briefing-V2 — alte Bookmarks werden weiterhin
+  // aufgelöst, aber an die neue Page umgelenkt.
   if (hash === '#/heute' || hash === '' || hash === '#') {
-    showPage('heute');
-    if (typeof loadBriefing === 'function') loadBriefing(_currentBriefingTab || 'heute');
+    location.hash = '#/briefing';
     return;
   }
   if (hash === '#/firmen') { showPage('companies'); return; }
@@ -4022,10 +4028,14 @@ async function onLogin(user) {
   updateTaskBadge();
   initCalendarBar();  // v1.32: Kalender-Bar nach Login initialisieren
 
-  if (window.location.hash && window.location.hash !== '#') {
+  // v2.2.1: Login-Landing auf Briefing-V2. Wenn der User vorher auf der
+  // alten #/heute-Page war (Browser-History), umleiten — die alte Page
+  // existiert noch im Code, ist aber nicht mehr das offizielle Dashboard.
+  const hash = window.location.hash;
+  if (hash && hash !== '#' && hash !== '#/heute') {
     handleHashChange();
   } else {
-    navigateTo('heute');  // v1.42: Landing auf Briefing-Dashboard
+    navigateTo('briefing');
   }
 }
 
@@ -4162,7 +4172,7 @@ async function doMustChangePassword() {
     await loadRoles();
     updateTaskBadge();
     initCalendarBar();
-    navigateTo('heute');  // v1.42: Briefing-Dashboard nach erstem Passwort-Wechsel
+    navigateTo('briefing');  // v2.2.1: Login-Landing auf Briefing-V2 (alte 'heute'-Page hat Vorgänger-Layout)
 
     showToast('Passwort erfolgreich geändert.');
   } catch (e) {
