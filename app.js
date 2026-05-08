@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.4.2 (CSV-Import — Mac-Newlines + Mac-Roman). Zwei
+   Bugs bei Excel-Mac-Exporten:
+   - Mac-Classic-Newline (nur `\r`, kein `\n`): mein Parser
+     ignorierte einzelnes `\r`, also wurde die ganze Datei als
+     eine lange Zeile gelesen — alle Header und alle Datenwerte
+     landeten im Header-Array. Fix: Newline-Normalisierung
+     `text.replace(/\r\n?/g, '\n')` vorab.
+   - Mac-Roman-Encoding (z.B. ß = 0xA7) wurde von der Auto-
+     Erkennung als Windows-1252 gelesen → 0xA7 = §. Neue Option
+     "Mac-Roman" im Encoding-Dropdown (TextDecoder unterstützt
+     'macintosh').
    Version 2.4.1 (CSV-Import — Umlaute & Encoding). Excel speichert
    "CSV (kommagetrennt)" auf deutschen Systemen meistens als
    Windows-1252 (nicht UTF-8) — damit gehen ä/ö/ü/ß im UTF-8-
@@ -19214,8 +19225,12 @@ function _detectSeparator(firstLine) {
   return best;
 }
 
-// Mini-RFC4180-konformer CSV-Parser (Quotes mit Doppel-Quote-Escape)
+// Mini-RFC4180-konformer CSV-Parser (Quotes mit Doppel-Quote-Escape).
+// v2.4.2: Newline-Normalisierung vorab — `\r\n` und einzelnes `\r`
+// (Mac-Classic / alte Excel-Mac-Exporte) werden zu `\n`. Sonst landet
+// die ganze Datei als eine lange Zeile.
 function _parseCSV(text, sep) {
+  text = text.replace(/\r\n?/g, '\n');
   const rows = [];
   let cur = [];
   let field = '';
@@ -19230,7 +19245,6 @@ function _parseCSV(text, sep) {
       if (c === '"' && field === '') inQuotes = true;
       else if (c === sep) { cur.push(field); field = ''; }
       else if (c === '\n') { cur.push(field); rows.push(cur); cur = []; field = ''; }
-      else if (c === '\r') { /* ignore */ }
       else field += c;
     }
   }
@@ -19297,9 +19311,9 @@ function _parseCurrentImportFile() {
   _importState.rows = rows.slice(1).filter(r => r.some(v => (v || '').trim() !== ''));
   _importState.mapping = _autoMapHeaders(_importState.headers, IMPORT_FIELDS[_importState.type]);
 
-  // v2.4.1: Encoding mit anzeigen, plus Replacement-Char-Warnung
+  // v2.4.1/2: Encoding mit anzeigen, plus Replacement-Char-Warnung
   const replCount = (_importState.rawText.match(/�/g) || []).length;
-  const encLabel = { 'utf-8': 'UTF-8', 'windows-1252': 'Windows-1252', 'iso-8859-1': 'ISO-8859-1', 'utf-16le': 'UTF-16 LE', 'utf-16be': 'UTF-16 BE' }[_importState.encoding] || _importState.encoding;
+  const encLabel = { 'utf-8': 'UTF-8', 'windows-1252': 'Windows-1252', 'iso-8859-1': 'ISO-8859-1', 'macintosh': 'Mac-Roman', 'utf-16le': 'UTF-16 LE', 'utf-16be': 'UTF-16 BE' }[_importState.encoding] || _importState.encoding;
   const warn = replCount > 0
     ? ` · <span style="color:var(--danger)">⚠ ${replCount} unleserliche Zeichen — Zeichensatz manuell wählen (z.B. Windows-1252)</span>`
     : '';
