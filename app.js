@@ -1,5 +1,11 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.7.4 (Einsätze-Tab Loader: 0-Treffer + Error-Fälle).
+   loadCompanyDeployments hatte zwei early returns (error,
+   total===0), die nur den alten versteckten Body überschrieben —
+   der neue sichtbare Tab-Body (v2.7.3) blieb mit "Lade Einsätze …"
+   stehen, wenn die Firma keine Einsätze hatte. Fix: visible Body
+   und Count auch in beiden early-Pfaden aktualisieren.
    Version 2.7.3 (Einsätze-Tab auf Firma-Detail + Verantwortlicher-
    Dropdown-Fix).
    1) Firma-Detail-Page hat jetzt einen eigenen "Einsätze"-Tab
@@ -11179,6 +11185,13 @@ async function loadCompanyDeployments(companyId) {
   closeExpandedRow();
   const tbody = document.getElementById('company-deployments-body');
   const countEl = document.getElementById('company-deployments-count');
+  // v2.7.4: visible-Body immer mit-aktualisieren — sonst bleibt "Lade Einsätze ..."
+  // bei 0-Treffer oder Error stehen
+  const visTbody = document.getElementById('company-deployments-body-visible');
+  const visCountEl = document.getElementById('company-deployments-count-visible');
+  const visEmpty = (msg) => {
+    if (visTbody) visTbody.innerHTML = `<tr><td colspan="7"><div class="empty">${msg}</div></td></tr>`;
+  };
 
   await loadEinsatzStatus();
 
@@ -11192,6 +11205,8 @@ async function loadCompanyDeployments(companyId) {
   if (error) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     countEl.textContent = 'Einsätze';
+    if (visCountEl) visCountEl.textContent = 'Einsätze';
+    visEmpty(`Fehler: ${esc(error.message)}`);
     return;
   }
 
@@ -11202,6 +11217,8 @@ async function loadCompanyDeployments(companyId) {
   if (total === 0) {
     countEl.textContent = 'Keine Einsätze';
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Einsätze für diese Firma. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
+    if (visCountEl) visCountEl.textContent = 'Keine Einsätze';
+    visEmpty('Noch keine Einsätze für diese Firma. Klicke oben auf „+ Einsatz hinzufügen".');
     return;
   }
 
