@@ -6924,3 +6924,31 @@ select.typ-select-secondary {
   margin-left: 4px;
 }
 .tag-filter-mode:hover, .tag-filter-clear:hover { color: var(--text); border-color: var(--text); }
+
+/* v2.6.1: Dubletten */
+.dublette-group {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+.dublette-group-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 10px;
+}
+.dublette-group-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.dublette-group-meta { font-size: 12px; color: var(--muted); }
+.dublette-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.dublette-table th, .dublette-table td {
+  padding: 6px 10px; border-bottom: 0.5px solid var(--border); text-align: left;
+}
+.dublette-table th {
+  font-size: 11px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; font-weight: 600;
+}
+.dublette-group-actions {
+  margin-top: 10px; display: flex; justify-content: flex-end;
+}

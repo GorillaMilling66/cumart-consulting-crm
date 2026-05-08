@@ -355,6 +355,7 @@
       <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
       <button class="listen-tab" data-page="tags"      onclick="navigateTo('tags')">Tags</button>
       <button class="listen-tab" data-page="products"  onclick="navigateTo('products')">Produkte</button>
+      <button class="listen-tab" data-page="dubletten" onclick="navigateTo('dubletten')">Dubletten</button>
       <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
     </div>
 
@@ -2256,6 +2257,36 @@
       </div>
     </div>
 
+    <!-- v2.6.1: SEITE: DUBLETTEN — Firmen mit doppeltem Namen finden + zusammenführen -->
+    <div class="page" id="page-dubletten">
+      <div class="page-header">
+        <h1 class="page-title">Dubletten</h1>
+        <button class="btn" onclick="loadDublettenPage()">Neu prüfen</button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;max-width:720px">
+        Findet Firmen, deren Namen nach Normalisierung identisch sind (z.&nbsp;B. „Müller GmbH" vs. „MÜLLER GmbH" oder „Müller GMBH"). Beim Zusammenführen wählst du eine als Master — die andere wird soft-gelöscht und alle ihre Verknüpfungen (Kontakte, Projekte, Termine, Einsätze, Notizen, Tags, Pins) wandern zum Master.
+      </p>
+      <div id="dubletten-content">
+        <div class="info-card-empty">Lade …</div>
+      </div>
+    </div>
+
+    <!-- v2.6.1: MERGE-CONFIRM-MODAL -->
+    <div class="modal-overlay" id="modal-merge" onclick="if(event.target===this)closeMergeModal()">
+      <div class="modal" style="width:560px">
+        <div class="modal-title">Firmen zusammenführen</div>
+        <div id="merge-summary" style="font-size:13px;line-height:1.6;margin-bottom:12px"></div>
+        <div style="background:var(--bg-soft);padding:12px;border-radius:6px;font-size:12px;color:var(--muted);margin-bottom:14px">
+          <strong>Was passiert:</strong><br>
+          Alle Kontakte, Projekte, Termine, Einsätze, Aufgaben, Notizen, Mitgliedschaften, Tags, Pins und Lieferanten-Verknüpfungen der Dublette werden zum Master umgebogen. Der Dublikat-Datensatz wird soft-gelöscht (deleted_at = now). <strong>Nicht reversibel</strong> ohne Backup.
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn" onclick="closeMergeModal()">Abbrechen</button>
+          <button class="btn btn-primary" id="merge-confirm-btn" onclick="confirmMerge()">Zusammenführen</button>
+        </div>
+      </div>
+    </div>
+
     <!-- v2.4.0: SEITE: IMPORT — CSV/Excel-Daten in Firmen oder Kontakte einlesen -->
     <div class="page" id="page-import">
       <div class="page-header">
@@ -2294,6 +2325,7 @@
               <option value="company">Firma</option>
               <option value="contact">Kontakt</option>
               <option value="company_contact">Firma + Kontakt zusammen</option>
+              <option value="product">Produkt</option>
             </select>
           </label>
         </div>

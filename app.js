@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.1 (Dubletten-Aufräumen + CSV-Import für Produkte).
+   - Dubletten-Page (#/dubletten): findet Firmen mit identischem
+     normalisiertem Namen (Lowercase + getrimmt + Rechtsform-Suffixe
+     `gmbh & co. kg / gmbh / ag / kg / ohg / gbr / e.V. / ug / ltd.`
+     entfernt + Sonderzeichen weg). Zeigt Gruppen mit Verknüpfungs-
+     Counts (Kontakte/Projekte/Termine/Einsätze) pro Eintrag.
+   - Master-Wahl per Radio (Default: der mit den meisten Verknüpfungen),
+     Klick auf "Zusammenführen" öffnet Confirm-Modal.
+   - Merge-Algorithmus: alle FKs der Dublette → Master (contacts,
+     appointments, projects, deployments, tasks, notes, memberships,
+     products.lieferant_id), entity_tags + pins mit UNIQUE-Konflikt-
+     Behandlung (bei Master-Match: delete statt update), Dublette
+     soft-gelöscht.
+   - CSV-Import erweitert um Datentyp "Produkt": Felder name (req),
+     artikelnummer, hersteller_artikelnr, kategorie, einheit, EK, VK,
+     beschreibung, notizen + Spezialfeld __lieferant_name (resolved
+     auf companies.id). Preis-Strings werden tolerant geparst —
+     "1.234,56 €" / "1234,56" / "1234.56".
    Version 2.6.0 (Produkte + Lieferantenmanagement — Phase 1).
    - Migration v2.6.0: companies.ist_lieferant boolean DEFAULT false
      + neue Tabelle products (id, name, beschreibung, artikelnummer,
@@ -2801,6 +2819,7 @@ function showPage(name) {
   if (name === 'templates') loadTemplates();
   if (name === 'tags') loadTagsPage?.();
   if (name === 'products') loadProductsPage?.();
+  if (name === 'dubletten') loadDublettenPage?.();
   if (name === 'import') resetImportPage?.();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
@@ -4007,7 +4026,7 @@ function setListenTabCount(page, count) {
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
-const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','import'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','dubletten','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
   const settingsBar = document.getElementById('einstellungen-tab-bar');
@@ -4178,6 +4197,8 @@ function navigateTo(page, param) {
     hash = '#/tags';
   } else if (page === 'products') {
     hash = '#/produkte';
+  } else if (page === 'dubletten') {
+    hash = '#/dubletten';
   } else if (page === 'import') {
     hash = '#/import';
   } else if (page === 'briefing') {
@@ -4329,6 +4350,7 @@ function handleHashChange() {
   if (hash === '#/templates')  { showPage('templates'); return; }
   if (hash === '#/tags')       { showPage('tags'); return; }
   if (hash === '#/produkte')   { showPage('products'); return; }
+  if (hash === '#/dubletten')  { showPage('dubletten'); return; }
   if (hash === '#/import')     { showPage('import'); return; }
   // v2.0.0 — Drei-Bereiche-Architektur
   if (hash === '#/briefing')      { showPage('briefing');      return; }
@@ -19294,6 +19316,30 @@ const IMPORT_FIELDS = {
     { key: 'kontakt_telefon',  label: 'Kontakt · Telefon',  group: 'Kontakt', aliases: ['telefon','tel','phone','mobil','direktwahl'] },
     { key: 'kontakt_position', label: 'Kontakt · Position', group: 'Kontakt', aliases: ['position','rolle','funktion','title','jobtitel'] },
     { key: 'kontakt_notizen',  label: 'Kontakt · Notizen',  group: 'Kontakt', aliases: ['kontakt notizen','kontakt-notiz'] }
+  ],
+  // v2.6.1: Produkt-Import
+  product: [
+    { key: 'name',                 label: 'Name',                 required: true,
+                                   aliases: ['name','bezeichnung','produkt','artikel','artikelbezeichnung','title'] },
+    { key: 'artikelnummer',        label: 'Artikelnummer (intern)',
+                                   aliases: ['artikelnummer','artnr','art-nr','art.nr','sku','interne-nr'] },
+    { key: 'hersteller_artikelnr', label: 'Hersteller-Artikelnr.',
+                                   aliases: ['hersteller-artikelnr','herstellernr','hersteller-nr','partno','part-no','manufacturer'] },
+    { key: 'kategorie',            label: 'Kategorie',
+                                   aliases: ['kategorie','category','warengruppe','typ'] },
+    { key: 'einheit',              label: 'Einheit',
+                                   aliases: ['einheit','unit','me','mengeneinheit'] },
+    { key: 'einkaufspreis',        label: 'Einkaufspreis (EK)',
+                                   aliases: ['einkaufspreis','ek','ek-preis','einkauf','purchase','cost'] },
+    { key: 'verkaufspreis',        label: 'Verkaufspreis (VK)',
+                                   aliases: ['verkaufspreis','vk','vk-preis','verkauf','listenpreis','price','retail'] },
+    { key: '__lieferant_name',     label: 'Lieferant (Name)',
+                                   aliases: ['lieferant','supplier','hersteller','herstellername'],
+                                   hint: 'Wird per Namen auf eine bestehende Firma mit „Lieferant"-Marker gemappt' },
+    { key: 'beschreibung',         label: 'Beschreibung',
+                                   aliases: ['beschreibung','description','beschrieb'] },
+    { key: 'notizen',              label: 'Notizen',
+                                   aliases: ['notizen','notes','bemerkung'] }
   ]
 };
 
@@ -19608,11 +19654,13 @@ async function runImport() {
     return;
   }
 
-  // ── Modus 2: Nur Firmen ODER nur Kontakte ──────────────────────────────
+  // ── Modus 2: Nur Firmen ODER nur Kontakte ODER Produkte ────────────────
   // Für Kontakte: Firmenname → company_id auflösen
+  // Für Produkte: Lieferantenname → lieferant_id auflösen
   let companyNameToId = {};
-  if (_importState.type === 'contact' && mappedKeys.has('__company_name')) {
-    const { data: allCompanies } = await db.from('companies').select('id, name').is('deleted_at', null);
+  if ((_importState.type === 'contact' && mappedKeys.has('__company_name'))
+      || (_importState.type === 'product' && mappedKeys.has('__lieferant_name'))) {
+    const { data: allCompanies } = await db.from('companies').select('id, name, ist_lieferant').is('deleted_at', null);
     (allCompanies || []).forEach(c => { companyNameToId[c.name.toLowerCase().trim()] = c.id; });
   }
 
@@ -19634,6 +19682,16 @@ async function runImport() {
         const split = _splitFullName(val);
         if (split.vorname && !obj.vorname) obj.vorname = split.vorname;
         if (split.nachname && !obj.nachname) obj.nachname = split.nachname;
+      } else if (_importState.type === 'product' && key === '__lieferant_name') {
+        // v2.6.1: Lieferantenname → lieferant_id (companies) auflösen
+        const cid = companyNameToId[val.toLowerCase().trim()];
+        if (cid) obj.lieferant_id = cid;
+        else errors.push({ row: rowIdx + 2, msg: `Lieferant „${val}" nicht gefunden — Produkt ohne Lieferant angelegt` });
+      } else if (_importState.type === 'product' && (key === 'einkaufspreis' || key === 'verkaufspreis')) {
+        // v2.6.1: Preis-Strings tolerant parsen — "1.234,56 €" / "1234,56" / "1234.56"
+        const cleaned = val.replace(/[^\d,.\-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
+        const num = Number(cleaned);
+        obj[key] = Number.isFinite(num) ? num : 0;
       } else {
         obj[key] = val;
       }
@@ -19643,7 +19701,9 @@ async function runImport() {
   });
 
   // Batch-Insert (in Chunks von 100)
-  const table = _importState.type === 'company' ? 'companies' : 'contacts';
+  const table = _importState.type === 'company' ? 'companies'
+              : _importState.type === 'product' ? 'products'
+              : 'contacts';
   let inserted = 0;
   for (let i = 0; i < payloads.length; i += 100) {
     const chunk = payloads.slice(i, i + 100);
@@ -19669,7 +19729,10 @@ async function runImport() {
         ${errors.map(e => `Zeile ${esc(String(e.row))}: ${esc(e.msg)}`).join('<br>')}
       </div>`;
   }
-  showToast(`${inserted} ${_importState.type === 'company' ? 'Firmen' : 'Kontakte'} importiert.`);
+  const label = _importState.type === 'company' ? 'Firmen'
+              : _importState.type === 'product' ? 'Produkte'
+              : 'Kontakte';
+  showToast(`${inserted} ${label} importiert.`);
   btn.disabled = false;
 }
 
@@ -19945,6 +20008,224 @@ async function removeTagFromEntity(tagId, entityType, entityId, containerId) {
 if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
   MODAL_CLOSERS['modal-product'] = () => closeProductModal();
+  MODAL_CLOSERS['modal-merge']   = () => closeMergeModal();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.6.1 — DUBLETTEN (Firma-Doppelungen finden + zusammenführen)
+// ═══════════════════════════════════════════════════════════
+
+let _dublettenGroups = [];   // [{ key, items: [{...company}], masterId }]
+let _mergeContext = null;    // { masterId, dupIds, masterName }
+
+// Normalisiert einen Firmennamen für Vergleich:
+// Lowercase, getrimmt, häufige Rechtsform-Suffixe entfernt, Sonderzeichen weg.
+function _normalizeCompanyName(name) {
+  if (!name) return '';
+  let s = name.toLowerCase().trim();
+  // Rechtsform-Suffixe und Trenner abschneiden
+  s = s.replace(/\b(gmbh\s*&\s*co\.?\s*kg|gmbh|ag|kg|ohg|gbr|e\.?\s*v\.?|ug|ltd\.?|inc\.?|corp\.?|co\.?)\b/g, '');
+  s = s.replace(/[\.\,\-\&]/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+async function loadDublettenPage() {
+  const wrap = document.getElementById('dubletten-content');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="info-card-empty">Lade …</div>';
+
+  const { data: companies, error } = await db.from('companies').select('*')
+    .is('deleted_at', null).order('name');
+  if (error) {
+    wrap.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`;
+    return;
+  }
+
+  // Gruppieren nach normalisiertem Namen
+  const groups = {};
+  (companies || []).forEach(c => {
+    const key = _normalizeCompanyName(c.name);
+    if (!key) return;
+    (groups[key] = groups[key] || []).push(c);
+  });
+  // Nur Gruppen mit ≥2 Einträgen
+  _dublettenGroups = Object.entries(groups)
+    .filter(([k, items]) => items.length >= 2)
+    .map(([key, items]) => ({ key, items }))
+    .sort((a, b) => b.items.length - a.items.length);
+
+  if (_dublettenGroups.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Dubletten gefunden — alle Firmennamen sind eindeutig.</div>';
+    return;
+  }
+
+  // Pro Gruppe: Verknüpfungs-Counts holen (für Master-Empfehlung)
+  const allIds = _dublettenGroups.flatMap(g => g.items.map(i => i.id));
+  const counts = await _getCompanyLinkCounts(allIds);
+
+  wrap.innerHTML = _dublettenGroups.map((g, gi) => {
+    const items = g.items.map(c => ({
+      ...c,
+      _count: counts[c.id] || { contacts:0, projects:0, deployments:0, appointments:0, total:0 }
+    }));
+    // Master-Empfehlung: der mit den meisten Verknüpfungen
+    const recommendedMaster = items.slice().sort((a, b) => b._count.total - a._count.total)[0];
+    return `
+      <div class="dublette-group">
+        <div class="dublette-group-head">
+          <span class="dublette-group-name">${esc(items[0].name)}</span>
+          <span class="dublette-group-meta">${items.length} Einträge mit identischem normalisiertem Namen</span>
+        </div>
+        <table class="dublette-table">
+          <thead><tr>
+            <th style="width:36px">Master</th>
+            <th>Name</th>
+            <th>Stadt</th>
+            <th>Kontakte</th>
+            <th>Projekte</th>
+            <th>Termine</th>
+            <th>Einsätze</th>
+            <th>Erstellt</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+          ${items.map(c => `
+            <tr>
+              <td><input type="radio" name="dublette-master-${gi}" value="${esc(c.id)}" ${c.id === recommendedMaster.id ? 'checked' : ''}></td>
+              <td><span class="cell-link" onclick="navigateTo('firma','${esc(c.id)}')">${esc(c.name)}</span>${c.ist_lieferant ? ' <span style="font-size:10px;color:var(--muted)">(Lieferant)</span>' : ''}</td>
+              <td>${esc(c.stadt || '—')}</td>
+              <td>${c._count.contacts}</td>
+              <td>${c._count.projects}</td>
+              <td>${c._count.appointments}</td>
+              <td>${c._count.deployments}</td>
+              <td style="font-size:11px;color:var(--muted)">${c.created_at ? esc(formatDateCompact(c.created_at.substring(0,10))) : '—'}</td>
+              <td></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="dublette-group-actions">
+          <button class="btn btn-primary btn-sm" onclick="startMerge(${gi})">Diese ${items.length} Einträge zusammenführen</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// Verknüpfungs-Counts pro Firma — für Master-Empfehlung und UI-Anzeige
+async function _getCompanyLinkCounts(companyIds) {
+  if (companyIds.length === 0) return {};
+  const counts = {};
+  companyIds.forEach(id => { counts[id] = { contacts:0, projects:0, deployments:0, appointments:0, total:0 }; });
+
+  const queries = await Promise.all([
+    db.from('contacts').select('company_id').is('deleted_at', null).in('company_id', companyIds),
+    db.from('projects').select('company_id').is('deleted_at', null).in('company_id', companyIds),
+    db.from('deployments').select('company_id').is('deleted_at', null).in('company_id', companyIds),
+    db.from('appointments').select('company_id').is('deleted_at', null).in('company_id', companyIds)
+  ]);
+  const [c, p, d, a] = queries.map(r => r.data || []);
+  c.forEach(r => { if (counts[r.company_id]) counts[r.company_id].contacts++; });
+  p.forEach(r => { if (counts[r.company_id]) counts[r.company_id].projects++; });
+  d.forEach(r => { if (counts[r.company_id]) counts[r.company_id].deployments++; });
+  a.forEach(r => { if (counts[r.company_id]) counts[r.company_id].appointments++; });
+  Object.values(counts).forEach(c => { c.total = c.contacts + c.projects + c.deployments + c.appointments; });
+  return counts;
+}
+
+function startMerge(groupIdx) {
+  const group = _dublettenGroups[groupIdx];
+  if (!group) return;
+  const masterRadio = document.querySelector(`input[name="dublette-master-${groupIdx}"]:checked`);
+  if (!masterRadio) { showToast('Bitte einen Master wählen.', true); return; }
+  const masterId = masterRadio.value;
+  const dupIds = group.items.filter(c => c.id !== masterId).map(c => c.id);
+  const masterName = group.items.find(c => c.id === masterId)?.name || '?';
+
+  _mergeContext = { masterId, dupIds, masterName };
+  document.getElementById('merge-summary').innerHTML = `
+    <strong>Master:</strong> ${esc(masterName)}<br>
+    <strong>Dubletten (${dupIds.length}):</strong> ${esc(group.items.filter(c => c.id !== masterId).map(c => `${c.name}${c.stadt ? ' (' + c.stadt + ')' : ''}`).join(', '))}`;
+  document.getElementById('modal-merge').classList.add('open');
+}
+
+function closeMergeModal() {
+  document.getElementById('modal-merge').classList.remove('open');
+  _mergeContext = null;
+}
+
+async function confirmMerge() {
+  if (!_mergeContext) return;
+  const { masterId, dupIds } = _mergeContext;
+  const btn = document.getElementById('merge-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Wird zusammengeführt …';
+
+  let totalMoved = 0;
+  const errors = [];
+
+  for (const dupId of dupIds) {
+    // FKs umbiegen — companies-Spalten in den abhängigen Tabellen
+    const fkUpdates = [
+      { table: 'contacts',     col: 'company_id' },
+      { table: 'appointments', col: 'company_id' },
+      { table: 'projects',     col: 'company_id' },
+      { table: 'deployments',  col: 'company_id' },
+      { table: 'tasks',        col: 'company_id' },
+      { table: 'notes',        col: 'company_id' },
+      { table: 'memberships',  col: 'company_id' },
+      { table: 'products',     col: 'lieferant_id' }
+    ];
+    for (const { table, col } of fkUpdates) {
+      const { error } = await db.from(table).update({ [col]: masterId }).eq(col, dupId);
+      if (error) errors.push({ table, msg: error.message });
+      else totalMoved++;
+    }
+
+    // entity_tags: kann UNIQUE-Konflikt geben (master + dup haben gleichen Tag)
+    // → erst Tags der Dublette holen, die der Master noch nicht hat → updaten
+    // → übrige Dublikat-Tags löschen
+    const { data: dupTags } = await db.from('entity_tags').select('id, tag_id')
+      .eq('entity_type', 'company').eq('entity_id', dupId);
+    const { data: masterTags } = await db.from('entity_tags').select('tag_id')
+      .eq('entity_type', 'company').eq('entity_id', masterId);
+    const masterTagSet = new Set((masterTags || []).map(t => t.tag_id));
+    for (const dt of (dupTags || [])) {
+      if (masterTagSet.has(dt.tag_id)) {
+        await db.from('entity_tags').delete().eq('id', dt.id);
+      } else {
+        await db.from('entity_tags').update({ entity_id: masterId }).eq('id', dt.id);
+      }
+    }
+
+    // pins analog (UNIQUE pro user_id, entity_type, entity_id)
+    const { data: dupPins } = await db.from('pins').select('id, user_id')
+      .eq('entity_type', 'company').eq('entity_id', dupId);
+    const { data: masterPins } = await db.from('pins').select('user_id')
+      .eq('entity_type', 'company').eq('entity_id', masterId);
+    const masterPinUsers = new Set((masterPins || []).map(p => p.user_id));
+    for (const dp of (dupPins || [])) {
+      if (masterPinUsers.has(dp.user_id)) {
+        await db.from('pins').delete().eq('id', dp.id);
+      } else {
+        await db.from('pins').update({ entity_id: masterId }).eq('id', dp.id);
+      }
+    }
+
+    // Dublikat soft-deleten
+    const { error: delErr } = await db.from('companies')
+      .update({ deleted_at: new Date().toISOString() }).eq('id', dupId);
+    if (delErr) errors.push({ table: 'companies (soft-delete)', msg: delErr.message });
+  }
+
+  closeMergeModal();
+  if (errors.length > 0) {
+    showToast(`Zusammengeführt mit ${errors.length} Hinweisen — siehe Browser-Konsole.`, true);
+    console.warn('Merge-Hinweise:', errors);
+  } else {
+    showToast(`Zusammengeführt: ${dupIds.length} Dublette${dupIds.length === 1 ? '' : 'n'} → 1 Master.`);
+  }
+  invalidateTagsCache();
+  await loadDublettenPage();
 }
 
 // ═══════════════════════════════════════════════════════════
