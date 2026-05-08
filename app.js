@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.4.4 (CSV-Import: "Firma + Kontakt zusammen" + Anrede-
+   Splitting). Neuer dritter Datentyp `company_contact`: jede Zeile
+   enthält Firma- UND Kontakt-Felder. Mapping-Dropdown zeigt die
+   Felder per <optgroup> nach "Firma" / "Kontakt" gruppiert (Helper-
+   Logik in renderImportMapping erkennt das `group`-Property).
+   Import-Algorithmus (`_runCompanyContactImport`):
+     1) Bestehende Firmen (Name → ID) cachen
+     2) Pro Zeile: Firma upserten (find by name; sonst anlegen mit
+        allen mapped Firma-Feldern); danach Kontakt mit company_id
+        anlegen
+   Plus: neues Spezialfeld `kontakt_anrede` für Spalten wie
+   "Herr Martin Bollwinkel" — `_splitFullName` schält Anrede/Titel
+   ab und zerlegt den Rest in vorname (alle bis auf das letzte
+   Token) + nachname (letztes Token). Wenn die Spalte gemappt ist,
+   sind kontakt_vorname/_nachname nicht mehr Pflicht.
    Version 2.4.3 (CSV-Auto-Encoding: Mac-Roman vs. Win-1252).
    Auto-Detection wählte bisher pauschal Windows-1252 als Fallback,
    wenn UTF-8 fehlschlug. Bei Mac-Roman-Dateien (Excel-Mac-Export)
@@ -19164,6 +19179,33 @@ const IMPORT_FIELDS = {
     { key: '__company_name',      label: 'Firma (Name)', aliases: ['firma','firmenname','company','unternehmen','arbeitgeber'],
                                   hint: 'Wird per Namen auf eine bestehende Firma gemappt' },
     { key: 'notizen',             label: 'Notizen',      aliases: ['notizen','notes','bemerkung'] }
+  ],
+  // v2.4.4: Firma + Kontakt in einem Rutsch — Felder per Prefix gruppiert
+  company_contact: [
+    // Firma
+    { key: 'firma_name',     label: 'Firma · Name',     required: true,  group: 'Firma',
+                             aliases: ['firma','firmenname','company','unternehmen','customer','kunde'] },
+    { key: 'firma_strasse',  label: 'Firma · Straße',   group: 'Firma',  aliases: ['strasse','straße','street','adresse','anschrift','adr.zeile 1','adrzeile1'] },
+    { key: 'firma_plz',      label: 'Firma · PLZ',      group: 'Firma',  aliases: ['plz','zip','postleitzahl','postal','postcode'] },
+    { key: 'firma_stadt',    label: 'Firma · Stadt',    group: 'Firma',  aliases: ['stadt','ort','city','town'] },
+    { key: 'firma_land',     label: 'Firma · Land',     group: 'Firma',  aliases: ['land','country'] },
+    { key: 'firma_telefon',  label: 'Firma · Telefon',  group: 'Firma',  aliases: ['firma telefon','firmentelefon','firma-tel','tel firma','tel 1','telefon 1'] },
+    { key: 'firma_email',    label: 'Firma · E-Mail',   group: 'Firma',  aliases: ['firma email','firmenemail','firma-mail','e-mail 1','email 1'] },
+    { key: 'firma_website',  label: 'Firma · Website',  group: 'Firma',  aliases: ['website','homepage','url','web','internet'] },
+    { key: 'firma_branche',  label: 'Firma · Branche',  group: 'Firma',  aliases: ['branche','industry','sektor'] },
+    { key: 'firma_notizen',  label: 'Firma · Notizen',  group: 'Firma',  aliases: ['firma notizen','firmen-notiz'] },
+    // Kontakt
+    { key: 'kontakt_vorname',  label: 'Kontakt · Vorname',  required: true, group: 'Kontakt',
+                               aliases: ['vorname','firstname','first name'] },
+    { key: 'kontakt_nachname', label: 'Kontakt · Nachname', required: true, group: 'Kontakt',
+                               aliases: ['nachname','lastname','last name','surname'] },
+    { key: 'kontakt_anrede',   label: 'Kontakt · Anrede + Name (zusammen)', group: 'Kontakt',
+                               aliases: ['administrator','ansprechpartner','kontaktperson','kontakt'],
+                               hint: 'Beispiel: "Herr Martin Bollwinkel" — wird automatisch in Vor-/Nachname zerlegt' },
+    { key: 'kontakt_email',    label: 'Kontakt · E-Mail',   group: 'Kontakt', aliases: ['email','e-mail','mail','kontakt email'] },
+    { key: 'kontakt_telefon',  label: 'Kontakt · Telefon',  group: 'Kontakt', aliases: ['telefon','tel','phone','mobil','direktwahl'] },
+    { key: 'kontakt_position', label: 'Kontakt · Position', group: 'Kontakt', aliases: ['position','rolle','funktion','title','jobtitel'] },
+    { key: 'kontakt_notizen',  label: 'Kontakt · Notizen',  group: 'Kontakt', aliases: ['kontakt notizen','kontakt-notiz'] }
   ]
 };
 
@@ -19359,13 +19401,29 @@ function renderImportMapping() {
   const fields = IMPORT_FIELDS[_importState.type];
   const sample = _importState.rows[0] || [];
 
+  // v2.4.4: optgroup wenn Felder gruppiert sind (z.B. Firma/Kontakt)
   const optionsForSelected = (selected) => {
     const opts = [`<option value=""${selected ? '' : ' selected'}>— Ignorieren —</option>`];
-    fields.forEach(f => {
-      const req = f.required ? ' *' : '';
-      const sel = selected === f.key ? ' selected' : '';
-      opts.push(`<option value="${esc(f.key)}"${sel}>${esc(f.label)}${req}</option>`);
-    });
+    const grouped = fields.some(f => f.group);
+    if (grouped) {
+      const groups = {};
+      fields.forEach(f => { (groups[f.group || ''] = groups[f.group || ''] || []).push(f); });
+      Object.entries(groups).forEach(([gname, gfields]) => {
+        opts.push(`<optgroup label="${esc(gname)}">`);
+        gfields.forEach(f => {
+          const req = f.required ? ' *' : '';
+          const sel = selected === f.key ? ' selected' : '';
+          opts.push(`<option value="${esc(f.key)}"${sel}>${esc(f.label)}${req}</option>`);
+        });
+        opts.push('</optgroup>');
+      });
+    } else {
+      fields.forEach(f => {
+        const req = f.required ? ' *' : '';
+        const sel = selected === f.key ? ' selected' : '';
+        opts.push(`<option value="${esc(f.key)}"${sel}>${esc(f.label)}${req}</option>`);
+      });
+    }
     return opts.join('');
   };
 
@@ -19413,6 +19471,19 @@ function renderImportPreview() {
   table.innerHTML = headHtml + bodyHtml;
 }
 
+// v2.4.4: "Herr Martin Bollwinkel" / "Frau Dr. Anna Müller" → vor/nachname.
+// Heuristik: erste Anrede-Worte abschneiden, Rest splitten — letztes Wort
+// ist Nachname, Rest sind Vornamen. Reicht für 95 % der Fälle.
+const _ANREDE_TOKENS = new Set(['herr','frau','hr.','fr.','dr.','prof.','prof','dr','dipl.-ing.','dipl.','ing.']);
+function _splitFullName(input) {
+  const tokens = (input || '').trim().split(/\s+/).filter(Boolean);
+  while (tokens.length > 0 && _ANREDE_TOKENS.has(tokens[0].toLowerCase())) tokens.shift();
+  if (tokens.length === 0) return { vorname: '', nachname: '' };
+  if (tokens.length === 1) return { vorname: '', nachname: tokens[0] };
+  const nachname = tokens.pop();
+  return { vorname: tokens.join(' '), nachname };
+}
+
 async function runImport() {
   const btn = document.getElementById('import-run-btn');
   const statusEl = document.getElementById('import-status');
@@ -19420,9 +19491,13 @@ async function runImport() {
   errorsEl.innerHTML = '';
 
   // Validierung: alle required-Felder gemappt?
+  // v2.4.4: für company_contact reicht entweder vor+nachname ODER nur "Anrede + Name"-Spalte
   const fields = IMPORT_FIELDS[_importState.type];
   const mappedKeys = new Set(_importState.mapping.filter(Boolean));
-  const missing = fields.filter(f => f.required && !mappedKeys.has(f.key));
+  let missing = fields.filter(f => f.required && !mappedKeys.has(f.key));
+  if (_importState.type === 'company_contact' && mappedKeys.has('kontakt_anrede')) {
+    missing = missing.filter(f => f.key !== 'kontakt_vorname' && f.key !== 'kontakt_nachname');
+  }
   if (missing.length > 0) {
     showToast('Pflichtfelder fehlen: ' + missing.map(f => f.label).join(', '), true);
     return;
@@ -19435,6 +19510,13 @@ async function runImport() {
   btn.disabled = true;
   statusEl.textContent = 'Import läuft …';
 
+  // ── Modus 1: Firma + Kontakt zusammen ──────────────────────────────────
+  if (_importState.type === 'company_contact') {
+    await _runCompanyContactImport(statusEl, errorsEl, btn);
+    return;
+  }
+
+  // ── Modus 2: Nur Firmen ODER nur Kontakte ──────────────────────────────
   // Für Kontakte: Firmenname → company_id auflösen
   let companyNameToId = {};
   if (_importState.type === 'contact' && mappedKeys.has('__company_name')) {
@@ -19491,6 +19573,80 @@ async function runImport() {
       </div>`;
   }
   showToast(`${inserted} ${_importState.type === 'company' ? 'Firmen' : 'Kontakte'} importiert.`);
+  btn.disabled = false;
+}
+
+// v2.4.4 — Combined-Import: jede Zeile = Firma + Kontakt.
+// Algorithmus:
+//   1. Bestehende Firmen aus DB cachen (Name → ID)
+//   2. Pro Zeile: Firma upserten (find by name, sonst anlegen mit Firma-Feldern)
+//   3. Kontakt anlegen mit company_id
+async function _runCompanyContactImport(statusEl, errorsEl, btn) {
+  const errors = [];
+  // Vorhandene Firmen laden
+  const { data: allCompanies } = await db.from('companies').select('id, name').is('deleted_at', null);
+  const companyNameToId = new Map((allCompanies || []).map(c => [c.name.toLowerCase().trim(), c.id]));
+
+  // Pro Zeile: Firmenname extrahieren + ggf. anlegen
+  let companiesCreated = 0, contactsCreated = 0;
+  for (let rowIdx = 0; rowIdx < _importState.rows.length; rowIdx++) {
+    const row = _importState.rows[rowIdx];
+    const firmaPayload = {};
+    const kontaktPayload = {};
+    _importState.mapping.forEach((key, colIdx) => {
+      if (!key) return;
+      const val = (row[colIdx] || '').trim();
+      if (val === '') return;
+      if (key.startsWith('firma_')) firmaPayload[key.replace('firma_', '')] = val;
+      else if (key === 'kontakt_anrede') {
+        const split = _splitFullName(val);
+        if (split.vorname && !kontaktPayload.vorname) kontaktPayload.vorname = split.vorname;
+        if (split.nachname && !kontaktPayload.nachname) kontaktPayload.nachname = split.nachname;
+      }
+      else if (key.startsWith('kontakt_')) kontaktPayload[key.replace('kontakt_', '')] = val;
+    });
+
+    const firmaName = (firmaPayload.name || '').trim();
+    if (!firmaName) {
+      errors.push({ row: rowIdx + 2, msg: 'Firmenname fehlt — Zeile übersprungen' });
+      continue;
+    }
+
+    let companyId = companyNameToId.get(firmaName.toLowerCase());
+    if (!companyId) {
+      // Firma anlegen
+      firmaPayload.erstellt_von = currentProfile?.id || null;
+      const { data: newC, error: cErr } = await db.from('companies').insert(firmaPayload).select('id').single();
+      if (cErr) {
+        errors.push({ row: rowIdx + 2, msg: `Firma „${firmaName}" konnte nicht angelegt werden: ${cErr.message}` });
+        continue;
+      }
+      companyId = newC.id;
+      companyNameToId.set(firmaName.toLowerCase(), companyId);
+      companiesCreated++;
+    }
+
+    // Kontakt anlegen, wenn überhaupt Vor- oder Nachname da
+    if (!kontaktPayload.vorname && !kontaktPayload.nachname) continue;
+    kontaktPayload.company_id = companyId;
+    kontaktPayload.erstellt_von = currentProfile?.id || null;
+    const { error: kErr } = await db.from('contacts').insert(kontaktPayload);
+    if (kErr) {
+      errors.push({ row: rowIdx + 2, msg: `Kontakt nicht angelegt: ${kErr.message}` });
+      continue;
+    }
+    contactsCreated++;
+  }
+
+  statusEl.textContent = `${companiesCreated} neue Firmen · ${contactsCreated} Kontakte angelegt`;
+  if (errors.length > 0) {
+    errorsEl.innerHTML = `
+      <div style="font-size:13px;font-weight:600;color:var(--warning);margin-bottom:8px">${errors.length} Hinweise/Fehler:</div>
+      <div style="max-height:240px;overflow-y:auto;font-size:12px;color:var(--muted);background:var(--bg-soft);padding:10px;border-radius:6px;font-family:monospace">
+        ${errors.map(e => `Zeile ${esc(String(e.row))}: ${esc(e.msg)}`).join('<br>')}
+      </div>`;
+  }
+  showToast(`${companiesCreated} Firmen + ${contactsCreated} Kontakte importiert.`);
   btn.disabled = false;
 }
 
