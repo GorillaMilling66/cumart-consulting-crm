@@ -2264,9 +2264,14 @@
         <button class="btn" onclick="loadDublettenPage()">Neu prüfen</button>
       </div>
       <p style="font-size:13px;color:var(--muted);margin-bottom:16px;max-width:720px">
-        Findet Firmen, deren Namen nach Normalisierung identisch sind (z.&nbsp;B. „Müller GmbH" vs. „MÜLLER GmbH" oder „Müller GMBH"). Beim Zusammenführen wählst du eine als Master — die andere wird soft-gelöscht und alle ihre Verknüpfungen (Kontakte, Projekte, Termine, Einsätze, Notizen, Tags, Pins) wandern zum Master.
+        Findet Datensätze, die wahrscheinlich Dubletten sind. <strong>Firmen</strong> per normalisiertem Namen (Rechtsformen wie GmbH/AG werden ignoriert). <strong>Kontakte</strong> per Name + E-Mail (gleicher Name allein reicht nicht — z.&nbsp;B. „Thomas Müller" wäre sonst überall doppelt).
       </p>
+      <h2 style="font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 12px">Firmen</h2>
       <div id="dubletten-content">
+        <div class="info-card-empty">Lade …</div>
+      </div>
+      <h2 style="font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:24px 0 12px">Kontakte</h2>
+      <div id="dubletten-contacts">
         <div class="info-card-empty">Lade …</div>
       </div>
     </div>

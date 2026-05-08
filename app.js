@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.4 (Kontakt-Dubletten + E-Mail-Match-Schutz). Auf
+   der Dubletten-Seite jetzt auch eine Sektion "Kontakte". Match-
+   Kriterium absichtlich strenger als bei Firmen: gleicher Name
+   ALLEINE reicht NICHT (z.B. "Thomas Müller" gibt's mehrfach in
+   verschiedenen Firmen). Match nur wenn Name UND E-Mail
+   übereinstimmen — Kontakte ohne E-Mail werden bewusst nicht
+   gruppiert. Helper `_contactDuplicateKey(k)`. Merge analog zur
+   Firma: FK-Updates an appointments.contact_id, projects.haupt-
+   kontakt_id, tasks.contact_id, notes.contact_id; entity_tags
+   und pins mit UNIQUE-Konflikt-Behandlung; Soft-Delete des
+   Dublikats. Confirm-Modal wird per onclick-Override zwischen
+   Firma- und Kontakt-Merge umgeschaltet.
    Version 2.6.3 (Listen-Tab-Counts stabil + Merge-Reload schnell).
    - Tab-Counter (Firmen · 247) zeigte beim Klick die gefilterte
      Anzahl ("Firmen · 2"), weil renderXTable nach jeder
@@ -20056,15 +20068,23 @@ function _normalizeCompanyName(name) {
 
 async function loadDublettenPage() {
   const wrap = document.getElementById('dubletten-content');
+  const wrapK = document.getElementById('dubletten-contacts');
   if (!wrap) return;
   wrap.innerHTML = '<div class="info-card-empty">Lade …</div>';
+  if (wrapK) wrapK.innerHTML = '<div class="info-card-empty">Lade …</div>';
 
-  const { data: companies, error } = await db.from('companies').select('*')
-    .is('deleted_at', null).order('name');
+  // Firmen + Kontakte parallel laden
+  const [companiesRes, contactsRes] = await Promise.all([
+    db.from('companies').select('*').is('deleted_at', null).order('name'),
+    db.from('contacts').select('*, company:companies(id, name)').is('deleted_at', null).order('nachname')
+  ]);
+  const { data: companies, error } = companiesRes;
   if (error) {
     wrap.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`;
     return;
   }
+  // Kontakt-Dubletten parallel rendern
+  _renderContactDubletten(contactsRes.data || []);
 
   // Gruppieren nach normalisiertem Namen
   const groups = {};
@@ -20167,8 +20187,11 @@ function startMerge(groupIdx) {
 
   _mergeContext = { masterId, dupIds, masterName };
   document.getElementById('merge-summary').innerHTML = `
-    <strong>Master:</strong> ${esc(masterName)}<br>
+    <strong>Master (Firma):</strong> ${esc(masterName)}<br>
     <strong>Dubletten (${dupIds.length}):</strong> ${esc(group.items.filter(c => c.id !== masterId).map(c => `${c.name}${c.stadt ? ' (' + c.stadt + ')' : ''}`).join(', '))}`;
+  // Confirm-Handler explizit auf Firma-Variante setzen (kann durch Kontakt-Merge umgesetzt sein)
+  const btn = document.getElementById('merge-confirm-btn');
+  if (btn) btn.onclick = confirmMerge;
   document.getElementById('modal-merge').classList.add('open');
 }
 
@@ -20254,6 +20277,185 @@ async function confirmMerge() {
   // die fertige Gruppe lokal aus dem State entfernen und das Block-DOM rauszupfen.
   // Erst nach Klick auf "Neu prüfen" wird komplett neu gescannt.
   _removeMergedGroupFromUI(masterId, dupIds);
+}
+
+// ── v2.6.4: Kontakt-Dubletten — Match per Name + E-Mail ───────────────
+
+let _contactDublettenGroups = [];
+let _mergeContactContext = null;
+
+// Normalisierter Schlüssel: lowercase Vor+Nachname zusammen + ":" + lowercase email.
+// Match nur wenn beide Seiten Email haben — verhindert "Thomas Müller"-False-Positives.
+function _contactDuplicateKey(k) {
+  const fullName = [(k.vorname || '').trim(), (k.nachname || '').trim()].filter(Boolean).join(' ').toLowerCase();
+  const email = (k.email || '').trim().toLowerCase();
+  if (!fullName || !email) return null;     // Ohne E-Mail nicht gruppieren
+  return `${fullName}|${email}`;
+}
+
+function _renderContactDubletten(contacts) {
+  const wrap = document.getElementById('dubletten-contacts');
+  if (!wrap) return;
+
+  const groups = {};
+  contacts.forEach(k => {
+    const key = _contactDuplicateKey(k);
+    if (!key) return;
+    (groups[key] = groups[key] || []).push(k);
+  });
+  _contactDublettenGroups = Object.entries(groups)
+    .filter(([, items]) => items.length >= 2)
+    .map(([key, items]) => ({ key, items }))
+    .sort((a, b) => b.items.length - a.items.length);
+
+  if (_contactDublettenGroups.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Kontakt-Dubletten gefunden — alle Kontakte mit gleichem Namen + E-Mail sind eindeutig. Kontakte ohne E-Mail werden bewusst nicht zusammengeführt (zu viele „Thomas Müller").</div>';
+    return;
+  }
+
+  wrap.innerHTML = _contactDublettenGroups.map((g, gi) => {
+    const items = g.items;
+    const fullName = [items[0].vorname, items[0].nachname].filter(Boolean).join(' ');
+    return `
+      <div class="dublette-group">
+        <div class="dublette-group-head">
+          <span class="dublette-group-name">${esc(fullName)} · ${esc(items[0].email || '')}</span>
+          <span class="dublette-group-meta">${items.length} Einträge mit gleichem Namen + E-Mail</span>
+        </div>
+        <table class="dublette-table">
+          <thead><tr>
+            <th style="width:36px">Master</th>
+            <th>Name</th>
+            <th>Position</th>
+            <th>Telefon</th>
+            <th>Firma</th>
+            <th>Erstellt</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+          ${items.map((k, i) => {
+            const fn = [k.vorname, k.nachname].filter(Boolean).join(' ');
+            const firma = k.company?.name || (k.company_id ? '(Firma gelöscht)' : '—');
+            return `
+              <tr>
+                <td><input type="radio" name="dublette-contact-master-${gi}" value="${esc(k.id)}" ${i === 0 ? 'checked' : ''}></td>
+                <td><span class="cell-link" onclick="navigateTo('kontakt','${esc(k.id)}')">${esc(fn)}</span></td>
+                <td>${esc(k.position || '—')}</td>
+                <td>${esc(k.telefon || '—')}</td>
+                <td>${esc(firma)}</td>
+                <td style="font-size:11px;color:var(--muted)">${k.created_at ? esc(formatDateCompact(k.created_at.substring(0,10))) : '—'}</td>
+                <td></td>
+              </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+        <div class="dublette-group-actions">
+          <button class="btn btn-primary btn-sm" onclick="startContactMerge(${gi})">Diese ${items.length} Einträge zusammenführen</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function startContactMerge(groupIdx) {
+  const group = _contactDublettenGroups[groupIdx];
+  if (!group) return;
+  const masterRadio = document.querySelector(`input[name="dublette-contact-master-${groupIdx}"]:checked`);
+  if (!masterRadio) { showToast('Bitte einen Master wählen.', true); return; }
+  const masterId = masterRadio.value;
+  const dupIds = group.items.filter(k => k.id !== masterId).map(k => k.id);
+  const masterK = group.items.find(k => k.id === masterId);
+  const masterName = masterK ? [masterK.vorname, masterK.nachname].filter(Boolean).join(' ') : '?';
+
+  _mergeContactContext = { masterId, dupIds, masterName };
+  document.getElementById('merge-summary').innerHTML = `
+    <strong>Master (Kontakt):</strong> ${esc(masterName)} · ${esc(masterK?.email || '')}<br>
+    <strong>Dubletten (${dupIds.length}):</strong> ${esc(group.items.filter(k => k.id !== masterId).map(k => `${k.vorname || ''} ${k.nachname || ''}`.trim()).join(', '))}<br>
+    <em style="color:var(--muted);font-size:12px">Verknüpfungen (Termine, Aufgaben, Notizen, Projekt-Hauptkontakt, Tags, Pins) wandern zum Master.</em>`;
+  // Merge-Confirm-Button auf Kontakt-Variante umbiegen
+  const btn = document.getElementById('merge-confirm-btn');
+  btn.onclick = confirmContactMerge;
+  document.getElementById('modal-merge').classList.add('open');
+}
+
+async function confirmContactMerge() {
+  if (!_mergeContactContext) return;
+  const { masterId, dupIds } = _mergeContactContext;
+  const btn = document.getElementById('merge-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Wird zusammengeführt …';
+
+  const fkSpec = [
+    { table: 'appointments', col: 'contact_id' },
+    { table: 'projects',     col: 'hauptkontakt_id' },
+    { table: 'tasks',        col: 'contact_id' },
+    { table: 'notes',        col: 'contact_id' }
+  ];
+
+  const errors = [];
+  for (const dupId of dupIds) {
+    // Welle 1: FK-Updates + Tag/Pin-Reads parallel
+    const fkPromises = fkSpec.map(({ table, col }) =>
+      db.from(table).update({ [col]: masterId }).eq(col, dupId)
+        .then(res => ({ table, col, error: res.error }))
+    );
+    const [, dupTagsRes, masterTagsRes, dupPinsRes, masterPinsRes] = await Promise.all([
+      Promise.all(fkPromises),
+      db.from('entity_tags').select('id, tag_id').eq('entity_type', 'contact').eq('entity_id', dupId),
+      db.from('entity_tags').select('tag_id').eq('entity_type', 'contact').eq('entity_id', masterId),
+      db.from('pins').select('id, user_id').eq('entity_type', 'contact').eq('entity_id', dupId),
+      db.from('pins').select('user_id').eq('entity_type', 'contact').eq('entity_id', masterId)
+    ]);
+
+    const masterTagSet = new Set((masterTagsRes.data || []).map(t => t.tag_id));
+    const masterPinUsrs = new Set((masterPinsRes.data || []).map(p => p.user_id));
+    const tagOps = (dupTagsRes.data || []).map(dt =>
+      masterTagSet.has(dt.tag_id)
+        ? db.from('entity_tags').delete().eq('id', dt.id)
+        : db.from('entity_tags').update({ entity_id: masterId }).eq('id', dt.id)
+    );
+    const pinOps = (dupPinsRes.data || []).map(dp =>
+      masterPinUsrs.has(dp.user_id)
+        ? db.from('pins').delete().eq('id', dp.id)
+        : db.from('pins').update({ entity_id: masterId }).eq('id', dp.id)
+    );
+    // Welle 2: Tag/Pin-Resolve + Soft-Delete
+    const finalResults = await Promise.all([
+      ...tagOps,
+      ...pinOps,
+      db.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', dupId)
+    ]);
+    const sd = finalResults[finalResults.length - 1];
+    if (sd?.error) errors.push({ msg: sd.error.message });
+  }
+
+  closeMergeModal();
+  if (errors.length > 0) {
+    showToast(`Zusammengeführt mit ${errors.length} Hinweisen — Konsole prüfen.`, true);
+    console.warn('Kontakt-Merge-Hinweise:', errors);
+  } else {
+    showToast(`Zusammengeführt: ${dupIds.length} Kontakt-Dublette${dupIds.length === 1 ? '' : 'n'} → 1 Master.`);
+  }
+  // Confirm-Button auf Default-Firma-Variante zurück
+  const cbtn = document.getElementById('merge-confirm-btn');
+  if (cbtn) cbtn.onclick = confirmMerge;
+  _mergeContactContext = null;
+  // Lokal aus Liste entfernen
+  _removeMergedContactGroupFromUI(masterId, dupIds);
+}
+
+function _removeMergedContactGroupFromUI(masterId, dupIds) {
+  const removeAt = _contactDublettenGroups.findIndex(g =>
+    g.items.some(k => k.id === masterId) && dupIds.every(d => g.items.some(k => k.id === d))
+  );
+  if (removeAt < 0) return;
+  _contactDublettenGroups.splice(removeAt, 1);
+  const wrap = document.getElementById('dubletten-contacts');
+  if (!wrap) return;
+  if (_contactDublettenGroups.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Alle Kontakt-Dubletten aufgeräumt.</div>';
+    return;
+  }
+  const blocks = wrap.querySelectorAll('.dublette-group');
+  if (blocks[removeAt]) blocks[removeAt].remove();
 }
 
 function _removeMergedGroupFromUI(masterId, dupIds) {
