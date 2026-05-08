@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.2 (Anhang-Upload aus Aktionen-Sidebar +
+   Arbeitsplatz-Tile). Neuer Button „+ Anhang hochladen" in
+   den Aktionen-Karten von Firma/Projekt/Kontakt sowie ein
+   neuer Quick-Tile „+ Anhang" auf dem Arbeitsplatz neben
+   „+ Notiz". Der Text aus dem zugehörigen Note-Input bzw. dem
+   Arbeitsplatz-Capture-Feld wird zum **sichtbaren Filename**
+   in der Liste (Original-Endung bleibt erhalten); leerer Text
+   → Original-Filename. Bezug = aktuelle Detail-Page bzw. erster
+   gesetzter Arbeitsplatz-Kontext (Priorität Firma > Projekt
+   > Kontakt). Multi-File-Upload unterstützt — bei mehreren
+   Dateien mit Prefix-Text wird durchnummeriert „<Text> (1).pdf",
+   „<Text> (2).pdf". Helper: `attachFileFromActions`,
+   `_uploadOneAttachment`, `_sanitizeFilenamePart`, `_getExt`.
+   Außerdem hat der Kontakt jetzt eine eigene Anhang-Zone im
+   Stammdaten-Tab (analog zu Firma/Projekt).
    Version 2.9.1 (Anhänge im Aktivitäten-Stream). Hochgeladene
    Dateien erscheinen jetzt zusätzlich zur Anhang-Zone auch im
    chronologischen Aktivitäten-Stream der Firma/des Projekts/
@@ -4175,6 +4190,30 @@ async function arbeitsplatzCreate(typ) {
     const captureInput = document.getElementById('arbeitsplatz-capture-input');
     if (captureInput) captureInput.value = '';
     showToast('Notiz angelegt.');
+    return;
+  }
+  else if (typ === 'anhang') {
+    // v2.9.2: Datei hochladen — Capture-Text wird zum Filename, Bezug nötig.
+    if (_arbeitsplatzContexts.length === 0) {
+      showToast('Setze einen Bezug (Firma · Projekt · Kontakt) für den Anhang.', false);
+      return;
+    }
+    // Nimm den ersten Kontext als Ziel-Entity. Mehrfach-Anhängen ist
+    // bei Kontext-Mehrfachwahl bewusst nicht — der User entscheidet
+    // sich pro Upload für genau einen Bezug. Bei mehreren Kontexten
+    // priorisieren wir Firma > Projekt > Kontakt.
+    const priority = ['firma', 'projekt', 'kontakt'];
+    const ctx = priority.map(t => _arbeitsplatzContexts.find(c => c.type === t)).find(Boolean);
+    if (!ctx) { showToast('Bezug muss Firma, Projekt oder Kontakt sein.', false); return; }
+    const entityType = ctx.type === 'firma' ? 'company' : ctx.type === 'projekt' ? 'project' : 'contact';
+    attachFileFromActions(entityType, ctx.id, captureText);
+    // Capture-Text leeren passiert im Helper nicht für den Arbeitsplatz —
+    // hier explizit nach Ausführung leeren (Filename wurde verbraucht).
+    if (captureText) {
+      _arbeitsplatzCaptureText = '';
+      const captureInput = document.getElementById('arbeitsplatz-capture-input');
+      if (captureInput) captureInput.value = '';
+    }
     return;
   }
 
@@ -9832,6 +9871,7 @@ function renderContactDetail(k) {
   wire('contact-detail-pin-btn', () => togglePin('contact', k.id, [k.vorname, k.nachname].filter(Boolean).join(' ')));
   applyPinButtonState('contact-detail-pin-btn', 'contact', k.id);
   renderEntityTagZone('contact-side-tags', 'contact', k.id);  // v2.5.0
+  renderAttachmentZone('contact', k.id, 'contact-attachments');  // v2.9.2
 
   wire('contact-detail-add-appointment-btn', () => {
     appointmentModalPrefillContactId = k.id;
@@ -20431,6 +20471,97 @@ if (typeof MODAL_CLOSERS !== 'undefined') {
 //  Termin/Kontakt). Storage-Bucket: "attachments" (privat).
 //  Pfad: <entity_type>/<entity_id>/<uuid>-<original-filename>
 // ═══════════════════════════════════════════════════════════
+
+// v2.9.2: Trigger via Aktionen-Sidebar / Arbeitsplatz-Tile.
+// Der eingegebene Text wird zum sichtbaren Dateinamen (mit Original-
+// Endung); leerer Text → Original-Filename bleibt. Bezug = aktuelle
+// Detail-Page bzw. Arbeitsplatz-Kontext.
+function _sanitizeFilenamePart(s) {
+  return (s || '').replace(/[\/\\:*?"<>|\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function _getExt(name) {
+  const dot = (name || '').lastIndexOf('.');
+  return dot > 0 ? name.substring(dot) : '';
+}
+
+async function _uploadOneAttachment(entityType, entityId, file, displayName, beschreibung) {
+  if (file.size > 50 * 1024 * 1024) {
+    showToast(`„${file.name}" ist größer als 50 MB — übersprungen.`, true);
+    return false;
+  }
+  const safeFilename = (displayName || file.name).replace(/[^\w.\-]/g, '_');
+  const id = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + '-' + Math.random().toString(36).slice(2));
+  const storagePath = `${entityType}/${entityId}/${id}-${safeFilename}`;
+  const { error: upErr } = await db.storage.from(ATTACHMENT_BUCKET).upload(storagePath, file, {
+    contentType: file.type || 'application/octet-stream',
+    upsert: false
+  });
+  if (upErr) { showToast(`Upload fehlgeschlagen: ${upErr.message}`, true); return false; }
+  const { error: dbErr } = await db.from('attachments').insert({
+    entity_type: entityType,
+    entity_id: entityId,
+    filename: displayName || file.name,
+    storage_path: storagePath,
+    mime_type: file.type || null,
+    size_bytes: file.size,
+    beschreibung: beschreibung || null,
+    uploaded_by: currentProfile?.id || null
+  });
+  if (dbErr) {
+    showToast(`Metadaten-Eintrag fehlgeschlagen: ${dbErr.message}`, true);
+    await db.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
+    return false;
+  }
+  return true;
+}
+
+// Öffnet einen Datei-Picker und lädt die Auswahl an die aktive Detail-Entity
+// hoch. prefixText (z.B. aus dem Note-Input) wird zum sichtbaren Filename.
+function attachFileFromActions(entityType, entityId, prefixText) {
+  if (!entityId) { showToast('Kein Bezug.', true); return; }
+  const prefix = _sanitizeFilenamePart(prefixText);
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.onchange = async () => {
+    const files = [...(input.files || [])];
+    if (files.length === 0) { input.remove(); return; }
+    showToast(`Lade ${files.length} Datei${files.length === 1 ? '' : 'en'} hoch …`);
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      let displayName;
+      if (prefix) {
+        displayName = files.length === 1 ? `${prefix}${_getExt(file.name)}` : `${prefix} (${i + 1})${_getExt(file.name)}`;
+      } else {
+        displayName = file.name;
+      }
+      const success = await _uploadOneAttachment(entityType, entityId, file, displayName, prefix || null);
+      if (success) ok++;
+    }
+    showToast(`${ok} von ${files.length} hochgeladen.`);
+    // Note-Input leeren (war als Filename verbraucht)
+    if (prefix) {
+      const noteInputId = entityType === 'company' ? 'company-note-input'
+        : entityType === 'project' ? 'project-note-input'
+        : entityType === 'contact' ? 'contact-note-input' : null;
+      if (noteInputId) {
+        const ni = document.getElementById(noteInputId);
+        if (ni) ni.value = '';
+      }
+    }
+    // Anhang-Zone refreshen (richtige Container-ID je Entity)
+    const containerMap = { company: 'company-attachments', project: 'project-attachments', contact: 'contact-attachments', deployment: 'dep-attachments', appointment: 'appt-attachments' };
+    const cont = containerMap[entityType];
+    if (cont && document.getElementById(cont)) await renderAttachmentZone(entityType, entityId, cont);
+    _refreshActivityStreamFor(entityType, entityId);
+    input.remove();
+  };
+  input.click();
+}
 
 const ATTACHMENT_BUCKET = 'attachments';
 

@@ -438,6 +438,7 @@
           <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('firma')">+ Firma</button>
           <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('kontakt')">+ Kontakt</button>
           <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('notiz')">+ Notiz</button>
+          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('anhang')">+ Anhang</button>
         </div>
 
         <!-- v2.2.0: Aktive Vorgänge fortführen -->
@@ -832,6 +833,7 @@
             <button class="proj-action" id="company-quick-task">+ Aufgabe anlegen</button>
             <button class="proj-action" id="company-quick-contact">+ Kontakt anlegen</button>
             <button class="proj-action" id="company-quick-membership">+ Mitgliedschaft anlegen</button>
+            <button class="proj-action" onclick="attachFileFromActions('company', currentCompanyDetailId, document.getElementById('company-note-input').value)">+ Anhang hochladen</button>
           </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
@@ -1032,6 +1034,10 @@
                         onblur="saveContactNotesInline()"></textarea>
               <div id="contact-notes-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
             </div>
+            <div class="info-card" style="margin-top:16px">
+              <div class="info-card-title">Anhänge</div>
+              <div id="contact-attachments" class="attachment-zone"></div>
+            </div>
           </div>
 
           <div class="proj-tab-panel" data-tab="projekte" id="contact-panel-projekte" style="display:none">
@@ -1070,6 +1076,7 @@
             <button class="proj-action" id="contact-quick-appointment">+ Termin anlegen</button>
             <button class="proj-action" id="contact-quick-task">+ Aufgabe anlegen</button>
             <button class="proj-action" id="contact-quick-project">+ Projekt anlegen</button>
+            <button class="proj-action" onclick="attachFileFromActions('contact', currentContactDetailId, document.getElementById('contact-note-input').value)">+ Anhang hochladen</button>
           </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
@@ -1544,6 +1551,7 @@
             <button class="proj-action" id="project-quick-deployment">+ Einsatz anlegen</button>
             <button class="proj-action" id="project-quick-appointment">+ Termin anlegen</button>
             <button class="proj-action" id="project-quick-task">+ Aufgabe anlegen</button>
+            <button class="proj-action" onclick="attachFileFromActions('project', currentProjectDetailId, document.getElementById('project-note-input').value)">+ Anhang hochladen</button>
           </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
