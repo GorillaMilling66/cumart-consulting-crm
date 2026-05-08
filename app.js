@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.4.5 (Anrede-Splitting auch im Kontakt-Import). Das
+   Spezialfeld "Anrede + Vor- und Nachname (zusammen)" gab es
+   bisher nur im Datentyp "Firma + Kontakt zusammen". Jetzt auch
+   im reinen Kontakt-Import (`__full_name`): mappst du eine Spalte
+   wie "Herr Martin Bollwinkel" auf dieses Feld, schält der Splitter
+   die Anrede ab und schreibt den Rest in vorname (alle Tokens bis
+   auf das letzte) und nachname (letztes Token). Wenn das Feld
+   gemappt ist, sind vorname/nachname nicht mehr Pflicht.
    Version 2.4.4 (CSV-Import: "Firma + Kontakt zusammen" + Anrede-
    Splitting). Neuer dritter Datentyp `company_contact`: jede Zeile
    enthält Firma- UND Kontakt-Felder. Mapping-Dropdown zeigt die
@@ -19173,6 +19181,11 @@ const IMPORT_FIELDS = {
   contact: [
     { key: 'vorname',             label: 'Vorname',      required: true,  aliases: ['vorname','firstname','first name','given name'] },
     { key: 'nachname',            label: 'Nachname',     required: true,  aliases: ['nachname','lastname','last name','surname','familyname'] },
+    // v2.4.5: Spezialfeld — wenn die CSV "Herr Martin Bollwinkel" in einer Spalte hat,
+    // wird Anrede abgeschnitten + Rest auf vorname/nachname gesplittet.
+    { key: '__full_name',         label: 'Anrede + Vor- und Nachname (zusammen)',
+                                  aliases: ['administrator','ansprechpartner','kontaktperson','kontakt','vollständiger name','full name','name komplett'],
+                                  hint: 'z.B. "Herr Martin Bollwinkel" — Anrede wird verworfen, Vor- und Nachname automatisch getrennt' },
     { key: 'email',               label: 'E-Mail',       aliases: ['email','e-mail','mail'] },
     { key: 'telefon',             label: 'Telefon',      aliases: ['telefon','tel','phone','fon','mobil','rufnummer'] },
     { key: 'position',            label: 'Position',     aliases: ['position','rolle','role','funktion','title','job','jobtitel'] },
@@ -19491,12 +19504,16 @@ async function runImport() {
   errorsEl.innerHTML = '';
 
   // Validierung: alle required-Felder gemappt?
-  // v2.4.4: für company_contact reicht entweder vor+nachname ODER nur "Anrede + Name"-Spalte
+  // v2.4.4/5: für company_contact und contact reicht entweder vor+nachname
+  // ODER eine kombinierte "Anrede + Name"-Spalte
   const fields = IMPORT_FIELDS[_importState.type];
   const mappedKeys = new Set(_importState.mapping.filter(Boolean));
   let missing = fields.filter(f => f.required && !mappedKeys.has(f.key));
   if (_importState.type === 'company_contact' && mappedKeys.has('kontakt_anrede')) {
     missing = missing.filter(f => f.key !== 'kontakt_vorname' && f.key !== 'kontakt_nachname');
+  }
+  if (_importState.type === 'contact' && mappedKeys.has('__full_name')) {
+    missing = missing.filter(f => f.key !== 'vorname' && f.key !== 'nachname');
   }
   if (missing.length > 0) {
     showToast('Pflichtfelder fehlen: ' + missing.map(f => f.label).join(', '), true);
@@ -19537,6 +19554,11 @@ async function runImport() {
         const cid = companyNameToId[val.toLowerCase()];
         if (cid) obj.company_id = cid;
         else errors.push({ row: rowIdx + 2, msg: `Firma „${val}" nicht gefunden — Kontakt ohne Firma angelegt` });
+      } else if (_importState.type === 'contact' && key === '__full_name') {
+        // v2.4.5: Anrede abschneiden, Rest in vorname + nachname zerlegen
+        const split = _splitFullName(val);
+        if (split.vorname && !obj.vorname) obj.vorname = split.vorname;
+        if (split.nachname && !obj.nachname) obj.nachname = split.nachname;
       } else {
         obj[key] = val;
       }
