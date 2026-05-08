@@ -1,5 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.7.0 (Produkt-Dubletten + Bulk-Edit für Firmen/Produkte).
+   - Dubletten-Page bekommt eine dritte Sektion "Produkte". Match
+     per gleicher artikelnummer ODER gleichem normalisiertem Namen
+     (Union-Find-Cluster). Merge: Dublette per Soft-Delete entfernt
+     — keine FK-Transfers nötig (auf products zeigt aktuell nichts).
+   - Bulk-Edit für Firmen-Liste (Tag setzen / entfernen) und
+     Produkt-Liste (Lieferant setzen / entfernen): Checkbox-Spalte
+     erste Spalte, "Alle auswählen" im Header, sticky Bulk-Toolbar
+     erscheint sobald >0 selektiert. Aktionen:
+       - Firmen: Tag setzen (Bulk-Insert in entity_tags, ignoriert
+         schon-getaggte via UNIQUE), Tag entfernen (Bulk-Delete)
+       - Produkte: Lieferant setzen (Bulk-UPDATE auf lieferant_id,
+         "— Lieferant entfernen —"-Option setzt NULL)
+   - Helpers: bulkToggleRow, bulkToggleAll, clearBulkSelection,
+     _updateBulkToolbar, bulkAddTag, bulkRemoveTag,
+     bulkSetProductLieferant.
    Version 2.6.6 ("Heute von dir" zeigt jetzt alle Anlage-Typen).
    Vorher zeigte die Sektion nur Termine, Einsätze, Aufgaben +
    erledigte Aufgaben — Importe von Firmen/Kontakten und neu
@@ -7085,6 +7101,8 @@ async function loadCompanies() {
       + typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
   renderTagFilterUI('company');  // v2.5.1
+  _populateBulkTagDropdown();    // v2.7.1
+  clearBulkSelection('company');
 
   const [companiesResult, contactsResult] = await Promise.all([
     db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null).order('name'),
@@ -7194,7 +7212,7 @@ function renderCompaniesTable(companies) {
     const msg = total === 0
       ? 'Noch keine Firmen angelegt. Klicke oben auf „+ Neue Firma".'
       : 'Keine Firmen entsprechen den Filterkriterien.';
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">${msg}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">${msg}</div></td></tr>`;
     return;
   }
 
@@ -7207,8 +7225,10 @@ function renderCompaniesTable(companies) {
       ? `<span class="abc-badge abc-badge-${esc(c.abc_klassifizierung)}" title="ABC ${esc(c.abc_klassifizierung)}" style="margin-right:8px;vertical-align:middle">${esc(c.abc_klassifizierung)}</span>`
       : '';
 
+    const checked = _bulkSelected.company.has(c.id) ? 'checked' : '';
     return `
       <tr>
+        <td class="col-bulk"><input type="checkbox" ${checked} onchange="bulkToggleRow('company','${esc(c.id)}',this.checked)"></td>
         <td>
           <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${abcHtml}${esc(c.name)}${isCompanyIncomplete(c) ? '<span class="incomplete-badge" title="Datenpflege-Bedarf — keine Adresse und keine Kontaktdaten">unvollständig</span>' : ''}</div>
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
@@ -20175,18 +20195,20 @@ async function loadDublettenPage() {
   wrap.innerHTML = '<div class="info-card-empty">Lade …</div>';
   if (wrapK) wrapK.innerHTML = '<div class="info-card-empty">Lade …</div>';
 
-  // Firmen + Kontakte parallel laden
-  const [companiesRes, contactsRes] = await Promise.all([
+  // Firmen + Kontakte + Produkte parallel laden
+  const [companiesRes, contactsRes, productsRes] = await Promise.all([
     db.from('companies').select('*').is('deleted_at', null).order('name'),
-    db.from('contacts').select('*, company:companies(id, name)').is('deleted_at', null).order('nachname')
+    db.from('contacts').select('*, company:companies(id, name)').is('deleted_at', null).order('nachname'),
+    db.from('products').select('*, lieferant:companies!products_lieferant_id_fkey(id, name)').is('deleted_at', null).order('name')
   ]);
   const { data: companies, error } = companiesRes;
   if (error) {
     wrap.innerHTML = `<div class="info-card-empty">Fehler: ${esc(error.message)}</div>`;
     return;
   }
-  // Kontakt-Dubletten parallel rendern
+  // Kontakt + Produkt-Dubletten parallel rendern
   _renderContactDubletten(contactsRes.data || []);
+  _renderProductDubletten(productsRes.data || []);
 
   // Gruppieren nach normalisiertem Namen
   const groups = {};
@@ -20560,6 +20582,305 @@ function _removeMergedContactGroupFromUI(masterId, dupIds) {
   if (blocks[removeAt]) blocks[removeAt].remove();
 }
 
+// ── v2.7.0: Produkt-Dubletten — Match per Artikelnummer ODER Name ──────
+
+let _productDublettenGroups = [];
+let _mergeProductContext = null;
+
+function _normalizeProductKey(p) {
+  // Zwei Match-Schlüssel: artikelnummer (sehr eindeutig) und name (normalisiert).
+  // Heuristik: wenn artikelnummer gleich → sicher dieselbe Position (lacht selten zufällig).
+  // Wenn nur name gleich → wahrscheinlich Dublette, aber User soll prüfen.
+  return {
+    artNr: (p.artikelnummer || '').trim().toLowerCase(),
+    name: (p.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  };
+}
+
+function _renderProductDubletten(products) {
+  const wrap = document.getElementById('dubletten-products');
+  if (!wrap) return;
+
+  // Gruppieren — Union-Find: zwei Produkte sind verbunden wenn artNr ODER name match.
+  // Pragmatisch: zwei separate Indexe bilden, dann Cluster zusammenführen.
+  const byArtNr = {};
+  const byName = {};
+  products.forEach(p => {
+    const k = _normalizeProductKey(p);
+    if (k.artNr) (byArtNr[k.artNr] = byArtNr[k.artNr] || []).push(p);
+    if (k.name)  (byName[k.name]   = byName[k.name]   || []).push(p);
+  });
+
+  // Cluster bilden — Union-Find auf Produkt-IDs
+  const parent = {};
+  const find = id => parent[id] === id ? id : (parent[id] = find(parent[id]));
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  products.forEach(p => { parent[p.id] = p.id; });
+
+  Object.values(byArtNr).forEach(items => {
+    if (items.length >= 2) for (let i = 1; i < items.length; i++) union(items[0].id, items[i].id);
+  });
+  Object.values(byName).forEach(items => {
+    if (items.length >= 2) for (let i = 1; i < items.length; i++) union(items[0].id, items[i].id);
+  });
+
+  const clusters = {};
+  products.forEach(p => {
+    const root = find(p.id);
+    (clusters[root] = clusters[root] || []).push(p);
+  });
+  _productDublettenGroups = Object.values(clusters)
+    .filter(items => items.length >= 2)
+    .map(items => ({ items }))
+    .sort((a, b) => b.items.length - a.items.length);
+
+  if (_productDublettenGroups.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Produkt-Dubletten gefunden — alle Artikel sind eindeutig.</div>';
+    return;
+  }
+
+  wrap.innerHTML = _productDublettenGroups.map((g, gi) => {
+    const items = g.items;
+    return `
+      <div class="dublette-group">
+        <div class="dublette-group-head">
+          <span class="dublette-group-name">${esc(items[0].name)}</span>
+          <span class="dublette-group-meta">${items.length} Einträge mit gleicher Artikelnummer ODER gleichem Namen</span>
+        </div>
+        <table class="dublette-table">
+          <thead><tr>
+            <th style="width:36px">Master</th>
+            <th>Name</th>
+            <th>Art.-Nr.</th>
+            <th>Hersteller-Nr.</th>
+            <th>Kategorie</th>
+            <th>Lieferant</th>
+            <th>EK / VK</th>
+            <th>Erstellt</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+          ${items.map((p, i) => `
+            <tr>
+              <td><input type="radio" name="dublette-product-master-${gi}" value="${esc(p.id)}" ${i === 0 ? 'checked' : ''}></td>
+              <td><span class="cell-link" onclick="openProductModal('edit','${esc(p.id)}')">${esc(p.name)}</span></td>
+              <td>${esc(p.artikelnummer || '—')}</td>
+              <td>${esc(p.hersteller_artikelnr || '—')}</td>
+              <td>${esc(p.kategorie || '—')}</td>
+              <td>${p.lieferant ? esc(p.lieferant.name) : '<span class="muted">—</span>'}</td>
+              <td>${esc(formatPreis(Number(p.einkaufspreis) || 0))} / ${esc(formatPreis(Number(p.verkaufspreis) || 0))}</td>
+              <td style="font-size:11px;color:var(--muted)">${p.created_at ? esc(formatDateCompact(p.created_at.substring(0,10))) : '—'}</td>
+              <td></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="dublette-group-actions">
+          <button class="btn btn-primary btn-sm" onclick="startProductMerge(${gi})">Diese ${items.length} Einträge zusammenführen</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function startProductMerge(groupIdx) {
+  const group = _productDublettenGroups[groupIdx];
+  if (!group) return;
+  const masterRadio = document.querySelector(`input[name="dublette-product-master-${groupIdx}"]:checked`);
+  if (!masterRadio) { showToast('Bitte einen Master wählen.', true); return; }
+  const masterId = masterRadio.value;
+  const dupIds = group.items.filter(p => p.id !== masterId).map(p => p.id);
+  const masterP = group.items.find(p => p.id === masterId);
+
+  _mergeProductContext = { masterId, dupIds };
+  document.getElementById('merge-summary').innerHTML = `
+    <strong>Master (Produkt):</strong> ${esc(masterP?.name || '')}${masterP?.artikelnummer ? ' · ' + esc(masterP.artikelnummer) : ''}<br>
+    <strong>Dubletten (${dupIds.length}):</strong> ${esc(group.items.filter(p => p.id !== masterId).map(p => p.name).join(', '))}<br>
+    <em style="color:var(--muted);font-size:12px">Produkte werden soft-gelöscht — Master bleibt unverändert. Hinweis: Verkaufspositionen kommen erst in v2.6.x Phase 2 — bisher referenziert nichts auf Produkte, daher kein FK-Transfer nötig.</em>`;
+  const btn = document.getElementById('merge-confirm-btn');
+  btn.onclick = confirmProductMerge;
+  document.getElementById('modal-merge').classList.add('open');
+}
+
+async function confirmProductMerge() {
+  if (!_mergeProductContext) return;
+  const { masterId, dupIds } = _mergeProductContext;
+  const btn = document.getElementById('merge-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Wird zusammengeführt …';
+
+  const errors = [];
+  // Aktuell referenziert keine Tabelle products (außer products selbst über lieferant_id,
+  // das aber product → company zeigt). Daher reicht: Dubletten soft-deleten, parallel.
+  const results = await Promise.all(
+    dupIds.map(id => db.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', id))
+  );
+  results.forEach((r, i) => { if (r.error) errors.push({ id: dupIds[i], msg: r.error.message }); });
+
+  closeMergeModal();
+  if (errors.length > 0) {
+    showToast(`Zusammengeführt mit ${errors.length} Hinweisen — Konsole prüfen.`, true);
+    console.warn('Produkt-Merge-Hinweise:', errors);
+  } else {
+    showToast(`Zusammengeführt: ${dupIds.length} Produkt-Dublette${dupIds.length === 1 ? '' : 'n'} → 1 Master.`);
+  }
+  // Reset Confirm-Button auf Default-Firma-Variante
+  const cbtn = document.getElementById('merge-confirm-btn');
+  if (cbtn) cbtn.onclick = confirmMerge;
+  _mergeProductContext = null;
+  _removeMergedProductGroupFromUI(masterId, dupIds);
+}
+
+// ── v2.7.1: Bulk-Edit für Listen ──────────────────────────────────────
+
+const _bulkSelected = {
+  company: new Set(),
+  contact: new Set(),
+  product: new Set()
+};
+
+function bulkToggleRow(entityType, id, checked) {
+  if (checked) _bulkSelected[entityType].add(id);
+  else _bulkSelected[entityType].delete(id);
+  _updateBulkToolbar(entityType);
+}
+
+function bulkToggleAll(entityType, checked) {
+  // Alle aktuell sichtbaren Zeilen togglen
+  const tbodyId = entityType === 'company' ? 'companies-table-body'
+                : entityType === 'product' ? 'products-table-body'
+                : 'contacts-table-body';
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');
+  checkboxes.forEach(cb => {
+    cb.checked = checked;
+    // ID aus dem onchange-Attribut lesen (zwischen den Single-Quotes)
+    const match = cb.getAttribute('onchange')?.match(/'([^']+)'/);
+    const id = match?.[1];
+    if (!id) return;
+    if (checked) _bulkSelected[entityType].add(id);
+    else _bulkSelected[entityType].delete(id);
+  });
+  _updateBulkToolbar(entityType);
+}
+
+function clearBulkSelection(entityType) {
+  _bulkSelected[entityType].clear();
+  // Visuell: alle Checkboxen entwählen
+  const tbodyId = entityType === 'company' ? 'companies-table-body'
+                : entityType === 'product' ? 'products-table-body'
+                : 'contacts-table-body';
+  document.querySelectorAll(`#${tbodyId} input[type="checkbox"]`).forEach(cb => cb.checked = false);
+  const sel = entityType === 'company' ? 'companies-select-all'
+            : entityType === 'product' ? 'products-select-all'
+            : 'contacts-select-all';
+  const all = document.getElementById(sel);
+  if (all) all.checked = false;
+  _updateBulkToolbar(entityType);
+}
+
+function _updateBulkToolbar(entityType) {
+  const toolbarId = entityType === 'company' ? 'companies-bulk-toolbar'
+                  : entityType === 'product' ? 'products-bulk-toolbar'
+                  : 'contacts-bulk-toolbar';
+  const countId = entityType === 'company' ? 'companies-bulk-count'
+                : entityType === 'product' ? 'products-bulk-count'
+                : 'contacts-bulk-count';
+  const tb = document.getElementById(toolbarId);
+  const cnt = document.getElementById(countId);
+  if (!tb || !cnt) return;
+  const n = _bulkSelected[entityType].size;
+  if (n === 0) {
+    tb.style.display = 'none';
+  } else {
+    tb.style.display = '';
+    const labelMap = { company: 'Firmen', product: 'Produkte', contact: 'Kontakte' };
+    cnt.textContent = `${n} ${labelMap[entityType]} ausgewählt`;
+  }
+}
+
+// Tag-Dropdown im Firmen-Bulk-Toolbar mit aktuellen Tags füllen
+async function _populateBulkTagDropdown() {
+  const sel = document.getElementById('companies-bulk-tag');
+  if (!sel) return;
+  const tags = await loadTagsCache();
+  sel.innerHTML = '<option value="">— Tag wählen —</option>'
+    + tags.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+}
+
+// Lieferanten-Dropdown im Produkt-Bulk-Toolbar
+async function _populateBulkLieferantDropdown() {
+  const sel = document.getElementById('products-bulk-lieferant');
+  if (!sel) return;
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+    companiesCache = cs || [];
+  }
+  const lieferanten = companiesCache.filter(c => c.ist_lieferant);
+  sel.innerHTML = '<option value="">— Lieferant wählen —</option>'
+    + '<option value="__clear__">— Lieferant entfernen —</option>'
+    + lieferanten.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+}
+
+async function bulkAddTag(entityType) {
+  const tagId = document.getElementById(`${entityType === 'company' ? 'companies' : entityType + 's'}-bulk-tag`).value;
+  if (!tagId) { showToast('Bitte einen Tag wählen.', true); return; }
+  const ids = [...(_bulkSelected[entityType] || [])];
+  if (ids.length === 0) return;
+  // Insert pro ID (UNIQUE-Constraint fängt schon getaggte ab)
+  const rows = ids.map(id => ({ tag_id: tagId, entity_type: entityType, entity_id: id }));
+  let added = 0, skipped = 0;
+  for (const row of rows) {
+    const { error } = await db.from('entity_tags').insert(row);
+    if (!error) added++;
+    else if (error.code === '23505') skipped++;  // unique violation = schon getaggt
+    else skipped++;
+  }
+  showToast(`Tag gesetzt: ${added} hinzugefügt${skipped > 0 ? `, ${skipped} übersprungen (schon getaggt)` : ''}.`);
+  invalidateTagsCache();
+}
+
+async function bulkRemoveTag(entityType) {
+  const tagId = document.getElementById(`${entityType === 'company' ? 'companies' : entityType + 's'}-bulk-tag`).value;
+  if (!tagId) { showToast('Bitte einen Tag wählen.', true); return; }
+  const ids = [...(_bulkSelected[entityType] || [])];
+  if (ids.length === 0) return;
+  const { error, count } = await db.from('entity_tags').delete({ count: 'exact' })
+    .eq('tag_id', tagId).eq('entity_type', entityType).in('entity_id', ids);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast(`Tag entfernt von ${count || ids.length} Einträgen.`);
+  invalidateTagsCache();
+}
+
+async function bulkSetProductLieferant() {
+  const lfVal = document.getElementById('products-bulk-lieferant').value;
+  if (!lfVal) { showToast('Bitte einen Lieferanten wählen.', true); return; }
+  const ids = [..._bulkSelected.product];
+  if (ids.length === 0) return;
+  const lieferantId = lfVal === '__clear__' ? null : lfVal;
+  const { error, count } = await db.from('products').update({ lieferant_id: lieferantId }, { count: 'exact' })
+    .in('id', ids);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast(`Lieferant ${lieferantId ? 'gesetzt' : 'entfernt'} bei ${count || ids.length} Produkten.`);
+  await loadProductsAndLieferanten();
+  filterProducts();
+  clearBulkSelection('product');
+}
+
+function _removeMergedProductGroupFromUI(masterId, dupIds) {
+  const removeAt = _productDublettenGroups.findIndex(g =>
+    g.items.some(p => p.id === masterId) && dupIds.every(d => g.items.some(p => p.id === d))
+  );
+  if (removeAt < 0) return;
+  _productDublettenGroups.splice(removeAt, 1);
+  const wrap = document.getElementById('dubletten-products');
+  if (!wrap) return;
+  if (_productDublettenGroups.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Alle Produkt-Dubletten aufgeräumt.</div>';
+    return;
+  }
+  const blocks = wrap.querySelectorAll('.dublette-group');
+  if (blocks[removeAt]) blocks[removeAt].remove();
+}
+
 function _removeMergedGroupFromUI(masterId, dupIds) {
   // Finde die Gruppe, die diese Dubletten enthält
   const removeAt = _dublettenGroups.findIndex(g =>
@@ -20591,6 +20912,8 @@ async function loadProductsPage() {
   await loadProductsAndLieferanten();
   populateProductsKategorieFilter();
   populateProductsLieferantFilter();
+  _populateBulkLieferantDropdown();   // v2.7.1
+  clearBulkSelection('product');
   filterProducts();
 }
 
@@ -20650,7 +20973,7 @@ function renderProductsTable(products) {
   if (!tbody) return;
   countEl.textContent = `${products.length} Produkt${products.length === 1 ? '' : 'e'}`;
   if (products.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Keine Produkte. Klicke oben auf „+ Neues Produkt".</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Keine Produkte. Klicke oben auf „+ Neues Produkt".</div></td></tr>';
     return;
   }
   tbody.innerHTML = products.map(p => {
@@ -20659,8 +20982,10 @@ function renderProductsTable(products) {
     const marge = vk - ek;
     const margePct = ek > 0 ? Math.round((marge / ek) * 100) : (vk > 0 ? 100 : 0);
     const margeColor = marge > 0 ? 'var(--success)' : marge < 0 ? 'var(--danger)' : 'var(--muted)';
+    const checked = _bulkSelected.product.has(p.id) ? 'checked' : '';
     return `
       <tr style="${p.ist_aktiv ? '' : 'opacity:0.55'}">
+        <td class="col-bulk"><input type="checkbox" ${checked} onchange="bulkToggleRow('product','${esc(p.id)}',this.checked)"></td>
         <td><span class="cell-link" onclick="openProductModal('edit','${esc(p.id)}')">${esc(p.name)}</span>${p.ist_aktiv ? '' : ' <span style="font-size:10px;color:var(--muted);font-style:italic">(inaktiv)</span>'}</td>
         <td class="col-tablet">${esc(p.artikelnummer || '—')}</td>
         <td class="col-tablet">${p.kategorie ? `<span class="badge" style="background:#eef2ff;color:#4338ca">${esc(p.kategorie)}</span>` : '—'}</td>

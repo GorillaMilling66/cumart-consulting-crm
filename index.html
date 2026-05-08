@@ -584,6 +584,17 @@
         <div class="tag-filter-row" id="companies-tag-filter" data-entity="company"></div>
       </div>
 
+      <!-- v2.7.1: Bulk-Edit-Toolbar (versteckt bis Auswahl > 0) -->
+      <div class="bulk-toolbar" id="companies-bulk-toolbar" style="display:none">
+        <span class="bulk-toolbar-label" id="companies-bulk-count">0 ausgewählt</span>
+        <select id="companies-bulk-tag">
+          <option value="">— Tag wählen —</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="bulkAddTag('company')">Tag setzen</button>
+        <button class="btn btn-sm" onclick="bulkRemoveTag('company')">Tag entfernen</button>
+        <button class="btn btn-sm" onclick="clearBulkSelection('company')">Auswahl aufheben</button>
+      </div>
+
       <div class="card">
         <div class="card-title">
           <span id="companies-count">Firmen</span>
@@ -592,6 +603,7 @@
           <table>
             <thead>
               <tr>
+                <th class="col-bulk"><input type="checkbox" id="companies-select-all" onchange="bulkToggleAll('company', this.checked)" title="Alle auswählen"></th>
                 <th>Name</th>
                 <th>Typ</th>
                 <th class="col-tablet">Ort</th>
@@ -602,7 +614,7 @@
               </tr>
             </thead>
             <tbody id="companies-table-body">
-              <tr><td colspan="7"><div class="empty">Lade Firmen ...</div></td></tr>
+              <tr><td colspan="8"><div class="empty">Lade Firmen ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -2165,11 +2177,22 @@
           </label>
         </div>
       </div>
+      <!-- v2.7.1: Bulk-Edit-Toolbar Produkte -->
+      <div class="bulk-toolbar" id="products-bulk-toolbar" style="display:none">
+        <span class="bulk-toolbar-label" id="products-bulk-count">0 ausgewählt</span>
+        <select id="products-bulk-lieferant">
+          <option value="">— Lieferant wählen —</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Lieferant setzen</button>
+        <button class="btn btn-sm" onclick="clearBulkSelection('product')">Auswahl aufheben</button>
+      </div>
+
       <div class="card">
         <div class="card-title"><span id="products-count">Produkte</span></div>
         <div class="table-wrap">
           <table>
             <thead><tr>
+              <th class="col-bulk"><input type="checkbox" id="products-select-all" onchange="bulkToggleAll('product', this.checked)" title="Alle auswählen"></th>
               <th>Name</th>
               <th class="col-tablet">Artikelnr.</th>
               <th class="col-tablet">Kategorie</th>
@@ -2180,7 +2203,7 @@
               <th class="col-action"></th>
             </tr></thead>
             <tbody id="products-table-body">
-              <tr><td colspan="8"><div class="empty">Lade Produkte …</div></td></tr>
+              <tr><td colspan="9"><div class="empty">Lade Produkte …</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -2264,7 +2287,7 @@
         <button class="btn" onclick="loadDublettenPage()">Neu prüfen</button>
       </div>
       <p style="font-size:13px;color:var(--muted);margin-bottom:16px;max-width:720px">
-        Findet Datensätze, die wahrscheinlich Dubletten sind. <strong>Firmen</strong> per normalisiertem Namen (Rechtsformen wie GmbH/AG werden ignoriert). <strong>Kontakte</strong> per Name + E-Mail (gleicher Name allein reicht nicht — z.&nbsp;B. „Thomas Müller" wäre sonst überall doppelt).
+        Findet Datensätze, die wahrscheinlich Dubletten sind. <strong>Firmen</strong> per normalisiertem Namen (Rechtsformen wie GmbH/AG werden ignoriert). <strong>Kontakte</strong> per Name + E-Mail (gleicher Name allein reicht nicht — z.&nbsp;B. „Thomas Müller" wäre sonst überall doppelt). <strong>Produkte</strong> per gleicher Artikelnummer ODER gleichem Namen.
       </p>
       <h2 style="font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 12px">Firmen</h2>
       <div id="dubletten-content">
@@ -2272,6 +2295,10 @@
       </div>
       <h2 style="font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:24px 0 12px">Kontakte</h2>
       <div id="dubletten-contacts">
+        <div class="info-card-empty">Lade …</div>
+      </div>
+      <h2 style="font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:24px 0 12px">Produkte</h2>
+      <div id="dubletten-products">
         <div class="info-card-empty">Lade …</div>
       </div>
     </div>

@@ -6975,3 +6975,27 @@ select.typ-select-secondary {
 .dublette-group-actions {
   margin-top: 10px; display: flex; justify-content: flex-end;
 }
+
+/* v2.7.1: Bulk-Edit-Toolbar + Checkbox-Spalte */
+.col-bulk { width: 36px; padding-left: 12px !important; }
+.col-bulk input[type="checkbox"] { cursor: pointer; }
+.bulk-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--primary, #1e40af);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  position: sticky; top: 0; z-index: 5;
+}
+.bulk-toolbar-label {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  padding-right: 8px; border-right: 0.5px solid var(--border);
+}
+.bulk-toolbar select {
+  padding: 5px 8px; font-size: 12px;
+  border: 0.5px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); font-family: inherit;
+  min-width: 180px;
+}
