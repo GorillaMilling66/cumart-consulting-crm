@@ -1,5 +1,22 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.3 (Listen-Tab-Counts stabil + Merge-Reload schnell).
+   - Tab-Counter (Firmen · 247) zeigte beim Klick die gefilterte
+     Anzahl ("Firmen · 2"), weil renderXTable nach jeder
+     Filterung setListenTabCount mit `shown` aufrief und damit den
+     Total-Wert von loadAllListenTabCounts (v2.3.2) überschrieb.
+     Fix: setListenTabCount-Calls in renderCompaniesTable/Contacts/
+     Appointments/Projects/Deployments/Tasks entfernt — der Tab
+     zeigt jetzt immer das Total. Die gefilterte Anzahl steht
+     weiter prominent im Card-Title (z.B. "2 von 247 Firmen").
+   - Listen-Tab-CSS: feste min-width:110px, konstantes Font-Weight
+     500, Border immer reserviert — keine Layout-Shifts mehr beim
+     Tab-Wechsel.
+   - Merge-Reload: nach dem Zusammenführen wurde loadDublettenPage()
+     komplett neu gerufen — das scannt alle Firmen + Counts neu
+     (~1-2 s). Jetzt wird stattdessen nur der DOM-Block der gemerg-
+     ten Gruppe entfernt + _dublettenGroups lokal aktualisiert.
+     Klick auf "Neu prüfen" macht weiterhin den vollen Scan.
    Version 2.6.2 (Merge-Performance — parallele Wellen statt
    sequenzieller Roundtrips). Vorher: pro Dublette ~15 sequenzielle
    DB-Calls (8 FK-Updates, 4 Tag/Pin-Reads, ~3 Tag/Pin-Updates,
@@ -7121,7 +7138,7 @@ function renderCompaniesTable(companies) {
   countEl.textContent = (shown === total)
     ? `${total} ${total === 1 ? 'Firma' : 'Firmen'}`
     : `${shown} von ${total} Firmen`;
-  setListenTabCount('companies', shown);
+  // v2.6.3: Tab-Count nicht mehr mit shown-Zahl überschreiben — er zeigt Total
 
   if (shown === 0) {
     const msg = total === 0
@@ -7721,7 +7738,7 @@ function renderContactsTable(contacts) {
   countEl.textContent = (shown === total)
     ? `${total} Kontakt${total === 1 ? '' : 'e'}`
     : `${shown} von ${total} Kontakten`;
-  setListenTabCount('contacts', shown);
+  // v2.6.3: Tab-Count zeigt Total, nicht shown
 
   if (shown === 0) {
     const msg = total === 0
@@ -8018,7 +8035,7 @@ function renderAppointmentsTable(appointments) {
   countEl.textContent = (shown === total)
     ? `${total} Termin${total === 1 ? '' : 'e'}`
     : `${shown} von ${total} Terminen`;
-  setListenTabCount('appointments', shown);
+  // v2.6.3: Tab-Count zeigt Total, nicht shown
 
   if (shown === 0) {
     const msg = total === 0
@@ -8691,7 +8708,7 @@ function renderProjectsTable(projects) {
   countEl.textContent = (shown === total)
     ? `${total} Projekt${total === 1 ? '' : 'e'}`
     : `${shown} von ${total} Projekten`;
-  setListenTabCount('projects', shown);
+  // v2.6.3: Tab-Count zeigt Total, nicht shown
 
   if (shown === 0) {
     const msg = total === 0
@@ -9953,7 +9970,7 @@ function renderDeploymentsTable(deployments) {
   countEl.textContent = (shown === total)
     ? `${total} Einsatz${total === 1 ? '' : '̈e'}`.replace('tz̈e', 'tze')
     : `${shown} von ${total} Einsätzen`;
-  setListenTabCount('deployments', shown);
+  // v2.6.3: Tab-Count zeigt Total, nicht shown
   // Hinweis zum Umsatz aktiver Einsätze
   const umsatzAktiv = deployments
     .filter(d => ['Durchgeführt', 'Abgerechnet'].includes(d.status) && !d.project_id)
@@ -17176,7 +17193,7 @@ async function renderTasksTable(tasks) {
   countEl.textContent = (shown === total)
     ? `${total} Aufgabe${total === 1 ? '' : 'n'}`
     : `${shown} von ${total} Aufgaben`;
-  setListenTabCount('tasks', shown);
+  // v2.6.3: Tab-Count zeigt Total, nicht shown
 
   if (shown === 0) {
     const msg = total === 0
@@ -20233,7 +20250,30 @@ async function confirmMerge() {
     showToast(`Zusammengeführt: ${dupIds.length} Dublette${dupIds.length === 1 ? '' : 'n'} → 1 Master.`);
   }
   invalidateTagsCache();
-  await loadDublettenPage();
+  // v2.6.3: kein Full-Reload aller 247 Firmen + Counts. Stattdessen
+  // die fertige Gruppe lokal aus dem State entfernen und das Block-DOM rauszupfen.
+  // Erst nach Klick auf "Neu prüfen" wird komplett neu gescannt.
+  _removeMergedGroupFromUI(masterId, dupIds);
+}
+
+function _removeMergedGroupFromUI(masterId, dupIds) {
+  // Finde die Gruppe, die diese Dubletten enthält
+  const removeAt = _dublettenGroups.findIndex(g =>
+    g.items.some(c => c.id === masterId) && dupIds.every(d => g.items.some(c => c.id === d))
+  );
+  if (removeAt < 0) return;
+  _dublettenGroups.splice(removeAt, 1);
+
+  // Wenn keine Gruppen mehr: leerer Zustand
+  const wrap = document.getElementById('dubletten-content');
+  if (!wrap) return;
+  if (_dublettenGroups.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Alle Dubletten aufgeräumt — saubere Sache. Klicke „Neu prüfen", falls du es nochmal scannen willst.</div>';
+    return;
+  }
+  // Sonst: das Group-Block-Element der gemergten Gruppe entfernen (es ist das removeAt-te Kind)
+  const blocks = wrap.querySelectorAll('.dublette-group');
+  if (blocks[removeAt]) blocks[removeAt].remove();
 }
 
 // ═══════════════════════════════════════════════════════════

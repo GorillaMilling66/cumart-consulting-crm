@@ -484,22 +484,23 @@ body {
 .listen-tab {
   display: inline-flex; align-items: baseline; gap: 6px;
   padding: 6px 14px;
-  border: none;
+  border: 0.5px solid transparent;          /* v2.6.3: Border immer reservieren — kein Layout-Shift bei active */
   background: transparent;
   font-family: inherit;
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 500;                          /* v2.6.3: konstantes Gewicht — kein Wackeln zw. inactive/active */
   color: var(--muted);
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: background .12s, color .12s;
+  min-width: 110px;                          /* v2.6.3: feste Mindestbreite — Counter springt nicht mehr */
+  justify-content: center;
 }
 .listen-tab:hover { background: var(--bg-soft); color: var(--text); }
 .listen-tab.active {
   background: var(--surface);
   color: var(--text);
-  font-weight: 500;
-  border: 0.5px solid var(--border);
+  border-color: var(--border);
 }
 .listen-tab-count {
   font-size: 12px;
