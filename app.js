@@ -1,5 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.2 (Merge-Performance — parallele Wellen statt
+   sequenzieller Roundtrips). Vorher: pro Dublette ~15 sequenzielle
+   DB-Calls (8 FK-Updates, 4 Tag/Pin-Reads, ~3 Tag/Pin-Updates,
+   1 Soft-Delete) → ~2 s pro Dublette. Jetzt zwei parallele Wellen:
+   Welle 1 = alle FK-Updates + Tag/Pin-Reads gleichzeitig; Welle 2 =
+   Tag/Pin-Resolve-Updates + Soft-Delete gleichzeitig. Geschätzter
+   Gewinn: ~10x schneller (~200-300 ms pro Dublette).
    Version 2.6.1 (Dubletten-Aufräumen + CSV-Import für Produkte).
    - Dubletten-Page (#/dubletten): findet Firmen mit identischem
      normalisiertem Namen (Lowercase + getrimmt + Rechtsform-Suffixe
@@ -20163,58 +20170,59 @@ async function confirmMerge() {
   let totalMoved = 0;
   const errors = [];
 
+  // v2.6.2: Pro Dublette zwei Wellen statt 15 sequenzielle Roundtrips —
+  // alle FK-Updates + Tag/Pin-Reads parallel; danach Tag/Pin-Resolve + Soft-Delete parallel.
+  const fkSpec = [
+    { table: 'contacts',     col: 'company_id' },
+    { table: 'appointments', col: 'company_id' },
+    { table: 'projects',     col: 'company_id' },
+    { table: 'deployments',  col: 'company_id' },
+    { table: 'tasks',        col: 'company_id' },
+    { table: 'notes',        col: 'company_id' },
+    { table: 'memberships',  col: 'company_id' },
+    { table: 'products',     col: 'lieferant_id' }
+  ];
+
   for (const dupId of dupIds) {
-    // FKs umbiegen — companies-Spalten in den abhängigen Tabellen
-    const fkUpdates = [
-      { table: 'contacts',     col: 'company_id' },
-      { table: 'appointments', col: 'company_id' },
-      { table: 'projects',     col: 'company_id' },
-      { table: 'deployments',  col: 'company_id' },
-      { table: 'tasks',        col: 'company_id' },
-      { table: 'notes',        col: 'company_id' },
-      { table: 'memberships',  col: 'company_id' },
-      { table: 'products',     col: 'lieferant_id' }
-    ];
-    for (const { table, col } of fkUpdates) {
-      const { error } = await db.from(table).update({ [col]: masterId }).eq(col, dupId);
-      if (error) errors.push({ table, msg: error.message });
+    // Welle 1: alle FK-Updates + Tag/Pin-Reads parallel
+    const fkPromises = fkSpec.map(({ table, col }) =>
+      db.from(table).update({ [col]: masterId }).eq(col, dupId)
+        .then(res => ({ table, col, error: res.error }))
+    );
+    const [fkResults, dupTagsRes, masterTagsRes, dupPinsRes, masterPinsRes] = await Promise.all([
+      Promise.all(fkPromises),
+      db.from('entity_tags').select('id, tag_id').eq('entity_type', 'company').eq('entity_id', dupId),
+      db.from('entity_tags').select('tag_id').eq('entity_type', 'company').eq('entity_id', masterId),
+      db.from('pins').select('id, user_id').eq('entity_type', 'company').eq('entity_id', dupId),
+      db.from('pins').select('user_id').eq('entity_type', 'company').eq('entity_id', masterId)
+    ]);
+    fkResults.forEach(r => {
+      if (r.error) errors.push({ table: r.table, msg: r.error.message });
       else totalMoved++;
-    }
+    });
 
-    // entity_tags: kann UNIQUE-Konflikt geben (master + dup haben gleichen Tag)
-    // → erst Tags der Dublette holen, die der Master noch nicht hat → updaten
-    // → übrige Dublikat-Tags löschen
-    const { data: dupTags } = await db.from('entity_tags').select('id, tag_id')
-      .eq('entity_type', 'company').eq('entity_id', dupId);
-    const { data: masterTags } = await db.from('entity_tags').select('tag_id')
-      .eq('entity_type', 'company').eq('entity_id', masterId);
-    const masterTagSet = new Set((masterTags || []).map(t => t.tag_id));
-    for (const dt of (dupTags || [])) {
-      if (masterTagSet.has(dt.tag_id)) {
-        await db.from('entity_tags').delete().eq('id', dt.id);
-      } else {
-        await db.from('entity_tags').update({ entity_id: masterId }).eq('id', dt.id);
-      }
-    }
+    // Tag/Pin-Konflikte aufräumen — bei Master-Match: DELETE statt UPDATE.
+    const masterTagSet  = new Set((masterTagsRes.data  || []).map(t => t.tag_id));
+    const masterPinUsrs = new Set((masterPinsRes.data || []).map(p => p.user_id));
+    const tagOps = (dupTagsRes.data || []).map(dt =>
+      masterTagSet.has(dt.tag_id)
+        ? db.from('entity_tags').delete().eq('id', dt.id)
+        : db.from('entity_tags').update({ entity_id: masterId }).eq('id', dt.id)
+    );
+    const pinOps = (dupPinsRes.data || []).map(dp =>
+      masterPinUsrs.has(dp.user_id)
+        ? db.from('pins').delete().eq('id', dp.id)
+        : db.from('pins').update({ entity_id: masterId }).eq('id', dp.id)
+    );
 
-    // pins analog (UNIQUE pro user_id, entity_type, entity_id)
-    const { data: dupPins } = await db.from('pins').select('id, user_id')
-      .eq('entity_type', 'company').eq('entity_id', dupId);
-    const { data: masterPins } = await db.from('pins').select('user_id')
-      .eq('entity_type', 'company').eq('entity_id', masterId);
-    const masterPinUsers = new Set((masterPins || []).map(p => p.user_id));
-    for (const dp of (dupPins || [])) {
-      if (masterPinUsers.has(dp.user_id)) {
-        await db.from('pins').delete().eq('id', dp.id);
-      } else {
-        await db.from('pins').update({ entity_id: masterId }).eq('id', dp.id);
-      }
-    }
-
-    // Dublikat soft-deleten
-    const { error: delErr } = await db.from('companies')
-      .update({ deleted_at: new Date().toISOString() }).eq('id', dupId);
-    if (delErr) errors.push({ table: 'companies (soft-delete)', msg: delErr.message });
+    // Welle 2: Tag/Pin-Resolve + Soft-Delete parallel
+    const finalResults = await Promise.all([
+      ...tagOps,
+      ...pinOps,
+      db.from('companies').update({ deleted_at: new Date().toISOString() }).eq('id', dupId)
+    ]);
+    const softDeleteRes = finalResults[finalResults.length - 1];
+    if (softDeleteRes?.error) errors.push({ table: 'companies (soft-delete)', msg: softDeleteRes.error.message });
   }
 
   closeMergeModal();
