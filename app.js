@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.4.3 (CSV-Auto-Encoding: Mac-Roman vs. Win-1252).
+   Auto-Detection wählte bisher pauschal Windows-1252 als Fallback,
+   wenn UTF-8 fehlschlug. Bei Mac-Roman-Dateien (Excel-Mac-Export)
+   ergaben sich kuriose Zeichen: 0x8A=Š statt ä, 0x9F=Ÿ statt ü,
+   0xA7=§ statt ß. Neue Heuristik zählt typische deutsche Umlaut-
+   Bytes für beide Encodings und wählt das Set mit der höheren
+   Übereinstimmung. Dadurch wird Mac-Roman jetzt automatisch
+   erkannt; manueller Override im Dropdown bleibt für Sonderfälle.
    Version 2.4.2 (CSV-Import — Mac-Newlines + Mac-Roman). Zwei
    Bugs bei Excel-Mac-Exporten:
    - Mac-Classic-Newline (nur `\r`, kein `\n`): mein Parser
@@ -19186,22 +19194,32 @@ function resetImportPage() {
   const typeSel = document.getElementById('import-type'); if (typeSel) typeSel.value = 'company';
 }
 
-// v2.4.1: Encoding-Erkennung. Reihenfolge: BOM-Check → UTF-8 versuchen
-// (mit fatal:false; wenn Replacement-Chars '�' häufig auftauchen,
-// ist es wahrscheinlich Windows-1252) → Windows-1252 als Fallback.
-// Excel speichert "CSV (kommagetrennt)" auf deutschen Systemen meistens
-// als Windows-1252 — daher dieser Fallback essentiell für Umlaute.
+// v2.4.1: Encoding-Erkennung. Reihenfolge: BOM-Check → UTF-8 versuchen →
+// Heuristik Win-1252 vs. Mac-Roman anhand typischer deutscher Umlaut-Bytes.
+// v2.4.3: Mac-Roman-Heuristik ergänzt — Excel-Mac speichert CSV oft so,
+// und Win-1252 als Fallback war zu pauschal: ä in Mac-Roman ist 0x8A
+// (in Win-1252 = Š), ü ist 0x9F (Ÿ), ß ist 0xA7 (§).
+const _DE_UMLAUT_BYTES_WIN1252 = new Set([0xE4, 0xF6, 0xFC, 0xDF, 0xC4, 0xD6, 0xDC]);
+const _DE_UMLAUT_BYTES_MACROMAN = new Set([0x8A, 0x9A, 0x9F, 0xA7, 0x80, 0x85, 0x86]);
+
 function _detectEncoding(bytes) {
   if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return 'utf-8';
   if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) return 'utf-16le';
   if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) return 'utf-16be';
   // Probe als UTF-8 — wenn das Replacement-Char (U+FFFD) auftaucht,
-  // war's wahrscheinlich Windows-1252 (deutsche Umlaute liegen dort
-  // bei 0xE4/0xF6/0xFC/0xDF — UTF-8 erwartet 0xC3 davor).
+  // war's keine UTF-8.
   try {
     const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
     if (utf8.indexOf('�') === -1) return 'utf-8';
   } catch {}
+  // Heuristik: zähle typische deutsche Umlaut-Bytes für beide Encodings.
+  // Wer mehr hat, wird gewählt. Bei Gleichstand: Win-1252 (häufiger).
+  let win = 0, mac = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (_DE_UMLAUT_BYTES_WIN1252.has(bytes[i])) win++;
+    else if (_DE_UMLAUT_BYTES_MACROMAN.has(bytes[i])) mac++;
+  }
+  if (mac > win) return 'macintosh';
   return 'windows-1252';
 }
 
