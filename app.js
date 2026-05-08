@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.0 (Produkte + Lieferantenmanagement — Phase 1).
+   - Migration v2.6.0: companies.ist_lieferant boolean DEFAULT false
+     + neue Tabelle products (id, name, beschreibung, artikelnummer,
+     hersteller_artikelnr, einheit, einkaufspreis, verkaufspreis,
+     kategorie, lieferant_id FK companies SET NULL, notizen,
+     ist_aktiv, erstellt_von, created_at, deleted_at). RLS-Pattern
+     wie sonst, Indexe auf name/lieferant_id/kategorie.
+   - Firma-Modal: neue Checkbox „Auch als Lieferant" — eine Firma
+     kann gleichzeitig Kunde und Lieferant sein.
+   - Firmen-Liste: zusätzlicher Filter-Toggle „Nur Lieferanten".
+   - Settings → Produkte (#/produkte): CRUD-Page mit Filter (Suche,
+     Kategorie, Lieferant, „Nur aktive"), Tabelle mit Marge-Anzeige
+     (EK/VK/Marge in € und %).
+   - Produkt-Modal: Lieferant-Dropdown listet nur companies mit
+     ist_lieferant=true, Kategorie-Datalist mit Vorschlägen aus
+     existing Bestand.
+   Phase 2 folgt: product_sales (Verkaufspositionen), Marge im
+   Projekt-Wirtschaftlichkeit-Tab. Phase 3: CSV-Import für Produkte.
    Version 2.5.1 (Tags — Phase 2: Filter in den Listen).
    Tag-Filter-Zeile unter den vorhandenen Filtern in den drei
    Listen Firmen / Kontakte / Projekte. Pillen pro Tag, Toggle
@@ -2782,6 +2800,7 @@ function showPage(name) {
   if (name === 'programs') loadPrograms();
   if (name === 'templates') loadTemplates();
   if (name === 'tags') loadTagsPage?.();
+  if (name === 'products') loadProductsPage?.();
   if (name === 'import') resetImportPage?.();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
@@ -3988,7 +4007,7 @@ function setListenTabCount(page, count) {
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
-const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','import'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
   const settingsBar = document.getElementById('einstellungen-tab-bar');
@@ -4157,6 +4176,8 @@ function navigateTo(page, param) {
     hash = '#/templates';
   } else if (page === 'tags') {
     hash = '#/tags';
+  } else if (page === 'products') {
+    hash = '#/produkte';
   } else if (page === 'import') {
     hash = '#/import';
   } else if (page === 'briefing') {
@@ -4307,6 +4328,7 @@ function handleHashChange() {
   if (hash === '#/programme')  { showPage('programs'); return; }
   if (hash === '#/templates')  { showPage('templates'); return; }
   if (hash === '#/tags')       { showPage('tags'); return; }
+  if (hash === '#/produkte')   { showPage('products'); return; }
   if (hash === '#/import')     { showPage('import'); return; }
   // v2.0.0 — Drei-Bereiche-Architektur
   if (hash === '#/briefing')      { showPage('briefing');      return; }
@@ -7017,10 +7039,12 @@ async function filterCompanies() {
   const searchTerm = document.getElementById('companies-search').value.trim().toLowerCase();
   const typFilter  = document.getElementById('companies-typ-filter').value;
   const incompleteFilter = document.getElementById('companies-incomplete-filter')?.checked;
+  const lieferantFilter = document.getElementById('companies-lieferant-filter')?.checked;
 
   let filtered = companiesCache;
   if (typFilter) filtered = filtered.filter(c => c.typ_id === typFilter);
   if (incompleteFilter) filtered = filtered.filter(isCompanyIncomplete);
+  if (lieferantFilter) filtered = filtered.filter(c => c.ist_lieferant === true);
   if (searchTerm) {
     filtered = filtered.filter(c => {
       const haystack = [c.name, c.stadt, c.plz, c.email, c.telefon, c.branche, c.strasse, c.website]
@@ -7127,6 +7151,7 @@ async function openCompanyModal(mode, companyId = null) {
   document.getElementById('c-email').value = '';
   document.getElementById('c-website').value = '';
   document.getElementById('c-notizen').value = '';
+  const lf = document.getElementById('c-ist-lieferant'); if (lf) lf.checked = false;
 
   if (mode === 'new') {
     document.getElementById('modal-company-title').textContent = 'Neue Firma';
@@ -7152,6 +7177,8 @@ async function openCompanyModal(mode, companyId = null) {
     document.getElementById('c-website').value = data.website || '';
     document.getElementById('c-notizen').value = data.notizen || '';
     if (data.typ_id) typSelect.value = data.typ_id;
+    const lfEl = document.getElementById('c-ist-lieferant');
+    if (lfEl) lfEl.checked = !!data.ist_lieferant;
   }
 
   setupCompanyPreviewListeners();  // v1.38
@@ -7177,6 +7204,7 @@ async function saveCompany() {
   const email    = document.getElementById('c-email').value.trim();
   const website  = document.getElementById('c-website').value.trim();
   const notizen  = document.getElementById('c-notizen').value.trim();
+  const ist_lieferant = document.getElementById('c-ist-lieferant')?.checked || false;  // v2.6.0
   const btn      = document.getElementById('c-save-btn');
 
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
@@ -7196,7 +7224,8 @@ async function saveCompany() {
       strasse: strasse || null, plz: plz || null,
       stadt: stadt || null, land: land || 'Deutschland',
       telefon: telefon || null, email: email || null,
-      website: website || null, notizen: notizen || null
+      website: website || null, notizen: notizen || null,
+      ist_lieferant  // v2.6.0
     };
     if (!editingCompanyId) payload.erstellt_von = currentUser?.id || null;
 
@@ -19915,6 +19944,200 @@ async function removeTagFromEntity(tagId, entityType, entityId, containerId) {
 // Modal-Closer-Map erweitern
 if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
+  MODAL_CLOSERS['modal-product'] = () => closeProductModal();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.6.0 — PRODUKTE (Hardware-Katalog: Spannmittel, Halter, Werkzeuge)
+// ═══════════════════════════════════════════════════════════
+
+let _productsCache = [];
+let _editingProductId = null;
+
+async function loadProductsPage() {
+  await loadProductsAndLieferanten();
+  populateProductsKategorieFilter();
+  populateProductsLieferantFilter();
+  filterProducts();
+}
+
+async function loadProductsAndLieferanten() {
+  // Produkte
+  const { data: prods } = await db.from('products')
+    .select('*, lieferant:companies!products_lieferant_id_fkey(id, name)')
+    .is('deleted_at', null).order('name');
+  _productsCache = prods || [];
+
+  // Lieferanten in companiesCache nachziehen, falls nicht da
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+    companiesCache = cs || [];
+  }
+}
+
+function populateProductsKategorieFilter() {
+  const sel = document.getElementById('products-kategorie-filter');
+  if (!sel) return;
+  const kategorien = [...new Set(_productsCache.map(p => p.kategorie).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Alle Kategorien</option>'
+    + kategorien.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+}
+
+function populateProductsLieferantFilter() {
+  const sel = document.getElementById('products-lieferant-filter');
+  if (!sel) return;
+  const lieferanten = companiesCache.filter(c => c.ist_lieferant);
+  sel.innerHTML = '<option value="">Alle Lieferanten</option>'
+    + lieferanten.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+}
+
+function filterProducts() {
+  const search = document.getElementById('products-search')?.value.trim().toLowerCase() || '';
+  const kategorie = document.getElementById('products-kategorie-filter')?.value || '';
+  const lieferantId = document.getElementById('products-lieferant-filter')?.value || '';
+  const onlyAktiv = document.getElementById('products-aktiv-filter')?.checked;
+
+  let list = _productsCache;
+  if (kategorie) list = list.filter(p => p.kategorie === kategorie);
+  if (lieferantId) list = list.filter(p => p.lieferant_id === lieferantId);
+  if (onlyAktiv) list = list.filter(p => p.ist_aktiv);
+  if (search) {
+    list = list.filter(p => {
+      const haystack = [p.name, p.beschreibung, p.artikelnummer, p.hersteller_artikelnr, p.kategorie, p.lieferant?.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(search);
+    });
+  }
+  renderProductsTable(list);
+}
+
+function renderProductsTable(products) {
+  const tbody = document.getElementById('products-table-body');
+  const countEl = document.getElementById('products-count');
+  if (!tbody) return;
+  countEl.textContent = `${products.length} Produkt${products.length === 1 ? '' : 'e'}`;
+  if (products.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Keine Produkte. Klicke oben auf „+ Neues Produkt".</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = products.map(p => {
+    const ek = Number(p.einkaufspreis) || 0;
+    const vk = Number(p.verkaufspreis) || 0;
+    const marge = vk - ek;
+    const margePct = ek > 0 ? Math.round((marge / ek) * 100) : (vk > 0 ? 100 : 0);
+    const margeColor = marge > 0 ? 'var(--success)' : marge < 0 ? 'var(--danger)' : 'var(--muted)';
+    return `
+      <tr style="${p.ist_aktiv ? '' : 'opacity:0.55'}">
+        <td><span class="cell-link" onclick="openProductModal('edit','${esc(p.id)}')">${esc(p.name)}</span>${p.ist_aktiv ? '' : ' <span style="font-size:10px;color:var(--muted);font-style:italic">(inaktiv)</span>'}</td>
+        <td class="col-tablet">${esc(p.artikelnummer || '—')}</td>
+        <td class="col-tablet">${p.kategorie ? `<span class="badge" style="background:#eef2ff;color:#4338ca">${esc(p.kategorie)}</span>` : '—'}</td>
+        <td class="col-desktop">${p.lieferant ? `<span class="cell-link" onclick="navigateTo('firma','${esc(p.lieferant.id)}')">${esc(p.lieferant.name)}</span>` : '<span class="muted">—</span>'}</td>
+        <td>${esc(formatPreis(ek))}</td>
+        <td>${esc(formatPreis(vk))}</td>
+        <td style="color:${margeColor};font-weight:500">${esc(formatPreis(marge))} <span style="font-size:11px;color:var(--muted)">(${margePct >= 0 ? '+' : ''}${margePct}%)</span></td>
+        <td class="col-action">
+          <button class="btn btn-sm" onclick="openProductModal('edit','${esc(p.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function openProductModal(mode, productId = null) {
+  _editingProductId = mode === 'edit' ? productId : null;
+  document.getElementById('product-modal-title').textContent = mode === 'edit' ? 'Produkt bearbeiten' : 'Neues Produkt';
+  document.getElementById('pr-delete-btn').style.display = mode === 'edit' ? '' : 'none';
+
+  // Felder leeren
+  ['pr-name','pr-artikelnummer','pr-hersteller-artikelnr','pr-kategorie','pr-beschreibung','pr-notizen']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('pr-einheit').value = 'Stk';
+  document.getElementById('pr-einkaufspreis').value = '0';
+  document.getElementById('pr-verkaufspreis').value = '0';
+  document.getElementById('pr-ist-aktiv').checked = true;
+
+  // Lieferanten-Dropdown füllen (nur companies mit ist_lieferant=true)
+  if (companiesCache.length === 0) {
+    const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+    companiesCache = cs || [];
+  }
+  const lieferanten = companiesCache.filter(c => c.ist_lieferant);
+  const lfSel = document.getElementById('pr-lieferant');
+  lfSel.innerHTML = '<option value="">— Kein Lieferant —</option>'
+    + lieferanten.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+
+  // Kategorien-Vorschläge aus existierendem Bestand
+  if (_productsCache.length === 0) await loadProductsAndLieferanten();
+  const kategorien = [...new Set(_productsCache.map(p => p.kategorie).filter(Boolean))].sort();
+  document.getElementById('pr-kategorie-list').innerHTML = kategorien.map(k => `<option value="${esc(k)}">`).join('');
+
+  if (mode === 'edit' && productId) {
+    const p = _productsCache.find(x => x.id === productId);
+    if (p) {
+      document.getElementById('pr-name').value = p.name || '';
+      document.getElementById('pr-artikelnummer').value = p.artikelnummer || '';
+      document.getElementById('pr-hersteller-artikelnr').value = p.hersteller_artikelnr || '';
+      document.getElementById('pr-kategorie').value = p.kategorie || '';
+      document.getElementById('pr-einheit').value = p.einheit || 'Stk';
+      document.getElementById('pr-einkaufspreis').value = p.einkaufspreis || 0;
+      document.getElementById('pr-verkaufspreis').value = p.verkaufspreis || 0;
+      document.getElementById('pr-beschreibung').value = p.beschreibung || '';
+      document.getElementById('pr-notizen').value = p.notizen || '';
+      document.getElementById('pr-ist-aktiv').checked = p.ist_aktiv !== false;
+      if (p.lieferant_id) lfSel.value = p.lieferant_id;
+    }
+  }
+
+  document.getElementById('modal-product').classList.add('open');
+  setTimeout(() => document.getElementById('pr-name')?.focus(), 100);
+}
+
+function closeProductModal() {
+  document.getElementById('modal-product').classList.remove('open');
+  _editingProductId = null;
+}
+
+async function saveProduct() {
+  const name = document.getElementById('pr-name').value.trim();
+  if (!name) { showToast('Name ist Pflicht.', true); return; }
+  const payload = {
+    name,
+    artikelnummer: document.getElementById('pr-artikelnummer').value.trim() || null,
+    hersteller_artikelnr: document.getElementById('pr-hersteller-artikelnr').value.trim() || null,
+    kategorie: document.getElementById('pr-kategorie').value.trim() || null,
+    einheit: document.getElementById('pr-einheit').value.trim() || 'Stk',
+    einkaufspreis: Number(document.getElementById('pr-einkaufspreis').value) || 0,
+    verkaufspreis: Number(document.getElementById('pr-verkaufspreis').value) || 0,
+    lieferant_id: document.getElementById('pr-lieferant').value || null,
+    beschreibung: document.getElementById('pr-beschreibung').value.trim() || null,
+    notizen: document.getElementById('pr-notizen').value.trim() || null,
+    ist_aktiv: document.getElementById('pr-ist-aktiv').checked
+  };
+  let res;
+  if (_editingProductId) {
+    res = await db.from('products').update(payload).eq('id', _editingProductId);
+  } else {
+    payload.erstellt_von = currentProfile?.id || null;
+    res = await db.from('products').insert(payload);
+  }
+  if (res.error) { showToast('Fehler: ' + res.error.message, true); return; }
+  closeProductModal();
+  showToast(_editingProductId ? 'Produkt aktualisiert.' : 'Produkt angelegt.');
+  await loadProductsAndLieferanten();
+  populateProductsKategorieFilter();
+  populateProductsLieferantFilter();
+  filterProducts();
+}
+
+async function deleteProduct() {
+  if (!_editingProductId) return;
+  const ok = await confirmDialog({ title: 'Produkt löschen?', message: 'Das Produkt wird in den Papierkorb verschoben (Soft-Delete).', okLabel: 'Löschen', isDanger: true });
+  if (!ok) return;
+  const { error } = await db.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', _editingProductId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  closeProductModal();
+  showToast('Produkt gelöscht.');
+  await loadProductsAndLieferanten();
+  filterProducts();
 }
 
 // ── v2.5.1: Tag-Filter in den Listen ─────────────────────────────────

@@ -354,6 +354,7 @@
       <button class="listen-tab" data-page="templates" onclick="navigateTo('templates')">Templates</button>
       <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
       <button class="listen-tab" data-page="tags"      onclick="navigateTo('tags')">Tags</button>
+      <button class="listen-tab" data-page="products"  onclick="navigateTo('products')">Produkte</button>
       <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
     </div>
 
@@ -572,6 +573,10 @@
           <label class="filter-toggle" style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" id="companies-incomplete-filter" onchange="filterCompanies()">
             <span>Nur unvollständige</span>
+          </label>
+          <label class="filter-toggle" style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="companies-lieferant-filter" onchange="filterCompanies()">
+            <span>Nur Lieferanten</span>
           </label>
         </div>
         <!-- v2.5.1: Tag-Filter -->
@@ -2127,6 +2132,130 @@
       </div>
     </div>
 
+    <!-- v2.6.0: SEITE: PRODUKTE — Hardware-Katalog (Spannmittel, Halter, Werkzeuge) -->
+    <div class="page" id="page-products">
+      <div class="page-header">
+        <h1 class="page-title">Produkte</h1>
+        <button class="btn btn-primary" onclick="openProductModal('new')">+ Neues Produkt</button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;max-width:720px">
+        Hardware-Katalog (Spannmittel, Halter, Werkzeuge). Einkaufs- und Verkaufspreis sind Standard-Werte;
+        beim konkreten Verkauf können sie pro Position übersteuert werden. Lieferant ist eine Firma mit
+        gesetztem „Lieferant"-Marker.
+      </p>
+      <div class="card" style="padding:14px 20px">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:200px;margin:0">
+            <input type="text" id="products-search" placeholder="Suche nach Name, Artikelnummer, Kategorie ..." oninput="filterProducts()">
+          </div>
+          <div class="form-group" style="min-width:160px;margin:0">
+            <select id="products-kategorie-filter" onchange="filterProducts()">
+              <option value="">Alle Kategorien</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:200px;margin:0">
+            <select id="products-lieferant-filter" onchange="filterProducts()">
+              <option value="">Alle Lieferanten</option>
+            </select>
+          </div>
+          <label class="filter-toggle" style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="products-aktiv-filter" checked onchange="filterProducts()">
+            <span>Nur aktive</span>
+          </label>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span id="products-count">Produkte</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Name</th>
+              <th class="col-tablet">Artikelnr.</th>
+              <th class="col-tablet">Kategorie</th>
+              <th class="col-desktop">Lieferant</th>
+              <th>EK</th>
+              <th>VK</th>
+              <th>Marge</th>
+              <th class="col-action"></th>
+            </tr></thead>
+            <tbody id="products-table-body">
+              <tr><td colspan="8"><div class="empty">Lade Produkte …</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.6.0: PRODUKT-MODAL -->
+    <div class="modal-overlay" id="modal-product" onclick="if(event.target===this)closeProductModal()">
+      <div class="modal" style="width:640px;max-height:88vh;overflow-y:auto">
+        <div class="modal-title" id="product-modal-title">Neues Produkt</div>
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" id="pr-name" placeholder="z.B. Schraubstock GS-100">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Artikelnummer (intern)</label>
+            <input type="text" id="pr-artikelnummer" placeholder="z.B. CC-SP-001">
+          </div>
+          <div class="form-group">
+            <label>Hersteller-Artikelnr.</label>
+            <input type="text" id="pr-hersteller-artikelnr" placeholder="z.B. 123456-78">
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Kategorie</label>
+            <input type="text" id="pr-kategorie" list="pr-kategorie-list" placeholder="z.B. Spannmittel, Halter, Werkzeug">
+            <datalist id="pr-kategorie-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Einheit</label>
+            <input type="text" id="pr-einheit" value="Stk" placeholder="Stk, m, kg, Set, ...">
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Einkaufspreis (EK) *</label>
+            <input type="number" id="pr-einkaufspreis" min="0" step="0.01" value="0">
+          </div>
+          <div class="form-group">
+            <label>Verkaufspreis (VK) *</label>
+            <input type="number" id="pr-verkaufspreis" min="0" step="0.01" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Lieferant</label>
+          <select id="pr-lieferant">
+            <option value="">— Kein Lieferant —</option>
+          </select>
+          <small class="field-hint" style="color:var(--muted)">Nur Firmen mit „Lieferant"-Marker werden gelistet.</small>
+        </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="pr-beschreibung" rows="2" placeholder="Was kann das Produkt? Wofür einsetzbar?"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Notizen</label>
+          <textarea id="pr-notizen" rows="2" placeholder="Interne Bemerkungen, Lieferzeit, …"></textarea>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="pr-ist-aktiv" checked>
+            <span>Aktiv (in Auswahl-Listen anzeigen)</span>
+          </label>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:space-between">
+          <button class="btn btn-danger" id="pr-delete-btn" onclick="deleteProduct()" style="display:none">Löschen</button>
+          <div>
+            <button class="btn" onclick="closeProductModal()">Abbrechen</button>
+            <button class="btn btn-primary" onclick="saveProduct()">Speichern</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- v2.4.0: SEITE: IMPORT — CSV/Excel-Daten in Firmen oder Kontakte einlesen -->
     <div class="page" id="page-import">
       <div class="page-header">
@@ -2589,6 +2718,12 @@
         <div class="form-group">
           <label>Website</label>
           <input type="text" id="c-website" placeholder="www.firma.de">
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="c-ist-lieferant">
+            <span>Auch als Lieferant — taucht im Produkt-Modal als auswählbarer Lieferant auf</span>
+          </label>
         </div>
       </section>
 
