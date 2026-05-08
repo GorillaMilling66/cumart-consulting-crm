@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.5 (CSV-Import: eine Spalte → mehrere Zielfelder).
+   Mapping-Struktur umgestellt von `Array<string|null>` auf
+   `Array<string[]>`. Im Mapping-UI hat jede CSV-Spalte ein primäres
+   Dropdown plus einen "+ weitere Zuordnung"-Button und je
+   weiterem Slot ein × zum Entfernen. Beim Insert iteriert die
+   Schleife über alle Slots — derselbe Wert landet in allen
+   gewählten Zielfeldern. Anwendung: z.B. Spalte „Id.-Nr." kann
+   gleichzeitig auf „Artikelnummer (intern)" UND „Hersteller-
+   Artikelnr." gemappt werden, wenn die CSV nur eine ID-Spalte
+   hat. Helpers: addImportMapping(colIdx), updateImportMapping
+   (colIdx, slotIdx, value), removeImportMapping(colIdx, slotIdx);
+   setImportMapping bleibt als legacy/single-Mode-Wrapper.
+   Required-Validierung sammelt Keys aus allen Slots.
    Version 2.6.4 (Kontakt-Dubletten + E-Mail-Match-Schutz). Auf
    der Dubletten-Seite jetzt auch eine Sektion "Kontakte". Match-
    Kriterium absichtlich strenger als bei Firmen: gleicher Name
@@ -19388,7 +19401,10 @@ let _importState = {
   headers: [],
   rows: [],
   type: 'company',
-  mapping: []  // Array<string|null> — Index = CSV-Spalte, Wert = Schema-Key oder null (ignorieren)
+  // v2.6.5: Mapping ist jetzt ein Array<string[]> — eine CSV-Spalte kann auf
+  // mehrere Zielfelder gleichzeitig gemappt werden (z.B. Id.-Nr. → sowohl
+  // Artikelnummer intern als auch Hersteller-Artikelnr.).
+  mapping: []  // Array<string[]> — leeres Array = ignorieren
 };
 
 function resetImportPage() {
@@ -19488,18 +19504,20 @@ function _normalizeHeader(h) {
   return (h || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '');
 }
 
+// v2.6.5: returnt Array<string[]> — bei Auto-Map wird pro Spalte 0 oder 1 Match gefunden,
+// User kann manuell weitere hinzufügen.
 function _autoMapHeaders(headers, fields) {
   return headers.map(h => {
     const norm = _normalizeHeader(h);
-    if (!norm) return null;
+    if (!norm) return [];
     for (const f of fields) {
-      if (_normalizeHeader(f.key) === norm) return f.key;
-      if (_normalizeHeader(f.label) === norm) return f.key;
+      if (_normalizeHeader(f.key) === norm) return [f.key];
+      if (_normalizeHeader(f.label) === norm) return [f.key];
       for (const a of (f.aliases || [])) {
-        if (_normalizeHeader(a) === norm) return f.key;
+        if (_normalizeHeader(a) === norm) return [f.key];
       }
     }
-    return null;
+    return [];
   });
 }
 
@@ -19599,24 +19617,66 @@ function renderImportMapping() {
 
   wrap.innerHTML = `
     <table class="import-mapping-table">
-      <thead><tr><th>CSV-Spalte</th><th>Beispiel-Wert</th><th>→ Zielfeld</th></tr></thead>
+      <thead><tr><th>CSV-Spalte</th><th>Beispiel-Wert</th><th>→ Zielfeld(er)</th></tr></thead>
       <tbody>
-      ${_importState.headers.map((h, i) => `
+      ${_importState.headers.map((h, i) => {
+        const mappings = _importState.mapping[i] || [];
+        // v2.6.5: bei leerem Mapping einen "leeren" Slot zum Auswählen rendern;
+        // bei mehreren Mappings jeweils ein Dropdown + ×-Button + ein "+ weitere"-Button.
+        const slots = mappings.length === 0 ? [null] : mappings;
+        return `
         <tr>
           <td><strong>${esc(h)}</strong></td>
           <td class="muted">${esc((sample[i] || '').substring(0, 60))}</td>
           <td>
-            <select onchange="setImportMapping(${i}, this.value)">
-              ${optionsForSelected(_importState.mapping[i])}
-            </select>
+            <div class="import-mapping-slots">
+              ${slots.map((sel, mIdx) => `
+                <div class="import-mapping-slot">
+                  <select onchange="updateImportMapping(${i}, ${mIdx}, this.value)">
+                    ${optionsForSelected(sel)}
+                  </select>
+                  ${mappings.length > 0 ? `<button type="button" class="import-mapping-x" onclick="removeImportMapping(${i}, ${mIdx})" title="Entfernen">×</button>` : ''}
+                </div>`).join('')}
+              ${mappings.length > 0 ? `<button type="button" class="import-mapping-add" onclick="addImportMapping(${i})">+ weitere Zuordnung</button>` : ''}
+            </div>
           </td>
-        </tr>`).join('')}
+        </tr>`;
+      }).join('')}
       </tbody>
     </table>`;
 }
 
+// v2.6.5: Multi-Mapping-Helpers — eine Spalte kann auf mehrere Zielfelder mappen.
+function updateImportMapping(colIdx, slotIdx, value) {
+  if (!_importState.mapping[colIdx]) _importState.mapping[colIdx] = [];
+  if (!value) {
+    // leerer Wert = diesen Slot entfernen
+    _importState.mapping[colIdx].splice(slotIdx, 1);
+  } else {
+    _importState.mapping[colIdx][slotIdx] = value;
+  }
+  renderImportMapping();
+  renderImportPreview();
+}
+
+function addImportMapping(colIdx) {
+  if (!_importState.mapping[colIdx]) _importState.mapping[colIdx] = [];
+  // leerer String als Platzhalter — User wählt im Dropdown; wir filtern leere bei Insert.
+  _importState.mapping[colIdx].push('');
+  renderImportMapping();
+}
+
+function removeImportMapping(colIdx, slotIdx) {
+  if (!_importState.mapping[colIdx]) return;
+  _importState.mapping[colIdx].splice(slotIdx, 1);
+  renderImportMapping();
+  renderImportPreview();
+}
+
+// Backward-compat: legacy setImportMapping (single-target) ruft die neue Logik
 function setImportMapping(colIdx, value) {
-  _importState.mapping[colIdx] = value || null;
+  _importState.mapping[colIdx] = value ? [value] : [];
+  renderImportMapping();
   renderImportPreview();
 }
 
@@ -19625,17 +19685,24 @@ function renderImportPreview() {
   if (!table) return;
   const fields = IMPORT_FIELDS[_importState.type];
   const fieldByKey = Object.fromEntries(fields.map(f => [f.key, f]));
-  const usedKeys = _importState.mapping.filter(Boolean);
-  const cols = usedKeys.map(k => fieldByKey[k]?.label || k);
+  // v2.6.5: pro CSV-Spalte können mehrere Zielfelder gemappt sein.
+  // Preview zeigt jede (Spalte → Zielfeld)-Kombination als eigene Spalte.
+  const previewCols = [];  // [{ colIdx, key, label }]
+  _importState.mapping.forEach((keys, colIdx) => {
+    (keys || []).forEach(key => {
+      if (!key) return;
+      previewCols.push({ colIdx, key, label: fieldByKey[key]?.label || key });
+    });
+  });
 
-  if (cols.length === 0) {
+  if (previewCols.length === 0) {
     table.innerHTML = '<thead><tr><th>—</th></tr></thead><tbody><tr><td>Mapping fehlt — keine Spalten zugeordnet.</td></tr></tbody>';
     return;
   }
   const sample = _importState.rows.slice(0, 5);
-  const headHtml = `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>`;
+  const headHtml = `<thead><tr>${previewCols.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>`;
   const bodyHtml = `<tbody>${sample.map(r => {
-    const cells = _importState.mapping.map((k, i) => k ? `<td>${esc((r[i] || '').substring(0, 80))}</td>` : '').filter(Boolean).join('');
+    const cells = previewCols.map(c => `<td>${esc((r[c.colIdx] || '').substring(0, 80))}</td>`).join('');
     return `<tr>${cells}</tr>`;
   }).join('')}</tbody>`;
   table.innerHTML = headHtml + bodyHtml;
@@ -19663,8 +19730,10 @@ async function runImport() {
   // Validierung: alle required-Felder gemappt?
   // v2.4.4/5: für company_contact und contact reicht entweder vor+nachname
   // ODER eine kombinierte "Anrede + Name"-Spalte
+  // v2.6.5: mapping ist Array<string[]>, alle Keys aus allen Slots sammeln
   const fields = IMPORT_FIELDS[_importState.type];
-  const mappedKeys = new Set(_importState.mapping.filter(Boolean));
+  const mappedKeys = new Set();
+  _importState.mapping.forEach(arr => (arr || []).forEach(k => k && mappedKeys.add(k)));
   let missing = fields.filter(f => f.required && !mappedKeys.has(f.key));
   if (_importState.type === 'company_contact' && mappedKeys.has('kontakt_anrede')) {
     missing = missing.filter(f => f.key !== 'kontakt_vorname' && f.key !== 'kontakt_nachname');
@@ -19701,35 +19770,39 @@ async function runImport() {
   }
 
   // Rows zu Payloads transformieren
+  // v2.6.5: pro Spalte können mehrere Zielfelder gemappt sein → nested loop
   const payloads = [];
   const errors = [];
   _importState.rows.forEach((row, rowIdx) => {
     const obj = {};
-    _importState.mapping.forEach((key, colIdx) => {
-      if (!key) return;
+    _importState.mapping.forEach((keys, colIdx) => {
+      if (!keys || keys.length === 0) return;
       const val = (row[colIdx] || '').trim();
       if (val === '') return;
-      if (_importState.type === 'contact' && key === '__company_name') {
-        const cid = companyNameToId[val.toLowerCase()];
-        if (cid) obj.company_id = cid;
-        else errors.push({ row: rowIdx + 2, msg: `Firma „${val}" nicht gefunden — Kontakt ohne Firma angelegt` });
-      } else if (_importState.type === 'contact' && key === '__full_name') {
-        // v2.4.5: Anrede abschneiden, Rest in vorname + nachname zerlegen
-        const split = _splitFullName(val);
-        if (split.vorname && !obj.vorname) obj.vorname = split.vorname;
-        if (split.nachname && !obj.nachname) obj.nachname = split.nachname;
-      } else if (_importState.type === 'product' && key === '__lieferant_name') {
-        // v2.6.1: Lieferantenname → lieferant_id (companies) auflösen
-        const cid = companyNameToId[val.toLowerCase().trim()];
-        if (cid) obj.lieferant_id = cid;
-        else errors.push({ row: rowIdx + 2, msg: `Lieferant „${val}" nicht gefunden — Produkt ohne Lieferant angelegt` });
-      } else if (_importState.type === 'product' && (key === 'einkaufspreis' || key === 'verkaufspreis')) {
-        // v2.6.1: Preis-Strings tolerant parsen — "1.234,56 €" / "1234,56" / "1234.56"
-        const cleaned = val.replace(/[^\d,.\-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
-        const num = Number(cleaned);
-        obj[key] = Number.isFinite(num) ? num : 0;
-      } else {
-        obj[key] = val;
+      for (const key of keys) {
+        if (!key) continue;
+        if (_importState.type === 'contact' && key === '__company_name') {
+          const cid = companyNameToId[val.toLowerCase()];
+          if (cid) obj.company_id = cid;
+          else errors.push({ row: rowIdx + 2, msg: `Firma „${val}" nicht gefunden — Kontakt ohne Firma angelegt` });
+        } else if (_importState.type === 'contact' && key === '__full_name') {
+          // v2.4.5: Anrede abschneiden, Rest in vorname + nachname zerlegen
+          const split = _splitFullName(val);
+          if (split.vorname && !obj.vorname) obj.vorname = split.vorname;
+          if (split.nachname && !obj.nachname) obj.nachname = split.nachname;
+        } else if (_importState.type === 'product' && key === '__lieferant_name') {
+          // v2.6.1: Lieferantenname → lieferant_id (companies) auflösen
+          const cid = companyNameToId[val.toLowerCase().trim()];
+          if (cid) obj.lieferant_id = cid;
+          else errors.push({ row: rowIdx + 2, msg: `Lieferant „${val}" nicht gefunden — Produkt ohne Lieferant angelegt` });
+        } else if (_importState.type === 'product' && (key === 'einkaufspreis' || key === 'verkaufspreis')) {
+          // v2.6.1: Preis-Strings tolerant parsen — "1.234,56 €" / "1234,56" / "1234.56"
+          const cleaned = val.replace(/[^\d,.\-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
+          const num = Number(cleaned);
+          obj[key] = Number.isFinite(num) ? num : 0;
+        } else {
+          obj[key] = val;
+        }
       }
     });
     obj.erstellt_von = currentProfile?.id || null;
@@ -19789,17 +19862,21 @@ async function _runCompanyContactImport(statusEl, errorsEl, btn) {
     const row = _importState.rows[rowIdx];
     const firmaPayload = {};
     const kontaktPayload = {};
-    _importState.mapping.forEach((key, colIdx) => {
-      if (!key) return;
+    // v2.6.5: pro Spalte mehrere Zielfelder möglich → nested loop
+    _importState.mapping.forEach((keys, colIdx) => {
+      if (!keys || keys.length === 0) return;
       const val = (row[colIdx] || '').trim();
       if (val === '') return;
-      if (key.startsWith('firma_')) firmaPayload[key.replace('firma_', '')] = val;
-      else if (key === 'kontakt_anrede') {
-        const split = _splitFullName(val);
-        if (split.vorname && !kontaktPayload.vorname) kontaktPayload.vorname = split.vorname;
-        if (split.nachname && !kontaktPayload.nachname) kontaktPayload.nachname = split.nachname;
+      for (const key of keys) {
+        if (!key) continue;
+        if (key.startsWith('firma_')) firmaPayload[key.replace('firma_', '')] = val;
+        else if (key === 'kontakt_anrede') {
+          const split = _splitFullName(val);
+          if (split.vorname && !kontaktPayload.vorname) kontaktPayload.vorname = split.vorname;
+          if (split.nachname && !kontaktPayload.nachname) kontaktPayload.nachname = split.nachname;
+        }
+        else if (key.startsWith('kontakt_')) kontaktPayload[key.replace('kontakt_', '')] = val;
       }
-      else if (key.startsWith('kontakt_')) kontaktPayload[key.replace('kontakt_', '')] = val;
     });
 
     const firmaName = (firmaPayload.name || '').trim();

@@ -6823,6 +6823,28 @@ select.typ-select-secondary {
   border: 0.5px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface); font-family: inherit;
 }
+/* v2.6.5: Multi-Mapping pro Spalte */
+.import-mapping-slots { display: flex; flex-direction: column; gap: 4px; }
+.import-mapping-slot { display: flex; gap: 4px; align-items: center; }
+.import-mapping-slot select { flex: 1; }
+.import-mapping-x {
+  background: transparent; border: 0;
+  width: 22px; height: 22px;
+  font-size: 14px; line-height: 1;
+  color: var(--muted); cursor: pointer;
+  border-radius: 50%;
+}
+.import-mapping-x:hover { background: var(--bg-soft); color: var(--danger, #ef4444); }
+.import-mapping-add {
+  background: transparent;
+  border: 0.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 11px; color: var(--muted);
+  cursor: pointer; font-family: inherit;
+  align-self: flex-start;
+}
+.import-mapping-add:hover { color: var(--text); border-color: var(--text); }
 #import-preview-table {
   width: 100%; border-collapse: collapse; font-size: 12px;
 }
