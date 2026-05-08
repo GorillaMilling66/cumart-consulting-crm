@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.7.5 (Hotfix — doppelte visTbody-Deklaration).
+   v2.7.4 hat oben in loadCompanyDeployments `const visTbody`
+   eingefügt, ohne die alte zweite Deklaration im Erfolgs-Pfad
+   zu entfernen. JS-Engine hat das ganze app.js mit SyntaxError
+   abgewiesen ("Identifier 'visTbody' has already been declared")
+   — Folge: Login-Handler doLogin/sanitizeEmailOnBlur waren
+   undefined. Fix: zweite Deklaration im Erfolgs-Pfad raus,
+   Variablen aus dem oberen Scope wiederverwendet.
    Version 2.7.4 (Einsätze-Tab Loader: 0-Treffer + Error-Fälle).
    loadCompanyDeployments hatte zwei early returns (error,
    total===0), die nur den alten versteckten Body überschrieben —
@@ -11254,35 +11262,32 @@ async function loadCompanyDeployments(companyId) {
   // Auto-Expand wenn genau ein Einsatz (v1.28)
   autoExpandSingleRow(tbody, 'deployment', all);
 
-  // v2.7.3: zusätzlich den neuen sichtbaren Tab-Body rendern (eigener Einsätze-Tab)
-  const visTbody = document.getElementById('company-deployments-body-visible');
-  const visCountEl = document.getElementById('company-deployments-count-visible');
+  // v2.7.3/4/5: zusätzlich den neuen sichtbaren Tab-Body rendern.
+  // Variablen `visTbody` und `visCountEl` sind oben in der Funktion deklariert
+  // — hier nicht erneut deklarieren (sonst SyntaxError "already declared",
+  // bricht das ganze Script-Loading).
   if (visTbody) {
     if (visCountEl) visCountEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'}`
       + (umsatz > 0 ? ` · ${formatPreis(umsatz)} direkt abrechenbar` : '');
-    if (total === 0) {
-      visTbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Einsätze für diese Firma. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
-    } else {
-      visTbody.innerHTML = all.map(d => {
-        const statusColor = einsatzStatusFarbe(d.status);
-        const projektHtml = d.project
-          ? `<span class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</span>`
-          : '<span class="muted">Direktverkauf</span>';
-        const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
-        return `
-          <tr>
-            <td><span class="cell-link" onclick="navigateTo('einsatz','${esc(d.id)}')">${esc(d.titel || '—')}</span></td>
-            <td class="col-tablet">${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
-            <td class="col-tablet">${esc(d.service?.name || '—')}</td>
-            <td class="col-desktop">${projektHtml}</td>
-            <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
-            <td>${esc(formatPreis(gesamt))}</td>
-            <td class="col-action" style="text-align:right">
-              <button class="btn btn-sm" onclick="openDeploymentModal('edit','${esc(d.id)}')">Bearbeiten</button>
-            </td>
-          </tr>`;
-      }).join('');
-    }
+    visTbody.innerHTML = all.map(d => {
+      const statusColor = einsatzStatusFarbe(d.status);
+      const projektHtml = d.project
+        ? `<span class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</span>`
+        : '<span class="muted">Direktverkauf</span>';
+      const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+      return `
+        <tr>
+          <td><span class="cell-link" onclick="navigateTo('einsatz','${esc(d.id)}')">${esc(d.titel || '—')}</span></td>
+          <td class="col-tablet">${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
+          <td class="col-tablet">${esc(d.service?.name || '—')}</td>
+          <td class="col-desktop">${projektHtml}</td>
+          <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+          <td>${esc(formatPreis(gesamt))}</td>
+          <td class="col-action" style="text-align:right">
+            <button class="btn btn-sm" onclick="openDeploymentModal('edit','${esc(d.id)}')">Bearbeiten</button>
+          </td>
+        </tr>`;
+    }).join('');
   }
 }
 
