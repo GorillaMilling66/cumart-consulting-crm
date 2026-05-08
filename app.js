@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.7.3 (Einsätze-Tab auf Firma-Detail + Verantwortlicher-
+   Dropdown-Fix).
+   1) Firma-Detail-Page hat jetzt einen eigenen "Einsätze"-Tab
+      neben "Projekte"/"Kontakte". Vorher waren Einsätze nur als
+      Filter-Pille im Aktivitäten-Stream sichtbar — auf Wunsch
+      separater Tab mit Tabelle (Titel/Datum/Leistung/Projekt/
+      Status/Wert). Loader füllt zwei Bodies (alter versteckter
+      Backwards-Compat + neuer sichtbarer Tab). Tab-Count über
+      setTabCount.
+   2) Verantwortlicher-Dropdown im Mitgliedschaft-Modal blieb leer,
+      weil loadUserProfilesCache nur (id,name,email) selektierte —
+      ohne `status`. Mitgliedschaft-Modal-Filter `u.status==='aktiv'`
+      lieferte daher keine Treffer wenn der Cache vorher schon
+      anderswo befüllt wurde. Fix: SELECT um status erweitert.
    Version 2.7.2 (Bulk-Edit inline statt Modal + Programm-Laufzeit-
    Modus Kalenderjahr).
    Zwei Erweiterungen:
@@ -8759,8 +8773,10 @@ function projektStatusFarbe(wert) {
 
 async function loadUserProfilesCache() {
   if (userProfilesCache.length > 0) return userProfilesCache;
+  // v2.7.3: status mitziehen, sonst können Caller (z.B. Mitgliedschaft-Modal)
+  // nicht auf 'aktiv' filtern — Folge: leere Verantwortlicher-Dropdowns.
   const { data, error } = await db.from('user_profiles')
-    .select('id, name, email').in('status', ['aktiv', 'eingeladen']).order('name');
+    .select('id, name, email, status').in('status', ['aktiv', 'eingeladen']).order('name');
   if (error) { return []; }
   userProfilesCache = data || [];
   return userProfilesCache;
@@ -11220,6 +11236,37 @@ async function loadCompanyDeployments(companyId) {
 
   // Auto-Expand wenn genau ein Einsatz (v1.28)
   autoExpandSingleRow(tbody, 'deployment', all);
+
+  // v2.7.3: zusätzlich den neuen sichtbaren Tab-Body rendern (eigener Einsätze-Tab)
+  const visTbody = document.getElementById('company-deployments-body-visible');
+  const visCountEl = document.getElementById('company-deployments-count-visible');
+  if (visTbody) {
+    if (visCountEl) visCountEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'}`
+      + (umsatz > 0 ? ` · ${formatPreis(umsatz)} direkt abrechenbar` : '');
+    if (total === 0) {
+      visTbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Einsätze für diese Firma. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
+    } else {
+      visTbody.innerHTML = all.map(d => {
+        const statusColor = einsatzStatusFarbe(d.status);
+        const projektHtml = d.project
+          ? `<span class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</span>`
+          : '<span class="muted">Direktverkauf</span>';
+        const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+        return `
+          <tr>
+            <td><span class="cell-link" onclick="navigateTo('einsatz','${esc(d.id)}')">${esc(d.titel || '—')}</span></td>
+            <td class="col-tablet">${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
+            <td class="col-tablet">${esc(d.service?.name || '—')}</td>
+            <td class="col-desktop">${projektHtml}</td>
+            <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+            <td>${esc(formatPreis(gesamt))}</td>
+            <td class="col-action" style="text-align:right">
+              <button class="btn btn-sm" onclick="openDeploymentModal('edit','${esc(d.id)}')">Bearbeiten</button>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

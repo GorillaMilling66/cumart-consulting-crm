@@ -684,6 +684,7 @@
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchCompanyV2Tab('aktivitaeten')">Aktivitäten</button>
         <button class="proj-tab"        data-tab="stammdaten"   onclick="switchCompanyV2Tab('stammdaten')">Stammdaten</button>
         <button class="proj-tab"        data-tab="projekte"     onclick="switchCompanyV2Tab('projekte')">Projekte <span class="tab-count" id="tab-count-company-projekte" style="display:none"></span></button>
+        <button class="proj-tab"        data-tab="einsaetze"    onclick="switchCompanyV2Tab('einsaetze')">Einsätze <span class="tab-count" id="tab-count-company-einsaetze" style="display:none"></span></button>
         <button class="proj-tab"        data-tab="kontakte"     onclick="switchCompanyV2Tab('kontakte')">Kontakte</button>
       </div>
 
@@ -761,6 +762,26 @@
                   </thead>
                   <tbody id="company-projects-body">
                     <tr><td colspan="6"><div class="empty">Lade Projekte ...</div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- v2.7.3: Einsätze-Tab — eigene Übersicht über alle Einsätze dieser Firma -->
+          <div class="proj-tab-panel" data-tab="einsaetze" id="company-panel-einsaetze" style="display:none">
+            <div class="info-card">
+              <div class="info-card-title-row">
+                <div class="info-card-title"><span id="company-deployments-count-visible">Einsätze</span></div>
+                <button class="btn btn-sm btn-primary" id="company-detail-add-deployment-btn">+ Einsatz hinzufügen</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Titel</th><th class="col-tablet">Datum</th><th class="col-tablet">Leistung</th><th class="col-desktop">Projekt</th><th>Status</th><th>Wert</th><th class="col-action"></th></tr>
+                  </thead>
+                  <tbody id="company-deployments-body-visible">
+                    <tr><td colspan="7"><div class="empty">Lade Einsätze ...</div></td></tr>
                   </tbody>
                 </table>
               </div>
