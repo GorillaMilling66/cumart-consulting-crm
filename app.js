@@ -1,5 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.7.1 (Generisches Bulk-Edit + Bug-Fixes). Drei Sachen:
+   - BUG-FIX: bulkToggleAll las die ID per Regex aus dem onchange-
+     Attribut, das matchte aber den ersten Quote-Inhalt = den
+     entityType-String "product"/"company". Daher landete der String
+     statt UUIDs in _bulkSelected. Folge: Bulk-UPDATE warf
+     22P02 (invalid uuid: "product"). Fix: data-bulk-id-Attribut
+     an jeder Checkbox + bulkToggleAll liest cb.dataset.bulkId.
+   - BUG-FIX: bulkSetProductLieferant verwendete .update(payload,
+     {count:'exact'}) — supabase-js erlaubt count nur über
+     .select(). Ersetzt durch .update().in().select('id'),
+     count = data.length.
+   - GENERISCHES BULK-EDIT: neuer "Felder bearbeiten…"-Button in
+     allen drei Bulk-Toolbars (Firma/Kontakt/Produkt). Öffnet
+     modal-bulk-edit mit Feld-Dropdown + Wert-Input (Typ-spezifisch:
+     text / textarea / number / boolean / select / lookup / company /
+     lieferant). Plus Checkbox "Nur leere Felder überschreiben"
+     (Filter `IS NULL` auf das Zielfeld vor UPDATE). Konfig in
+     BULK_EDIT_FIELDS pro Entitätstyp.
+   - Kontakt-Liste bekommt jetzt auch Checkbox-Spalte + Bulk-Toolbar
+     (vorher nur Firmen + Produkte).
    Version 2.7.0 (Produkt-Dubletten + Bulk-Edit für Firmen/Produkte).
    - Dubletten-Page bekommt eine dritte Sektion "Produkte". Match
      per gleicher artikelnummer ODER gleichem normalisiertem Namen
@@ -7228,7 +7248,7 @@ function renderCompaniesTable(companies) {
     const checked = _bulkSelected.company.has(c.id) ? 'checked' : '';
     return `
       <tr>
-        <td class="col-bulk"><input type="checkbox" ${checked} onchange="bulkToggleRow('company','${esc(c.id)}',this.checked)"></td>
+        <td class="col-bulk"><input type="checkbox" data-bulk-id="${esc(c.id)}" ${checked} onchange="bulkToggleRow('company','${esc(c.id)}',this.checked)"></td>
         <td>
           <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${abcHtml}${esc(c.name)}${isCompanyIncomplete(c) ? '<span class="incomplete-badge" title="Datenpflege-Bedarf — keine Adresse und keine Kontaktdaten">unvollständig</span>' : ''}</div>
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
@@ -7752,6 +7772,8 @@ async function loadContacts() {
     companiesCache = cs || [];
   }
   renderTagFilterUI('contact');  // v2.5.1
+  _populateBulkTagDropdown('contact');  // v2.7.1
+  clearBulkSelection('contact');
 
   const companyFilter = document.getElementById('contacts-company-filter');
   const existingValue = companyFilter.value;
@@ -7814,7 +7836,7 @@ function renderContactsTable(contacts) {
     const msg = total === 0
       ? 'Noch keine Kontakte angelegt. Klicke oben auf „+ Neuer Kontakt".'
       : 'Keine Kontakte entsprechen den Filterkriterien.';
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">${msg}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">${msg}</div></td></tr>`;
     return;
   }
 
@@ -7823,9 +7845,11 @@ function renderContactsTable(contacts) {
     const firmaHtml = k.company_id && k.company
       ? `<div class="cell-link" onclick="navigateTo('firma', '${esc(k.company_id)}')">${esc(k.company.name)}</div>`
       : '<span style="color:var(--muted);font-style:italic">Ohne Firma</span>';
+    const checked = _bulkSelected.contact.has(k.id) ? 'checked' : '';
 
     return `
       <tr>
+        <td class="col-bulk"><input type="checkbox" data-bulk-id="${esc(k.id)}" ${checked} onchange="bulkToggleRow('contact','${esc(k.id)}',this.checked)"></td>
         <td>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="avatar">${esc(ini(fullName))}</div>
@@ -20743,18 +20767,16 @@ function bulkToggleRow(entityType, id, checked) {
 }
 
 function bulkToggleAll(entityType, checked) {
-  // Alle aktuell sichtbaren Zeilen togglen
+  // Alle aktuell sichtbaren Zeilen togglen — ID kommt aus data-bulk-id-Attribut
   const tbodyId = entityType === 'company' ? 'companies-table-body'
                 : entityType === 'product' ? 'products-table-body'
                 : 'contacts-table-body';
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');
+  const checkboxes = tbody.querySelectorAll('input[type="checkbox"][data-bulk-id]');
   checkboxes.forEach(cb => {
     cb.checked = checked;
-    // ID aus dem onchange-Attribut lesen (zwischen den Single-Quotes)
-    const match = cb.getAttribute('onchange')?.match(/'([^']+)'/);
-    const id = match?.[1];
+    const id = cb.dataset.bulkId;
     if (!id) return;
     if (checked) _bulkSelected[entityType].add(id);
     else _bulkSelected[entityType].delete(id);
@@ -20797,9 +20819,13 @@ function _updateBulkToolbar(entityType) {
   }
 }
 
-// Tag-Dropdown im Firmen-Bulk-Toolbar mit aktuellen Tags füllen
-async function _populateBulkTagDropdown() {
-  const sel = document.getElementById('companies-bulk-tag');
+// Tag-Dropdown im Bulk-Toolbar mit aktuellen Tags füllen.
+// v2.7.1: für beliebigen Entitätstyp (company/contact) nutzbar.
+async function _populateBulkTagDropdown(entityType = 'company') {
+  const selId = entityType === 'company' ? 'companies-bulk-tag'
+              : entityType === 'contact' ? 'contacts-bulk-tag'
+              : null;
+  const sel = selId && document.getElementById(selId);
   if (!sel) return;
   const tags = await loadTagsCache();
   sel.innerHTML = '<option value="">— Tag wählen —</option>'
@@ -20843,10 +20869,12 @@ async function bulkRemoveTag(entityType) {
   if (!tagId) { showToast('Bitte einen Tag wählen.', true); return; }
   const ids = [...(_bulkSelected[entityType] || [])];
   if (ids.length === 0) return;
-  const { error, count } = await db.from('entity_tags').delete({ count: 'exact' })
+  // v2.7.1-fix: count-Option im delete()-Call ist supabase-js-supported, gibt count im Result zurück
+  const { error, count } = await db.from('entity_tags')
+    .delete({ count: 'exact' })
     .eq('tag_id', tagId).eq('entity_type', entityType).in('entity_id', ids);
   if (error) { showToast('Fehler: ' + error.message, true); return; }
-  showToast(`Tag entfernt von ${count || ids.length} Einträgen.`);
+  showToast(`Tag entfernt von ${count != null ? count : ids.length} Einträgen.`);
   invalidateTagsCache();
 }
 
@@ -20856,13 +20884,228 @@ async function bulkSetProductLieferant() {
   const ids = [..._bulkSelected.product];
   if (ids.length === 0) return;
   const lieferantId = lfVal === '__clear__' ? null : lfVal;
-  const { error, count } = await db.from('products').update({ lieferant_id: lieferantId }, { count: 'exact' })
-    .in('id', ids);
+  // v2.7.1-fix: kein {count:'exact'}-Option auf update() — das ist ungültiges
+  // PostgREST-Syntax und führte zum 22P02 (uuid-Parse-Fehler "product").
+  // Stattdessen .select('id') am Ende und length zählen.
+  const { error, data } = await db.from('products')
+    .update({ lieferant_id: lieferantId }).in('id', ids).select('id');
   if (error) { showToast('Fehler: ' + error.message, true); return; }
-  showToast(`Lieferant ${lieferantId ? 'gesetzt' : 'entfernt'} bei ${count || ids.length} Produkten.`);
+  const n = data?.length ?? ids.length;
+  showToast(`Lieferant ${lieferantId ? 'gesetzt' : 'entfernt'} bei ${n} Produkten.`);
   await loadProductsAndLieferanten();
   filterProducts();
   clearBulkSelection('product');
+}
+
+// ── v2.7.1: Generisches Bulk-Edit-Modal ──────────────────────────────
+// Pro Entitätstyp eine Felder-Definition. type bestimmt die Eingabe:
+// 'text' / 'textarea' / 'number' / 'boolean' / 'lookup' / 'company' / 'lieferant'
+
+const BULK_EDIT_FIELDS = {
+  company: {
+    table: 'companies',
+    label: 'Firmen',
+    fields: [
+      { key: 'typ_id',          label: 'Typ',                   type: 'lookup',   kategorie: 'unternehmens_typ' },
+      { key: 'branche',          label: 'Branche',               type: 'text' },
+      { key: 'abc_klassifizierung', label: 'ABC-Klassifizierung', type: 'select', options: [['A','A — Top-Kunde'],['B','B — Wichtiger Kunde'],['C','C — Geringerer Wert']] },
+      { key: 'land',             label: 'Land',                  type: 'text' },
+      { key: 'stadt',            label: 'Stadt',                 type: 'text' },
+      { key: 'plz',              label: 'PLZ',                   type: 'text' },
+      { key: 'ist_lieferant',    label: 'Auch Lieferant',        type: 'boolean' },
+      { key: 'notizen',          label: 'Notizen',               type: 'textarea' }
+    ]
+  },
+  contact: {
+    table: 'contacts',
+    label: 'Kontakte',
+    fields: [
+      { key: 'position',   label: 'Position',  type: 'text' },
+      { key: 'company_id', label: 'Firma',     type: 'company' },
+      { key: 'notizen',    label: 'Notizen',   type: 'textarea' }
+    ]
+  },
+  product: {
+    table: 'products',
+    label: 'Produkte',
+    fields: [
+      { key: 'kategorie',     label: 'Kategorie',     type: 'text' },
+      { key: 'einheit',       label: 'Einheit',       type: 'text' },
+      { key: 'einkaufspreis', label: 'Einkaufspreis', type: 'number' },
+      { key: 'verkaufspreis', label: 'Verkaufspreis', type: 'number' },
+      { key: 'lieferant_id',  label: 'Lieferant',     type: 'lieferant' },
+      { key: 'ist_aktiv',     label: 'Aktiv',         type: 'boolean' }
+    ]
+  }
+};
+
+let _bulkEditContext = null;  // { entityType, ids }
+
+async function openBulkEditModal(entityType) {
+  const ids = [...(_bulkSelected[entityType] || [])];
+  if (ids.length === 0) { showToast('Keine Auswahl.', true); return; }
+  const cfg = BULK_EDIT_FIELDS[entityType];
+  if (!cfg) { showToast('Bulk-Edit für diesen Typ nicht verfügbar.', true); return; }
+
+  _bulkEditContext = { entityType, ids };
+  document.getElementById('bulk-edit-summary').innerHTML =
+    `${ids.length} ${esc(cfg.label)} ausgewählt — der gewählte Wert wird auf alle angewandt.`;
+
+  // Feld-Dropdown füllen
+  const fieldSel = document.getElementById('bulk-edit-field');
+  fieldSel.innerHTML = '<option value="">— Feld wählen —</option>'
+    + cfg.fields.map(f => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
+
+  // Reset
+  document.getElementById('bulk-edit-value-wrap').style.display = 'none';
+  document.getElementById('bulk-edit-only-empty').checked = false;
+  document.getElementById('modal-bulk-edit').classList.add('open');
+}
+
+function closeBulkEditModal() {
+  document.getElementById('modal-bulk-edit').classList.remove('open');
+  _bulkEditContext = null;
+}
+
+async function onBulkEditFieldChange() {
+  if (!_bulkEditContext) return;
+  const fieldKey = document.getElementById('bulk-edit-field').value;
+  const wrap = document.getElementById('bulk-edit-value-wrap');
+  const inputWrap = document.getElementById('bulk-edit-value-input');
+  const labelEl = document.getElementById('bulk-edit-value-label');
+  const hintEl = document.getElementById('bulk-edit-value-hint');
+  if (!fieldKey) { wrap.style.display = 'none'; return; }
+
+  const cfg = BULK_EDIT_FIELDS[_bulkEditContext.entityType];
+  const field = cfg.fields.find(f => f.key === fieldKey);
+  if (!field) return;
+
+  labelEl.textContent = `Neuer Wert für „${field.label}"`;
+  hintEl.textContent = '';
+  wrap.style.display = '';
+
+  switch (field.type) {
+    case 'text':
+      inputWrap.innerHTML = `<input type="text" id="bulk-edit-value" placeholder="z.B. ${esc(field.label.toLowerCase())}">`;
+      break;
+    case 'number':
+      inputWrap.innerHTML = `<input type="number" id="bulk-edit-value" step="0.01" min="0">`;
+      break;
+    case 'textarea':
+      inputWrap.innerHTML = `<textarea id="bulk-edit-value" rows="3"></textarea>`;
+      break;
+    case 'boolean':
+      inputWrap.innerHTML = `<select id="bulk-edit-value">
+        <option value="true">Ja / aktiv</option>
+        <option value="false">Nein / inaktiv</option>
+      </select>`;
+      break;
+    case 'select':
+      inputWrap.innerHTML = `<select id="bulk-edit-value">
+        <option value="__NULL__">— Wert entfernen (NULL) —</option>
+        ${(field.options || []).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}
+      </select>`;
+      break;
+    case 'lookup': {
+      // Lookup-Werte aus lookup_values
+      const { data } = await db.from('lookup_values')
+        .select('id, wert').eq('kategorie', field.kategorie).eq('ist_aktiv', true).order('reihenfolge');
+      inputWrap.innerHTML = `<select id="bulk-edit-value">
+        <option value="">— Bitte wählen —</option>
+        <option value="__NULL__">— Wert entfernen (NULL) —</option>
+        ${(data || []).map(o => `<option value="${esc(o.id)}">${esc(o.wert)}</option>`).join('')}
+      </select>`;
+      break;
+    }
+    case 'company': {
+      if (companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+      inputWrap.innerHTML = `<select id="bulk-edit-value">
+        <option value="">— Bitte wählen —</option>
+        <option value="__NULL__">— Firma entfernen (NULL) —</option>
+        ${companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}
+      </select>`;
+      break;
+    }
+    case 'lieferant': {
+      if (companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+      const lieferanten = companiesCache.filter(c => c.ist_lieferant);
+      hintEl.textContent = `${lieferanten.length} Lieferanten verfügbar — markiere weitere Firmen als „Lieferant", um sie hier zu sehen.`;
+      inputWrap.innerHTML = `<select id="bulk-edit-value">
+        <option value="">— Bitte wählen —</option>
+        <option value="__NULL__">— Lieferant entfernen (NULL) —</option>
+        ${lieferanten.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}
+      </select>`;
+      break;
+    }
+  }
+}
+
+async function applyBulkEdit() {
+  if (!_bulkEditContext) return;
+  const { entityType, ids } = _bulkEditContext;
+  const cfg = BULK_EDIT_FIELDS[entityType];
+  const fieldKey = document.getElementById('bulk-edit-field').value;
+  if (!fieldKey) { showToast('Bitte ein Feld wählen.', true); return; }
+  const field = cfg.fields.find(f => f.key === fieldKey);
+  const valEl = document.getElementById('bulk-edit-value');
+  if (!valEl) { showToast('Bitte einen Wert eingeben.', true); return; }
+  const onlyEmpty = document.getElementById('bulk-edit-only-empty').checked;
+
+  // Wert-Parsing je nach Typ
+  let value = valEl.value;
+  if (value === '__NULL__') value = null;
+  else if (field.type === 'boolean') value = value === 'true';
+  else if (field.type === 'number') {
+    const cleaned = String(value).replace(/[^\d,.\-]/g, '').replace(',', '.');
+    const num = Number(cleaned);
+    value = Number.isFinite(num) ? num : 0;
+  }
+  else if (field.type === 'text' || field.type === 'textarea') {
+    value = (value || '').trim();
+    if (value === '') value = null;
+  }
+
+  const btn = document.getElementById('bulk-edit-apply-btn');
+  btn.disabled = true; btn.textContent = 'Wird angewandt …';
+
+  // "Nur leere überschreiben"-Modus: Filter nach IS NULL auf dem Feld
+  let query = db.from(cfg.table).update({ [fieldKey]: value }).in('id', ids);
+  if (onlyEmpty) query = query.is(fieldKey, null);
+  const { error, data } = await query.select('id');
+
+  btn.disabled = false; btn.textContent = 'Anwenden';
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  const n = data?.length ?? ids.length;
+  showToast(`${field.label} bei ${n} ${cfg.label} geändert${onlyEmpty ? ' (nur leere)' : ''}.`);
+  closeBulkEditModal();
+
+  // Cache + Liste aktualisieren
+  if (entityType === 'company') {
+    const { data: cs } = await db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null).order('name');
+    companiesCache = cs || [];
+    filterCompanies();
+    clearBulkSelection('company');
+  } else if (entityType === 'contact') {
+    const { data: ks } = await db.from('contacts').select('*, company:companies(id, name)').is('deleted_at', null).order('nachname').order('vorname');
+    contactsCache = ks || [];
+    filterContacts();
+    clearBulkSelection('contact');
+  } else if (entityType === 'product') {
+    await loadProductsAndLieferanten();
+    filterProducts();
+    clearBulkSelection('product');
+  }
+}
+
+// Modal-Closer-Map erweitern
+if (typeof MODAL_CLOSERS !== 'undefined') {
+  MODAL_CLOSERS['modal-bulk-edit'] = () => closeBulkEditModal();
 }
 
 function _removeMergedProductGroupFromUI(masterId, dupIds) {
@@ -20985,7 +21228,7 @@ function renderProductsTable(products) {
     const checked = _bulkSelected.product.has(p.id) ? 'checked' : '';
     return `
       <tr style="${p.ist_aktiv ? '' : 'opacity:0.55'}">
-        <td class="col-bulk"><input type="checkbox" ${checked} onchange="bulkToggleRow('product','${esc(p.id)}',this.checked)"></td>
+        <td class="col-bulk"><input type="checkbox" data-bulk-id="${esc(p.id)}" ${checked} onchange="bulkToggleRow('product','${esc(p.id)}',this.checked)"></td>
         <td><span class="cell-link" onclick="openProductModal('edit','${esc(p.id)}')">${esc(p.name)}</span>${p.ist_aktiv ? '' : ' <span style="font-size:10px;color:var(--muted);font-style:italic">(inaktiv)</span>'}</td>
         <td class="col-tablet">${esc(p.artikelnummer || '—')}</td>
         <td class="col-tablet">${p.kategorie ? `<span class="badge" style="background:#eef2ff;color:#4338ca">${esc(p.kategorie)}</span>` : '—'}</td>

@@ -592,6 +592,7 @@
         </select>
         <button class="btn btn-sm btn-primary" onclick="bulkAddTag('company')">Tag setzen</button>
         <button class="btn btn-sm" onclick="bulkRemoveTag('company')">Tag entfernen</button>
+        <button class="btn btn-sm" onclick="openBulkEditModal('company')">Felder bearbeiten…</button>
         <button class="btn btn-sm" onclick="clearBulkSelection('company')">Auswahl aufheben</button>
       </div>
 
@@ -840,6 +841,18 @@
         <div class="tag-filter-row" id="contacts-tag-filter" data-entity="contact"></div>
       </div>
 
+      <!-- v2.7.1: Bulk-Edit-Toolbar Kontakte -->
+      <div class="bulk-toolbar" id="contacts-bulk-toolbar" style="display:none">
+        <span class="bulk-toolbar-label" id="contacts-bulk-count">0 ausgewählt</span>
+        <select id="contacts-bulk-tag">
+          <option value="">— Tag wählen —</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="bulkAddTag('contact')">Tag setzen</button>
+        <button class="btn btn-sm" onclick="bulkRemoveTag('contact')">Tag entfernen</button>
+        <button class="btn btn-sm" onclick="openBulkEditModal('contact')">Felder bearbeiten…</button>
+        <button class="btn btn-sm" onclick="clearBulkSelection('contact')">Auswahl aufheben</button>
+      </div>
+
       <div class="card">
         <div class="card-title">
           <span id="contacts-count">Kontakte</span>
@@ -848,6 +861,7 @@
           <table>
             <thead>
               <tr>
+                <th class="col-bulk"><input type="checkbox" id="contacts-select-all" onchange="bulkToggleAll('contact', this.checked)" title="Alle auswählen"></th>
                 <th>Name</th>
                 <th>Firma</th>
                 <th class="col-tablet">Position</th>
@@ -857,7 +871,7 @@
               </tr>
             </thead>
             <tbody id="contacts-table-body">
-              <tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>
+              <tr><td colspan="7"><div class="empty">Lade Kontakte ...</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -2184,6 +2198,7 @@
           <option value="">— Lieferant wählen —</option>
         </select>
         <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Lieferant setzen</button>
+        <button class="btn btn-sm" onclick="openBulkEditModal('product')">Felder bearbeiten…</button>
         <button class="btn btn-sm" onclick="clearBulkSelection('product')">Auswahl aufheben</button>
       </div>
 
@@ -2300,6 +2315,35 @@
       <h2 style="font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:24px 0 12px">Produkte</h2>
       <div id="dubletten-products">
         <div class="info-card-empty">Lade …</div>
+      </div>
+    </div>
+
+    <!-- v2.7.1: BULK-EDIT-MODAL — generische Massenänderung -->
+    <div class="modal-overlay" id="modal-bulk-edit" onclick="if(event.target===this)closeBulkEditModal()">
+      <div class="modal" style="width:520px">
+        <div class="modal-title">Felder bearbeiten</div>
+        <div id="bulk-edit-summary" style="font-size:13px;line-height:1.6;margin-bottom:14px"></div>
+        <div class="form-group">
+          <label>Welches Feld soll geändert werden?</label>
+          <select id="bulk-edit-field" onchange="onBulkEditFieldChange()">
+            <option value="">— Feld wählen —</option>
+          </select>
+        </div>
+        <div class="form-group" id="bulk-edit-value-wrap" style="display:none">
+          <label id="bulk-edit-value-label">Neuer Wert</label>
+          <div id="bulk-edit-value-input"></div>
+          <small class="field-hint" style="color:var(--muted)" id="bulk-edit-value-hint"></small>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="bulk-edit-only-empty">
+            <span>Nur leere Felder überschreiben (sicher: schützt bestehende Werte)</span>
+          </label>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn" onclick="closeBulkEditModal()">Abbrechen</button>
+          <button class="btn btn-primary" id="bulk-edit-apply-btn" onclick="applyBulkEdit()">Anwenden</button>
+        </div>
       </div>
     </div>
 
