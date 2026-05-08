@@ -353,6 +353,7 @@
       <button class="listen-tab" data-page="programs"  onclick="navigateTo('programs')">Programme</button>
       <button class="listen-tab" data-page="templates" onclick="navigateTo('templates')">Templates</button>
       <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
+      <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
     </div>
 
     <!-- v2.0.0 — BRIEFING (Hauptbereich 1) — Section-Layout statt Tabs -->
@@ -2048,6 +2049,67 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- v2.4.0: SEITE: IMPORT — CSV/Excel-Daten in Firmen oder Kontakte einlesen -->
+    <div class="page" id="page-import">
+      <div class="page-header">
+        <h1 class="page-title">Daten-Import</h1>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;max-width:720px">
+        Lade eine CSV-Datei hoch (Excel: <em>Speichern unter → CSV UTF-8</em>),
+        wähle den Datentyp, ordne pro CSV-Spalte das Zielfeld zu — und importiere.
+      </p>
+
+      <!-- Schritt 1: Datei + Typ -->
+      <div class="card import-step">
+        <div class="card-title">1 — Datei &amp; Datentyp</div>
+        <div class="import-row">
+          <input type="file" id="import-file" accept=".csv,text/csv,.txt" onchange="onImportFileChosen(event)">
+          <label class="import-row-label">Trennzeichen
+            <select id="import-separator" onchange="reparseImportFile()">
+              <option value="auto">Automatisch erkennen</option>
+              <option value=",">Komma (,)</option>
+              <option value=";">Semikolon (;)</option>
+              <option value="\t">Tab</option>
+            </select>
+          </label>
+          <label class="import-row-label">Datentyp
+            <select id="import-type" onchange="onImportTypeChange()">
+              <option value="company">Firma</option>
+              <option value="contact">Kontakt</option>
+            </select>
+          </label>
+        </div>
+        <div class="import-meta" id="import-meta" style="margin-top:10px;color:var(--muted);font-size:12px"></div>
+      </div>
+
+      <!-- Schritt 2: Mapping -->
+      <div class="card import-step" id="import-mapping-card" style="display:none">
+        <div class="card-title">2 — Spalten zuordnen</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+          Pro CSV-Spalte: was soll daraus werden? „Ignorieren" überspringt die Spalte.
+        </div>
+        <div id="import-mapping"></div>
+      </div>
+
+      <!-- Schritt 3: Vorschau -->
+      <div class="card import-step" id="import-preview-card" style="display:none">
+        <div class="card-title">3 — Vorschau (erste 5 Zeilen)</div>
+        <div class="table-wrap">
+          <table id="import-preview-table"></table>
+        </div>
+      </div>
+
+      <!-- Schritt 4: Import -->
+      <div class="card import-step" id="import-run-card" style="display:none">
+        <div class="card-title">4 — Importieren</div>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="import-run-btn" onclick="runImport()">Import starten</button>
+          <span id="import-status" style="font-size:13px;color:var(--muted)"></span>
+        </div>
+        <div id="import-errors" style="margin-top:14px"></div>
       </div>
     </div>
 

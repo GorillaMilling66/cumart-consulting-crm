@@ -1,5 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.4.0 (CSV-Import). Generischer CSV-Importer für Firmen
+   und Kontakte unter Einstellungen → Import (#/import). Vier-
+   Schritte-Flow:
+   1) Datei wählen (CSV; Excel: "Speichern unter → CSV UTF-8"),
+      Trennzeichen Auto-Erkennung (oder manuell), Datentyp wählen
+   2) Spalten-Mapping — pro CSV-Spalte ein Dropdown auf das Zielfeld;
+      Auto-Vorschlag basierend auf Header-Aliasen, User kann frei
+      überschreiben
+   3) Vorschau erste 5 Zeilen mit dem aktuellen Mapping
+   4) Import — Batch-Insert in Chunks von 100, einzelner Retry bei
+      Batch-Fehler, Fehler-Liste + Erfolgs-Counter
+   Kontakte: Spalte "Firma (Name)" wird per Lookup auf company_id
+   gemappt — fehlende Firmen werden gemeldet und der Kontakt ohne
+   Firma angelegt. Helper: IMPORT_FIELDS, _parseCSV (RFC4180-like
+   mit Quote-Escape), _detectSeparator, _autoMapHeaders,
+   resetImportPage, runImport.
    Version 2.3.2 (Recently-Visited validieren + Listen-Tab-Counts
    proaktiv).
    - Recently-Visited (localStorage `cumart_recent_visits`) zeigte
@@ -2683,6 +2699,7 @@ function showPage(name) {
   if (name === 'lookups') loadLookupsPage();
   if (name === 'programs') loadPrograms();
   if (name === 'templates') loadTemplates();
+  if (name === 'import') resetImportPage?.();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
@@ -3888,7 +3905,7 @@ function setListenTabCount(page, count) {
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
-const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
   const settingsBar = document.getElementById('einstellungen-tab-bar');
@@ -4055,6 +4072,8 @@ function navigateTo(page, param) {
     hash = '#/programme';
   } else if (page === 'templates') {
     hash = '#/templates';
+  } else if (page === 'import') {
+    hash = '#/import';
   } else if (page === 'briefing') {
     hash = '#/briefing';
   } else if (page === 'arbeitsplatz') {
@@ -4202,6 +4221,7 @@ function handleHashChange() {
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
   if (hash === '#/programme')  { showPage('programs'); return; }
   if (hash === '#/templates')  { showPage('templates'); return; }
+  if (hash === '#/import')     { showPage('import'); return; }
   // v2.0.0 — Drei-Bereiche-Architektur
   if (hash === '#/briefing')      { showPage('briefing');      return; }
   if (hash === '#/arbeitsplatz')  { showPage('arbeitsplatz');  return; }
@@ -19081,6 +19101,310 @@ async function onWorkflowStepToggle(workflowKey, entityType, entityId, stepId, c
   await _saveWorkflowStep(entityType, entityId, workflowKey, stepId, checked);
   // Re-render mit aktualisiertem State (für Progress-Counter und Hero-Pille)
   await renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.4.0 — CSV-IMPORT (Firma + Kontakt)
+//  Generischer Importer: User lädt CSV, App parst, schlägt Mapping
+//  vor (Header → Schema-Feld), User kann pro Spalte überschreiben,
+//  Preview zeigt erste 5 Zeilen, Import läuft als Batch-Insert mit
+//  Fehler-Sammlung. Kontakte können per Firmenname auf company_id
+//  gemappt werden (Lookup im aktuellen Bestand).
+// ═══════════════════════════════════════════════════════════
+
+const IMPORT_FIELDS = {
+  company: [
+    { key: 'name',                label: 'Name',         required: true,  aliases: ['name','firma','firmenname','company','unternehmen','customer'] },
+    { key: 'strasse',             label: 'Straße',       aliases: ['strasse','straße','street','adresse','anschrift'] },
+    { key: 'plz',                 label: 'PLZ',          aliases: ['plz','zip','postleitzahl','postal','postcode'] },
+    { key: 'stadt',               label: 'Stadt',        aliases: ['stadt','ort','city','town'] },
+    { key: 'land',                label: 'Land',         aliases: ['land','country'] },
+    { key: 'telefon',             label: 'Telefon',      aliases: ['telefon','tel','phone','fon','rufnummer'] },
+    { key: 'email',               label: 'E-Mail',       aliases: ['email','e-mail','mail'] },
+    { key: 'website',             label: 'Website',      aliases: ['website','homepage','url','web','internet'] },
+    { key: 'branche',             label: 'Branche',      aliases: ['branche','industry','sektor','sector','geschaeftsfeld'] },
+    { key: 'notizen',             label: 'Notizen',      aliases: ['notizen','notes','bemerkung','kommentar','remark'] },
+    { key: 'abc_klassifizierung', label: 'ABC',          aliases: ['abc','klassifizierung','rating'] }
+  ],
+  contact: [
+    { key: 'vorname',             label: 'Vorname',      required: true,  aliases: ['vorname','firstname','first name','given name'] },
+    { key: 'nachname',            label: 'Nachname',     required: true,  aliases: ['nachname','lastname','last name','surname','familyname'] },
+    { key: 'email',               label: 'E-Mail',       aliases: ['email','e-mail','mail'] },
+    { key: 'telefon',             label: 'Telefon',      aliases: ['telefon','tel','phone','fon','mobil','rufnummer'] },
+    { key: 'position',            label: 'Position',     aliases: ['position','rolle','role','funktion','title','job','jobtitel'] },
+    { key: '__company_name',      label: 'Firma (Name)', aliases: ['firma','firmenname','company','unternehmen','arbeitgeber'],
+                                  hint: 'Wird per Namen auf eine bestehende Firma gemappt' },
+    { key: 'notizen',             label: 'Notizen',      aliases: ['notizen','notes','bemerkung'] }
+  ]
+};
+
+let _importState = {
+  file: null,
+  rawText: '',
+  separator: ',',
+  headers: [],
+  rows: [],
+  type: 'company',
+  mapping: []  // Array<string|null> — Index = CSV-Spalte, Wert = Schema-Key oder null (ignorieren)
+};
+
+function resetImportPage() {
+  _importState = { file: null, rawText: '', separator: ',', headers: [], rows: [], type: 'company', mapping: [] };
+  const fileInput = document.getElementById('import-file');
+  if (fileInput) fileInput.value = '';
+  document.getElementById('import-meta').textContent = '';
+  document.getElementById('import-mapping-card').style.display = 'none';
+  document.getElementById('import-preview-card').style.display = 'none';
+  document.getElementById('import-run-card').style.display = 'none';
+  document.getElementById('import-status').textContent = '';
+  document.getElementById('import-errors').innerHTML = '';
+  const sepSel = document.getElementById('import-separator'); if (sepSel) sepSel.value = 'auto';
+  const typeSel = document.getElementById('import-type'); if (typeSel) typeSel.value = 'company';
+}
+
+function _detectSeparator(firstLine) {
+  const cands = [';', ',', '\t', '|'];
+  let best = ',', bestCount = 0;
+  cands.forEach(c => {
+    const re = c === '\t' ? /\t/g : new RegExp('\\' + c, 'g');
+    const count = (firstLine.match(re) || []).length;
+    if (count > bestCount) { bestCount = count; best = c; }
+  });
+  return best;
+}
+
+// Mini-RFC4180-konformer CSV-Parser (Quotes mit Doppel-Quote-Escape)
+function _parseCSV(text, sep) {
+  const rows = [];
+  let cur = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i+1] === '"') { field += '"'; i++; }
+      else if (c === '"') inQuotes = false;
+      else field += c;
+    } else {
+      if (c === '"' && field === '') inQuotes = true;
+      else if (c === sep) { cur.push(field); field = ''; }
+      else if (c === '\n') { cur.push(field); rows.push(cur); cur = []; field = ''; }
+      else if (c === '\r') { /* ignore */ }
+      else field += c;
+    }
+  }
+  if (field !== '' || cur.length > 0) { cur.push(field); rows.push(cur); }
+  // letzte leere Zeile entfernen wenn nur ein leeres Feld
+  while (rows.length > 0 && rows[rows.length-1].length === 1 && rows[rows.length-1][0] === '') rows.pop();
+  return rows;
+}
+
+function _normalizeHeader(h) {
+  return (h || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '');
+}
+
+function _autoMapHeaders(headers, fields) {
+  return headers.map(h => {
+    const norm = _normalizeHeader(h);
+    if (!norm) return null;
+    for (const f of fields) {
+      if (_normalizeHeader(f.key) === norm) return f.key;
+      if (_normalizeHeader(f.label) === norm) return f.key;
+      for (const a of (f.aliases || [])) {
+        if (_normalizeHeader(a) === norm) return f.key;
+      }
+    }
+    return null;
+  });
+}
+
+async function onImportFileChosen(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  _importState.file = file;
+  const text = await file.text();
+  _importState.rawText = text;
+  _parseCurrentImportFile();
+}
+
+function reparseImportFile() {
+  if (!_importState.rawText) return;
+  _parseCurrentImportFile();
+}
+
+function _parseCurrentImportFile() {
+  const sepChoice = document.getElementById('import-separator').value;
+  const text = _importState.rawText;
+  const firstLine = text.split('\n')[0] || '';
+  const sep = sepChoice === 'auto' ? _detectSeparator(firstLine) : (sepChoice === '\\t' ? '\t' : sepChoice);
+  _importState.separator = sep;
+
+  const rows = _parseCSV(text, sep);
+  if (rows.length === 0) {
+    document.getElementById('import-meta').textContent = 'Datei ist leer.';
+    return;
+  }
+  _importState.headers = rows[0].map(h => h.trim());
+  _importState.rows = rows.slice(1).filter(r => r.some(v => (v || '').trim() !== ''));
+  _importState.mapping = _autoMapHeaders(_importState.headers, IMPORT_FIELDS[_importState.type]);
+
+  document.getElementById('import-meta').textContent =
+    `${_importState.rows.length} Datensätze · ${_importState.headers.length} Spalten · Trenner: „${sep === '\t' ? 'Tab' : sep}"`;
+  renderImportMapping();
+  renderImportPreview();
+  document.getElementById('import-mapping-card').style.display = '';
+  document.getElementById('import-preview-card').style.display = '';
+  document.getElementById('import-run-card').style.display = '';
+}
+
+function onImportTypeChange() {
+  _importState.type = document.getElementById('import-type').value;
+  if (_importState.headers.length > 0) {
+    _importState.mapping = _autoMapHeaders(_importState.headers, IMPORT_FIELDS[_importState.type]);
+    renderImportMapping();
+    renderImportPreview();
+  }
+}
+
+function renderImportMapping() {
+  const wrap = document.getElementById('import-mapping');
+  if (!wrap) return;
+  const fields = IMPORT_FIELDS[_importState.type];
+  const sample = _importState.rows[0] || [];
+
+  const optionsForSelected = (selected) => {
+    const opts = [`<option value=""${selected ? '' : ' selected'}>— Ignorieren —</option>`];
+    fields.forEach(f => {
+      const req = f.required ? ' *' : '';
+      const sel = selected === f.key ? ' selected' : '';
+      opts.push(`<option value="${esc(f.key)}"${sel}>${esc(f.label)}${req}</option>`);
+    });
+    return opts.join('');
+  };
+
+  wrap.innerHTML = `
+    <table class="import-mapping-table">
+      <thead><tr><th>CSV-Spalte</th><th>Beispiel-Wert</th><th>→ Zielfeld</th></tr></thead>
+      <tbody>
+      ${_importState.headers.map((h, i) => `
+        <tr>
+          <td><strong>${esc(h)}</strong></td>
+          <td class="muted">${esc((sample[i] || '').substring(0, 60))}</td>
+          <td>
+            <select onchange="setImportMapping(${i}, this.value)">
+              ${optionsForSelected(_importState.mapping[i])}
+            </select>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function setImportMapping(colIdx, value) {
+  _importState.mapping[colIdx] = value || null;
+  renderImportPreview();
+}
+
+function renderImportPreview() {
+  const table = document.getElementById('import-preview-table');
+  if (!table) return;
+  const fields = IMPORT_FIELDS[_importState.type];
+  const fieldByKey = Object.fromEntries(fields.map(f => [f.key, f]));
+  const usedKeys = _importState.mapping.filter(Boolean);
+  const cols = usedKeys.map(k => fieldByKey[k]?.label || k);
+
+  if (cols.length === 0) {
+    table.innerHTML = '<thead><tr><th>—</th></tr></thead><tbody><tr><td>Mapping fehlt — keine Spalten zugeordnet.</td></tr></tbody>';
+    return;
+  }
+  const sample = _importState.rows.slice(0, 5);
+  const headHtml = `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>`;
+  const bodyHtml = `<tbody>${sample.map(r => {
+    const cells = _importState.mapping.map((k, i) => k ? `<td>${esc((r[i] || '').substring(0, 80))}</td>` : '').filter(Boolean).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('')}</tbody>`;
+  table.innerHTML = headHtml + bodyHtml;
+}
+
+async function runImport() {
+  const btn = document.getElementById('import-run-btn');
+  const statusEl = document.getElementById('import-status');
+  const errorsEl = document.getElementById('import-errors');
+  errorsEl.innerHTML = '';
+
+  // Validierung: alle required-Felder gemappt?
+  const fields = IMPORT_FIELDS[_importState.type];
+  const mappedKeys = new Set(_importState.mapping.filter(Boolean));
+  const missing = fields.filter(f => f.required && !mappedKeys.has(f.key));
+  if (missing.length > 0) {
+    showToast('Pflichtfelder fehlen: ' + missing.map(f => f.label).join(', '), true);
+    return;
+  }
+  if (_importState.rows.length === 0) {
+    showToast('Keine Datensätze.', true);
+    return;
+  }
+
+  btn.disabled = true;
+  statusEl.textContent = 'Import läuft …';
+
+  // Für Kontakte: Firmenname → company_id auflösen
+  let companyNameToId = {};
+  if (_importState.type === 'contact' && mappedKeys.has('__company_name')) {
+    const { data: allCompanies } = await db.from('companies').select('id, name').is('deleted_at', null);
+    (allCompanies || []).forEach(c => { companyNameToId[c.name.toLowerCase().trim()] = c.id; });
+  }
+
+  // Rows zu Payloads transformieren
+  const payloads = [];
+  const errors = [];
+  _importState.rows.forEach((row, rowIdx) => {
+    const obj = {};
+    _importState.mapping.forEach((key, colIdx) => {
+      if (!key) return;
+      const val = (row[colIdx] || '').trim();
+      if (val === '') return;
+      if (_importState.type === 'contact' && key === '__company_name') {
+        const cid = companyNameToId[val.toLowerCase()];
+        if (cid) obj.company_id = cid;
+        else errors.push({ row: rowIdx + 2, msg: `Firma „${val}" nicht gefunden — Kontakt ohne Firma angelegt` });
+      } else {
+        obj[key] = val;
+      }
+    });
+    obj.erstellt_von = currentProfile?.id || null;
+    payloads.push(obj);
+  });
+
+  // Batch-Insert (in Chunks von 100)
+  const table = _importState.type === 'company' ? 'companies' : 'contacts';
+  let inserted = 0;
+  for (let i = 0; i < payloads.length; i += 100) {
+    const chunk = payloads.slice(i, i + 100);
+    const { error } = await db.from(table).insert(chunk);
+    if (error) {
+      errors.push({ row: i + 2, msg: 'DB-Fehler: ' + error.message });
+      // Bei Batch-Fehler einzeln retry, damit der Rest durchgeht
+      for (const single of chunk) {
+        const { error: e2 } = await db.from(table).insert(single);
+        if (!e2) inserted++;
+        else errors.push({ row: '?', msg: 'Datensatz übersprungen: ' + e2.message + ' · ' + JSON.stringify(single).substring(0, 120) });
+      }
+    } else {
+      inserted += chunk.length;
+    }
+  }
+
+  statusEl.textContent = `${inserted} von ${payloads.length} importiert.`;
+  if (errors.length > 0) {
+    errorsEl.innerHTML = `
+      <div style="font-size:13px;font-weight:600;color:var(--warning);margin-bottom:8px">${errors.length} Hinweise/Fehler:</div>
+      <div style="max-height:240px;overflow-y:auto;font-size:12px;color:var(--muted);background:var(--bg-soft);padding:10px;border-radius:6px;font-family:monospace">
+        ${errors.map(e => `Zeile ${esc(String(e.row))}: ${esc(e.msg)}`).join('<br>')}
+      </div>`;
+  }
+  showToast(`${inserted} ${_importState.type === 'company' ? 'Firmen' : 'Kontakte'} importiert.`);
+  btn.disabled = false;
 }
 
 // ═══════════════════════════════════════════════════════════
