@@ -1097,6 +1097,10 @@ body {
 .arbeitsplatz {
   max-width: 1200px;
   margin: 0 auto;
+  padding-bottom: 64px;          /* v2.9.3: Abstand unter der letzten Karte */
+}
+@media (max-width: 900px) {
+  .arbeitsplatz { padding-bottom: calc(var(--mobile-nav-height) + 32px); }
 }
 .arbeitsplatz-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -3962,47 +3966,70 @@ tbody tr:focus-within .action-icons,
    FAB — Quick-Add Floating Action Button (v1.21.0)
    ═══════════════════════════════════════════════════════════ */
 
-.fab {
-  position: fixed;
-  bottom: 130px;                     /* über der Kalender-Bar (~100 px) — v1.32.1 */
-  right: 24px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  box-shadow: 0 4px 16px rgba(0,0,0,.2);
-  cursor: pointer;
-  display: none;                     /* per JS erst nach Login eingeblendet */
-  align-items: center;
-  justify-content: center;
-  z-index: 900;                      /* über Content, unter Modals (1000) und Search (1100) */
-  transition: transform .12s ease, box-shadow .12s ease;
-}
-.fab.visible { display: flex; }
+/* v2.9.3: alter runder FAB entfernt — Quick-Add jetzt oben in der Topnav als Pille. */
+.fab,
+.fab.visible { display: none !important; }
 .fab:hover { box-shadow: 0 6px 20px rgba(0,0,0,.25); transform: translateY(-1px); }
 .fab:active { transform: translateY(0); }
 .fab svg { width: 22px; height: 22px; }
 
-/* Mobile: keine Kalender-Bar, FAB nur über Bottom-Nav */
+/* v2.9.3: Quick-Add jetzt zentral im Topnav als prägnante Pille.
+   fab-menu wird beim Öffnen via JS unter den Topnav-Button gehängt. */
+.app-topnav-center {
+  flex: 1; display: flex; justify-content: center; align-items: center;
+  min-width: 0;
+}
+.app-topnav-quickadd {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px;
+  padding: 0 18px;
+  background: var(--text);
+  color: var(--surface);
+  border: none;
+  border-radius: 999px;             /* länglich-prägnant, Pille */
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: opacity .12s, transform .12s, box-shadow .12s;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12);
+}
+.app-topnav-quickadd:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.18); }
+.app-topnav-quickadd:active { transform: translateY(0); }
+.app-topnav-quickadd .quickadd-plus {
+  font-size: 16px; line-height: 1; font-weight: 400;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+}
+.app-topnav-quickadd .quickadd-kbd {
+  font-size: 10px;
+  background: rgba(255,255,255,.18);
+  color: var(--surface);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  font-weight: 500;
+}
 @media (max-width: 900px) {
-  .fab {
-    bottom: calc(var(--mobile-nav-height) + 16px);
-    right: 16px;
-  }
+  .app-topnav-center { flex: 0 1 auto; }
+  .app-topnav-quickadd { padding: 0 12px; height: 34px; }
+  .app-topnav-quickadd .quickadd-label { display: none; }
+  .app-topnav-quickadd .quickadd-kbd  { display: none; }
 }
 
 .fab-menu {
   position: fixed;
-  bottom: 192px;                     /* 130 (FAB) + 62 — v1.32.1 */
-  right: 24px;
+  top: 60px;                         /* v2.9.3: unter dem Topnav-Button (Default) */
+  left: 50%;                         /* JS-Positionierung überschreibt das */
+  transform: translateX(-50%);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0,0,0,.18);
   padding: 6px;
-  min-width: 200px;
+  min-width: 220px;
   display: none;
   z-index: 920;
 }

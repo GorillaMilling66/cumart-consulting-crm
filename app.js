@@ -1,5 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.3 (Schnell-Anlegen-Pille im Topnav + Bottom-
+   Padding Arbeitsplatz). Zwei UX-Verbesserungen:
+   1) Der runde schwarze Floating-FAB unten rechts ist weg —
+      stattdessen sitzt jetzt eine prägnante Pille
+      „+ Schnell anlegen [n]" zentral im Topnav zwischen
+      Brand/Tabs (links) und Suche/Zahnrad/Avatar (rechts).
+      Neue Topnav-Sektion `.app-topnav-center` mit `flex:1`,
+      Button mit `border-radius:999px` und Akzent-Hintergrund.
+      Mobile zeigt nur das Plus-Symbol. Das Schnell-Anlegen-
+      Menü öffnet jetzt unter dem Button (JS positioniert
+      `fab-menu` per `getBoundingClientRect()` zentriert
+      darunter, mit Viewport-Clamp). Alter `.fab` ist via
+      `display:none !important` hart aus dem Layout.
+   2) `.arbeitsplatz` hat 64 px `padding-bottom` (Mobile:
+      mobile-nav-height + 32 px) — die letzte Sektion
+      „Vorlagen" lag bisher direkt auf der Viewport-Kante.
    Version 2.9.2 (Anhang-Upload aus Aktionen-Sidebar +
    Arbeitsplatz-Tile). Neuer Button „+ Anhang hochladen" in
    den Aktionen-Karten von Firma/Projekt/Kontakt sowie ein
@@ -18181,6 +18197,19 @@ function openFabMenu() {
   const ctx = _getFabContext();
   const title = document.getElementById('fab-menu-title');
   if (title) title.textContent = ctx.label ? `Schnell anlegen · ${ctx.label}` : 'Schnell anlegen';
+  // v2.9.3: Menü dynamisch unter dem Topnav-Quickadd-Button positionieren
+  const anchor = document.getElementById('topnav-quickadd');
+  if (anchor) {
+    const r = anchor.getBoundingClientRect();
+    const menuW = menu.offsetWidth || 220;
+    let left = r.left + (r.width / 2) - (menuW / 2);
+    left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
+    menu.style.top = `${r.bottom + 6}px`;
+    menu.style.left = `${left}px`;
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+    menu.style.transform = 'none';
+  }
   menu.classList.add('open');
   _fabOpen = true;
 }
