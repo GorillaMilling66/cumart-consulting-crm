@@ -6993,9 +6993,20 @@ select.typ-select-secondary {
   font-size: 13px; font-weight: 600; color: var(--text);
   padding-right: 8px; border-right: 0.5px solid var(--border);
 }
-.bulk-toolbar select {
+.bulk-toolbar select, .bulk-toolbar input[type="text"], .bulk-toolbar input[type="number"] {
   padding: 5px 8px; font-size: 12px;
   border: 0.5px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface); font-family: inherit;
-  min-width: 180px;
+  min-width: 160px;
+}
+/* v2.7.2: Inline-Gruppen visuell durch Trennlinie abgrenzen */
+.bulk-group {
+  display: flex; gap: 6px; align-items: center;
+  padding-right: 10px; margin-right: 4px;
+  border-right: 0.5px solid var(--border);
+}
+.bulk-group:last-of-type { border-right: 0; }
+.bulk-only-empty {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--muted); cursor: pointer;
 }

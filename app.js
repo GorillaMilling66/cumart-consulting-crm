@@ -1,5 +1,24 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.7.2 (Bulk-Edit inline statt Modal + Programm-Laufzeit-
+   Modus Kalenderjahr).
+   Zwei Erweiterungen:
+   1) Bulk-Edit-UI komplett in die Toolbar verlegt — kein Modal-Pop-up
+      mehr. Die Toolbar ist jetzt in zwei Bulk-Groups visuell getrennt:
+      Tag-/Lieferant-Quick-Aktionen links, Generic Field-Edit rechts
+      (Feld-Dropdown + dynamisches Wert-Input + Anwenden + "nur leere"-
+      Toggle). Auswahl-Reset nach erfolgreichem Update.
+      Helpers: _populateBulkFieldDropdown, onBulkFieldInlineChange,
+      applyBulkInline. Modal-Variante (openBulkEditModal) bleibt im
+      Code, wird aber nicht mehr aus der UI gerufen.
+   2) Mitgliedschafts-Programme: neue Spalte `laufzeit_modus` mit
+      Werten 'monate' (default) oder 'kalenderjahr'. Migration
+      v2.7.2_program_laufzeit_modus.sql. Programm-Modal hat einen
+      Modus-Selektor; Monats-Eingabe wird bei Kalenderjahr-Modus
+      ausgegraut. recalcMembershipEnd setzt im Kalenderjahr-Modus
+      automatisch start = 01.01.YYYY und end = 31.12.YYYY (Jahr aus
+      bestehendem Startdatum oder heutiges Jahr) — User kann beides
+      nachher überschreiben.
    Version 2.7.1 (Generisches Bulk-Edit + Bug-Fixes). Drei Sachen:
    - BUG-FIX: bulkToggleAll las die ID per Regex aus dem onchange-
      Attribut, das matchte aber den ersten Quote-Inhalt = den
@@ -6409,6 +6428,10 @@ async function openProgramModal(mode, programId = null) {
   document.getElementById('pr-preis').value = '';
   document.getElementById('pr-praefix').value = '';
   document.getElementById('pr-aktiv').value = 'true';
+  // v2.7.2: Laufzeit-Modus
+  const lmSel = document.getElementById('pr-laufzeit-modus');
+  if (lmSel) lmSel.value = 'monate';
+  onProgramLaufzeitModusChange();
 
   const benefitsContainer = document.getElementById('pr-benefits-container');
   benefitsContainer.innerHTML = '';
@@ -6439,6 +6462,10 @@ async function openProgramModal(mode, programId = null) {
     document.getElementById('pr-preis').value = data.standard_preis ?? '';
     document.getElementById('pr-praefix').value = data.mitgliedsnummer_praefix || '';
     document.getElementById('pr-aktiv').value = data.ist_aktiv ? 'true' : 'false';
+    // v2.7.2: Laufzeit-Modus
+    const lmSelE = document.getElementById('pr-laufzeit-modus');
+    if (lmSelE) lmSelE.value = data.laufzeit_modus || 'monate';
+    onProgramLaufzeitModusChange();
 
     const benefits = (data.membership_program_benefits || []).sort((a, b) => (a.reihenfolge || 0) - (b.reihenfolge || 0));
     if (benefits.length === 0) {
@@ -6458,6 +6485,21 @@ async function openProgramModal(mode, programId = null) {
 function closeProgramModal() {
   document.getElementById('modal-program').classList.remove('open');
   editingProgramId = null;
+}
+
+// v2.7.2: Laufzeit-Monate-Feld optisch aus-/einblenden je nach Modus.
+// Bei Kalenderjahr ist die Monats-Zahl irrelevant.
+function onProgramLaufzeitModusChange() {
+  const modus = document.getElementById('pr-laufzeit-modus')?.value;
+  const wrap = document.getElementById('pr-laufzeit-monate-wrap');
+  if (!wrap) return;
+  if (modus === 'kalenderjahr') {
+    wrap.style.opacity = '0.4';
+    wrap.style.pointerEvents = 'none';
+  } else {
+    wrap.style.opacity = '';
+    wrap.style.pointerEvents = '';
+  }
 }
 
 /** Neue Benefit-Zeile im Modal einfügen. Optional mit Daten vorbefüllen. */
@@ -6504,16 +6546,22 @@ function removeBenefitRow(btn) {
 
 /** Programm + Benefits atomar speichern. */
 async function saveProgram() {
-  const name         = document.getElementById('pr-name').value.trim();
-  const beschreibung = document.getElementById('pr-beschreibung').value.trim();
-  const laufzeit     = parseInt(document.getElementById('pr-laufzeit').value, 10);
-  const preisRaw     = document.getElementById('pr-preis').value;
-  const praefix      = document.getElementById('pr-praefix').value.trim();
-  const ist_aktiv    = document.getElementById('pr-aktiv').value === 'true';
-  const btn          = document.getElementById('pr-save-btn');
+  const name           = document.getElementById('pr-name').value.trim();
+  const beschreibung   = document.getElementById('pr-beschreibung').value.trim();
+  const laufzeitModus  = document.getElementById('pr-laufzeit-modus')?.value || 'monate';  // v2.7.2
+  const laufzeit       = parseInt(document.getElementById('pr-laufzeit').value, 10);
+  const preisRaw       = document.getElementById('pr-preis').value;
+  const praefix        = document.getElementById('pr-praefix').value.trim();
+  const ist_aktiv      = document.getElementById('pr-aktiv').value === 'true';
+  const btn            = document.getElementById('pr-save-btn');
 
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
-  if (!laufzeit || laufzeit < 1) { showToast('Laufzeit muss mindestens 1 Monat sein.', true); return; }
+  // v2.7.2: bei Kalenderjahr-Modus ist `laufzeit_monate` praktisch immer 12,
+  // wir setzen es auf 12 wenn der User im Modus „kalenderjahr" ist (sonst weiterhin Pflicht)
+  if (laufzeitModus === 'monate' && (!laufzeit || laufzeit < 1)) {
+    showToast('Laufzeit muss mindestens 1 Monat sein.', true); return;
+  }
+  const finalLaufzeit = laufzeitModus === 'kalenderjahr' ? 12 : laufzeit;
 
   const standard_preis = preisRaw === '' ? 0 : Number(preisRaw);
   if (Number.isNaN(standard_preis) || standard_preis < 0) {
@@ -6553,7 +6601,8 @@ async function saveProgram() {
     const payload = {
       name,
       beschreibung: beschreibung || null,
-      laufzeit_monate: laufzeit,
+      laufzeit_monate: finalLaufzeit,         // v2.7.2: bei Kalenderjahr-Modus = 12
+      laufzeit_modus: laufzeitModus,          // v2.7.2
       standard_preis,
       mitgliedsnummer_praefix: praefix || null,
       ist_aktiv,
@@ -6916,24 +6965,41 @@ function onMembershipProgramChange() {
   previewBox.style.display = 'block';
 }
 
-/** Berechnet Enddatum aus Startdatum + Laufzeit des gewählten Programms. */
+/** Berechnet Start-/Enddatum aus dem Programm.
+ *  v2.7.2: Wenn das Programm Modus „kalenderjahr" hat, werden Start = 01.01.YYYY
+ *  und Ende = 31.12.YYYY automatisch gesetzt (User kann später überschreiben).
+ *  Bei Modus „monate" (Default): Enddatum = Startdatum + laufzeit_monate − 1 Tag,
+ *  nur wenn Enddatum leer ist. */
 function recalcMembershipEnd() {
   const programId = document.getElementById('ms-program').value;
-  const startStr = document.getElementById('ms-start').value;
+  const startInput = document.getElementById('ms-start');
   const endInput = document.getElementById('ms-end');
-  if (!programId || !startStr) return;
+  if (!programId) return;
 
   const program = programsCache.find(p => p.id === programId);
   if (!program) return;
 
-  // Nur überschreiben, wenn Enddatum leer (damit manuelle Änderungen erhalten bleiben)
-  if (endInput.value) return;
+  // v2.7.2: Kalenderjahr-Modus
+  if (program.laufzeit_modus === 'kalenderjahr') {
+    // Jahr aus dem aktuellen Startdatum (falls schon gesetzt) oder heutiges Jahr
+    let year = new Date().getFullYear();
+    if (startInput.value) {
+      const parsed = parseLocalDate(startInput.value);
+      if (!isNaN(parsed.getTime())) year = parsed.getFullYear();
+    }
+    // Beide Felder direkt setzen — User kann anschließend manuell ändern
+    startInput.value = `${year}-01-01`;
+    endInput.value   = `${year}-12-31`;
+    return;
+  }
 
-  const start = parseLocalDate(startStr);
+  // Modus „monate": nur Enddatum berechnen, und nur wenn Startdatum gesetzt + Enddatum leer
+  if (!startInput.value) return;
+  if (endInput.value) return;
+  const start = parseLocalDate(startInput.value);
   const end = new Date(start);
   end.setMonth(end.getMonth() + (program.laufzeit_monate || 12));
   end.setDate(end.getDate() - 1); // letzter Tag der Laufzeit
-
   endInput.value = end.toISOString().slice(0, 10);
 }
 
@@ -7122,6 +7188,7 @@ async function loadCompanies() {
   }
   renderTagFilterUI('company');  // v2.5.1
   _populateBulkTagDropdown();    // v2.7.1
+  _populateBulkFieldDropdown('company');  // v2.7.2
   clearBulkSelection('company');
 
   const [companiesResult, contactsResult] = await Promise.all([
@@ -7773,6 +7840,7 @@ async function loadContacts() {
   }
   renderTagFilterUI('contact');  // v2.5.1
   _populateBulkTagDropdown('contact');  // v2.7.1
+  _populateBulkFieldDropdown('contact');  // v2.7.2
   clearBulkSelection('contact');
 
   const companyFilter = document.getElementById('contacts-company-filter');
@@ -20941,6 +21009,164 @@ const BULK_EDIT_FIELDS = {
 
 let _bulkEditContext = null;  // { entityType, ids }
 
+// v2.7.2: Inline-Bulk-Edit in der Toolbar — User wollte kein Modal, sondern
+// die Auswahl direkt in der Bulk-Toolbar.
+async function _populateBulkFieldDropdown(entityType) {
+  const cfg = BULK_EDIT_FIELDS[entityType];
+  if (!cfg) return;
+  const selId = entityType === 'company' ? 'companies-bulk-field'
+              : entityType === 'product' ? 'products-bulk-field'
+              : 'contacts-bulk-field';
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Feld bearbeiten —</option>'
+    + cfg.fields.map(f => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
+}
+
+async function onBulkFieldInlineChange(entityType) {
+  const prefix = entityType === 'company' ? 'companies'
+               : entityType === 'product' ? 'products'
+               : 'contacts';
+  const fieldKey = document.getElementById(`${prefix}-bulk-field`).value;
+  const valWrap = document.getElementById(`${prefix}-bulk-value-wrap`);
+  const applyBtn = document.getElementById(`${prefix}-bulk-apply-btn`);
+  const oeWrap = document.getElementById(`${prefix}-bulk-only-empty-wrap`);
+  if (!fieldKey) {
+    valWrap.style.display = 'none';
+    valWrap.innerHTML = '';
+    applyBtn.style.display = 'none';
+    oeWrap.style.display = 'none';
+    return;
+  }
+  const cfg = BULK_EDIT_FIELDS[entityType];
+  const field = cfg.fields.find(f => f.key === fieldKey);
+  if (!field) return;
+
+  const valueId = `${prefix}-bulk-value`;
+  let inputHtml = '';
+  switch (field.type) {
+    case 'text':
+      inputHtml = `<input type="text" id="${valueId}" placeholder="${esc(field.label)}">`;
+      break;
+    case 'number':
+      inputHtml = `<input type="number" id="${valueId}" step="0.01" min="0" placeholder="0,00">`;
+      break;
+    case 'textarea':
+      inputHtml = `<input type="text" id="${valueId}" placeholder="${esc(field.label)}">`;  // einzeilig in Toolbar
+      break;
+    case 'boolean':
+      inputHtml = `<select id="${valueId}"><option value="true">Ja / aktiv</option><option value="false">Nein / inaktiv</option></select>`;
+      break;
+    case 'select':
+      inputHtml = `<select id="${valueId}">
+        <option value="__NULL__">— leeren —</option>
+        ${(field.options || []).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}
+      </select>`;
+      break;
+    case 'lookup': {
+      const { data } = await db.from('lookup_values')
+        .select('id, wert').eq('kategorie', field.kategorie).eq('ist_aktiv', true).order('reihenfolge');
+      inputHtml = `<select id="${valueId}">
+        <option value="">— Bitte wählen —</option>
+        <option value="__NULL__">— leeren —</option>
+        ${(data || []).map(o => `<option value="${esc(o.id)}">${esc(o.wert)}</option>`).join('')}
+      </select>`;
+      break;
+    }
+    case 'company': {
+      if (companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+      inputHtml = `<select id="${valueId}">
+        <option value="">— Bitte wählen —</option>
+        <option value="__NULL__">— leeren —</option>
+        ${companiesCache.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}
+      </select>`;
+      break;
+    }
+    case 'lieferant': {
+      if (companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('*').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+      const lieferanten = companiesCache.filter(c => c.ist_lieferant);
+      inputHtml = `<select id="${valueId}">
+        <option value="">— Bitte wählen —</option>
+        <option value="__NULL__">— leeren —</option>
+        ${lieferanten.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}
+      </select>`;
+      break;
+    }
+  }
+  valWrap.innerHTML = inputHtml;
+  valWrap.style.display = '';
+  applyBtn.style.display = '';
+  oeWrap.style.display = '';
+}
+
+async function applyBulkInline(entityType) {
+  const ids = [...(_bulkSelected[entityType] || [])];
+  if (ids.length === 0) { showToast('Keine Auswahl.', true); return; }
+  const cfg = BULK_EDIT_FIELDS[entityType];
+  const prefix = entityType === 'company' ? 'companies'
+               : entityType === 'product' ? 'products'
+               : 'contacts';
+  const fieldKey = document.getElementById(`${prefix}-bulk-field`).value;
+  if (!fieldKey) { showToast('Bitte ein Feld wählen.', true); return; }
+  const field = cfg.fields.find(f => f.key === fieldKey);
+  const valEl = document.getElementById(`${prefix}-bulk-value`);
+  if (!valEl) { showToast('Bitte einen Wert wählen.', true); return; }
+  const onlyEmpty = document.getElementById(`${prefix}-bulk-only-empty`)?.checked;
+
+  let value = valEl.value;
+  if (value === '__NULL__') value = null;
+  else if (field.type === 'boolean') value = value === 'true';
+  else if (field.type === 'number') {
+    const cleaned = String(value).replace(/[^\d,.\-]/g, '').replace(',', '.');
+    const num = Number(cleaned);
+    value = Number.isFinite(num) ? num : 0;
+  }
+  else if (field.type === 'text' || field.type === 'textarea') {
+    value = (value || '').trim();
+    if (value === '') value = null;
+  }
+  else if (value === '') {
+    showToast('Bitte einen Wert wählen.', true); return;
+  }
+
+  const btn = document.getElementById(`${prefix}-bulk-apply-btn`);
+  btn.disabled = true;
+  let query = db.from(cfg.table).update({ [fieldKey]: value }).in('id', ids);
+  if (onlyEmpty) query = query.is(fieldKey, null);
+  const { error, data } = await query.select('id');
+  btn.disabled = false;
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  const n = data?.length ?? ids.length;
+  showToast(`${field.label} bei ${n} ${cfg.label} geändert${onlyEmpty ? ' (nur leere)' : ''}.`);
+
+  // Reset inline editor
+  document.getElementById(`${prefix}-bulk-field`).value = '';
+  onBulkFieldInlineChange(entityType);
+
+  // Cache + Liste aktualisieren
+  if (entityType === 'company') {
+    const { data: cs } = await db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null).order('name');
+    companiesCache = cs || [];
+    filterCompanies();
+    clearBulkSelection('company');
+  } else if (entityType === 'contact') {
+    const { data: ks } = await db.from('contacts').select('*, company:companies(id, name)').is('deleted_at', null).order('nachname').order('vorname');
+    contactsCache = ks || [];
+    filterContacts();
+    clearBulkSelection('contact');
+  } else if (entityType === 'product') {
+    await loadProductsAndLieferanten();
+    filterProducts();
+    clearBulkSelection('product');
+  }
+}
+
 async function openBulkEditModal(entityType) {
   const ids = [...(_bulkSelected[entityType] || [])];
   if (ids.length === 0) { showToast('Keine Auswahl.', true); return; }
@@ -21156,6 +21382,7 @@ async function loadProductsPage() {
   populateProductsKategorieFilter();
   populateProductsLieferantFilter();
   _populateBulkLieferantDropdown();   // v2.7.1
+  _populateBulkFieldDropdown('product');  // v2.7.2
   clearBulkSelection('product');
   filterProducts();
 }

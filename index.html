@@ -584,15 +584,22 @@
         <div class="tag-filter-row" id="companies-tag-filter" data-entity="company"></div>
       </div>
 
-      <!-- v2.7.1: Bulk-Edit-Toolbar (versteckt bis Auswahl > 0) -->
+      <!-- v2.7.1/2: Bulk-Edit-Toolbar inline (versteckt bis Auswahl > 0) -->
       <div class="bulk-toolbar" id="companies-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="companies-bulk-count">0 ausgewählt</span>
-        <select id="companies-bulk-tag">
-          <option value="">— Tag wählen —</option>
-        </select>
-        <button class="btn btn-sm btn-primary" onclick="bulkAddTag('company')">Tag setzen</button>
-        <button class="btn btn-sm" onclick="bulkRemoveTag('company')">Tag entfernen</button>
-        <button class="btn btn-sm" onclick="openBulkEditModal('company')">Felder bearbeiten…</button>
+        <span class="bulk-group">
+          <select id="companies-bulk-tag"><option value="">— Tag wählen —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="bulkAddTag('company')">Tag setzen</button>
+          <button class="btn btn-sm" onclick="bulkRemoveTag('company')">Tag entfernen</button>
+        </span>
+        <span class="bulk-group">
+          <select id="companies-bulk-field" onchange="onBulkFieldInlineChange('company')"><option value="">— Feld bearbeiten —</option></select>
+          <span id="companies-bulk-value-wrap" style="display:none"></span>
+          <button class="btn btn-sm btn-primary" id="companies-bulk-apply-btn" onclick="applyBulkInline('company')" style="display:none">Anwenden</button>
+          <label class="bulk-only-empty" id="companies-bulk-only-empty-wrap" style="display:none">
+            <input type="checkbox" id="companies-bulk-only-empty"> <span>nur leere</span>
+          </label>
+        </span>
         <button class="btn btn-sm" onclick="clearBulkSelection('company')">Auswahl aufheben</button>
       </div>
 
@@ -841,15 +848,22 @@
         <div class="tag-filter-row" id="contacts-tag-filter" data-entity="contact"></div>
       </div>
 
-      <!-- v2.7.1: Bulk-Edit-Toolbar Kontakte -->
+      <!-- v2.7.1/2: Bulk-Edit-Toolbar Kontakte (inline) -->
       <div class="bulk-toolbar" id="contacts-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="contacts-bulk-count">0 ausgewählt</span>
-        <select id="contacts-bulk-tag">
-          <option value="">— Tag wählen —</option>
-        </select>
-        <button class="btn btn-sm btn-primary" onclick="bulkAddTag('contact')">Tag setzen</button>
-        <button class="btn btn-sm" onclick="bulkRemoveTag('contact')">Tag entfernen</button>
-        <button class="btn btn-sm" onclick="openBulkEditModal('contact')">Felder bearbeiten…</button>
+        <span class="bulk-group">
+          <select id="contacts-bulk-tag"><option value="">— Tag wählen —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="bulkAddTag('contact')">Tag setzen</button>
+          <button class="btn btn-sm" onclick="bulkRemoveTag('contact')">Tag entfernen</button>
+        </span>
+        <span class="bulk-group">
+          <select id="contacts-bulk-field" onchange="onBulkFieldInlineChange('contact')"><option value="">— Feld bearbeiten —</option></select>
+          <span id="contacts-bulk-value-wrap" style="display:none"></span>
+          <button class="btn btn-sm btn-primary" id="contacts-bulk-apply-btn" onclick="applyBulkInline('contact')" style="display:none">Anwenden</button>
+          <label class="bulk-only-empty" id="contacts-bulk-only-empty-wrap" style="display:none">
+            <input type="checkbox" id="contacts-bulk-only-empty"> <span>nur leere</span>
+          </label>
+        </span>
         <button class="btn btn-sm" onclick="clearBulkSelection('contact')">Auswahl aufheben</button>
       </div>
 
@@ -2191,14 +2205,21 @@
           </label>
         </div>
       </div>
-      <!-- v2.7.1: Bulk-Edit-Toolbar Produkte -->
+      <!-- v2.7.1/2: Bulk-Edit-Toolbar Produkte (inline) -->
       <div class="bulk-toolbar" id="products-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="products-bulk-count">0 ausgewählt</span>
-        <select id="products-bulk-lieferant">
-          <option value="">— Lieferant wählen —</option>
-        </select>
-        <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Lieferant setzen</button>
-        <button class="btn btn-sm" onclick="openBulkEditModal('product')">Felder bearbeiten…</button>
+        <span class="bulk-group">
+          <select id="products-bulk-lieferant"><option value="">— Lieferant wählen —</option></select>
+          <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Lieferant setzen</button>
+        </span>
+        <span class="bulk-group">
+          <select id="products-bulk-field" onchange="onBulkFieldInlineChange('product')"><option value="">— Feld bearbeiten —</option></select>
+          <span id="products-bulk-value-wrap" style="display:none"></span>
+          <button class="btn btn-sm btn-primary" id="products-bulk-apply-btn" onclick="applyBulkInline('product')" style="display:none">Anwenden</button>
+          <label class="bulk-only-empty" id="products-bulk-only-empty-wrap" style="display:none">
+            <input type="checkbox" id="products-bulk-only-empty"> <span>nur leere</span>
+          </label>
+        </span>
         <button class="btn btn-sm" onclick="clearBulkSelection('product')">Auswahl aufheben</button>
       </div>
 
@@ -3823,26 +3844,34 @@
         </div>
         <div class="form-row-2">
           <div class="form-group">
+            <label>Laufzeit-Modus *</label>
+            <select id="pr-laufzeit-modus" onchange="onProgramLaufzeitModusChange()">
+              <option value="monate">Feste Anzahl Monate (z.B. 12)</option>
+              <option value="kalenderjahr">Kalenderjahr (01.01. → 31.12.)</option>
+            </select>
+            <small class="field-hint" style="color:var(--muted);font-size:11px">Beim Anlegen einer Mitgliedschaft werden Start/Ende entsprechend vorbelegt.</small>
+          </div>
+          <div class="form-group" id="pr-laufzeit-monate-wrap">
             <label>Laufzeit (Monate) *</label>
             <input type="number" id="pr-laufzeit" min="1" step="1" value="12">
-          </div>
-          <div class="form-group">
-            <label>Standard-Preis (€)</label>
-            <input type="number" id="pr-preis" min="0" step="0.01" placeholder="0.00">
           </div>
         </div>
         <div class="form-row-2">
           <div class="form-group">
+            <label>Standard-Preis (€)</label>
+            <input type="number" id="pr-preis" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="form-group">
             <label>Mitgliedsnummer-Präfix</label>
             <input type="text" id="pr-praefix" placeholder="z. B. TNC" maxlength="20">
           </div>
-          <div class="form-group">
-            <label>Status</label>
-            <select id="pr-aktiv">
-              <option value="true">Aktiv</option>
-              <option value="false">Archiviert</option>
-            </select>
-          </div>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="pr-aktiv">
+            <option value="true">Aktiv</option>
+            <option value="false">Archiviert</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Beschreibung</label>
