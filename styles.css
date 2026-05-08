@@ -6890,3 +6890,37 @@ select.typ-select-secondary {
   border-color: var(--text);
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
 }
+
+/* v2.5.1: Tag-Filter in Listen */
+.tag-filter-row {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 0.5px dashed var(--border);
+}
+.tag-filter-row:empty { display: none; }
+.tag-filter-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+  margin-right: 4px;
+}
+.tag-filter-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag-filter-pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  cursor: pointer; font-family: inherit;
+  transition: opacity .12s, transform .08s;
+}
+.tag-filter-pill:hover { opacity: 0.85; }
+.tag-filter-pill.is-active { font-weight: 600; }
+.tag-filter-mode, .tag-filter-clear {
+  background: transparent;
+  border: 0.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 11px; color: var(--muted);
+  cursor: pointer; font-family: inherit;
+  margin-left: 4px;
+}
+.tag-filter-mode:hover, .tag-filter-clear:hover { color: var(--text); border-color: var(--text); }

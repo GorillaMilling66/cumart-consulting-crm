@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.5.1 (Tags — Phase 2: Filter in den Listen).
+   Tag-Filter-Zeile unter den vorhandenen Filtern in den drei
+   Listen Firmen / Kontakte / Projekte. Pillen pro Tag, Toggle
+   per Klick (mehrere wählbar), Clear-Button, Modus-Toggle "alle"
+   (AND) vs. "eines" (OR) sobald >1 Tag aktiv.
+   Filter wirkt zusätzlich zum bestehenden Such- und Status-Filter
+   (alle Bedingungen werden mit AND verknüpft). State pro Listen-
+   Page in `_tagFilterState`. Helper: applyTagFilter (lädt passende
+   entity_ids aus entity_tags und filtert clientside).
+   Beide Filter-Funktionen filterCompanies / filterContacts /
+   filterProjects sind nun async, weil applyTagFilter eine
+   DB-Query macht.
    Version 2.5.0 (Tags — Phase 1: Verwaltung + Detail-Page-Picker).
    Cross-Entity-Labels für Firma/Kontakt/Projekt. Ein Tag (z.B.
    "VIP", "Heidenhain", "Akquise 2026") kann an mehrere Entitäten
@@ -6954,6 +6966,7 @@ async function loadCompanies() {
     typSelect.innerHTML = '<option value="">Alle Typen</option>'
       + typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
+  renderTagFilterUI('company');  // v2.5.1
 
   const [companiesResult, contactsResult] = await Promise.all([
     db.from('companies').select('*, typ:lookup_values!companies_typ_id_fkey(id, wert, farbe)').is('deleted_at', null).order('name'),
@@ -7000,7 +7013,7 @@ function isCompanyIncomplete(c) {
       && !((c.email   || '').trim());
 }
 
-function filterCompanies() {
+async function filterCompanies() {
   const searchTerm = document.getElementById('companies-search').value.trim().toLowerCase();
   const typFilter  = document.getElementById('companies-typ-filter').value;
   const incompleteFilter = document.getElementById('companies-incomplete-filter')?.checked;
@@ -7015,6 +7028,8 @@ function filterCompanies() {
       return haystack.includes(searchTerm);
     });
   }
+  // v2.5.1: Tag-Filter
+  filtered = await applyTagFilter('company', filtered);
   renderCompaniesTable(filtered);
 }
 
@@ -7591,6 +7606,7 @@ async function loadContacts() {
     const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
+  renderTagFilterUI('contact');  // v2.5.1
 
   const companyFilter = document.getElementById('contacts-company-filter');
   const existingValue = companyFilter.value;
@@ -7616,7 +7632,7 @@ async function loadContacts() {
   filterContacts();
 }
 
-function filterContacts() {
+async function filterContacts() {
   const searchTerm = document.getElementById('contacts-search').value.trim().toLowerCase();
   const companyFilterVal = document.getElementById('contacts-company-filter').value;
 
@@ -7633,6 +7649,8 @@ function filterContacts() {
       return haystack.includes(searchTerm);
     });
   }
+  // v2.5.1: Tag-Filter
+  filtered = await applyTagFilter('contact', filtered);
   renderContactsTable(filtered);
 }
 
@@ -8522,6 +8540,7 @@ async function loadProjects() {
     const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
+  renderTagFilterUI('project');  // v2.5.1
 
   // User sicherstellen
   await loadUserProfilesCache();
@@ -8566,7 +8585,7 @@ async function loadProjects() {
   filterProjects();
 }
 
-function filterProjects() {
+async function filterProjects() {
   const searchTerm       = document.getElementById('projects-search').value.trim().toLowerCase();
   const statusFilterVal  = document.getElementById('projects-status-filter').value;
   const companyFilterVal = document.getElementById('projects-company-filter').value;
@@ -8599,6 +8618,8 @@ function filterProjects() {
       return haystack.includes(searchTerm);
     });
   }
+  // v2.5.1: Tag-Filter
+  filtered = await applyTagFilter('project', filtered);
 
   renderProjectsTable(filtered);
 }
@@ -19894,6 +19915,98 @@ async function removeTagFromEntity(tagId, entityType, entityId, containerId) {
 // Modal-Closer-Map erweitern
 if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
+}
+
+// ── v2.5.1: Tag-Filter in den Listen ─────────────────────────────────
+
+const _tagFilterState = {
+  company: { tagIds: [], mode: 'or' },   // mode: 'or' | 'and'
+  contact: { tagIds: [], mode: 'or' },
+  project: { tagIds: [], mode: 'or' }
+};
+
+async function renderTagFilterUI(entityType) {
+  const containerId = entityType === 'company' ? 'companies-tag-filter'
+                    : entityType === 'contact' ? 'contacts-tag-filter'
+                    : 'projects-tag-filter';
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const tags = await loadTagsCache();
+  if (tags.length === 0) {
+    wrap.innerHTML = '';
+    return;
+  }
+  const state = _tagFilterState[entityType];
+  const pills = tags.map(t => {
+    const active = state.tagIds.includes(t.id);
+    const bg = active ? (t.farbe || '#3b82f6') : 'transparent';
+    const fg = active ? '#fff' : (t.farbe || '#3b82f6');
+    return `<button type="button" class="tag-filter-pill ${active ? 'is-active' : ''}"
+              style="background:${esc(bg)};color:${esc(fg)};border:1px solid ${esc(t.farbe || '#3b82f6')}66"
+              onclick="toggleTagFilter('${esc(entityType)}','${esc(t.id)}')">${esc(t.name)}</button>`;
+  }).join('');
+  const modeLbl = state.mode === 'and' ? 'alle' : 'eines';
+  const modeToggle = state.tagIds.length > 1
+    ? `<button type="button" class="tag-filter-mode" onclick="toggleTagFilterMode('${esc(entityType)}')" title="Modus umschalten">Modus: <strong>${modeLbl}</strong></button>`
+    : '';
+  const clearBtn = state.tagIds.length > 0
+    ? `<button type="button" class="tag-filter-clear" onclick="clearTagFilter('${esc(entityType)}')">Filter aufheben</button>`
+    : '';
+  wrap.innerHTML = `
+    <div class="tag-filter-label">Tags:</div>
+    <div class="tag-filter-pills">${pills}</div>
+    ${modeToggle}${clearBtn}`;
+}
+
+function toggleTagFilter(entityType, tagId) {
+  const state = _tagFilterState[entityType];
+  const idx = state.tagIds.indexOf(tagId);
+  if (idx >= 0) state.tagIds.splice(idx, 1);
+  else state.tagIds.push(tagId);
+  renderTagFilterUI(entityType);
+  if (entityType === 'company') filterCompanies();
+  else if (entityType === 'contact') filterContacts();
+  else if (entityType === 'project') filterProjects();
+}
+
+function toggleTagFilterMode(entityType) {
+  const state = _tagFilterState[entityType];
+  state.mode = state.mode === 'or' ? 'and' : 'or';
+  renderTagFilterUI(entityType);
+  if (entityType === 'company') filterCompanies();
+  else if (entityType === 'contact') filterContacts();
+  else if (entityType === 'project') filterProjects();
+}
+
+function clearTagFilter(entityType) {
+  _tagFilterState[entityType] = { tagIds: [], mode: 'or' };
+  renderTagFilterUI(entityType);
+  if (entityType === 'company') filterCompanies();
+  else if (entityType === 'contact') filterContacts();
+  else if (entityType === 'project') filterProjects();
+}
+
+async function applyTagFilter(entityType, items) {
+  const state = _tagFilterState[entityType];
+  if (!state || state.tagIds.length === 0) return items;
+  // IDs holen, die mit dem Filter passen
+  const { data, error } = await db.from('entity_tags')
+    .select('entity_id, tag_id')
+    .eq('entity_type', entityType)
+    .in('tag_id', state.tagIds);
+  if (error) return items;
+  let allowed;
+  if (state.mode === 'or') {
+    allowed = new Set((data || []).map(r => r.entity_id));
+  } else {
+    // AND: nur IDs, die ALLE selektierten Tags haben
+    const counts = {};
+    (data || []).forEach(r => { counts[r.entity_id] = (counts[r.entity_id] || 0) + 1; });
+    allowed = new Set(Object.entries(counts)
+      .filter(([id, c]) => c >= state.tagIds.length)
+      .map(([id]) => id));
+  }
+  return items.filter(it => allowed.has(it.id));
 }
 
 // ═══════════════════════════════════════════════════════════
