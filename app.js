@@ -1,5 +1,22 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.0 (Datei-Anhänge — Phase 9). Generische Anhänge
+   an Firmen, Projekten, Einsätzen und Terminen über polymorphe
+   Beziehung (entity_type, entity_id). Neue Tabelle `attachments`
+   (Metadaten) + Supabase-Storage-Bucket „attachments" (privat,
+   max 50 MB pro Datei) für die echten Dateien. Pfad-Schema:
+   `<entity_type>/<entity_id>/<uuid>-<filename>`.
+   Migration v2.9.0_attachments.sql: Tabelle + 2 RLS-Policies +
+   Storage-Bucket + 4 storage.objects-Policies (alle authenticated).
+   UI: neue Detail-Bereiche `#company-attachments`,
+   `#project-attachments`, `#dep-attachments`, `#appt-attachments`
+   mit Datei-Liste (Icon nach MIME, Filename = Download-Link über
+   1h-Signed-URL, Größe + Datum + Uploader, Lösch-Button) und
+   Upload-Button (Multi-File, soft-validate auf 50 MB). Soft-Delete
+   via deleted_at, Storage-Datei bleibt erhalten (Admin-Cleanup).
+   Helper: renderAttachmentZone, loadAttachmentsFor,
+   onAttachmentFileChosen, downloadAttachment, deleteAttachment,
+   _formatBytes, _attachmentIcon.
    Version 2.8.1 (Arbeitsplatz: visuelle Sektions-Trennung +
    Shortcuts-Label vollständig). Zwei UX-Verbesserungen:
    1) Jede Sektion auf dem Arbeitsplatz (Quick-Links / Angeheftet /
@@ -7630,6 +7647,7 @@ function renderCompanyDetail(c) {
   wire('company-detail-pin-btn', () => togglePin('company', c.id, c.name));
   applyPinButtonState('company-detail-pin-btn', 'company', c.id);
   renderEntityTagZone('company-side-tags', 'company', c.id);  // v2.5.0
+  renderAttachmentZone('company', c.id, 'company-attachments');  // v2.9.0
 
   wire('company-detail-add-contact-btn', () => {
     contactModalPrefillCompanyId = c.id;
@@ -9432,6 +9450,7 @@ async function renderProjectDetail(p) {
   wire('project-detail-pin-btn', () => togglePin('project', p.id, p.name));
   applyPinButtonState('project-detail-pin-btn', 'project', p.id);
   renderEntityTagZone('project-side-tags', 'project', p.id);  // v2.5.0
+  renderAttachmentZone('project', p.id, 'project-attachments');  // v2.9.0
   wire('project-detail-add-appointment-btn', () => {
     appointmentModalPrefillProjectId = p.id;
     openAppointmentModal('new');
@@ -19042,6 +19061,9 @@ async function loadAppointmentDetail(appointmentId) {
   renderWorkflowChecklist('appointment_prepare', 'appointment', appointmentId,
     'appt-workflow-checklist', 'appt-workflow-pill', a.workflow_state);
 
+  // v2.9.0: Datei-Anhänge laden
+  renderAttachmentZone('appointment', appointmentId, 'appt-attachments');
+
   // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang
   const apptTab = _pendingDetailTab || 'inhalt';
   _pendingDetailTab = null;
@@ -19279,6 +19301,9 @@ async function loadDeploymentDetail(deploymentId) {
   // v2.0.4: State aus geladenem Datensatz durchreichen.
   renderWorkflowChecklist('deployment_document', 'deployment', deploymentId,
     'dep-workflow-checklist', 'dep-workflow-pill', d.workflow_state);
+
+  // v2.9.0: Datei-Anhänge laden
+  renderAttachmentZone('deployment', deploymentId, 'dep-attachments');
 
   // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang
   const depTab = _pendingDetailTab || 'bericht';
@@ -20361,6 +20386,138 @@ if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
   MODAL_CLOSERS['modal-product'] = () => closeProductModal();
   MODAL_CLOSERS['modal-merge']   = () => closeMergeModal();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.9.0 — ATTACHMENTS (Datei-Anhänge an Firma/Projekt/Einsatz/
+//  Termin/Kontakt). Storage-Bucket: "attachments" (privat).
+//  Pfad: <entity_type>/<entity_id>/<uuid>-<original-filename>
+// ═══════════════════════════════════════════════════════════
+
+const ATTACHMENT_BUCKET = 'attachments';
+
+function _formatBytes(b) {
+  if (!b || b < 1024) return `${b || 0} B`;
+  if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`;
+  if (b < 1024*1024*1024) return `${(b/1024/1024).toFixed(1)} MB`;
+  return `${(b/1024/1024/1024).toFixed(2)} GB`;
+}
+
+function _attachmentIcon(mimeType, filename) {
+  const ext = (filename || '').split('.').pop()?.toLowerCase() || '';
+  if (mimeType?.startsWith('image/'))            return '🖼';
+  if (mimeType?.startsWith('video/'))            return '🎬';
+  if (mimeType?.startsWith('audio/'))            return '🎵';
+  if (mimeType === 'application/pdf' || ext === 'pdf') return '📄';
+  if (['doc','docx','rtf'].includes(ext))        return '📝';
+  if (['xls','xlsx','csv'].includes(ext))        return '📊';
+  if (['ppt','pptx','key'].includes(ext))        return '📈';
+  if (['zip','rar','7z','tar','gz'].includes(ext)) return '🗜';
+  return '📎';
+}
+
+async function loadAttachmentsFor(entityType, entityId) {
+  const { data, error } = await db.from('attachments')
+    .select('*, uploaded_by_user:user_profiles!attachments_uploaded_by_fkey(name)')
+    .is('deleted_at', null)
+    .eq('entity_type', entityType).eq('entity_id', entityId)
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return data || [];
+}
+
+async function renderAttachmentZone(entityType, entityId, containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap || !entityId) return;
+  const items = await loadAttachmentsFor(entityType, entityId);
+
+  const inputId = `${containerId}-file-input`;
+  const list = items.length === 0
+    ? '<div class="info-card-empty" style="font-size:12px">Noch keine Dateien.</div>'
+    : `<div class="attachment-list">${items.map(a => `
+        <div class="attachment-row">
+          <span class="attachment-icon">${esc(_attachmentIcon(a.mime_type, a.filename))}</span>
+          <a class="attachment-name" onclick="downloadAttachment('${esc(a.id)}')">${esc(a.filename)}</a>
+          <span class="attachment-meta">${esc(_formatBytes(a.size_bytes))} · ${esc(formatDateCompact((a.created_at||'').substring(0,10)))}${a.uploaded_by_user?.name ? ' · ' + esc(a.uploaded_by_user.name) : ''}</span>
+          <button class="attachment-delete" onclick="deleteAttachment('${esc(a.id)}','${esc(entityType)}','${esc(entityId)}','${esc(containerId)}')" title="Löschen">×</button>
+        </div>`).join('')}</div>`;
+
+  wrap.innerHTML = `
+    ${list}
+    <div class="attachment-upload">
+      <input type="file" id="${inputId}" multiple style="display:none"
+             onchange="onAttachmentFileChosen('${esc(entityType)}','${esc(entityId)}','${esc(containerId)}',this)">
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('${inputId}').click()">+ Datei hochladen</button>
+      <span class="attachment-hint">max 50 MB pro Datei</span>
+    </div>`;
+}
+
+async function onAttachmentFileChosen(entityType, entityId, containerId, input) {
+  const files = [...(input.files || [])];
+  if (files.length === 0) return;
+  const wrap = document.getElementById(containerId);
+  for (const file of files) {
+    if (file.size > 50 * 1024 * 1024) {
+      showToast(`„${file.name}" ist größer als 50 MB — übersprungen.`, true);
+      continue;
+    }
+    // Pfad: entity_type/entity_id/<uuid>-<filename>
+    const safeFilename = file.name.replace(/[^\w.\-]/g, '_');
+    const id = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + '-' + Math.random().toString(36).slice(2));
+    const storagePath = `${entityType}/${entityId}/${id}-${safeFilename}`;
+    showToast(`Lade „${file.name}" hoch …`);
+    const { error: upErr } = await db.storage.from(ATTACHMENT_BUCKET).upload(storagePath, file, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: false
+    });
+    if (upErr) { showToast(`Upload fehlgeschlagen: ${upErr.message}`, true); continue; }
+    // Metadaten in DB
+    const { error: dbErr } = await db.from('attachments').insert({
+      entity_type: entityType,
+      entity_id: entityId,
+      filename: file.name,
+      storage_path: storagePath,
+      mime_type: file.type || null,
+      size_bytes: file.size,
+      uploaded_by: currentProfile?.id || null
+    });
+    if (dbErr) {
+      showToast(`Metadaten-Eintrag fehlgeschlagen: ${dbErr.message}`, true);
+      // Storage-Datei aufräumen
+      await db.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
+      continue;
+    }
+  }
+  input.value = '';
+  showToast(`${files.length} Datei${files.length === 1 ? '' : 'en'} hochgeladen.`);
+  await renderAttachmentZone(entityType, entityId, containerId);
+}
+
+async function downloadAttachment(attachmentId) {
+  const { data: att } = await db.from('attachments').select('storage_path, filename').eq('id', attachmentId).single();
+  if (!att) { showToast('Datei nicht gefunden.', true); return; }
+  // Signed URL für 1h
+  const { data: urlData, error } = await db.storage.from(ATTACHMENT_BUCKET).createSignedUrl(att.storage_path, 3600);
+  if (error) { showToast('Download fehlgeschlagen: ' + error.message, true); return; }
+  // Browser-Download triggern
+  const a = document.createElement('a');
+  a.href = urlData.signedUrl;
+  a.download = att.filename;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function deleteAttachment(attachmentId, entityType, entityId, containerId) {
+  const ok = await confirmDialog({ title: 'Datei löschen?', message: 'Die Datei wird soft-gelöscht (deleted_at gesetzt). Storage bleibt erhalten — kontaktiere den Admin für endgültige Bereinigung.', okLabel: 'Löschen', isDanger: true });
+  if (!ok) return;
+  const { error } = await db.from('attachments')
+    .update({ deleted_at: new Date().toISOString() }).eq('id', attachmentId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  showToast('Datei gelöscht.');
+  await renderAttachmentZone(entityType, entityId, containerId);
 }
 
 // ═══════════════════════════════════════════════════════════

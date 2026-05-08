@@ -753,6 +753,11 @@
                         onblur="saveCompanyNotesInline()"></textarea>
               <div id="company-notes-save-status" style="font-size:11px;color:var(--muted);margin-top:4px;min-height:14px"></div>
             </div>
+            <!-- v2.9.0: Datei-Anhänge -->
+            <div class="info-card" style="margin-top:16px">
+              <div class="info-card-title">Dateien</div>
+              <div id="company-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
+            </div>
           </div>
 
           <!-- Projekte-Tab -->
@@ -1507,6 +1512,11 @@
                 </table>
               </div>
             </div>
+            <!-- v2.9.0: Datei-Anhänge -->
+            <div class="info-card" style="margin-top:16px">
+              <div class="info-card-title">Dateien</div>
+              <div id="project-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
+            </div>
           </div>
 
         </main>
@@ -1729,7 +1739,8 @@
           </div>
 
           <div class="proj-tab-panel" data-tab="anhaenge" id="appt-panel-anhaenge" style="display:none">
-            <div class="info-card-empty">Datei-Anhänge kommen in Phase 9 (Storage-Sub-Spec).</div>
+            <!-- v2.9.0: Datei-Anhänge -->
+            <div id="appt-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
           </div>
 
         </main>
@@ -1866,6 +1877,11 @@
               <textarea class="proj-brief-text" id="dep-plan-anfahrt"
                         placeholder="Adresse, Reisezeit, Parkplatz, Empfang"
                         onblur="saveDeploymentDokuField('anfahrt', this.value)"></textarea>
+            </div>
+            <!-- v2.9.0: Datei-Anhänge -->
+            <div class="proj-brief-section">
+              <div class="proj-brief-label">DATEIEN</div>
+              <div id="dep-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
             </div>
           </div>
 
