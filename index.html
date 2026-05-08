@@ -356,6 +356,7 @@
       <button class="listen-tab" data-page="tags"      onclick="navigateTo('tags')">Tags</button>
       <button class="listen-tab" data-page="products"  onclick="navigateTo('products')">Produkte</button>
       <button class="listen-tab" data-page="dubletten" onclick="navigateTo('dubletten')">Dubletten</button>
+      <button class="listen-tab" data-page="shortcuts" onclick="navigateTo('shortcuts')">Shortcuts</button>
       <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
     </div>
 
@@ -445,6 +446,12 @@
           <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('termin')">📅 Termin vorbereiten</button>
           <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('einsatz')">🔧 Einsatz vorbereiten</button>
           <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('projekt')">📦 Projekt-Briefing starten</button>
+        </div>
+
+        <!-- v2.8.0: Quick-Links / Shortcuts (User-konfigurierbar unter Einstellungen → Shortcuts) -->
+        <div class="arbeitsplatz-shortcuts-block" id="arbeitsplatz-shortcuts-block" style="display:none">
+          <div class="arbeitsplatz-section-eyebrow">QUICK-LINKS</div>
+          <div class="arbeitsplatz-shortcuts" id="arbeitsplatz-shortcuts"></div>
         </div>
 
         <!-- v2.3.0: Angeheftet (Pins) -->
@@ -2332,6 +2339,86 @@
           <div>
             <button class="btn" onclick="closeProductModal()">Abbrechen</button>
             <button class="btn btn-primary" onclick="saveProduct()">Speichern</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.8.0: SEITE: SHORTCUTS — Quick-Links auf den Arbeitsplatz -->
+    <div class="page" id="page-shortcuts">
+      <div class="page-header">
+        <h1 class="page-title">Shortcuts</h1>
+        <button class="btn btn-primary" onclick="openShortcutModal('new')">+ Neuer Shortcut</button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;max-width:720px">
+        Quick-Links für den Arbeitsplatz — z.&nbsp;B. „Seminarplan", „AWT-Training Präsentation", „Heidenhain-Wissensdatenbank". Klick auf eine Karte öffnet die URL in einem neuen Tab. Sortierung über das Reihenfolge-Feld.
+      </p>
+      <div class="card">
+        <div class="card-title"><span id="shortcuts-count">Shortcuts</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:50px">Icon</th>
+              <th>Label</th>
+              <th class="col-tablet">Kategorie</th>
+              <th class="col-desktop">URL</th>
+              <th style="width:80px">Reihenf.</th>
+              <th style="width:80px">Status</th>
+              <th class="col-action"></th>
+            </tr></thead>
+            <tbody id="shortcuts-table-body">
+              <tr><td colspan="7"><div class="empty">Lade Shortcuts …</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.8.0: SHORTCUT-MODAL -->
+    <div class="modal-overlay" id="modal-shortcut" onclick="if(event.target===this)closeShortcutModal()">
+      <div class="modal" style="width:520px">
+        <div class="modal-title" id="shortcut-modal-title">Neuer Shortcut</div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Icon (Emoji)</label>
+            <input type="text" id="sc-icon" placeholder="z.B. 📅 📊 🎓 🔧" maxlength="4">
+          </div>
+          <div class="form-group">
+            <label>Reihenfolge</label>
+            <input type="number" id="sc-reihenfolge" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Label *</label>
+          <input type="text" id="sc-label" placeholder="z.B. Seminarplan 2026">
+        </div>
+        <div class="form-group">
+          <label>URL *</label>
+          <input type="text" id="sc-url" placeholder="https://… oder mailto:… oder file://…">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Kategorie</label>
+            <input type="text" id="sc-kategorie" list="sc-kategorie-list" placeholder="Tools / Vorlagen / Externe Links">
+            <datalist id="sc-kategorie-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="sc-aktiv">
+              <option value="true">Aktiv</option>
+              <option value="false">Inaktiv</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="sc-beschreibung" rows="2" placeholder="Optional: kurze Erklärung"></textarea>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:space-between">
+          <button class="btn btn-danger" id="sc-delete-btn" onclick="deleteShortcut()" style="display:none">Löschen</button>
+          <div>
+            <button class="btn" onclick="closeShortcutModal()">Abbrechen</button>
+            <button class="btn btn-primary" onclick="saveShortcut()">Speichern</button>
           </div>
         </div>
       </div>

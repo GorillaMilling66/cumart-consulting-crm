@@ -1222,6 +1222,46 @@ body {
 }
 .arbeitsplatz-tile-secondary:hover { color: var(--text); }
 
+/* v2.8.0: Shortcuts — Quick-Links auf dem Arbeitsplatz */
+.arbeitsplatz-shortcuts-block { margin-bottom: 24px; }
+.arbeitsplatz-shortcuts {
+  display: flex; flex-direction: column; gap: 14px;
+}
+.arbeitsplatz-shortcut-group-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 6px;
+}
+.arbeitsplatz-shortcut-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.arbeitsplatz-shortcut-card {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  text-decoration: none;
+  color: var(--text);
+  transition: background .12s, border-color .12s, transform .08s;
+  cursor: pointer;
+}
+.arbeitsplatz-shortcut-card:hover {
+  background: var(--bg-soft);
+  border-color: var(--border-strong, var(--text));
+  transform: translateY(-1px);
+}
+.arbeitsplatz-shortcut-icon {
+  font-size: 22px; line-height: 1;
+  flex-shrink: 0;
+}
+.arbeitsplatz-shortcut-label {
+  font-size: 13px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* v2.3.0: Angeheftet (Pins) */
 .arbeitsplatz-pins-block { margin-bottom: 24px; }
 .arbeitsplatz-pins {

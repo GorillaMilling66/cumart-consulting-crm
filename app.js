@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.8.0 (Shortcuts — Quick-Links auf dem Arbeitsplatz).
+   User-konfigurierbare Quick-Links: Seminarplan, Präsentationen,
+   externe Tools, Wissensdatenbanken etc. Schema (Migration
+   v2.8.0_shortcuts.sql): neue Tabelle `shortcuts` (id, label, url,
+   icon, kategorie, beschreibung, reihenfolge, ist_aktiv,
+   erstellt_von, created_at). RLS-Pattern wie sonst, Index auf
+   reihenfolge/label für aktive Einträge.
+   UI: neue Settings-Sub-Page `#/shortcuts` mit CRUD-Tabelle und
+   Modal (Label + URL + Icon-Emoji + Kategorie + Reihenfolge +
+   Status). Auf dem Arbeitsplatz neue Sektion „QUICK-LINKS" oben
+   neben „FORTFÜHREN", Karten gruppiert nach Kategorie. Klick
+   öffnet URL in neuem Tab. Sektion ist versteckt wenn keine
+   aktiven Shortcuts existieren.
+   Helper: loadShortcutsCache, loadShortcutsPage, openShortcutModal,
+   saveShortcut, deleteShortcut, renderArbeitsplatzShortcuts.
    Version 2.7.5 (Hotfix — doppelte visTbody-Deklaration).
    v2.7.4 hat oben in loadCompanyDeployments `const visTbody`
    eingefügt, ohne die alte zweite Deklaration im Erfolgs-Pfad
@@ -2962,6 +2977,7 @@ function showPage(name) {
   if (name === 'tags') loadTagsPage?.();
   if (name === 'products') loadProductsPage?.();
   if (name === 'dubletten') loadDublettenPage?.();
+  if (name === 'shortcuts') loadShortcutsPage?.();
   if (name === 'import') resetImportPage?.();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
@@ -3569,6 +3585,7 @@ async function loadArbeitsplatz() {
 
   // Drei Lazy-Loads
   await Promise.all([
+    renderArbeitsplatzShortcuts(),  // v2.8.0
     renderArbeitsplatzPins(),       // v2.3.0
     renderArbeitsplatzInbox(),      // v2.3.0
     renderArbeitsplatzCare(),       // v2.3.0
@@ -4183,7 +4200,7 @@ function setListenTabCount(page, count) {
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
-const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','dubletten','import'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','dubletten','shortcuts','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
   const settingsBar = document.getElementById('einstellungen-tab-bar');
@@ -4356,6 +4373,8 @@ function navigateTo(page, param) {
     hash = '#/produkte';
   } else if (page === 'dubletten') {
     hash = '#/dubletten';
+  } else if (page === 'shortcuts') {
+    hash = '#/shortcuts';
   } else if (page === 'import') {
     hash = '#/import';
   } else if (page === 'briefing') {
@@ -4508,6 +4527,7 @@ function handleHashChange() {
   if (hash === '#/tags')       { showPage('tags'); return; }
   if (hash === '#/produkte')   { showPage('products'); return; }
   if (hash === '#/dubletten')  { showPage('dubletten'); return; }
+  if (hash === '#/shortcuts')  { showPage('shortcuts'); return; }
   if (hash === '#/import')     { showPage('import'); return; }
   // v2.0.0 — Drei-Bereiche-Architektur
   if (hash === '#/briefing')      { showPage('briefing');      return; }
@@ -20328,6 +20348,156 @@ if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
   MODAL_CLOSERS['modal-product'] = () => closeProductModal();
   MODAL_CLOSERS['modal-merge']   = () => closeMergeModal();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.8.0 — SHORTCUTS (Quick-Links auf dem Arbeitsplatz)
+// ═══════════════════════════════════════════════════════════
+
+let _shortcutsCache = [];
+let _editingShortcutId = null;
+
+async function loadShortcutsCache(force = false) {
+  if (!force && _shortcutsCache.length > 0) return _shortcutsCache;
+  const { data, error } = await db.from('shortcuts').select('*')
+    .order('reihenfolge', { ascending: true }).order('label');
+  if (error) return [];
+  _shortcutsCache = data || [];
+  return _shortcutsCache;
+}
+
+async function loadShortcutsPage() {
+  await loadShortcutsCache(true);
+  const tbody = document.getElementById('shortcuts-table-body');
+  const countEl = document.getElementById('shortcuts-count');
+  if (!tbody) return;
+  countEl.textContent = `${_shortcutsCache.length} Shortcut${_shortcutsCache.length === 1 ? '' : 's'}`;
+  if (_shortcutsCache.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Shortcuts. Klicke oben auf „+ Neuer Shortcut".</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = _shortcutsCache.map(s => `
+    <tr style="${s.ist_aktiv ? '' : 'opacity:0.55'}">
+      <td style="font-size:18px;text-align:center">${esc(s.icon || '🔗')}</td>
+      <td><span class="cell-link" onclick="openShortcutModal('edit','${esc(s.id)}')">${esc(s.label)}</span></td>
+      <td class="col-tablet">${s.kategorie ? `<span class="badge" style="background:#eef2ff;color:#4338ca">${esc(s.kategorie)}</span>` : '—'}</td>
+      <td class="col-desktop"><a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--link);font-size:12px;font-family:monospace">${esc(s.url.length > 60 ? s.url.substring(0,60) + '…' : s.url)}</a></td>
+      <td>${s.reihenfolge}</td>
+      <td>${s.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#166534">Aktiv</span>' : '<span style="color:var(--muted)">inaktiv</span>'}</td>
+      <td class="col-action"><button class="btn btn-sm" onclick="openShortcutModal('edit','${esc(s.id)}')">Bearbeiten</button></td>
+    </tr>`).join('');
+}
+
+async function openShortcutModal(mode, shortcutId = null) {
+  _editingShortcutId = mode === 'edit' ? shortcutId : null;
+  document.getElementById('shortcut-modal-title').textContent = mode === 'edit' ? 'Shortcut bearbeiten' : 'Neuer Shortcut';
+  document.getElementById('sc-delete-btn').style.display = mode === 'edit' ? '' : 'none';
+
+  ['sc-icon','sc-label','sc-url','sc-kategorie','sc-beschreibung'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('sc-reihenfolge').value = '0';
+  document.getElementById('sc-aktiv').value = 'true';
+
+  // Kategorie-Datalist mit existierenden Werten
+  await loadShortcutsCache();
+  const kategorien = [...new Set(_shortcutsCache.map(s => s.kategorie).filter(Boolean))].sort();
+  document.getElementById('sc-kategorie-list').innerHTML = kategorien.map(k => `<option value="${esc(k)}">`).join('');
+
+  if (mode === 'edit' && shortcutId) {
+    const s = _shortcutsCache.find(x => x.id === shortcutId);
+    if (s) {
+      document.getElementById('sc-icon').value = s.icon || '';
+      document.getElementById('sc-label').value = s.label || '';
+      document.getElementById('sc-url').value = s.url || '';
+      document.getElementById('sc-kategorie').value = s.kategorie || '';
+      document.getElementById('sc-beschreibung').value = s.beschreibung || '';
+      document.getElementById('sc-reihenfolge').value = s.reihenfolge ?? 0;
+      document.getElementById('sc-aktiv').value = s.ist_aktiv ? 'true' : 'false';
+    }
+  }
+  document.getElementById('modal-shortcut').classList.add('open');
+  setTimeout(() => document.getElementById('sc-label')?.focus(), 100);
+}
+
+function closeShortcutModal() {
+  document.getElementById('modal-shortcut').classList.remove('open');
+  _editingShortcutId = null;
+}
+
+async function saveShortcut() {
+  const label = document.getElementById('sc-label').value.trim();
+  const url = document.getElementById('sc-url').value.trim();
+  if (!label) { showToast('Label ist Pflicht.', true); return; }
+  if (!url)   { showToast('URL ist Pflicht.', true); return; }
+  const payload = {
+    label, url,
+    icon: document.getElementById('sc-icon').value.trim() || null,
+    kategorie: document.getElementById('sc-kategorie').value.trim() || null,
+    beschreibung: document.getElementById('sc-beschreibung').value.trim() || null,
+    reihenfolge: parseInt(document.getElementById('sc-reihenfolge').value, 10) || 0,
+    ist_aktiv: document.getElementById('sc-aktiv').value === 'true'
+  };
+  let res;
+  if (_editingShortcutId) {
+    res = await db.from('shortcuts').update(payload).eq('id', _editingShortcutId);
+  } else {
+    payload.erstellt_von = currentProfile?.id || null;
+    res = await db.from('shortcuts').insert(payload);
+  }
+  if (res.error) { showToast('Fehler: ' + res.error.message, true); return; }
+  closeShortcutModal();
+  showToast(_editingShortcutId ? 'Shortcut aktualisiert.' : 'Shortcut angelegt.');
+  await loadShortcutsCache(true);
+  loadShortcutsPage();
+}
+
+async function deleteShortcut() {
+  if (!_editingShortcutId) return;
+  const ok = await confirmDialog({ title: 'Shortcut löschen?', message: 'Hard-Delete — kann nicht rückgängig gemacht werden.', okLabel: 'Löschen', isDanger: true });
+  if (!ok) return;
+  const { error } = await db.from('shortcuts').delete().eq('id', _editingShortcutId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  closeShortcutModal();
+  showToast('Shortcut gelöscht.');
+  await loadShortcutsCache(true);
+  loadShortcutsPage();
+}
+
+async function renderArbeitsplatzShortcuts() {
+  const block = document.getElementById('arbeitsplatz-shortcuts-block');
+  const wrap = document.getElementById('arbeitsplatz-shortcuts');
+  if (!block || !wrap) return;
+  await loadShortcutsCache(true);
+  const active = _shortcutsCache.filter(s => s.ist_aktiv);
+  if (active.length === 0) {
+    block.style.display = 'none';
+    return;
+  }
+  block.style.display = '';
+
+  // Nach Kategorie gruppieren — innerhalb sortiert nach reihenfolge/label
+  const byKat = {};
+  active.forEach(s => {
+    const k = s.kategorie || 'Sonstiges';
+    (byKat[k] = byKat[k] || []).push(s);
+  });
+
+  wrap.innerHTML = Object.entries(byKat).map(([kat, items]) => `
+    <div class="arbeitsplatz-shortcut-group">
+      <div class="arbeitsplatz-shortcut-group-title">${esc(kat)}</div>
+      <div class="arbeitsplatz-shortcut-cards">
+        ${items.map(s => `
+          <a class="arbeitsplatz-shortcut-card" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.beschreibung || s.url)}">
+            <span class="arbeitsplatz-shortcut-icon">${esc(s.icon || '🔗')}</span>
+            <span class="arbeitsplatz-shortcut-label">${esc(s.label)}</span>
+          </a>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+if (typeof MODAL_CLOSERS !== 'undefined') {
+  MODAL_CLOSERS['modal-shortcut'] = () => closeShortcutModal();
 }
 
 // ═══════════════════════════════════════════════════════════
