@@ -1523,6 +1523,8 @@ body {
 .type-pill-aufgabe { background: var(--type-aufgabe-bg); color: var(--type-aufgabe-fg); }
 .type-pill-notiz   { background: var(--type-notiz-bg);   color: var(--type-notiz-fg); }
 .type-pill-status  { background: var(--type-status-bg);  color: var(--type-status-fg); }
+/* v2.9.1: Anhang-Pille im Activity-Stream */
+.type-pill-anhang  { background: #eef2ff; color: #3730a3; }
 
 /* v2.0.0 — Projekt-Detail V2 (Vier-Zonen-Muster) */
 .proj-breadcrumb {

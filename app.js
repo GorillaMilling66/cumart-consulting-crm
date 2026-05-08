@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.1 (Anhänge im Aktivitäten-Stream). Hochgeladene
+   Dateien erscheinen jetzt zusätzlich zur Anhang-Zone auch im
+   chronologischen Aktivitäten-Stream der Firma/des Projekts/
+   des Kontakts (Type-Pille „ANHANG", Klick = Download über
+   Signed-URL). Neue Filter-Pille „Anhänge" in den drei Streams.
+   Nach Upload und Delete wird der Stream über
+   `_refreshActivityStreamFor` automatisch neu geladen, wenn die
+   passende Detail-Page gerade offen ist.
    Version 2.9.0 (Datei-Anhänge — Phase 9). Generische Anhänge
    an Firmen, Projekten, Einsätzen und Terminen über polymorphe
    Beziehung (entity_type, entity_id). Neue Tabelle `attachments`
@@ -18365,11 +18373,13 @@ async function loadProjectActivityStream(projectId) {
   if (!wrap) return;
   wrap.innerHTML = '<div class="info-card-empty">Lade Aktivitäten …</div>';
 
-  const [appts, deps, tasks, notes] = await Promise.all([
+  const [appts, deps, tasks, notes, atts] = await Promise.all([
     db.from('appointments').select('id, titel, datum, uhrzeit_von, status, created_at').is('deleted_at', null).eq('project_id', projectId).order('datum', { ascending: false }).limit(50),
     db.from('deployments').select('id, titel, datum_von, status, ort, einzelpreis, menge, created_at').is('deleted_at', null).eq('project_id', projectId).order('datum_von', { ascending: false }).limit(50),
     db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
-    db.from('notes').select('id, inhalt, created_at, erstellt_von, user:user_profiles!notes_erstellt_von_fkey(name)').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50)
+    db.from('notes').select('id, inhalt, created_at, erstellt_von, user:user_profiles!notes_erstellt_von_fkey(name)').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
+    // v2.9.1: Anhänge in den Activity-Stream
+    db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', 'project').eq('entity_id', projectId).order('created_at', { ascending: false }).limit(50)
   ]);
   if (!isStillOnDetail('project', projectId)) return;  // v2.0.6: race-guard
 
@@ -18397,6 +18407,14 @@ async function loadProjectActivityStream(projectId) {
   (notes.data || []).forEach(n => items.push({
     type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
     click: `openNotizModal('${esc(n.id)}','project')`
+  }));
+  // v2.9.1: Anhänge
+  (atts.data || []).forEach(a => items.push({
+    type: 'ANHANG', ts: a.created_at,
+    title: `${_attachmentIcon(a.mime_type, a.filename)} ${a.filename}`,
+    meta: [_formatBytes(a.size_bytes), a.user?.name].filter(Boolean).join(' · '),
+    kind: 'anhaenge',
+    click: `downloadAttachment('${esc(a.id)}')`
   }));
 
   // Sortierung neueste zuerst
@@ -18702,11 +18720,13 @@ async function loadCompanyActivityStream(companyId) {
   if (!wrap) return;
   wrap.innerHTML = '<div class="info-card-empty">Lade Aktivitäten …</div>';
 
-  const [appts, deps, tasks, notes] = await Promise.all([
+  const [appts, deps, tasks, notes, atts] = await Promise.all([
     db.from('appointments').select('id, titel, datum, uhrzeit_von, status').is('deleted_at', null).eq('company_id', companyId).order('datum', { ascending: false }).limit(50),
     db.from('deployments').select('id, titel, datum_von, status, ort, einzelpreis, menge').is('deleted_at', null).eq('company_id', companyId).order('datum_von', { ascending: false }).limit(50),
     db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('company_id', companyId).order('created_at', { ascending: false }).limit(50),
-    db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('company_id', companyId).order('created_at', { ascending: false }).limit(50)
+    db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('company_id', companyId).order('created_at', { ascending: false }).limit(50),
+    // v2.9.1: Anhänge in den Activity-Stream
+    db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', 'company').eq('entity_id', companyId).order('created_at', { ascending: false }).limit(50)
   ]);
   if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
 
@@ -18732,6 +18752,14 @@ async function loadCompanyActivityStream(companyId) {
   (notes.data || []).forEach(n => items.push({
     id: n.id, type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
     click: `openNotizModal('${esc(n.id)}','company')`
+  }));
+  // v2.9.1: Anhänge
+  (atts.data || []).forEach(a => items.push({
+    id: a.id, type: 'ANHANG', ts: a.created_at,
+    title: `${_attachmentIcon(a.mime_type, a.filename)} ${a.filename}`,
+    meta: [_formatBytes(a.size_bytes), a.user?.name].filter(Boolean).join(' · '),
+    kind: 'anhaenge',
+    click: `downloadAttachment('${esc(a.id)}')`
   }));
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
@@ -18878,10 +18906,12 @@ async function loadContactActivityStream(contactId) {
   if (!wrap) return;
   wrap.innerHTML = '<div class="info-card-empty">Lade Aktivitäten …</div>';
 
-  const [appts, tasks, notes] = await Promise.all([
+  const [appts, tasks, notes, atts] = await Promise.all([
     db.from('appointments').select('id, titel, datum, uhrzeit_von, status').is('deleted_at', null).eq('contact_id', contactId).order('datum', { ascending: false }).limit(50),
     db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50),
-    db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50)
+    db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq('contact_id', contactId).order('created_at', { ascending: false }).limit(50),
+    // v2.9.1: Anhänge in den Activity-Stream
+    db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', 'contact').eq('entity_id', contactId).order('created_at', { ascending: false }).limit(50)
   ]);
   if (!isStillOnDetail('contact', contactId)) return;  // v2.0.6: race-guard
 
@@ -18900,6 +18930,14 @@ async function loadContactActivityStream(contactId) {
   (notes.data || []).forEach(n => items.push({
     type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
     click: `openNotizModal('${esc(n.id)}','contact')`
+  }));
+  // v2.9.1: Anhänge
+  (atts.data || []).forEach(a => items.push({
+    type: 'ANHANG', ts: a.created_at,
+    title: `${_attachmentIcon(a.mime_type, a.filename)} ${a.filename}`,
+    meta: [_formatBytes(a.size_bytes), a.user?.name].filter(Boolean).join(' · '),
+    kind: 'anhaenge',
+    click: `downloadAttachment('${esc(a.id)}')`
   }));
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
@@ -20491,6 +20529,7 @@ async function onAttachmentFileChosen(entityType, entityId, containerId, input) 
   input.value = '';
   showToast(`${files.length} Datei${files.length === 1 ? '' : 'en'} hochgeladen.`);
   await renderAttachmentZone(entityType, entityId, containerId);
+  _refreshActivityStreamFor(entityType, entityId);
 }
 
 async function downloadAttachment(attachmentId) {
@@ -20518,6 +20557,15 @@ async function deleteAttachment(attachmentId, entityType, entityId, containerId)
   if (error) { showToast('Fehler: ' + error.message, true); return; }
   showToast('Datei gelöscht.');
   await renderAttachmentZone(entityType, entityId, containerId);
+  _refreshActivityStreamFor(entityType, entityId);
+}
+
+// v2.9.1: Activity-Stream nach Anhang-Änderung neu laden, wenn passende
+// Detail-Page aktiv ist. Termin/Einsatz haben keinen Aktivitäten-Stream.
+function _refreshActivityStreamFor(entityType, entityId) {
+  if (entityType === 'company'  && currentCompanyDetailId === entityId) loadCompanyActivityStream(entityId);
+  if (entityType === 'project'  && currentProjectDetailId === entityId) loadProjectActivityStream(entityId);
+  if (entityType === 'contact'  && currentContactDetailId === entityId) loadContactActivityStream(entityId);
 }
 
 // ═══════════════════════════════════════════════════════════
