@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.6.6 ("Heute von dir" zeigt jetzt alle Anlage-Typen).
+   Vorher zeigte die Sektion nur Termine, Einsätze, Aufgaben +
+   erledigte Aufgaben — Importe von Firmen/Kontakten und neu
+   angelegte Produkte/Notizen waren unsichtbar. Jetzt mit dabei:
+   companies, contacts, notes, products (alle als heute-erstellt
+   per `erstellt_von = userId` und `created_at >= heute`).
+   Limit-Cap auf 12 Items (statt 6) wegen mehr Datenquellen.
+   Hinweis: Bearbeitungen werden weiterhin nicht getrackt — dafür
+   bräuchte es ein `updated_at`-Schema (kann später nachgezogen
+   werden).
    Version 2.6.5 (CSV-Import: eine Spalte → mehrere Zielfelder).
    Mapping-Struktur umgestellt von `Array<string|null>` auf
    `Array<string[]>`. Im Mapping-UI hat jede CSV-Spalte ein primäres
@@ -3844,8 +3854,10 @@ async function renderArbeitsplatzToday() {
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const todayStartISO = todayStart.toISOString();
 
-  // Parallel-Queries: heute erstellte Termine, Einsätze, Aufgaben, erledigte Aufgaben
-  const [apptRes, depRes, taskRes, taskDoneRes] = await Promise.all([
+  // Parallel-Queries: heute erstellte Datensätze in allen relevanten Tabellen.
+  // v2.6.6: Firma, Kontakt, Notiz, Produkt mit dazu — Importe und Anlagen via
+  // Listen / Einstellungen tauchen jetzt auch hier auf.
+  const [apptRes, depRes, taskRes, taskDoneRes, companyRes, contactRes, noteRes, productRes] = await Promise.all([
     db.from('appointments').select('id, titel, created_at').is('deleted_at', null)
       .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
     db.from('deployments').select('id, titel, created_at').is('deleted_at', null)
@@ -3853,15 +3865,27 @@ async function renderArbeitsplatzToday() {
     db.from('tasks').select('id, titel, created_at').is('deleted_at', null)
       .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
     db.from('tasks').select('id, titel, erledigt_am').is('deleted_at', null)
-      .eq('status', 'erledigt').gte('erledigt_am', todayStartISO).order('erledigt_am', { ascending: false }).limit(20)
+      .eq('status', 'erledigt').gte('erledigt_am', todayStartISO).order('erledigt_am', { ascending: false }).limit(20),
+    db.from('companies').select('id, name, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50),
+    db.from('contacts').select('id, vorname, nachname, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50),
+    db.from('notes').select('id, inhalt, created_at')
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+    db.from('products').select('id, name, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50)
   ]);
 
   const items = [
     ...((apptRes.data) || []).map(a => ({ type: 'TERMIN',  ts: a.created_at, label: a.titel, id: a.id, click: `navigateTo('termin','${esc(a.id)}')` })),
     ...((depRes.data) || []).map(d => ({ type: 'EINSATZ', ts: d.created_at, label: d.titel, id: d.id, click: `navigateTo('einsatz','${esc(d.id)}')` })),
     ...((taskRes.data) || []).map(t => ({ type: 'AUFGABE', ts: t.created_at, label: t.titel, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` })),
-    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${t.titel} → erledigt`, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` }))
-  ].filter(i => i.ts).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 6);
+    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${t.titel} → erledigt`, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` })),
+    ...((companyRes.data) || []).map(c => ({ type: 'FIRMA', ts: c.created_at, label: c.name, id: c.id, click: `navigateTo('firma','${esc(c.id)}')` })),
+    ...((contactRes.data) || []).map(k => ({ type: 'KONTAKT', ts: k.created_at, label: [k.vorname, k.nachname].filter(Boolean).join(' ') || '—', id: k.id, click: `navigateTo('kontakt','${esc(k.id)}')` })),
+    ...((noteRes.data) || []).map(n => ({ type: 'NOTIZ', ts: n.created_at, label: (n.inhalt || '').substring(0, 80), id: n.id })),
+    ...((productRes.data) || []).map(p => ({ type: 'PRODUKT', ts: p.created_at, label: p.name, id: p.id, click: `openProductModal('edit','${esc(p.id)}')` }))
+  ].filter(i => i.ts).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 12);
 
   if (counter) counter.textContent = `${items.length} Aktion${items.length === 1 ? '' : 'en'}`;
 
@@ -3874,8 +3898,9 @@ async function renderArbeitsplatzToday() {
     const time = new Date(it.ts).toTimeString().substring(0, 5);
     const cls = it.type.toLowerCase();
     const pill = it.type.charAt(0) + it.type.slice(1).toLowerCase();
+    const clickAttr = it.click ? `onclick="${it.click}" style="cursor:pointer"` : '';
     return `
-      <div class="arbeitsplatz-today-row" onclick="${it.click}">
+      <div class="arbeitsplatz-today-row" ${clickAttr}>
         <span class="arbeitsplatz-today-time">${esc(time)}</span>
         <span class="type-pill type-pill-${esc(cls)}">${esc(pill)}</span>
         <span class="arbeitsplatz-today-label">${esc(it.label || '—')}</span>
