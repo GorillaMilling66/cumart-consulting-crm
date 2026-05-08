@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.5.0 (Tags — Phase 1: Verwaltung + Detail-Page-Picker).
+   Cross-Entity-Labels für Firma/Kontakt/Projekt. Ein Tag (z.B.
+   "VIP", "Heidenhain", "Akquise 2026") kann an mehrere Entitäten
+   unterschiedlicher Typen hängen.
+   - Migration v2.5.0_tags.sql: Tabellen `tags` (id, name UNIQUE,
+     farbe, beschreibung) und `entity_tags` (Junction mit entity_type
+     CHECK in company/project/contact + entity_id, UNIQUE-Composite).
+     RLS analog zum bestehenden Pattern.
+   - Settings-Sub-Page #/tags mit CRUD-Modal (Name + Farb-Picker
+     aus 12 Voreinstellungen + Beschreibung), Liste mit Verknüpfungs-
+     Counts pro Tag.
+   - Tag-Picker auf Detail-Pages — neue TAGS-Sektion im Sidepanel
+     der Firma/Kontakt/Projekt-Page mit Pillen (entfernbar) und
+     Add-Dropdown plus „+ Neu"-Shortcut.
+   Helper: loadTagsCache, loadTagsForEntity, renderEntityTagZone,
+   addTagToEntity, removeTagFromEntity, openTagModal, saveTag,
+   deleteTag.
+   Phase 2 (folgt): Filter in den Listen-Tabellen nach Tag.
    Version 2.4.5 (Anrede-Splitting auch im Kontakt-Import). Das
    Spezialfeld "Anrede + Vor- und Nachname (zusammen)" gab es
    bisher nur im Datentyp "Firma + Kontakt zusammen". Jetzt auch
@@ -2751,6 +2769,7 @@ function showPage(name) {
   if (name === 'lookups') loadLookupsPage();
   if (name === 'programs') loadPrograms();
   if (name === 'templates') loadTemplates();
+  if (name === 'tags') loadTagsPage?.();
   if (name === 'import') resetImportPage?.();
   if (name === 'companies') loadCompanies();
   if (name === 'contacts') loadContacts();
@@ -3957,7 +3976,7 @@ function setListenTabCount(page, count) {
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
-const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','import'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
   const settingsBar = document.getElementById('einstellungen-tab-bar');
@@ -4124,6 +4143,8 @@ function navigateTo(page, param) {
     hash = '#/programme';
   } else if (page === 'templates') {
     hash = '#/templates';
+  } else if (page === 'tags') {
+    hash = '#/tags';
   } else if (page === 'import') {
     hash = '#/import';
   } else if (page === 'briefing') {
@@ -4273,6 +4294,7 @@ function handleHashChange() {
   if (hash === '#/stammdaten') { showPage('lookups'); return; }
   if (hash === '#/programme')  { showPage('programs'); return; }
   if (hash === '#/templates')  { showPage('templates'); return; }
+  if (hash === '#/tags')       { showPage('tags'); return; }
   if (hash === '#/import')     { showPage('import'); return; }
   // v2.0.0 — Drei-Bereiche-Architektur
   if (hash === '#/briefing')      { showPage('briefing');      return; }
@@ -7299,6 +7321,7 @@ function renderCompanyDetail(c) {
   wire('company-detail-copy-btn', () => copyCompanyById(c.id));
   wire('company-detail-pin-btn', () => togglePin('company', c.id, c.name));
   applyPinButtonState('company-detail-pin-btn', 'company', c.id);
+  renderEntityTagZone('company-side-tags', 'company', c.id);  // v2.5.0
 
   wire('company-detail-add-contact-btn', () => {
     contactModalPrefillCompanyId = c.id;
@@ -9087,6 +9110,7 @@ async function renderProjectDetail(p) {
   wire('project-detail-edit-btn', () => openProjectModal('edit', p.id));
   wire('project-detail-pin-btn', () => togglePin('project', p.id, p.name));
   applyPinButtonState('project-detail-pin-btn', 'project', p.id);
+  renderEntityTagZone('project-side-tags', 'project', p.id);  // v2.5.0
   wire('project-detail-add-appointment-btn', () => {
     appointmentModalPrefillProjectId = p.id;
     openAppointmentModal('new');
@@ -9459,6 +9483,7 @@ function renderContactDetail(k) {
   wire('contact-detail-copy-btn', () => copyContactById(k.id));
   wire('contact-detail-pin-btn', () => togglePin('contact', k.id, [k.vorname, k.nachname].filter(Boolean).join(' ')));
   applyPinButtonState('contact-detail-pin-btn', 'contact', k.id);
+  renderEntityTagZone('contact-side-tags', 'contact', k.id);  // v2.5.0
 
   wire('contact-detail-add-appointment-btn', () => {
     appointmentModalPrefillContactId = k.id;
@@ -19670,6 +19695,205 @@ async function _runCompanyContactImport(statusEl, errorsEl, btn) {
   }
   showToast(`${companiesCreated} Firmen + ${contactsCreated} Kontakte importiert.`);
   btn.disabled = false;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.5.0 — TAGS (Cross-Entity-Labels für Firma/Kontakt/Projekt)
+// ═══════════════════════════════════════════════════════════
+
+const TAG_FARBEN = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#6366f1','#84cc16','#f97316','#64748b','#0ea5e9'];
+let _tagsCache = null;            // [{id,name,farbe,beschreibung,...}]
+let _entityTagsCache = new Map(); // key="entityType:entityId" → tag-Array
+
+function invalidateTagsCache() { _tagsCache = null; _entityTagsCache.clear(); }
+
+async function loadTagsCache() {
+  if (_tagsCache) return _tagsCache;
+  const { data, error } = await db.from('tags').select('*').order('name');
+  if (error) return [];
+  _tagsCache = data || [];
+  return _tagsCache;
+}
+
+async function loadTagsForEntity(entityType, entityId) {
+  const key = `${entityType}:${entityId}`;
+  if (_entityTagsCache.has(key)) return _entityTagsCache.get(key);
+  const { data, error } = await db.from('entity_tags')
+    .select('tag_id, tags(id, name, farbe, beschreibung)')
+    .eq('entity_type', entityType).eq('entity_id', entityId);
+  if (error) return [];
+  const tags = (data || []).map(r => r.tags).filter(Boolean);
+  _entityTagsCache.set(key, tags);
+  return tags;
+}
+
+// ── Tag-Verwaltung-Page ───────────────────────────────────────
+
+async function loadTagsPage() {
+  invalidateTagsCache();
+  const tags = await loadTagsCache();
+
+  // Verknüpfungs-Counts pro Tag
+  const counts = {};
+  if (tags.length > 0) {
+    const { data: ets } = await db.from('entity_tags').select('tag_id').in('tag_id', tags.map(t => t.id));
+    (ets || []).forEach(r => { counts[r.tag_id] = (counts[r.tag_id] || 0) + 1; });
+  }
+
+  const tbody = document.getElementById('tags-table-body');
+  if (!tbody) return;
+  if (tags.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Tags. Klicke oben auf „+ Neuer Tag".</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = tags.map(t => `
+    <tr>
+      <td><span class="tag-pill" style="background:${esc(t.farbe || '#3b82f6')}22;color:${esc(t.farbe || '#3b82f6')};border:1px solid ${esc(t.farbe || '#3b82f6')}55">${esc(t.name)}</span></td>
+      <td class="col-tablet"><span style="display:inline-block;width:18px;height:18px;border-radius:4px;background:${esc(t.farbe || '#3b82f6')};vertical-align:middle"></span> <code style="font-size:11px;color:var(--muted)">${esc(t.farbe || '—')}</code></td>
+      <td class="col-tablet" style="color:var(--muted);font-size:13px">${esc(t.beschreibung || '—')}</td>
+      <td>${counts[t.id] || 0}×</td>
+      <td class="col-action">
+        <button class="btn btn-sm" onclick="openTagModal('edit','${esc(t.id)}')">Bearbeiten</button>
+      </td>
+    </tr>`).join('');
+}
+
+let _editingTagId = null;
+function openTagModal(mode, tagId = null) {
+  _editingTagId = mode === 'edit' ? tagId : null;
+  document.getElementById('tag-modal-title').textContent = mode === 'edit' ? 'Tag bearbeiten' : 'Neuer Tag';
+  document.getElementById('tg-delete-btn').style.display = mode === 'edit' ? '' : 'none';
+
+  // Farben-Picker rendern
+  const picker = document.getElementById('tg-farbe-picker');
+  if (picker) {
+    picker.innerHTML = TAG_FARBEN.map(f =>
+      `<button type="button" class="tag-farbe-swatch" data-farbe="${esc(f)}" style="background:${esc(f)}" onclick="selectTagFarbe('${esc(f)}')"></button>`
+    ).join('');
+  }
+
+  if (mode === 'edit' && tagId) {
+    const tag = (_tagsCache || []).find(t => t.id === tagId);
+    if (tag) {
+      document.getElementById('tg-name').value = tag.name || '';
+      document.getElementById('tg-farbe').value = tag.farbe || '#3b82f6';
+      document.getElementById('tg-beschreibung').value = tag.beschreibung || '';
+      _markSelectedFarbe(tag.farbe || '#3b82f6');
+    }
+  } else {
+    document.getElementById('tg-name').value = '';
+    document.getElementById('tg-farbe').value = TAG_FARBEN[0];
+    document.getElementById('tg-beschreibung').value = '';
+    _markSelectedFarbe(TAG_FARBEN[0]);
+  }
+  document.getElementById('modal-tag').classList.add('open');
+}
+
+function closeTagModal() {
+  document.getElementById('modal-tag').classList.remove('open');
+  _editingTagId = null;
+}
+
+function selectTagFarbe(farbe) {
+  document.getElementById('tg-farbe').value = farbe;
+  _markSelectedFarbe(farbe);
+}
+function _markSelectedFarbe(farbe) {
+  document.querySelectorAll('.tag-farbe-swatch').forEach(s => {
+    s.classList.toggle('is-selected', s.dataset.farbe === farbe);
+  });
+}
+
+async function saveTag() {
+  const name = document.getElementById('tg-name').value.trim();
+  if (!name) { showToast('Name ist Pflicht.', true); return; }
+  const payload = {
+    name,
+    farbe: document.getElementById('tg-farbe').value || '#3b82f6',
+    beschreibung: document.getElementById('tg-beschreibung').value.trim() || null
+  };
+  let res;
+  if (_editingTagId) {
+    res = await db.from('tags').update(payload).eq('id', _editingTagId);
+  } else {
+    payload.erstellt_von = currentProfile?.id || null;
+    res = await db.from('tags').insert(payload);
+  }
+  if (res.error) {
+    showToast('Fehler: ' + res.error.message, true);
+    return;
+  }
+  invalidateTagsCache();
+  closeTagModal();
+  showToast(_editingTagId ? 'Tag aktualisiert.' : 'Tag angelegt.');
+  loadTagsPage();
+}
+
+async function deleteTag() {
+  if (!_editingTagId) return;
+  const ok = await confirmDialog({ title: 'Tag löschen?', message: 'Alle Verknüpfungen zu Firmen/Kontakten/Projekten gehen mit verloren.', okLabel: 'Löschen', isDanger: true });
+  if (!ok) return;
+  const { error } = await db.from('tags').delete().eq('id', _editingTagId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  invalidateTagsCache();
+  closeTagModal();
+  showToast('Tag gelöscht.');
+  loadTagsPage();
+}
+
+// ── Tag-Picker-Komponente für Detail-Pages ──────────────────────
+
+async function renderEntityTagZone(containerId, entityType, entityId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap || !entityId) return;
+  const [allTags, currentTags] = await Promise.all([
+    loadTagsCache(),
+    loadTagsForEntity(entityType, entityId)
+  ]);
+  const currentIds = new Set(currentTags.map(t => t.id));
+  const availableTags = allTags.filter(t => !currentIds.has(t.id));
+
+  const pills = currentTags.map(t => `
+    <span class="tag-pill tag-pill-removable" style="background:${esc(t.farbe || '#3b82f6')}22;color:${esc(t.farbe || '#3b82f6')};border:1px solid ${esc(t.farbe || '#3b82f6')}55">
+      ${esc(t.name)}
+      <button class="tag-pill-x" onclick="removeTagFromEntity('${esc(t.id)}','${esc(entityType)}','${esc(entityId)}','${esc(containerId)}')" title="Tag entfernen">×</button>
+    </span>`).join('');
+
+  const adderId = `tag-adder-${containerId}`;
+  const addOptions = availableTags.length > 0
+    ? availableTags.map(t => `<option value="${esc(t.id)}" data-farbe="${esc(t.farbe || '#3b82f6')}">${esc(t.name)}</option>`).join('')
+    : '<option value="">— Alle Tags zugewiesen —</option>';
+
+  wrap.innerHTML = `
+    <div class="tag-list">${pills || '<span class="info-card-empty" style="font-size:12px">Noch keine Tags.</span>'}</div>
+    <div class="tag-adder">
+      <select id="${adderId}" onchange="addTagToEntity(this.value,'${esc(entityType)}','${esc(entityId)}','${esc(containerId)}'); this.value='';" ${availableTags.length === 0 ? 'disabled' : ''}>
+        <option value="">+ Tag hinzufügen …</option>
+        ${addOptions}
+      </select>
+      <button type="button" class="tag-create-btn" onclick="openTagModal('new')" title="Neuen Tag anlegen">+ Neu</button>
+    </div>`;
+}
+
+async function addTagToEntity(tagId, entityType, entityId, containerId) {
+  if (!tagId) return;
+  const { error } = await db.from('entity_tags').insert({ tag_id: tagId, entity_type: entityType, entity_id: entityId });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  _entityTagsCache.delete(`${entityType}:${entityId}`);
+  await renderEntityTagZone(containerId, entityType, entityId);
+}
+
+async function removeTagFromEntity(tagId, entityType, entityId, containerId) {
+  const { error } = await db.from('entity_tags').delete()
+    .eq('tag_id', tagId).eq('entity_type', entityType).eq('entity_id', entityId);
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
+  _entityTagsCache.delete(`${entityType}:${entityId}`);
+  await renderEntityTagZone(containerId, entityType, entityId);
+}
+
+// Modal-Closer-Map erweitern
+if (typeof MODAL_CLOSERS !== 'undefined') {
+  MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
 }
 
 // ═══════════════════════════════════════════════════════════

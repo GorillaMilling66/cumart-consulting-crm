@@ -353,6 +353,7 @@
       <button class="listen-tab" data-page="programs"  onclick="navigateTo('programs')">Programme</button>
       <button class="listen-tab" data-page="templates" onclick="navigateTo('templates')">Templates</button>
       <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
+      <button class="listen-tab" data-page="tags"      onclick="navigateTo('tags')">Tags</button>
       <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
     </div>
 
@@ -753,6 +754,10 @@
 
         <aside class="proj-side">
           <div class="proj-side-card">
+            <div class="proj-side-card-title">TAGS</div>
+            <div id="company-side-tags" class="tag-zone"><div class="info-card-empty">Lade …</div></div>
+          </div>
+          <div class="proj-side-card">
             <div class="proj-side-card-title">HAUPTKONTAKT</div>
             <div id="company-side-hauptkontakt"><div class="info-card-empty">—</div></div>
           </div>
@@ -966,6 +971,10 @@
         </main>
 
         <aside class="proj-side">
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">TAGS</div>
+            <div id="contact-side-tags" class="tag-zone"><div class="info-card-empty">Lade …</div></div>
+          </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">FIRMA</div>
             <div id="contact-side-firma"><div class="info-card-empty">Ohne Firma</div></div>
@@ -1424,6 +1433,10 @@
 
         <!-- Sidepanel -->
         <aside class="proj-side">
+          <div class="proj-side-card">
+            <div class="proj-side-card-title">TAGS</div>
+            <div id="project-side-tags" class="tag-zone"><div class="info-card-empty">Lade …</div></div>
+          </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">BETEILIGTE</div>
             <div id="project-beteiligte"><div class="info-card-empty">Lade …</div></div>
@@ -2048,6 +2061,62 @@
               <tr><td colspan="6"><div class="empty">Lade Programme ...</div></td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.5.0: SEITE: TAGS — Cross-Entity-Labels für Firma/Kontakt/Projekt -->
+    <div class="page" id="page-tags">
+      <div class="page-header">
+        <h1 class="page-title">Tags</h1>
+        <button class="btn btn-primary" onclick="openTagModal('new')">+ Neuer Tag</button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;max-width:720px">
+        Tags sind freie Labels, die du an Firmen, Kontakte und Projekte anhängen kannst — z.B. „VIP", „Heidenhain", „Akquise 2026".
+        Jedes Element kann beliebig viele Tags tragen.
+      </p>
+      <div class="card">
+        <div class="card-title">Alle Tags</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Name</th>
+              <th class="col-tablet">Farbe</th>
+              <th class="col-tablet">Beschreibung</th>
+              <th>Verknüpfungen</th>
+              <th class="col-action"></th>
+            </tr></thead>
+            <tbody id="tags-table-body">
+              <tr><td colspan="5"><div class="empty">Lade Tags …</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.5.0: TAG-MODAL -->
+    <div class="modal-overlay" id="modal-tag" onclick="if(event.target===this)closeTagModal()">
+      <div class="modal" style="width:480px">
+        <div class="modal-title" id="tag-modal-title">Neuer Tag</div>
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" id="tg-name" placeholder="z.B. VIP, Heidenhain, Akquise 2026">
+        </div>
+        <div class="form-group">
+          <label>Farbe</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap" id="tg-farbe-picker"></div>
+          <input type="hidden" id="tg-farbe" value="#3b82f6">
+        </div>
+        <div class="form-group">
+          <label>Beschreibung</label>
+          <textarea id="tg-beschreibung" rows="2" placeholder="Optional — wofür ist dieser Tag?"></textarea>
+        </div>
+        <div class="modal-footer" style="display:flex;justify-content:space-between">
+          <button class="btn btn-danger" id="tg-delete-btn" onclick="deleteTag()" style="display:none">Löschen</button>
+          <div>
+            <button class="btn" onclick="closeTagModal()">Abbrechen</button>
+            <button class="btn btn-primary" onclick="saveTag()">Speichern</button>
+          </div>
         </div>
       </div>
     </div>

@@ -6832,3 +6832,61 @@ select.typ-select-secondary {
   font-size: 11px; color: var(--muted); text-transform: uppercase;
   letter-spacing: 0.04em; font-weight: 600; background: var(--bg-soft);
 }
+
+/* v2.5.0: Tags */
+.tag-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.tag-pill-removable { padding-right: 4px; }
+.tag-pill-x {
+  background: transparent; border: 0;
+  color: inherit; opacity: 0.5;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  font-size: 14px; line-height: 1;
+  cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.tag-pill-x:hover { opacity: 1; background: rgba(0,0,0,0.1); }
+
+.tag-zone .tag-list {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-bottom: 8px;
+}
+.tag-zone .tag-adder {
+  display: flex; gap: 4px;
+}
+.tag-zone .tag-adder select {
+  flex: 1; padding: 4px 6px;
+  font-size: 11px;
+  border: 0.5px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); font-family: inherit;
+}
+.tag-create-btn {
+  background: transparent;
+  border: 0.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11px; color: var(--muted);
+  cursor: pointer; font-family: inherit;
+}
+.tag-create-btn:hover { color: var(--text); border-color: var(--text); }
+
+.tag-farbe-swatch {
+  width: 24px; height: 24px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: transform .08s, border-color .12s;
+}
+.tag-farbe-swatch:hover { transform: scale(1.1); }
+.tag-farbe-swatch.is-selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
+}
