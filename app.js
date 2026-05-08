@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.4.1 (CSV-Import — Umlaute & Encoding). Excel speichert
+   "CSV (kommagetrennt)" auf deutschen Systemen meistens als
+   Windows-1252 (nicht UTF-8) — damit gehen ä/ö/ü/ß im UTF-8-
+   Decode kaputt. Neuer Encoding-Selektor (Auto / UTF-8 /
+   Windows-1252 / ISO-8859-1 / UTF-16 LE), Auto-Detection per
+   BOM-Check und UTF-8-Probe (Replacement-Char-Heuristik), BOM
+   wird beim Decode abgeschnitten. Datei wird einmal als
+   ArrayBuffer gehalten; Encoding-Wechsel decodiert ohne erneuten
+   Upload. Meta-Zeile zeigt erkanntes Encoding + warnt bei
+   Replacement-Zeichen.
    Version 2.4.0 (CSV-Import). Generischer CSV-Importer für Firmen
    und Kontakte unter Einstellungen → Import (#/import). Vier-
    Schritte-Flow:
@@ -19140,8 +19150,10 @@ const IMPORT_FIELDS = {
 
 let _importState = {
   file: null,
+  buffer: null,        // v2.4.1: ArrayBuffer der Datei für Encoding-Wechsel ohne Re-Upload
   rawText: '',
   separator: ',',
+  encoding: 'utf-8',
   headers: [],
   rows: [],
   type: 'company',
@@ -19149,7 +19161,7 @@ let _importState = {
 };
 
 function resetImportPage() {
-  _importState = { file: null, rawText: '', separator: ',', headers: [], rows: [], type: 'company', mapping: [] };
+  _importState = { file: null, buffer: null, rawText: '', separator: ',', encoding: 'utf-8', headers: [], rows: [], type: 'company', mapping: [] };
   const fileInput = document.getElementById('import-file');
   if (fileInput) fileInput.value = '';
   document.getElementById('import-meta').textContent = '';
@@ -19159,7 +19171,36 @@ function resetImportPage() {
   document.getElementById('import-status').textContent = '';
   document.getElementById('import-errors').innerHTML = '';
   const sepSel = document.getElementById('import-separator'); if (sepSel) sepSel.value = 'auto';
+  const encSel = document.getElementById('import-encoding'); if (encSel) encSel.value = 'auto';
   const typeSel = document.getElementById('import-type'); if (typeSel) typeSel.value = 'company';
+}
+
+// v2.4.1: Encoding-Erkennung. Reihenfolge: BOM-Check → UTF-8 versuchen
+// (mit fatal:false; wenn Replacement-Chars '�' häufig auftauchen,
+// ist es wahrscheinlich Windows-1252) → Windows-1252 als Fallback.
+// Excel speichert "CSV (kommagetrennt)" auf deutschen Systemen meistens
+// als Windows-1252 — daher dieser Fallback essentiell für Umlaute.
+function _detectEncoding(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return 'utf-8';
+  if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) return 'utf-16le';
+  if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) return 'utf-16be';
+  // Probe als UTF-8 — wenn das Replacement-Char (U+FFFD) auftaucht,
+  // war's wahrscheinlich Windows-1252 (deutsche Umlaute liegen dort
+  // bei 0xE4/0xF6/0xFC/0xDF — UTF-8 erwartet 0xC3 davor).
+  try {
+    const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    if (utf8.indexOf('�') === -1) return 'utf-8';
+  } catch {}
+  return 'windows-1252';
+}
+
+function _decodeBuffer(buffer, encoding) {
+  let bytes = new Uint8Array(buffer);
+  // BOM bei UTF-8 abschneiden, sonst landet sie als unsichtbares Zeichen am Anfang
+  if (encoding === 'utf-8' && bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    bytes = bytes.subarray(3);
+  }
+  return new TextDecoder(encoding).decode(bytes);
 }
 
 function _detectSeparator(firstLine) {
@@ -19222,13 +19263,21 @@ async function onImportFileChosen(ev) {
   const file = ev.target.files?.[0];
   if (!file) return;
   _importState.file = file;
-  const text = await file.text();
-  _importState.rawText = text;
-  _parseCurrentImportFile();
+  _importState.buffer = await file.arrayBuffer();  // v2.4.1: behält Bytes für Encoding-Wechsel
+  _decodeAndParse();
 }
 
 function reparseImportFile() {
-  if (!_importState.rawText) return;
+  if (!_importState.buffer) return;
+  _decodeAndParse();
+}
+
+function _decodeAndParse() {
+  const encChoice = document.getElementById('import-encoding').value;
+  const bytes = new Uint8Array(_importState.buffer);
+  const enc = encChoice === 'auto' ? _detectEncoding(bytes) : encChoice;
+  _importState.encoding = enc;
+  _importState.rawText = _decodeBuffer(_importState.buffer, enc);
   _parseCurrentImportFile();
 }
 
@@ -19248,8 +19297,14 @@ function _parseCurrentImportFile() {
   _importState.rows = rows.slice(1).filter(r => r.some(v => (v || '').trim() !== ''));
   _importState.mapping = _autoMapHeaders(_importState.headers, IMPORT_FIELDS[_importState.type]);
 
-  document.getElementById('import-meta').textContent =
-    `${_importState.rows.length} Datensätze · ${_importState.headers.length} Spalten · Trenner: „${sep === '\t' ? 'Tab' : sep}"`;
+  // v2.4.1: Encoding mit anzeigen, plus Replacement-Char-Warnung
+  const replCount = (_importState.rawText.match(/�/g) || []).length;
+  const encLabel = { 'utf-8': 'UTF-8', 'windows-1252': 'Windows-1252', 'iso-8859-1': 'ISO-8859-1', 'utf-16le': 'UTF-16 LE', 'utf-16be': 'UTF-16 BE' }[_importState.encoding] || _importState.encoding;
+  const warn = replCount > 0
+    ? ` · <span style="color:var(--danger)">⚠ ${replCount} unleserliche Zeichen — Zeichensatz manuell wählen (z.B. Windows-1252)</span>`
+    : '';
+  document.getElementById('import-meta').innerHTML =
+    `${_importState.rows.length} Datensätze · ${_importState.headers.length} Spalten · Trenner: „${sep === '\t' ? 'Tab' : sep}" · Zeichensatz: ${esc(encLabel)}${warn}`;
   renderImportMapping();
   renderImportPreview();
   document.getElementById('import-mapping-card').style.display = '';
