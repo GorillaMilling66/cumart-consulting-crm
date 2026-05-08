@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.8.1 (Arbeitsplatz: visuelle Sektions-Trennung +
+   Shortcuts-Label vollständig). Zwei UX-Verbesserungen:
+   1) Jede Sektion auf dem Arbeitsplatz (Quick-Links / Angeheftet /
+      Dranbleiben / Datenpflege / Zuletzt bearbeitet / Heute von dir
+      / Vorlagen) ist jetzt eine eigene weiße Karte mit Border und
+      Padding. Sektions-Header sind kräftiger (12px/700/uppercase
+      mit farbigem Punkt davor und Trennlinie drunter), analog zu
+      den Drawer-Section-Headern (v2.1.4). Dadurch klare visuelle
+      Anker auf den ersten Blick.
+   2) Shortcut-Karten zeigen das Label vollständig — bis zu zwei
+      Zeilen mit `-webkit-line-clamp:2` statt single-line ellipsis.
+      Mindesthöhe 56px sorgt für ruhiges Grid. Bei nur einer
+      Kategorie wird der redundante Gruppen-Header weggelassen.
    Version 2.8.0 (Shortcuts — Quick-Links auf dem Arbeitsplatz).
    User-konfigurierbare Quick-Links: Seminarplan, Präsentationen,
    externe Tools, Wissensdatenbanken etc. Schema (Migration
@@ -20483,17 +20496,24 @@ async function renderArbeitsplatzShortcuts() {
     (byKat[k] = byKat[k] || []).push(s);
   });
 
-  wrap.innerHTML = Object.entries(byKat).map(([kat, items]) => `
-    <div class="arbeitsplatz-shortcut-group">
-      <div class="arbeitsplatz-shortcut-group-title">${esc(kat)}</div>
-      <div class="arbeitsplatz-shortcut-cards">
-        ${items.map(s => `
-          <a class="arbeitsplatz-shortcut-card" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.beschreibung || s.url)}">
-            <span class="arbeitsplatz-shortcut-icon">${esc(s.icon || '🔗')}</span>
-            <span class="arbeitsplatz-shortcut-label">${esc(s.label)}</span>
-          </a>`).join('')}
-      </div>
-    </div>`).join('');
+  const renderCard = s => `
+    <a class="arbeitsplatz-shortcut-card" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.beschreibung || s.label)}">
+      <span class="arbeitsplatz-shortcut-icon">${esc(s.icon || '🔗')}</span>
+      <span class="arbeitsplatz-shortcut-label">${esc(s.label)}</span>
+    </a>`;
+
+  // v2.8.1: bei nur einer Kategorie wird der Gruppen-Title weggelassen (redundant
+  // zum übergeordneten "QUICK-LINKS"-Header)
+  const kategorien = Object.keys(byKat);
+  if (kategorien.length === 1) {
+    wrap.innerHTML = `<div class="arbeitsplatz-shortcut-cards">${byKat[kategorien[0]].map(renderCard).join('')}</div>`;
+  } else {
+    wrap.innerHTML = kategorien.map(kat => `
+      <div class="arbeitsplatz-shortcut-group">
+        <div class="arbeitsplatz-shortcut-group-title">${esc(kat)}</div>
+        <div class="arbeitsplatz-shortcut-cards">${byKat[kat].map(renderCard).join('')}</div>
+      </div>`).join('');
+  }
 }
 
 if (typeof MODAL_CLOSERS !== 'undefined') {
