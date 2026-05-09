@@ -4022,8 +4022,17 @@ async function renderArbeitsplatzRecent() {
     return;
   }
   wrap.innerHTML = list.map(e => {
-    const label = TYPE_LABELS_FOR_ARBEITSPLATZ[e.type] || e.type;
-    const typClass = (e.type === 'firma' ? 'firma' : e.type === 'kontakt' ? 'kontakt' : e.type === 'projekt' ? 'projekt' : 'einsatz');
+    // v2.9.8: englische Types (company/contact/...) auf deutsche Anzeige normalisieren.
+    const TYPE_TO_DE = {
+      company: 'firma', firma: 'firma',
+      contact: 'kontakt', kontakt: 'kontakt',
+      project: 'projekt', projekt: 'projekt',
+      deployment: 'einsatz', einsatz: 'einsatz',
+      appointment: 'termin', termin: 'termin'
+    };
+    const de = TYPE_TO_DE[e.type] || e.type;
+    const label = TYPE_LABELS_FOR_ARBEITSPLATZ[de] || de.toUpperCase();
+    const typClass = ['firma','kontakt','projekt','einsatz','termin'].includes(de) ? de : 'einsatz';
     return `
       <button class="arbeitsplatz-recent-row" onclick="arbeitsplatzOpenRecent('${esc(e.type)}','${esc(e.id)}')">
         <span class="type-pill type-pill-${typClass}">${esc(label)}</span>
@@ -4037,7 +4046,18 @@ const TYPE_LABELS_FOR_ARBEITSPLATZ = {
 };
 
 function arbeitsplatzOpenRecent(type, id) {
-  navigateTo(type, id);
+  // v2.9.8: Recently-Visited speichert teils englische Types (company/contact/
+  // project/deployment/appointment), navigateTo erwartet aber deutsche
+  // Detail-Routen.
+  const TYPE_TO_DETAIL = {
+    company: 'firma', firma: 'firma',
+    contact: 'kontakt', kontakt: 'kontakt',
+    project: 'projekt', projekt: 'projekt',
+    deployment: 'einsatz', einsatz: 'einsatz',
+    appointment: 'termin', termin: 'termin'
+  };
+  const detail = TYPE_TO_DETAIL[type] || type;
+  navigateTo(detail, id);
 }
 
 /** Heute-von-dir: Aktionen heute, aggregiert aus mehreren Tabellen. */
