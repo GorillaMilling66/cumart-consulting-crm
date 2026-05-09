@@ -1,5 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.11 (Bulk-Toolbar Produkte: Lieferant-Gruppe
+   entfernt). Die separate „Lieferant"-Schnellaktion in der
+   Produkte-Bulk-Toolbar ist überflüssig — `lieferant_id`
+   steht ohnehin als Feld in der „Feld bearbeiten"-Gruppe
+   bereit. Reduziert die Toolbar auf zwei Gruppen (Feld
+   bearbeiten + Preise anpassen) plus „Auswahl aufheben".
+   `bulkSetProductLieferant` bleibt im Code als Backwards-
+   Helper, ist aber nicht mehr aus der UI erreichbar.
    Version 2.9.10 (Bulk-Toolbar cleaner). Die Inline-Bulk-Toolbar
    bei Firmen/Kontakten/Produkten war optisch unruhig (drei
    Gruppen, viele Buttons mit unterschiedlicher Höhe, keine

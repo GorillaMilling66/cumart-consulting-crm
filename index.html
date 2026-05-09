@@ -2320,13 +2320,10 @@
           </label>
         </div>
       </div>
-      <!-- v2.7.1/2: Bulk-Edit-Toolbar Produkte (inline) — v2.9.10 cleaner Layout -->
+      <!-- v2.7.1/2: Bulk-Edit-Toolbar Produkte (inline) — v2.9.10 cleaner Layout
+           v2.9.11: Lieferant-Gruppe entfernt — Lieferant ist Teil von „Feld bearbeiten". -->
       <div class="bulk-toolbar" id="products-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="products-bulk-count">0 ausgewählt</span>
-        <span class="bulk-group" data-label="Lieferant">
-          <select id="products-bulk-lieferant"><option value="">— Lieferant wählen —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Setzen</button>
-        </span>
         <span class="bulk-group" data-label="Feld bearbeiten">
           <select id="products-bulk-field" onchange="onBulkFieldInlineChange('product')"><option value="">— Feld wählen —</option></select>
           <span id="products-bulk-value-wrap" style="display:none"></span>
