@@ -1,2 +1,7 @@
 node_modules/
 .DS_Store
+
+# Test-Daten-Skripte für Smoke-Tests (Marker TEST_ / [TESTDATA]) —
+# bleiben lokal, gehören nicht ins Repo
+migrations/seed_*.sql
+migrations/cleanup_testdata.sql
