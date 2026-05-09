@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.4 (Topnav-Layout: Suche zentrisch, Plus als
+   Icon). Korrektur zu v2.9.3 nach User-Feedback: die Pille
+   „Schnell anlegen" raus, stattdessen ist die **Suche** jetzt
+   die prägnante zentrale Leiste (max 560 px breit, mit Lupe-
+   Icon, Placeholder „Firmen, Kontakte, Projekte … suchen",
+   ⌘K-Kbd). Schnell-Anlegen ist wieder ein schlichtes Plus-
+   Icon-Button rechts neben dem Zahnrad. ID `topnav-quickadd`
+   bleibt erhalten — JS-Menü-Positionierung unverändert.
+   Mobile blendet den Suche-Placeholder + ⌘K aus, nur Lupe
+   bleibt. Plus rendert immer.
    Version 2.9.3 (Schnell-Anlegen-Pille im Topnav + Bottom-
    Padding Arbeitsplatz). Zwei UX-Verbesserungen:
    1) Der runde schwarze Floating-FAB unten rechts ist weg —

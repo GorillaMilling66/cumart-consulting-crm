@@ -121,20 +121,21 @@
       </nav>
     </div>
     <div class="app-topnav-center">
-      <button class="app-topnav-quickadd" id="topnav-quickadd" onclick="toggleFabMenu(event)" aria-label="Schnell anlegen" title="Schnell anlegen (n)">
-        <span class="quickadd-plus">+</span>
-        <span class="quickadd-label">Schnell anlegen</span>
-        <kbd class="kbd quickadd-kbd">n</kbd>
-      </button>
-    </div>
-    <div class="app-topnav-right">
-      <button class="app-topnav-search" onclick="openSearchOverlay()" title="Globale Suche (⌘K)">
+      <button class="app-topnav-search app-topnav-search-wide" onclick="openSearchOverlay()" title="Globale Suche (⌘K)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <span>Suche</span>
+        <span>Firmen, Kontakte, Projekte, Termine, Einsätze suchen …</span>
         <kbd class="kbd">⌘K</kbd>
+      </button>
+    </div>
+    <div class="app-topnav-right">
+      <button class="app-topnav-icon app-topnav-icon-plus" id="topnav-quickadd" onclick="toggleFabMenu(event)" title="Schnell anlegen (n)" aria-label="Schnell anlegen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
       </button>
       <button class="app-topnav-icon" onclick="navigateTo('einstellungen')" title="Einstellungen" aria-label="Einstellungen">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

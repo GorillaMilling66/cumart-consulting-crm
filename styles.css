@@ -3973,50 +3973,36 @@ tbody tr:focus-within .action-icons,
 .fab:active { transform: translateY(0); }
 .fab svg { width: 22px; height: 22px; }
 
-/* v2.9.3: Quick-Add jetzt zentral im Topnav als prägnante Pille.
-   fab-menu wird beim Öffnen via JS unter den Topnav-Button gehängt. */
+/* v2.9.4: Suche zentrisch und prägnant in der Mitte des Topnavs;
+   Plus für Schnell-Anlegen ist ein schlichtes Icon rechts neben Zahnrad. */
 .app-topnav-center {
   flex: 1; display: flex; justify-content: center; align-items: center;
   min-width: 0;
+  padding: 0 24px;
 }
-.app-topnav-quickadd {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 36px;
-  padding: 0 18px;
-  background: var(--text);
-  color: var(--surface);
-  border: none;
-  border-radius: 999px;             /* länglich-prägnant, Pille */
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+.app-topnav-search-wide {
+  width: 100%;
+  max-width: 560px;
+  height: 38px;
+  padding: 0 14px;
+  justify-content: flex-start;
+}
+.app-topnav-search-wide span {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  transition: opacity .12s, transform .12s, box-shadow .12s;
-  box-shadow: 0 2px 6px rgba(0,0,0,.12);
 }
-.app-topnav-quickadd:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.18); }
-.app-topnav-quickadd:active { transform: translateY(0); }
-.app-topnav-quickadd .quickadd-plus {
-  font-size: 16px; line-height: 1; font-weight: 400;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px;
-}
-.app-topnav-quickadd .quickadd-kbd {
-  font-size: 10px;
-  background: rgba(255,255,255,.18);
-  color: var(--surface);
-  border-radius: 4px;
-  padding: 1px 6px;
-  margin-left: 4px;
-  font-weight: 500;
-}
+/* Das Plus-Icon nutzt die bestehende .app-topnav-icon-Klasse —
+   die zusätzliche Modifier-Klasse erlaubt nur dezente Tweaks. */
+.app-topnav-icon-plus svg { width: 20px; height: 20px; stroke-width: 2; }
+
 @media (max-width: 900px) {
-  .app-topnav-center { flex: 0 1 auto; }
-  .app-topnav-quickadd { padding: 0 12px; height: 34px; }
-  .app-topnav-quickadd .quickadd-label { display: none; }
-  .app-topnav-quickadd .quickadd-kbd  { display: none; }
+  .app-topnav-center { padding: 0 8px; }
+  .app-topnav-search-wide { max-width: none; }
+  .app-topnav-search-wide span,
+  .app-topnav-search-wide .kbd { display: none; }
 }
 
 .fab-menu {
