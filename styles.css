@@ -4508,14 +4508,16 @@ tr.expanded-row > td {
 }
 
 /* Main-Content bekommt padding-bottom, damit der letzte Inhalt nicht unter der Kalender-Bar verschwindet.
-   v2.0.1, Punkt 1: nur wenn die Bar tatsächlich sichtbar ist (= nur unter Briefing). */
-.main { padding-bottom: 0; }
+   v2.0.1, Punkt 1: nur wenn die Bar tatsächlich sichtbar ist (= nur unter Briefing).
+   v2.9.7: Mindestabstand 64 px überall, damit der letzte Inhalt nie auf der Viewport-Kante klebt. */
+.main { padding-bottom: 64px; }
 body.has-calendar .main { padding-bottom: 160px; }
 
 @media (max-width: 900px) {
   .calendar-bar,
   .calendar-popover { display: none !important; }
-  body.has-calendar .main { padding-bottom: 80px; }
+  .main { padding-bottom: calc(var(--mobile-nav-height) + 32px); }
+  body.has-calendar .main { padding-bottom: calc(var(--mobile-nav-height) + 32px); }
 }
 
 /* ═══════════════════════════════════════════════════════════
