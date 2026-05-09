@@ -2335,6 +2335,23 @@
             <input type="checkbox" id="products-bulk-only-empty"> <span>nur leere</span>
           </label>
         </span>
+        <!-- v2.9.9: Bulk-Preisanpassung -->
+        <span class="bulk-group">
+          <select id="products-bulk-price-target">
+            <option value="vk">VK anpassen</option>
+            <option value="ek">EK anpassen</option>
+            <option value="both">EK + VK anpassen</option>
+          </select>
+          <select id="products-bulk-price-op">
+            <option value="pct_inc">+ %</option>
+            <option value="pct_dec">− %</option>
+            <option value="abs_inc">+ €</option>
+            <option value="abs_dec">− €</option>
+            <option value="set">= €</option>
+          </select>
+          <input type="number" step="0.01" min="0" id="products-bulk-price-value" placeholder="Wert" style="width:90px">
+          <button class="btn btn-sm btn-primary" onclick="bulkAdjustProductPrices()">Preise anpassen</button>
+        </span>
         <button class="btn btn-sm" onclick="clearBulkSelection('product')">Auswahl aufheben</button>
       </div>
 
@@ -2644,6 +2661,13 @@
       <!-- Schritt 4: Import -->
       <div class="card import-step" id="import-run-card" style="display:none">
         <div class="card-title">4 — Importieren</div>
+        <!-- v2.9.9: Update-Modus für Produkte (Match auf Artikelnummer) -->
+        <div id="import-product-update-mode" style="display:none;background:var(--bg-soft);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="import-update-existing">
+            <span><strong>Bestehende Produkte aktualisieren statt neu anlegen</strong> — Match-Spalte: <code>artikelnummer</code>. Wenn ein Produkt mit der gleichen Artikelnummer existiert, werden die importierten Spalten überschrieben (UPDATE), sonst wird das Produkt neu angelegt.</span>
+          </label>
+        </div>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
           <button class="btn btn-primary" id="import-run-btn" onclick="runImport()">Import starten</button>
           <span id="import-status" style="font-size:13px;color:var(--muted)"></span>

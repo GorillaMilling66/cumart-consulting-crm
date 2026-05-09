@@ -1,5 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.9 (Bulk-Preisanpassung + CSV-Update-Modus für
+   Produkte). Zwei Wege für Preiserhöhungen:
+   1) **Inline in der Bulk-Toolbar** der Produkte-Liste:
+      Auswahl per Checkbox, Ziel (EK/VK/beide) × Operation
+      (+ % / − % / + € / − € / = €) × Wert → Preview-Dialog mit
+      Vorher/Nachher (Top-5 Datensätze + Restzähler), erst nach
+      Bestätigung Parallel-UPDATE pro Produkt. Negative Werte
+      werden auf 0 geclampt, Cents auf 2 Nachkommastellen
+      gerundet. Helper `bulkAdjustProductPrices`.
+      → Use-Case: „Alle Heidenhain-Produkte +5 % VK".
+   2) **CSV-Re-Import mit Update-Modus**: bei Datentyp Produkt
+      erscheint im Schritt 4 eine Checkbox „Bestehende Produkte
+      aktualisieren statt neu anlegen". Match-Spalte ist
+      `artikelnummer` (case-insensitive, getrimmt). Existiert
+      ein Produkt mit der Artikelnummer, wird per UPDATE
+      überschrieben (`erstellt_von` und `artikelnummer` selbst
+      bleiben unangetastet); sonst wird wie bisher neu
+      angelegt. Status-Zeile zeigt „X aktualisiert, Y neu
+      angelegt". Vor dem Lauf wird einmal die Artikelnummer→
+      ID-Map aus der DB geladen (1 Query, in-memory Lookup).
    Version 2.9.5 (Notizen-Liste). Neue Listen-Sub-Page
    `#/notizen` mit zentralem Überblick über alle Notizen
    inklusive Bezug. Tabelle: Inhalt-Snippet (3-zeilig clamped),
@@ -20123,6 +20143,15 @@ function onImportTypeChange() {
     renderImportMapping();
     renderImportPreview();
   }
+  // v2.9.9: Update-Modus-Box nur für Produkt-Import zeigen.
+  const updateBox = document.getElementById('import-product-update-mode');
+  if (updateBox) {
+    updateBox.style.display = _importState.type === 'product' ? 'block' : 'none';
+    if (_importState.type !== 'product') {
+      const cb = document.getElementById('import-update-existing');
+      if (cb) cb.checked = false;
+    }
+  }
 }
 
 function renderImportMapping() {
@@ -20355,24 +20384,64 @@ async function runImport() {
   const table = _importState.type === 'company' ? 'companies'
               : _importState.type === 'product' ? 'products'
               : 'contacts';
+
+  // v2.9.9: Update-Modus für Produkte — bestehende per artikelnummer matchen.
+  const updateMode = _importState.type === 'product'
+    && document.getElementById('import-update-existing')?.checked;
+
   let inserted = 0;
-  for (let i = 0; i < payloads.length; i += 100) {
-    const chunk = payloads.slice(i, i + 100);
-    const { error } = await db.from(table).insert(chunk);
-    if (error) {
-      errors.push({ row: i + 2, msg: 'DB-Fehler: ' + error.message });
-      // Bei Batch-Fehler einzeln retry, damit der Rest durchgeht
-      for (const single of chunk) {
-        const { error: e2 } = await db.from(table).insert(single);
-        if (!e2) inserted++;
-        else errors.push({ row: '?', msg: 'Datensatz übersprungen: ' + e2.message + ' · ' + JSON.stringify(single).substring(0, 120) });
+  let updated = 0;
+
+  if (updateMode) {
+    // Bestehende Produkte einmal laden (artikelnummer → id)
+    const { data: existing, error: existErr } = await db.from('products')
+      .select('id, artikelnummer').is('deleted_at', null);
+    if (existErr) {
+      errors.push({ row: '—', msg: 'Lese-Fehler beim Update-Match: ' + existErr.message });
+    }
+    const artNoToId = {};
+    (existing || []).forEach(p => {
+      if (p.artikelnummer) artNoToId[String(p.artikelnummer).trim().toLowerCase()] = p.id;
+    });
+
+    for (let i = 0; i < payloads.length; i++) {
+      const p = payloads[i];
+      const art = (p.artikelnummer || '').trim().toLowerCase();
+      const matchId = art ? artNoToId[art] : null;
+      if (matchId) {
+        // Update — `erstellt_von` und `artikelnummer` nicht überschreiben.
+        const { erstellt_von, artikelnummer, ...patch } = p;
+        const { error: e } = await db.from(table).update(patch).eq('id', matchId);
+        if (e) errors.push({ row: i + 2, msg: 'Update-Fehler: ' + e.message });
+        else updated++;
+      } else {
+        // Insert
+        const { error: e } = await db.from(table).insert(p);
+        if (e) errors.push({ row: i + 2, msg: 'Insert-Fehler: ' + e.message });
+        else inserted++;
       }
-    } else {
-      inserted += chunk.length;
+    }
+  } else {
+    for (let i = 0; i < payloads.length; i += 100) {
+      const chunk = payloads.slice(i, i + 100);
+      const { error } = await db.from(table).insert(chunk);
+      if (error) {
+        errors.push({ row: i + 2, msg: 'DB-Fehler: ' + error.message });
+        // Bei Batch-Fehler einzeln retry, damit der Rest durchgeht
+        for (const single of chunk) {
+          const { error: e2 } = await db.from(table).insert(single);
+          if (!e2) inserted++;
+          else errors.push({ row: '?', msg: 'Datensatz übersprungen: ' + e2.message + ' · ' + JSON.stringify(single).substring(0, 120) });
+        }
+      } else {
+        inserted += chunk.length;
+      }
     }
   }
 
-  statusEl.textContent = `${inserted} von ${payloads.length} importiert.`;
+  statusEl.textContent = updateMode
+    ? `${updated} aktualisiert, ${inserted} neu angelegt (von ${payloads.length} Zeilen).`
+    : `${inserted} von ${payloads.length} importiert.`;
   if (errors.length > 0) {
     errorsEl.innerHTML = `
       <div style="font-size:13px;font-weight:600;color:var(--warning);margin-bottom:8px">${errors.length} Hinweise/Fehler:</div>
@@ -21739,6 +21808,86 @@ async function bulkRemoveTag(entityType) {
   if (error) { showToast('Fehler: ' + error.message, true); return; }
   showToast(`Tag entfernt von ${count != null ? count : ids.length} Einträgen.`);
   invalidateTagsCache();
+}
+
+// v2.9.9: Bulk-Preisanpassung für Produkte. Berechnet Vorher/Nachher pro
+// Produkt clientseitig (weil PostgREST kein arithmetisches UPDATE erlaubt)
+// und schickt einen Batch-UPDATE pro Produkt parallel.
+async function bulkAdjustProductPrices() {
+  const target = document.getElementById('products-bulk-price-target').value;
+  const op     = document.getElementById('products-bulk-price-op').value;
+  const valRaw = document.getElementById('products-bulk-price-value').value;
+  const value  = parseFloat((valRaw || '').replace(',', '.'));
+  if (!isFinite(value) || value < 0) { showToast('Bitte einen gültigen Wert eingeben.', true); return; }
+
+  const ids = [..._bulkSelected.product];
+  if (ids.length === 0) { showToast('Keine Produkte ausgewählt.', true); return; }
+
+  // Aktuelle Preise lesen für Vorschau + Recalc
+  const { data: rows, error: readErr } = await db.from('products')
+    .select('id, name, einkaufspreis, verkaufspreis')
+    .in('id', ids);
+  if (readErr) { showToast('Fehler beim Lesen: ' + readErr.message, true); return; }
+
+  const recalc = (price) => {
+    if (price == null) return null; // null bleibt null (kein Preis hinterlegt)
+    const p = Number(price) || 0;
+    let n;
+    switch (op) {
+      case 'pct_inc': n = p * (1 + value / 100); break;
+      case 'pct_dec': n = p * (1 - value / 100); break;
+      case 'abs_inc': n = p + value; break;
+      case 'abs_dec': n = p - value; break;
+      case 'set':     n = value; break;
+      default:        n = p;
+    }
+    if (n < 0) n = 0;
+    return Math.round(n * 100) / 100;
+  };
+
+  // Preview-String bauen
+  const updates = rows.map(r => {
+    const newEk = (target === 'ek' || target === 'both') ? recalc(r.einkaufspreis) : r.einkaufspreis;
+    const newVk = (target === 'vk' || target === 'both') ? recalc(r.verkaufspreis) : r.verkaufspreis;
+    return { id: r.id, name: r.name, oldEk: r.einkaufspreis, newEk, oldVk: r.verkaufspreis, newVk };
+  });
+
+  const opLabel = { pct_inc: `+ ${value}%`, pct_dec: `− ${value}%`, abs_inc: `+ ${value} €`, abs_dec: `− ${value} €`, set: `= ${value} €` }[op];
+  const targetLabel = target === 'ek' ? 'EK' : target === 'vk' ? 'VK' : 'EK + VK';
+  const sample = updates.slice(0, 5).map(u => {
+    const part = (target === 'ek' || target === 'both')
+      ? `EK ${formatPreis(u.oldEk)} → ${formatPreis(u.newEk)}`
+      : `VK ${formatPreis(u.oldVk)} → ${formatPreis(u.newVk)}`;
+    return `• ${u.name}: ${part}`;
+  }).join('\n');
+  const more = updates.length > 5 ? `\n… und ${updates.length - 5} weitere` : '';
+
+  const ok = await confirmDialog({
+    title: `Preise anpassen (${targetLabel} ${opLabel})`,
+    message: `${updates.length} Produkte werden aktualisiert.\n\nVorschau:\n${sample}${more}`,
+    okLabel: 'Anpassen',
+    isDanger: false
+  });
+  if (!ok) return;
+
+  // Parallel-UPDATE pro Produkt
+  showToast(`Aktualisiere ${updates.length} Produkte …`);
+  const results = await Promise.all(updates.map(u => {
+    const payload = {};
+    if (target === 'ek' || target === 'both') payload.einkaufspreis = u.newEk;
+    if (target === 'vk' || target === 'both') payload.verkaufspreis = u.newVk;
+    return db.from('products').update(payload).eq('id', u.id).select('id');
+  }));
+  const errs = results.filter(r => r.error);
+  if (errs.length) {
+    showToast(`${updates.length - errs.length} aktualisiert, ${errs.length} Fehler.`, true);
+  } else {
+    showToast(`${updates.length} Produkte aktualisiert.`);
+  }
+  await loadProductsAndLieferanten();
+  filterProducts();
+  clearBulkSelection('product');
+  document.getElementById('products-bulk-price-value').value = '';
 }
 
 async function bulkSetProductLieferant() {
