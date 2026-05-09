@@ -7167,7 +7167,17 @@ select.typ-select-secondary {
   white-space: pre-wrap; word-break: break-word;
 }
 .row-link {
-  color: var(--accent); cursor: pointer; margin-left: 6px; font-weight: 500;
+  color: var(--accent); cursor: pointer; font-weight: 500;
 }
 .row-link:hover { text-decoration: underline; }
 .row-muted { color: var(--muted); font-size: 12px; font-style: italic; }
+/* v2.9.6: Bezug-Cell als einzeilige Flex-Row mit Ellipsis */
+.bezug-cell {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0;
+}
+.bezug-cell .type-pill { flex-shrink: 0; }
+.bezug-cell .row-link {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}

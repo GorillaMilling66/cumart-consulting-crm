@@ -17545,8 +17545,10 @@ function filterNotes() {
     const pillClass = bezug.type === 'company' ? 'firma' : bezug.type === 'project' ? 'projekt' : 'kontakt';
     const pillLabel = bezug.type === 'company' ? 'FIRMA' : bezug.type === 'project' ? 'PROJEKT' : 'KONTAKT';
     const bezugCell = bezug.click
-      ? `<span class="type-pill type-pill-${pillClass}">${esc(pillLabel)}</span>
-         <a class="row-link" onclick="event.stopPropagation();${bezug.click}">${esc(bezug.label)}</a>`
+      ? `<div class="bezug-cell">
+           <span class="type-pill type-pill-${pillClass}">${esc(pillLabel)}</span>
+           <a class="row-link" onclick="event.stopPropagation();${bezug.click}" title="${esc(bezug.label)}">${esc(bezug.label)}</a>
+         </div>`
       : `<span class="row-muted">${esc(bezug.label)}</span>`;
     return `
       <tr onclick="openNotizModal('${esc(n.id)}','${bezug.type === 'company' ? 'company' : bezug.type === 'project' ? 'project' : bezug.type === 'contact' ? 'contact' : 'company'}')" style="cursor:pointer">
