@@ -1378,19 +1378,42 @@ body {
 }
 .arbeitsplatz-care-item:hover { color: var(--text); border-color: var(--text); }
 
-/* v2.3.0: Pin-Button auf Detail-Pages */
+/* v2.3.0 / v2.9.13: Pin-Button auf Detail-Pages (sauberer SVG-Stern statt Emoji) */
 .btn-pin {
   background: transparent;
   border: 0;
-  width: 30px; height: 30px;
+  width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px;
   cursor: pointer;
-  filter: grayscale(1) opacity(0.4);
-  transition: filter 0.12s, transform 0.08s;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition: color 0.12s, background 0.12s, transform 0.08s;
+  padding: 0;
 }
-.btn-pin:hover { filter: grayscale(0) opacity(1); transform: scale(1.1); }
-.btn-pin[data-pinned="true"] { filter: grayscale(0) opacity(1); }
+.btn-pin svg { width: 18px; height: 18px; fill: none; transition: fill 0.12s; }
+.btn-pin:hover { background: var(--bg-soft); color: var(--text); transform: translateY(-1px); }
+.btn-pin[data-pinned="true"] { color: #f59e0b; }
+.btn-pin[data-pinned="true"] svg { fill: #f59e0b; }
+.btn-pin[data-pinned="true"]:hover { background: rgba(245, 158, 11, 0.1); }
+
+/* v2.9.13: Stern-Button in Suchergebnissen */
+.search-item-star {
+  background: transparent;
+  border: 0;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition: color 0.12s, background 0.12s;
+  padding: 0;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.search-item-star svg { width: 16px; height: 16px; fill: none; transition: fill 0.12s; }
+.search-item-star:hover { background: var(--bg-soft); color: var(--text); }
+.search-item-star[data-pinned="true"] { color: #f59e0b; }
+.search-item-star[data-pinned="true"] svg { fill: #f59e0b; }
 
 .arbeitsplatz-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px;

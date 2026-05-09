@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.13 (Pin-Stern im Suche-Overlay + sauberes
+   SVG-Stern-Design). Zwei Änderungen:
+   1) Der ⭐-Emoji-Pin-Button auf den Detail-Seiten wird durch
+      einen schlanken Lucide-Style-SVG-Stern ersetzt. Outlined
+      wenn nicht gepinnt (muted color), gefüllt + amber
+      (`#f59e0b`) wenn gepinnt. Hover bekommt einen dezenten
+      Background statt der scale-Wackelei. Buttons sind 32 px
+      groß, SVG 18 px, Border-Radius `var(--radius-sm)`.
+   2) Im Cmd+K-Suche-Overlay zeigt jeder Treffer für Firma /
+      Projekt / Kontakt einen Stern-Button rechts vor der Type-
+      Pille. Klick togglert den Pin direkt aus der Suche
+      (event.stopPropagation, damit nicht das Item geöffnet
+      wird). Pin-State wird einmalig pro Overlay-Open in
+      `_userPinsSet` gecacht (Set<entityType:id>) und sowohl
+      bei Such-Render als auch bei `togglePin` gepflegt.
    Version 2.9.12 (ABC eigene Spalte in der Firmen-Liste). Das
    ABC-Badge stand bisher inline direkt vor dem Firmennamen,
    was bei nur ein bis zwei klassifizierten Firmen optisch
@@ -3746,10 +3761,16 @@ async function loadArbeitsplatz() {
 //  Arbeitsplatz. Pins liegen in der `pins`-Tabelle (per-user).
 // ═══════════════════════════════════════════════════════════
 
+// v2.9.13: Sauberer SVG-Stern (Lucide-Style) statt Emoji.
+// Ein einziger SVG-Pfad, fill/stroke reagieren via CSS auf [data-pinned].
+const STAR_ICON_SVG = `<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+
 async function applyPinButtonState(btnId, entityType, entityId) {
   const btn = document.getElementById(btnId);
   if (!btn) return;
   btn.dataset.pinBtn = `${entityType}:${entityId}`;
+  // SVG-Inhalt setzen (Emoji entfernen)
+  if (!btn.querySelector('svg')) btn.innerHTML = STAR_ICON_SVG;
   const pinned = await isItemPinned(entityType, entityId);
   btn.dataset.pinned = pinned.toString();
   btn.title = pinned ? 'Angeheftet — klicken zum Entfernen' : 'Anheften';
@@ -3787,6 +3808,11 @@ async function togglePin(entityType, entityId, label) {
     });
     if (error) { showToast('Fehler: ' + error.message, true); return; }
     showToast(`„${label || 'Eintrag'}" angeheftet.`);
+  }
+  // v2.9.13: Pin-Cache fürs Suche-Overlay synchron halten.
+  if (_userPinsSet) {
+    const k = `${entityType}:${entityId}`;
+    if (pinned) _userPinsSet.delete(k); else _userPinsSet.add(k);
   }
   // UI aktualisieren wo nötig
   if (document.getElementById('page-arbeitsplatz')?.classList.contains('active')) {
@@ -11955,12 +11981,23 @@ function trackVisit(type, id, title, subtitle) {
   pushRecentlyVisited({ type, id, title, subtitle });
 }
 
+// v2.9.13: Cache der gepinnten Items, damit der Stern-Button im Suchergebnis
+// ohne extra Roundtrip pro Treffer den korrekten State zeigt.
+let _userPinsSet = null;
+async function refreshUserPinsSet() {
+  const list = await loadPinsForCurrentUser();
+  _userPinsSet = new Set(list.map(p => `${p.entity_type}:${p.entity_id}`));
+  return _userPinsSet;
+}
+
 function openSearchOverlay() {
   const overlay = document.getElementById('search-overlay');
   overlay.classList.add('open');
   const input = document.getElementById('search-input');
   input.value = '';
   searchActiveIndex = -1;
+  // Pin-Cache parallel zum Recently-Render frisch ziehen.
+  refreshUserPinsSet();
   renderRecentlyVisited();
   setTimeout(() => input.focus(), 50);
 }
@@ -12096,6 +12133,13 @@ function searchTypeLabel(type) {
 function renderSearchItem(entry, idx) {
   const icon = searchIconForType(entry.type);
   const typeLabel = searchTypeLabel(entry.type);
+  // v2.9.13: Pin-Stern für pinning-fähige Types (company, project, contact).
+  const PIN_TYPE_MAP = { company: 'company', project: 'project', contact: 'contact' };
+  const pinType = PIN_TYPE_MAP[entry.type];
+  const pinned = pinType && _userPinsSet ? _userPinsSet.has(`${pinType}:${entry.id}`) : false;
+  const starBtn = pinType
+    ? `<button class="search-item-star" data-pin-btn="${esc(pinType)}:${esc(entry.id)}" data-pinned="${pinned}" data-pin-type="${esc(pinType)}" data-pin-id="${esc(entry.id)}" data-pin-label="${esc(entry.title || '')}" title="${pinned ? 'Angeheftet — klicken zum Entfernen' : 'Anheften'}">${STAR_ICON_SVG}</button>`
+    : '';
   return `
     <div class="search-item${idx === searchActiveIndex ? ' active' : ''}" data-idx="${idx}" role="option" tabindex="-1">
       <div class="search-item-icon">${icon}</div>
@@ -12103,6 +12147,7 @@ function renderSearchItem(entry, idx) {
         <div class="search-item-title">${esc(entry.title || '—')}</div>
         ${entry.subtitle ? `<div class="search-item-sub">${esc(entry.subtitle)}</div>` : ''}
       </div>
+      ${starBtn}
       <div class="search-item-type-badge">${typeLabel}</div>
     </div>`;
 }
@@ -12111,6 +12156,26 @@ function wireSearchItemClicks() {
   document.querySelectorAll('#search-results .search-item').forEach(el => {
     const idx = parseInt(el.dataset.idx, 10);
     el.onclick = () => openSearchResult(searchResults[idx]);
+  });
+  // v2.9.13: Stern-Buttons mit eigenem Klick-Handler — togglert Pin
+  // und stoppt Bubbling, damit nicht das Item geöffnet wird.
+  document.querySelectorAll('#search-results .search-item-star').forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const t  = btn.dataset.pinType;
+      const id = btn.dataset.pinId;
+      const lb = btn.dataset.pinLabel;
+      await togglePin(t, id, lb);
+      // Cache + Button-State updaten
+      const key = `${t}:${id}`;
+      if (_userPinsSet) {
+        if (_userPinsSet.has(key)) _userPinsSet.delete(key);
+        else _userPinsSet.add(key);
+      }
+      const nowPinned = _userPinsSet?.has(key) || false;
+      btn.dataset.pinned = String(nowPinned);
+      btn.title = nowPinned ? 'Angeheftet — klicken zum Entfernen' : 'Anheften';
+    };
   });
 }
 
@@ -12218,6 +12283,8 @@ async function runSearchQueries(q) {
       isPicker ? Promise.resolve({ data: [] }) : depsQuery,
     ]);
     if (signal.aborted) return;
+    // v2.9.13: Pin-Cache vor dem Render bereithalten, damit der Stern-State stimmt.
+    if (!_userPinsSet) await refreshUserPinsSet();
     renderSearchResults(comps, conts, projs, deps, q);
   } catch (err) {
     if (signal.aborted) return;
