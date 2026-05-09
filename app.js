@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.5 (Notizen-Liste). Neue Listen-Sub-Page
+   `#/notizen` mit zentralem Überblick über alle Notizen
+   inklusive Bezug. Tabelle: Inhalt-Snippet (3-zeilig clamped),
+   Bezug (Pille FIRMA/PROJEKT/KONTAKT mit Link auf Detail bzw.
+   „Bezug entfernt"-Hinweis bei verwaisten Notizen), Erstellt-
+   Datum, Autor. Filter: Volltext-Suche, Bezug-Typ, Autor-
+   Dropdown. Klick auf Zeile öffnet das bestehende Notiz-
+   Bearbeiten-Modal. Loader `loadNotesList` cached die letzten
+   500 Notizen mit Joins auf companies/projects/contacts/
+   user_profiles; `filterNotes` filtert clientseitig. Tab-Count
+   kommt aus `loadAllListenTabCounts` (separater Pfad weil
+   notes kein deleted_at hat). Save/Delete im Notiz-Modal lädt
+   die Liste neu, falls aktiv.
    Version 2.9.4 (Topnav-Layout: Suche zentrisch, Plus als
    Icon). Korrektur zu v2.9.3 nach User-Feedback: die Pille
    „Schnell anlegen" raus, stattdessen ist die **Suche** jetzt
@@ -1382,6 +1395,8 @@ async function saveNotizFromModal() {
   if (ctx === 'company' && currentCompanyDetailId) loadCompanyActivityStream(currentCompanyDetailId);
   else if (ctx === 'project' && currentProjectDetailId) loadProjectActivityStream(currentProjectDetailId);
   else if (ctx === 'contact' && currentContactDetailId) loadContactActivityStream(currentContactDetailId);
+  // v2.9.5: Notizen-Liste aktualisieren, wenn sie offen ist
+  if (document.getElementById('page-notes')?.classList.contains('active')) loadNotesList();
 }
 
 async function deleteNotizFromModal() {
@@ -1396,6 +1411,8 @@ async function deleteNotizFromModal() {
   if (ctx === 'company' && currentCompanyDetailId) loadCompanyActivityStream(currentCompanyDetailId);
   else if (ctx === 'project' && currentProjectDetailId) loadProjectActivityStream(currentProjectDetailId);
   else if (ctx === 'contact' && currentContactDetailId) loadContactActivityStream(currentContactDetailId);
+  // v2.9.5: Notizen-Liste aktualisieren, wenn sie offen ist
+  if (document.getElementById('page-notes')?.classList.contains('active')) loadNotesList();
 }
 
 function renderActivityStreamSections(filtered) {
@@ -3062,6 +3079,7 @@ function showPage(name) {
   if (name === 'contacts') loadContacts();
   if (name === 'appointments') loadAppointments();
   if (name === 'tasks') loadTasks();
+  if (name === 'notes') loadNotesList();   // v2.9.5
   if (name === 'projects') loadProjects();
   if (name === 'deployments') loadDeployments();
   // v2.0.0 — Hauptbereiche
@@ -4302,7 +4320,7 @@ function setListenTabCount(page, count) {
 /** v2.0.0 — Sub-Nav für Listen ein-/ausblenden + aktiven Tab markieren.
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
-const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks'];
+const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks','notes'];
 const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','dubletten','shortcuts','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
@@ -4343,6 +4361,9 @@ async function loadAllListenTabCounts() {
       .is('deleted_at', null);
     setListenTabCount(page, count == null ? '' : count);
   }));
+  // v2.9.5: Notizen haben kein deleted_at — separater Count.
+  const { count: notesCount } = await db.from('notes').select('id', { count: 'exact', head: true });
+  setListenTabCount('notes', notesCount == null ? '' : notesCount);
 }
 
 async function loadEinstellungen() {
@@ -4363,7 +4384,7 @@ function setActiveTopNavTab(pageName) {
   // Mapping: welche Page gehört zu welchem Bereich?
   if (pageName === 'briefing' || pageName === 'heute') tabId = 'topnav-briefing';
   else if (pageName === 'arbeitsplatz') tabId = 'topnav-arbeitsplatz';
-  else if (['listen','companies','contacts','projects','appointments','deployments','tasks',
+  else if (['listen','companies','contacts','projects','appointments','deployments','tasks','notes',
             'company-detail','contact-detail','project-detail'].includes(pageName)) tabId = 'topnav-listen';
   // Einstellungen-Pages markieren keinen Top-Nav-Tab (eigener Bereich)
   if (tabId) document.getElementById(tabId)?.classList.add('active');
@@ -4453,6 +4474,8 @@ function navigateTo(page, param) {
     hash = '#/termine';
   } else if (page === 'tasks') {
     hash = '#/aufgaben';
+  } else if (page === 'notes') {
+    hash = '#/notizen';
   } else if (page === 'projects' && param && typeof param === 'object') {
     pendingProjectsFilter = { ...(pendingProjectsFilter || {}), ...param };
     hash = '#/projekte';
@@ -4620,6 +4643,7 @@ function handleHashChange() {
   }
   if (hash === '#/firmen') { showPage('companies'); return; }
   if (hash === '#/kontakte')   { showPage('contacts'); return; }
+  if (hash === '#/notizen')    { showPage('notes'); return; }   // v2.9.5
   if (hash === '#/projekte')   { showPage('projects'); return; }
   if (hash === '#/einsaetze')  { showPage('deployments'); return; }
   if (hash === '#/benutzer')   { showPage('users'); return; }
@@ -17418,6 +17442,121 @@ async function loadAufgabeStatus() {
 
 function isTaskOverdue(task, todayISO) {
   return task.status !== 'erledigt' && task.faelligkeit && task.faelligkeit < todayISO;
+}
+
+// ═══════════════════════════════════════════════════════════
+// v2.9.5 — NOTIZEN-LISTE
+// Eine zentrale Übersicht aller Notizen mit ihren Bezügen.
+// Notes hat kein deleted_at (echter DELETE) — verwaiste Bezüge
+// (Eltern soft-gelöscht) werden mit „Bezug entfernt" markiert.
+// ═══════════════════════════════════════════════════════════
+
+let _notesCache = [];
+let _notesAuthorsLoaded = false;
+
+async function loadNotesList() {
+  const tbody = document.getElementById('notes-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade Notizen ...</div></td></tr>';
+
+  const { data, error } = await db.from('notes')
+    .select(`
+      id, inhalt, created_at, company_id, project_id, contact_id, erstellt_von,
+      company:companies!notes_company_id_fkey(id, name, deleted_at),
+      project:projects!notes_project_id_fkey(id, name, deleted_at),
+      contact:contacts!notes_contact_id_fkey(id, vorname, nachname, deleted_at),
+      user:user_profiles!notes_erstellt_von_fkey(id, name)
+    `)
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+  _notesCache = data || [];
+
+  // Autoren-Dropdown einmalig befüllen
+  if (!_notesAuthorsLoaded) {
+    const sel = document.getElementById('notes-author-filter');
+    if (sel) {
+      const seen = new Map();
+      _notesCache.forEach(n => { if (n.user?.id) seen.set(n.user.id, n.user.name || '—'); });
+      [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+        .forEach(([id, name]) => sel.insertAdjacentHTML('beforeend', `<option value="${esc(id)}">${esc(name)}</option>`));
+      _notesAuthorsLoaded = true;
+    }
+  }
+
+  filterNotes();
+}
+
+function _getNotizBezug(n) {
+  if (n.company_id && n.company && !n.company.deleted_at) {
+    return { type: 'company', label: n.company.name, click: `navigateTo('firma','${n.company.id}')` };
+  }
+  if (n.project_id && n.project && !n.project.deleted_at) {
+    return { type: 'project', label: n.project.name, click: `navigateTo('projekt','${n.project.id}')` };
+  }
+  if (n.contact_id && n.contact && !n.contact.deleted_at) {
+    const name = [n.contact.vorname, n.contact.nachname].filter(Boolean).join(' ') || '—';
+    return { type: 'contact', label: name, click: `navigateTo('kontakt','${n.contact.id}')` };
+  }
+  // Bezug existiert in Spalte, aber Eltern wurden gelöscht
+  if (n.company_id || n.project_id || n.contact_id) {
+    return { type: 'orphan', label: 'Bezug entfernt', click: null };
+  }
+  return { type: 'none', label: '—', click: null };
+}
+
+function filterNotes() {
+  const q = (document.getElementById('notes-search')?.value || '').toLowerCase().trim();
+  const scope = document.getElementById('notes-scope-filter')?.value || 'all';
+  const author = document.getElementById('notes-author-filter')?.value || '';
+
+  const filtered = _notesCache.filter(n => {
+    const bezug = _getNotizBezug(n);
+    if (scope === 'company' && bezug.type !== 'company') return false;
+    if (scope === 'project' && bezug.type !== 'project') return false;
+    if (scope === 'contact' && bezug.type !== 'contact') return false;
+    if (scope === 'orphan'  && bezug.type !== 'orphan' && bezug.type !== 'none') return false;
+    if (author && n.erstellt_von !== author) return false;
+    if (q) {
+      const hay = [n.inhalt, bezug.label, n.user?.name].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const tbody = document.getElementById('notes-table-body');
+  const countEl = document.getElementById('notes-count');
+  if (countEl) countEl.textContent = filtered.length === _notesCache.length
+    ? `${_notesCache.length} Notizen`
+    : `${filtered.length} von ${_notesCache.length} Notizen`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Keine Notizen gefunden.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(n => {
+    const bezug = _getNotizBezug(n);
+    const snippet = (n.inhalt || '').length > 180 ? (n.inhalt.substring(0, 180) + ' …') : (n.inhalt || '');
+    const pillClass = bezug.type === 'company' ? 'firma' : bezug.type === 'project' ? 'projekt' : 'kontakt';
+    const pillLabel = bezug.type === 'company' ? 'FIRMA' : bezug.type === 'project' ? 'PROJEKT' : 'KONTAKT';
+    const bezugCell = bezug.click
+      ? `<span class="type-pill type-pill-${pillClass}">${esc(pillLabel)}</span>
+         <a class="row-link" onclick="event.stopPropagation();${bezug.click}">${esc(bezug.label)}</a>`
+      : `<span class="row-muted">${esc(bezug.label)}</span>`;
+    return `
+      <tr onclick="openNotizModal('${esc(n.id)}','${bezug.type === 'company' ? 'company' : bezug.type === 'project' ? 'project' : bezug.type === 'contact' ? 'contact' : 'company'}')" style="cursor:pointer">
+        <td><div class="notes-snippet">${esc(snippet)}</div></td>
+        <td>${bezugCell}</td>
+        <td class="col-tablet">${esc(formatDateCompact((n.created_at || '').substring(0, 10)))}</td>
+        <td class="col-desktop">${esc(n.user?.name || '—')}</td>
+        <td class="col-action"></td>
+      </tr>`;
+  }).join('');
 }
 
 // ── LISTE ───────────────────────────────────────────────────────────────────

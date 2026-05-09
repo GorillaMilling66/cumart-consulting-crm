@@ -7158,3 +7158,16 @@ select.typ-select-secondary {
   .attachment-row { grid-template-columns: 22px 1fr 24px; gap: 6px; }
   .attachment-meta { display: none; }
 }
+
+/* v2.9.5: Notizen-Liste — Snippet-Spalte + Bezug-Link */
+.notes-snippet {
+  font-size: 13px; line-height: 1.5; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis;
+  white-space: pre-wrap; word-break: break-word;
+}
+.row-link {
+  color: var(--accent); cursor: pointer; margin-left: 6px; font-weight: 500;
+}
+.row-link:hover { text-decoration: underline; }
+.row-muted { color: var(--muted); font-size: 12px; font-style: italic; }

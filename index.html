@@ -352,6 +352,7 @@
       <button class="listen-tab" data-page="appointments" onclick="navigateTo('appointments')">Termine <span class="listen-tab-count" id="listen-tab-count-appointments"></span></button>
       <button class="listen-tab" data-page="deployments" onclick="navigateTo('deployments')">Einsätze <span class="listen-tab-count" id="listen-tab-count-deployments"></span></button>
       <button class="listen-tab" data-page="tasks"       onclick="navigateTo('tasks')">Aufgaben <span class="listen-tab-count" id="listen-tab-count-tasks"></span></button>
+      <button class="listen-tab" data-page="notes"       onclick="navigateTo('notes')">Notizen <span class="listen-tab-count" id="listen-tab-count-notes"></span></button>
     </div>
 
     <!-- v2.0.0 — EINSTELLUNGEN-SUBNAV (sichtbar nur auf Einstellungs-Pages) -->
@@ -1246,6 +1247,57 @@
             </thead>
             <tbody id="tasks-table-body">
               <tr><td colspan="7"><div class="empty">Lade Aufgaben ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- v2.9.5: SEITE — NOTIZEN (LISTE) -->
+    <div class="page" id="page-notes">
+      <div class="page-header">
+        <h1 class="page-title">Notizen</h1>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="flex:1;min-width:240px;margin:0">
+            <input type="text" id="notes-search"
+                   placeholder="Suche nach Inhalt, Firma, Projekt, Kontakt ..."
+                   oninput="filterNotes()">
+          </div>
+          <div class="form-group" style="min-width:160px;margin:0">
+            <select id="notes-scope-filter" onchange="filterNotes()">
+              <option value="all">Alle Bezüge</option>
+              <option value="company">Nur Firma</option>
+              <option value="project">Nur Projekt</option>
+              <option value="contact">Nur Kontakt</option>
+              <option value="orphan">Ohne Bezug</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:160px;margin:0">
+            <select id="notes-author-filter" onchange="filterNotes()">
+              <option value="">Alle Autoren</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span id="notes-count">Notizen</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Inhalt</th>
+                <th style="width:230px">Bezug</th>
+                <th class="col-tablet" style="width:130px">Erstellt</th>
+                <th class="col-desktop" style="width:140px">Autor</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="notes-table-body">
+              <tr><td colspan="5"><div class="empty">Lade Notizen ...</div></td></tr>
             </tbody>
           </table>
         </div>
