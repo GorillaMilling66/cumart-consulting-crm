@@ -1,5 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.12 (ABC eigene Spalte in der Firmen-Liste). Das
+   ABC-Badge stand bisher inline direkt vor dem Firmennamen,
+   was bei nur ein bis zwei klassifizierten Firmen optisch
+   unruhig wirkte. Jetzt eigene 48-px-Spalte zwischen Bulk-
+   Checkbox und Name, zentriert. Leere Klassifizierungen
+   zeigen ein dezentes „—". Der Tabellen-Header ist um
+   „ABC" erweitert, das Lade-Empty-Colspan auf 9.
    Version 2.9.11 (Bulk-Toolbar Produkte: Lieferant-Gruppe
    entfernt). Die separate „Lieferant"-Schnellaktion in der
    Produkte-Bulk-Toolbar ist überflüssig — `lieferant_id`
@@ -7544,16 +7551,18 @@ function renderCompaniesTable(companies) {
     const typWert  = c.typ?.wert || '—';
     const ort = [c.plz, c.stadt].filter(Boolean).join(' ');
 
-    const abcHtml = c.abc_klassifizierung
-      ? `<span class="abc-badge abc-badge-${esc(c.abc_klassifizierung)}" title="ABC ${esc(c.abc_klassifizierung)}" style="margin-right:8px;vertical-align:middle">${esc(c.abc_klassifizierung)}</span>`
-      : '';
+    // v2.9.12: ABC bekommt eine eigene Spalte (vorher inline vor dem Namen).
+    const abcCell = c.abc_klassifizierung
+      ? `<span class="abc-badge abc-badge-${esc(c.abc_klassifizierung)}" title="ABC ${esc(c.abc_klassifizierung)}">${esc(c.abc_klassifizierung)}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
 
     const checked = _bulkSelected.company.has(c.id) ? 'checked' : '';
     return `
       <tr>
         <td class="col-bulk"><input type="checkbox" data-bulk-id="${esc(c.id)}" ${checked} onchange="bulkToggleRow('company','${esc(c.id)}',this.checked)"></td>
+        <td style="text-align:center">${abcCell}</td>
         <td>
-          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${abcHtml}${esc(c.name)}${isCompanyIncomplete(c) ? '<span class="incomplete-badge" title="Datenpflege-Bedarf — keine Adresse und keine Kontaktdaten">unvollständig</span>' : ''}</div>
+          <div class="cell-link" onclick="navigateTo('firma', '${esc(c.id)}')">${esc(c.name)}${isCompanyIncomplete(c) ? '<span class="incomplete-badge" title="Datenpflege-Bedarf — keine Adresse und keine Kontaktdaten">unvollständig</span>' : ''}</div>
           ${c.website ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(c.website)}</div>` : ''}
         </td>
         <td>
