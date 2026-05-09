@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.9.10 (Bulk-Toolbar cleaner). Die Inline-Bulk-Toolbar
+   bei Firmen/Kontakten/Produkten war optisch unruhig (drei
+   Gruppen, viele Buttons mit unterschiedlicher Höhe, keine
+   Trenner sichtbar). Refactor: jede Gruppe (`.bulk-group`) hat
+   jetzt eine Mini-Caption oben (TAG / FELD BEARBEITEN / PREISE
+   ANPASSEN / LIEFERANT) via `::before` mit `flex-basis:100%`,
+   die Controls liegen in einer Row darunter — alle einheitlich
+   32 px hoch (Selects, Inputs, Buttons). Vertikale Trennlinien
+   zwischen den Gruppen, „Auswahl aufheben" rutscht via
+   `margin-left:auto` rechts ans Ende. Die Buttons in den
+   Gruppen wurden auf kürzere Verben („Setzen" statt „Tag
+   setzen", „Anpassen" statt „Preise anpassen") reduziert, weil
+   die Caption schon den Kontext liefert. Kein Schema-Change.
    Version 2.9.9 (Bulk-Preisanpassung + CSV-Update-Modus für
    Produkte). Zwei Wege für Preiserhöhungen:
    1) **Inline in der Bulk-Toolbar** der Produkte-Liste:

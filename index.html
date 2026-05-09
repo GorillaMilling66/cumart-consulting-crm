@@ -604,20 +604,20 @@
       <!-- v2.7.1/2: Bulk-Edit-Toolbar inline (versteckt bis Auswahl > 0) -->
       <div class="bulk-toolbar" id="companies-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="companies-bulk-count">0 ausgewählt</span>
-        <span class="bulk-group">
+        <span class="bulk-group" data-label="Tag">
           <select id="companies-bulk-tag"><option value="">— Tag wählen —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="bulkAddTag('company')">Tag setzen</button>
-          <button class="btn btn-sm" onclick="bulkRemoveTag('company')">Tag entfernen</button>
+          <button class="btn btn-sm btn-primary" onclick="bulkAddTag('company')">Setzen</button>
+          <button class="btn btn-sm" onclick="bulkRemoveTag('company')">Entfernen</button>
         </span>
-        <span class="bulk-group">
-          <select id="companies-bulk-field" onchange="onBulkFieldInlineChange('company')"><option value="">— Feld bearbeiten —</option></select>
+        <span class="bulk-group" data-label="Feld bearbeiten">
+          <select id="companies-bulk-field" onchange="onBulkFieldInlineChange('company')"><option value="">— Feld wählen —</option></select>
           <span id="companies-bulk-value-wrap" style="display:none"></span>
           <button class="btn btn-sm btn-primary" id="companies-bulk-apply-btn" onclick="applyBulkInline('company')" style="display:none">Anwenden</button>
           <label class="bulk-only-empty" id="companies-bulk-only-empty-wrap" style="display:none">
             <input type="checkbox" id="companies-bulk-only-empty"> <span>nur leere</span>
           </label>
         </span>
-        <button class="btn btn-sm" onclick="clearBulkSelection('company')">Auswahl aufheben</button>
+        <button class="btn btn-sm bulk-clear-btn" onclick="clearBulkSelection('company')">Auswahl aufheben</button>
       </div>
 
       <div class="card">
@@ -896,20 +896,20 @@
       <!-- v2.7.1/2: Bulk-Edit-Toolbar Kontakte (inline) -->
       <div class="bulk-toolbar" id="contacts-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="contacts-bulk-count">0 ausgewählt</span>
-        <span class="bulk-group">
+        <span class="bulk-group" data-label="Tag">
           <select id="contacts-bulk-tag"><option value="">— Tag wählen —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="bulkAddTag('contact')">Tag setzen</button>
-          <button class="btn btn-sm" onclick="bulkRemoveTag('contact')">Tag entfernen</button>
+          <button class="btn btn-sm btn-primary" onclick="bulkAddTag('contact')">Setzen</button>
+          <button class="btn btn-sm" onclick="bulkRemoveTag('contact')">Entfernen</button>
         </span>
-        <span class="bulk-group">
-          <select id="contacts-bulk-field" onchange="onBulkFieldInlineChange('contact')"><option value="">— Feld bearbeiten —</option></select>
+        <span class="bulk-group" data-label="Feld bearbeiten">
+          <select id="contacts-bulk-field" onchange="onBulkFieldInlineChange('contact')"><option value="">— Feld wählen —</option></select>
           <span id="contacts-bulk-value-wrap" style="display:none"></span>
           <button class="btn btn-sm btn-primary" id="contacts-bulk-apply-btn" onclick="applyBulkInline('contact')" style="display:none">Anwenden</button>
           <label class="bulk-only-empty" id="contacts-bulk-only-empty-wrap" style="display:none">
             <input type="checkbox" id="contacts-bulk-only-empty"> <span>nur leere</span>
           </label>
         </span>
-        <button class="btn btn-sm" onclick="clearBulkSelection('contact')">Auswahl aufheben</button>
+        <button class="btn btn-sm bulk-clear-btn" onclick="clearBulkSelection('contact')">Auswahl aufheben</button>
       </div>
 
       <div class="card">
@@ -2320,15 +2320,15 @@
           </label>
         </div>
       </div>
-      <!-- v2.7.1/2: Bulk-Edit-Toolbar Produkte (inline) -->
+      <!-- v2.7.1/2: Bulk-Edit-Toolbar Produkte (inline) — v2.9.10 cleaner Layout -->
       <div class="bulk-toolbar" id="products-bulk-toolbar" style="display:none">
         <span class="bulk-toolbar-label" id="products-bulk-count">0 ausgewählt</span>
-        <span class="bulk-group">
+        <span class="bulk-group" data-label="Lieferant">
           <select id="products-bulk-lieferant"><option value="">— Lieferant wählen —</option></select>
-          <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Lieferant setzen</button>
+          <button class="btn btn-sm btn-primary" onclick="bulkSetProductLieferant()">Setzen</button>
         </span>
-        <span class="bulk-group">
-          <select id="products-bulk-field" onchange="onBulkFieldInlineChange('product')"><option value="">— Feld bearbeiten —</option></select>
+        <span class="bulk-group" data-label="Feld bearbeiten">
+          <select id="products-bulk-field" onchange="onBulkFieldInlineChange('product')"><option value="">— Feld wählen —</option></select>
           <span id="products-bulk-value-wrap" style="display:none"></span>
           <button class="btn btn-sm btn-primary" id="products-bulk-apply-btn" onclick="applyBulkInline('product')" style="display:none">Anwenden</button>
           <label class="bulk-only-empty" id="products-bulk-only-empty-wrap" style="display:none">
@@ -2336,11 +2336,11 @@
           </label>
         </span>
         <!-- v2.9.9: Bulk-Preisanpassung -->
-        <span class="bulk-group">
+        <span class="bulk-group" data-label="Preise anpassen">
           <select id="products-bulk-price-target">
-            <option value="vk">VK anpassen</option>
-            <option value="ek">EK anpassen</option>
-            <option value="both">EK + VK anpassen</option>
+            <option value="vk">VK</option>
+            <option value="ek">EK</option>
+            <option value="both">EK + VK</option>
           </select>
           <select id="products-bulk-price-op">
             <option value="pct_inc">+ %</option>
@@ -2349,10 +2349,10 @@
             <option value="abs_dec">− €</option>
             <option value="set">= €</option>
           </select>
-          <input type="number" step="0.01" min="0" id="products-bulk-price-value" placeholder="Wert" style="width:90px">
-          <button class="btn btn-sm btn-primary" onclick="bulkAdjustProductPrices()">Preise anpassen</button>
+          <input type="number" step="0.01" min="0" id="products-bulk-price-value" placeholder="Wert" class="bulk-input-narrow">
+          <button class="btn btn-sm btn-primary" onclick="bulkAdjustProductPrices()">Anpassen</button>
         </span>
-        <button class="btn btn-sm" onclick="clearBulkSelection('product')">Auswahl aufheben</button>
+        <button class="btn btn-sm bulk-clear-btn" onclick="clearBulkSelection('product')">Auswahl aufheben</button>
       </div>
 
       <div class="card">
