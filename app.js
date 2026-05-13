@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.2 (Einsatz-Modal: Service-Wechsel respektiert
+   manuellen Preis, Aktualisieren-Button signalisiert Abweichung
+   farbig). Drei zusammengehörige Änderungen:
+   1) Neuer State-Flag _deploymentEinzelpreisManuallyEdited
+      analog zu _deploymentMengeManuallyEdited. Wird gesetzt,
+      sobald der User selbst am Einzelpreis-Feld tippt (Edit-
+      Modus startet ihn ebenfalls auf true — die gespeicherte
+      Eingabe ist heilig).
+   2) Service-Wechsel-Handler: solange der Flag false ist,
+      übernimmt der Wechsel den Service-Standardpreis ins
+      Einzelpreis-Feld (wie bisher). Ist der Flag true, bleibt
+      der manuell eingegebene Preis stehen — der Service-
+      Wechsel überschreibt ihn nicht mehr.
+   3) Aktualisieren-Button neben dem Einzelpreis: zeigt ↻ wie
+      neben Menge, ruft beim Klick den Service-Standardpreis
+      ab und cleart den Manual-Override-Flag. Sobald der
+      aktuelle Preis vom Service-Standardpreis abweicht, leuchtet
+      der Button warnfarbig (gelber Hintergrund/dunkler Text) —
+      damit ist auf einen Blick erkennbar, dass die Aktualisieren-
+      Taste hier etwas zu sagen hat. Helper
+      updateEinzelpreisOutdatedState läuft bei Service-Change,
+      User-Input und beim Modal-Open.
    Version 2.11.1 (Projekt-Template legt Einsätze mit Service-
    Standardpreis an statt 0 €). Bug: createTemplateSubItems
    setzte beim Anlegen eines Einsatzes aus einem Template
@@ -1648,6 +1670,7 @@ let deploymentModalPrefillProjectId = null;
 let editingProjectId = null;
 let editingDeploymentId = null;
 let _deploymentMengeManuallyEdited = false;  // v1.33: verhindert, dass Auto-Menge manuelle Eingabe überschreibt
+let _deploymentEinzelpreisManuallyEdited = false;  // v2.11.2: verhindert, dass Service-Wechsel den manuell überschriebenen Preis ersetzt
 let editingTaskId = null;
 let taskModalPrefillCompanyId = null;
 let taskModalPrefillProjectId = null;
@@ -10870,6 +10893,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
   editingDeploymentId = deploymentId;
   selectedTechnikerIds = new Set();
   _deploymentMengeManuallyEdited = false;  // v1.33: Auto-Menge-Flag zurücksetzen
+  _deploymentEinzelpreisManuallyEdited = false;  // v2.11.2: Auto-Preis-Flag zurücksetzen
   renderDateShortcuts();                    // v1.33: aktuelle Monats-Buttons
 
   // Caches sicherstellen
@@ -10998,6 +11022,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     document.getElementById('d-menge').value = data.menge ?? 1;
     _deploymentMengeManuallyEdited = true;  // v1.33: existierende Menge nicht durch Auto-Berechnung ersetzen
     document.getElementById('d-einzelpreis').value = data.einzelpreis ?? '';
+    _deploymentEinzelpreisManuallyEdited = true;  // v2.11.2: gespeicherter Preis ist heilig — Service-Wechsel überschreibt ihn nicht
     document.getElementById('d-beschreibung').value = data.beschreibung || '';
     // v1.52.0: Doku-Block aus dokumentation befüllen
     document.getElementById('d-documentation-block').innerHTML =
@@ -11044,6 +11069,11 @@ async function openDeploymentModal(mode, deploymentId = null) {
 
   setupDeploymentPreviewListeners();  // v1.38
   renderDeploymentPreview();           // v1.38
+
+  // v2.11.2: Einmaliger initialer Check für den Aktualisieren-Button — wenn
+  // Edit-Preis vom Service-Standard abweicht, leuchtet der Button sofort beim
+  // Öffnen des Modals.
+  updateEinzelpreisOutdatedState();
 
   await populateTemplateDropdown('einsatz', mode);
 
@@ -11109,14 +11139,16 @@ function setupDeploymentModalListeners() {
   };
 
   serviceSelect.onchange = () => {
-    // Auto-fill Einzelpreis aus Service-Standardpreis, wenn noch leer
+    // v2.11.2: Auto-fill Einzelpreis nur dann, wenn der User ihn NICHT manuell
+    // editiert hat. Sonst bleibt der individuelle Preis stehen — der
+    // Aktualisieren-Button neben dem Preisfeld leuchtet aber farbig, damit
+    // sofort erkennbar ist, dass der Preis vom Service-Standard abweicht.
     const opt = serviceSelect.options[serviceSelect.selectedIndex];
     const preis = opt?.getAttribute('data-preis');
     const uhrzeitVon = opt?.getAttribute('data-uhrzeit-von');
     const uhrzeitBis = opt?.getAttribute('data-uhrzeit-bis');
 
-    const currentPreis = document.getElementById('d-einzelpreis').value;
-    if (preis && (currentPreis === '' || Number(currentPreis) === 0)) {
+    if (preis && !_deploymentEinzelpreisManuallyEdited) {
       document.getElementById('d-einzelpreis').value = preis;
     }
 
@@ -11127,6 +11159,7 @@ function setupDeploymentModalListeners() {
     if (uhrzeitBis && !dBis.value) dBis.value = uhrzeitBis;
 
     updateDeploymentPriceHint();
+    updateEinzelpreisOutdatedState();
   };
 
   // Gemeinsamer Handler für Datums-Änderungen — v1.33 auto-Menge nach Werktagen.
@@ -11146,7 +11179,14 @@ function setupDeploymentModalListeners() {
     if (e.isTrusted) _deploymentMengeManuallyEdited = true;
     updateDeploymentPriceHint();
   });
-  einzelpreis.oninput = updateDeploymentPriceHint;
+  // v2.11.2: User-Edit am Einzelpreis setzt analog den Manual-Override-Flag,
+  // damit der nächste Service-Wechsel den Preis nicht überschreibt. Außerdem
+  // Aktualisieren-Button-State neu berechnen.
+  einzelpreis.addEventListener('input', (e) => {
+    if (e.isTrusted) _deploymentEinzelpreisManuallyEdited = true;
+    updateDeploymentPriceHint();
+    updateEinzelpreisOutdatedState();
+  });
 
   // Reset-Icon neben Menge
   const resetBtn = document.getElementById('d-menge-reset');
@@ -11156,6 +11196,39 @@ function setupDeploymentModalListeners() {
       recomputeDeploymentMengeFromDates(true);
     };
   }
+
+  // v2.11.2: Reset-Icon neben Einzelpreis — auf Service-Standardpreis springen
+  // und das Manual-Override-Flag zurücksetzen.
+  const priceResetBtn = document.getElementById('d-einzelpreis-reset');
+  if (priceResetBtn) {
+    priceResetBtn.onclick = () => {
+      const opt = serviceSelect.options[serviceSelect.selectedIndex];
+      const preis = opt?.getAttribute('data-preis');
+      if (!preis) { showToast('Kein Service mit Standardpreis gewählt.', true); return; }
+      document.getElementById('d-einzelpreis').value = preis;
+      _deploymentEinzelpreisManuallyEdited = false;
+      updateDeploymentPriceHint();
+      updateEinzelpreisOutdatedState();
+    };
+  }
+}
+
+/** v2.11.2: Markiert den Aktualisieren-Button neben dem Einzelpreis farblich,
+ *  sobald der aktuelle Preis vom Service-Standardpreis abweicht. Greift bei
+ *  Service-Wechsel, manuellem Edit und beim Öffnen im Edit-Modus. */
+function updateEinzelpreisOutdatedState() {
+  const btn = document.getElementById('d-einzelpreis-reset');
+  if (!btn) return;
+  const serviceSelect = document.getElementById('d-service');
+  const opt = serviceSelect?.options?.[serviceSelect.selectedIndex];
+  const standard = Number(opt?.getAttribute('data-preis') || 0);
+  const aktuell  = Number(document.getElementById('d-einzelpreis').value || 0);
+  // Ohne Service oder ohne Standardpreis kein Hinweis — Button bleibt neutral.
+  const showOutdated = standard > 0 && aktuell !== standard;
+  btn.classList.toggle('is-outdated', showOutdated);
+  btn.title = showOutdated
+    ? `Einzelpreis abweichend von Service-Standardpreis (${formatPreis(standard)}). Klick übernimmt den Standardpreis.`
+    : 'Einzelpreis auf Service-Standardpreis aktualisieren';
 }
 
 /** Werktags-Menge aus datum_von/bis berechnen (v1.33). Überschreibt Menge nicht,

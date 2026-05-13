@@ -4612,6 +4612,20 @@ body.has-calendar .main { padding-bottom: 160px; }
   color: var(--text);
   border-color: var(--link);
 }
+/* v2.11.2: „Veralteter Wert"-Modifier — leuchtet auf, sobald der aktuelle
+   Einzelpreis vom Service-Standardpreis abweicht, damit man auf einen Blick
+   sieht, dass die Aktualisieren-Taste hier etwas zu sagen hat. */
+.input-action-btn.is-outdated {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #f59e0b;
+  font-weight: 600;
+}
+.input-action-btn.is-outdated:hover {
+  background: #fde68a;
+  color: #78350f;
+  border-color: #d97706;
+}
 
 /* ═══════════════════════════════════════════════════════════
    GANZTAGS-CHECKBOX (v1.33) — Termin/Einsatz-Modal
