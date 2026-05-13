@@ -1,5 +1,28 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.6 (Smart Empty States — Themen-Vorschläge,
+   kompakte Hinweise, aktive Onboarding-Karten). Die leeren
+   Bereiche im Projekt-Brief und Einsatz-Bericht waren passive
+   Hinweistexte („Noch keine Themen.", „Wird automatisch …",
+   „Dieses Projekt hat noch keine Themen.") — sie nahmen Platz
+   weg, sagten aber nichts Handlungsorientiertes. Jetzt:
+   1) Projekt-Brief „Themen" leer + Bibliothek voll → Onboarding-
+      Karte „Schnellstart aus der Themen-Bibliothek" mit Top-5-
+      Vorschlägen, Checkboxen, „Auswahl übernehmen"-Knopf, plus
+      Sekundär-Buttons „Mehr aus Bibliothek" / „Eigenes Thema".
+      Helper applyThemeSuggestionsForEmptyState.
+   2) Projekt-Brief „Themen" leer + Bibliothek leer → kompakte
+      Karte mit zwei Action-Links: „+ Erstes Thema" /
+      „Themen-Bibliothek öffnen".
+   3) Projekt-Brief „Entwicklungs-Log" leer → Mini-State (eine
+      Zeile, linke Border-Accent, Italic) statt großer Block.
+   4) Einsatz-Bericht „Behandelte Themen" + Projekt hat keine
+      Themen → Compact-Card mit primärem „Themen am Projekt
+      anlegen →"-Button (springt direkt auf den Projekt-Brief-
+      Tab via _pendingDetailTab).
+   Neue CSS-Klassen: .empty-state-card (+ -compact), .empty-
+   state-title, .empty-state-hint, .empty-state-suggestions
+   / -suggestion, .empty-state-actions, .empty-state-mini.
    Version 2.13.5 (Time-Filter rechts in der Filter-Leiste der
    Activity-Streams). Ergänzung zu v2.13.4: neben den
    bestehenden Entity-Type-Pillen (Alle/Termine/Einsätze/…)
@@ -7156,11 +7179,81 @@ async function renderProjectThemes(projectId) {
   }
 
   if (themes.length === 0) {
-    list.innerHTML = '<div class="info-card-empty">Noch keine Themen. Klicke oben auf „+ Thema", um die kanonische Themen-Liste für dieses Projekt anzulegen — Einsätze taggen später dagegen.</div>';
+    // v2.13.6: Smart Empty State — wenn die Themen-Bibliothek befüllt ist,
+    // zeigen wir die ersten 5 Vorschläge mit Übernahme-Knopf statt nur einen
+    // Hinweistext. Ist die Bibliothek leer, kompakter Hint mit zwei Action-
+    // Links.
+    list.innerHTML = '<div class="info-card-empty" style="padding:14px">Lade Themen-Bibliothek …</div>';
+    const { data: libRows } = await db.from('theme_library')
+      .select('id, name, beschreibung, kategorie')
+      .is('deleted_at', null).eq('ist_aktiv', true)
+      .order('kategorie', { ascending: true, nullsFirst: false })
+      .order('name', { ascending: true })
+      .limit(5);
+    const libSuggestions = libRows || [];
+    if (libSuggestions.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state-card">
+          <div class="empty-state-title">Noch keine Themen — und keine Bibliothek</div>
+          <div class="empty-state-hint">Mit „+ Thema" legst du ein projekt-spezifisches Thema an. Oder du baust eine Bibliothek auf, aus der du in jedem Projekt schöpfen kannst.</div>
+          <div class="empty-state-actions">
+            <button class="btn btn-sm btn-primary" onclick="openThemeModal('new', null, currentProjectDetailId)">+ Erstes Thema</button>
+            <button class="btn btn-sm" onclick="navigateTo('themes')">Themen-Bibliothek öffnen</button>
+          </div>
+        </div>`;
+    } else {
+      list.innerHTML = `
+        <div class="empty-state-card">
+          <div class="empty-state-title">Schnellstart aus deiner Themen-Bibliothek</div>
+          <div class="empty-state-hint">${libSuggestions.length} Vorschläge — alle oder einzelne übernehmen:</div>
+          <div class="empty-state-suggestions">
+            ${libSuggestions.map(t => `
+              <label class="empty-state-suggestion">
+                <input type="checkbox" value="${esc(t.id)}" checked>
+                <div>
+                  <div class="empty-state-suggestion-name">${esc(t.name)}</div>
+                  ${t.kategorie ? `<div class="empty-state-suggestion-meta">${esc(t.kategorie)}</div>` : ''}
+                </div>
+              </label>`).join('')}
+          </div>
+          <div class="empty-state-actions">
+            <button class="btn btn-sm btn-primary" onclick="applyThemeSuggestionsForEmptyState('${esc(projectId)}')">Auswahl übernehmen</button>
+            <button class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)">Mehr aus Bibliothek …</button>
+            <button class="btn btn-sm" onclick="openThemeModal('new', null, currentProjectDetailId)">Eigenes Thema</button>
+          </div>
+        </div>`;
+    }
     return;
   }
 
   list.innerHTML = `<div class="themes-list">${themes.map(t => renderThemeRow(t, projectId)).join('')}</div>`;
+}
+
+/** v2.13.6: Helper für Smart-Empty-State Themen — übernimmt die per Checkbox
+ *  ausgewählten Bibliotheks-Themen direkt aus dem leeren Themen-Bereich. */
+async function applyThemeSuggestionsForEmptyState(projectId) {
+  const wrap = document.getElementById('project-themes-list');
+  if (!wrap) return;
+  const ids = Array.from(wrap.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value);
+  if (ids.length === 0) { showToast('Bitte mindestens ein Thema auswählen.', true); return; }
+  const { data: libRows } = await db.from('theme_library')
+    .select('id, name, beschreibung').in('id', ids);
+  if (!libRows || libRows.length === 0) return;
+  const userId = currentProfile?.id || null;
+  const rows = libRows.map((t, idx) => ({
+    project_id: projectId,
+    name: t.name,
+    beschreibung: t.beschreibung,
+    library_theme_id: t.id,
+    owner_id: userId,
+    reihenfolge: 100 + idx,
+    status: 'offen'
+  }));
+  const { error } = await db.from('project_themes').insert(rows);
+  if (error) { showToast(error.message, true); return; }
+  showToast(`${rows.length} Thema${rows.length === 1 ? '' : 'tha'} übernommen.`);
+  invalidateThemesCache?.(projectId);
+  renderProjectThemes(projectId);
 }
 
 function dismissThemesBanner(projectId) {
@@ -21072,7 +21165,9 @@ async function renderProjectDevelopmentLog(projectId) {
   }).filter(i => i.log && i.log.trim());
 
   if (items.length === 0) {
-    wrap.innerHTML = '<div class="info-card-empty">Wird automatisch aus den Erkenntnissen oder dem Log-Eintrag deiner Einsätze gefüllt.</div>';
+    // v2.13.6: Mini-Empty-State — kein vollformatiger Block, sondern eine
+    // eingerückte einzeilige Andeutung. Spart Platz, bleibt informativ.
+    wrap.innerHTML = '<div class="empty-state-mini">Noch nichts protokolliert — wächst automatisch aus den Erkenntnissen / Log-Einträgen deiner Einsätze.</div>';
     return;
   }
 
@@ -21877,7 +21972,15 @@ async function renderDeploymentReportThemes(d) {
   }
   const themes = await loadProjectThemesData(d.project_id);
   if (themes.length === 0) {
-    wrap.innerHTML = '<div class="info-card-empty">Dieses Projekt hat noch keine Themen. Lege sie auf der Projekt-Detailseite an.</div>';
+    // v2.13.6: Aktionsorientierter Empty-State statt passivem Hinweis —
+    // direkter Link zum Projekt-Brief mit Pending-Tab, der dort den Brief-Tab
+    // aktiviert.
+    wrap.innerHTML = `
+      <div class="empty-state-card empty-state-card-compact">
+        <div class="empty-state-hint">Dieses Projekt hat noch keine Themen.</div>
+        <button class="btn btn-sm btn-primary" onclick="_jumpToProjectBriefFromEinsatz('${esc(d.project_id)}')">Themen am Projekt anlegen →</button>
+      </div>`;
+    if (hint) hint.style.display = 'none';
     return;
   }
   const { data: assigned } = await db.from('deployment_themes').select('theme_id').eq('deployment_id', d.id);
@@ -21890,6 +21993,14 @@ async function renderDeploymentReportThemes(d) {
       <span class="theme-color-dot" style="background:${esc(t.farbe || '#E6F1FB')}"></span>
       <span class="theme-pick-name">${esc(t.name)}</span>
     </label>`).join('')}</div>`;
+}
+
+/** v2.13.6: vom Einsatz-Bericht aus zum Projekt-Brief springen — öffnet das
+ *  Projekt mit Pending-Tab auf „brief", sodass der User direkt Themen
+ *  anlegen kann. */
+function _jumpToProjectBriefFromEinsatz(projectId) {
+  _pendingDetailTab = 'brief';
+  navigateTo('projekt', projectId);
 }
 
 async function toggleDeploymentReportTheme(deploymentId, themeId, checked) {

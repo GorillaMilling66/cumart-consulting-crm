@@ -2506,6 +2506,60 @@ body {
 }
 .info-card-empty { color: var(--muted); font-size: 13px; font-style: italic; }
 
+/* v2.13.6: Smart Empty-State-Karten — kein nichts-sagender Hinweis, sondern
+   aktive Onboarding-Karte mit Vorschlägen + Aktionen. */
+.empty-state-card {
+  background: linear-gradient(180deg, #fafafb 0%, var(--surface) 100%);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+}
+.empty-state-card-compact { padding: 10px 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.empty-state-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  margin-bottom: 4px;
+}
+.empty-state-hint {
+  font-size: 12px; color: var(--muted);
+  margin-bottom: 12px;
+}
+.empty-state-card-compact .empty-state-hint { margin-bottom: 0; flex: 1; }
+.empty-state-suggestions {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-bottom: 12px;
+}
+.empty-state-suggestion {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.empty-state-suggestion:hover { background: var(--bg); }
+.empty-state-suggestion input[type=checkbox] {
+  width: 14px; height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.empty-state-suggestion-name { font-size: 13px; color: var(--text); font-weight: 500; }
+.empty-state-suggestion-meta {
+  font-size: 11px; color: #3730a3; background: #eef2ff;
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  margin-top: 2px;
+}
+.empty-state-actions {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+
+/* v2.13.6: Mini-Empty-State — eine Zeile statt Block */
+.empty-state-mini {
+  font-size: 11px; color: var(--muted); font-style: italic;
+  padding: 6px 0;
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+
 .last-activity-item { display: flex; gap: 12px; align-items: flex-start; padding: 2px 0; }
 .last-activity-date {
   font-size: 12px;
