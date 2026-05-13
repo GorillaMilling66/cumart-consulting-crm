@@ -1146,6 +1146,72 @@ body {
 .status-pill-abgerechnet   { background: var(--status-billed-bg);  color: var(--status-billed-fg); }
 .status-pill-storniert     { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
 
+/* v2.15.3: Status-Pille als prominenter, klickbarer Picker im Detail-Hero.
+   Bg/Color kommen aus den status-pill-{key}-Modifiern (oben definiert) —
+   wir verstärken nur Größe, Padding, Schatten und ergänzen die Caret. */
+.status-pill-wrap { position: relative; display: inline-block; }
+.status-pill-clickable {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px !important;
+  font-size: 14px !important; font-weight: 600 !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(0,0,0,.08);
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform .12s ease, box-shadow .12s ease;
+  letter-spacing: .2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.status-pill-clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,.1);
+}
+.status-pill-caret {
+  font-size: 11px; opacity: .65;
+  line-height: 1;
+}
+
+.status-pill-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  padding: 4px;
+  overflow: hidden;
+}
+.status-pill-popup-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+}
+.status-pill-popup-item:hover { background: var(--bg); }
+.status-pill-popup-item.is-current { background: var(--bg); font-weight: 600; }
+.status-pill-popup-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%; flex-shrink: 0;
+}
+.status-pill-popup-label { flex: 1; }
+.status-pill-popup-check { color: var(--success); font-weight: 700; }
+.status-pill-popup-empty {
+  padding: 12px;
+  font-size: 12px; color: var(--muted);
+  font-style: italic;
+  text-align: center;
+}
+
 /* v2.0.0 — Arbeitsplatz */
 .arbeitsplatz {
   max-width: 1200px;

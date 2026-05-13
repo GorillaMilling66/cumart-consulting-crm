@@ -1408,7 +1408,12 @@
             <div class="proj-hero-subline" id="project-detail-subline"></div>
           </div>
           <div class="proj-hero-actions">
-            <span class="status-pill" id="project-status-pill">…</span>
+            <!-- v2.15.3: Status-Pille wird klickbar — Picker mit allen erlaubten Werten -->
+            <div class="status-pill-wrap">
+              <button type="button" class="status-pill status-pill-clickable" id="project-status-pill"
+                      onclick="toggleStatusPicker('project', this)">…<span class="status-pill-caret">▾</span></button>
+              <div class="status-pill-popup" id="project-status-popup" style="display:none"></div>
+            </div>
             <span class="workflow-status-pill" id="project-workflow-pill" style="display:none">✓ Vorbereitet</span>
             <button class="btn-pin" id="project-detail-pin-btn" aria-label="Anheften" title="Anheften"></button>
             <button class="btn btn-sm" id="project-detail-edit-btn">Bearbeiten</button>
@@ -1841,7 +1846,12 @@
             <div class="proj-hero-subline" id="appt-detail-subline"></div>
           </div>
           <div class="proj-hero-actions">
-            <span class="status-pill" id="appt-status-pill">…</span>
+            <!-- v2.15.3: Status-Pille klickbar -->
+            <div class="status-pill-wrap">
+              <button type="button" class="status-pill status-pill-clickable" id="appt-status-pill"
+                      onclick="toggleStatusPicker('appointment', this)">…<span class="status-pill-caret">▾</span></button>
+              <div class="status-pill-popup" id="appt-status-popup" style="display:none"></div>
+            </div>
             <span class="workflow-status-pill" id="appt-workflow-pill" style="display:none">✓ Vorbereitet</span>
             <button class="btn btn-sm" onclick="openAppointmentModal('edit', currentAppointmentDetailId)">Bearbeiten</button>
           </div>
@@ -1945,7 +1955,12 @@
             <div class="proj-hero-subline" id="dep-detail-subline"></div>
           </div>
           <div class="proj-hero-actions">
-            <span class="status-pill" id="dep-status-pill">…</span>
+            <!-- v2.15.3: Status-Pille klickbar -->
+            <div class="status-pill-wrap">
+              <button type="button" class="status-pill status-pill-clickable" id="dep-status-pill"
+                      onclick="toggleStatusPicker('deployment', this)">…<span class="status-pill-caret">▾</span></button>
+              <div class="status-pill-popup" id="dep-status-popup" style="display:none"></div>
+            </div>
             <span class="workflow-status-pill" id="dep-workflow-pill" style="display:none">✓ Dokumentiert</span>
             <button class="btn btn-sm" onclick="openDeploymentModal('edit', currentDeploymentDetailId)">Bearbeiten</button>
           </div>

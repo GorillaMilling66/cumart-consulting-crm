@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.15.3 (Status-Pille im Hero wird prominenter Picker.
+   Statt einer kleinen Text-Pille rechts oben sitzt jetzt ein
+   klickbarer Button: größeres Padding (6 × 14 px), 14-px-Fett-
+   Schrift, Pill-Form, mit Caret-Symbol (▾) und sanftem Schatten.
+   Klick öffnet ein Popup direkt darunter, das alle aktiven
+   Status-Werte aus `lookup_values` der jeweiligen Kategorie
+   (`projekt_status` / `einsatz_status` / `termin_status`) listet
+   — pro Wert ein Farb-Punkt + Label, der aktuelle Wert ist
+   markiert (✓). Auswahl: Confirm-Dialog („X → Y") und derselbe
+   from-Status-geschützte UPDATE-Pfad wie bei advanceEntityStatus.
+   Klick außerhalb / Klick auf die Pille schließen den Picker;
+   Lookup-Werte werden pro Entitäts-Typ gecacht. Damit ist auch
+   das direkte Setzen auf Storniert / Verloren / Lead-zurück
+   ohne Edit-Modal möglich. JS: _STATUS_LOOKUP_CAT,
+   _statusOptionsCache, _loadStatusOptions, toggleStatusPicker,
+   selectEntityStatus, _statusPopupIdFromAnchor, globaler
+   click-outside-Listener. Die Pille bekommt jetzt zusätzlich
+   data-current-status + data-entity-id, damit der Handler die
+   Werte direkt lesen kann (kein Closure-Trick im onclick).
+   CSS: .status-pill-wrap, .status-pill-clickable (+ -caret),
+   .status-pill-popup (+ -item / -dot / -label / -check / -empty,
+   .is-current).
    Version 2.15.2 (Status weiterbringen — Primary-Aktion in
    jedem Aktionen-Bereich mit Status-Flow. Im Aktionen-Sidebar
    von Projekt / Einsatz / Termin sitzt als erste Aktion ein
@@ -21097,8 +21119,10 @@ async function renderProjectV2Layout(p) {
   const statusPill = document.getElementById('project-status-pill');
   if (statusPill && p.status) {
     const statusKey = p.status.toLowerCase().replace(/[^a-z]/g, '');
-    statusPill.textContent = p.status;
-    statusPill.className = `status-pill status-pill-${statusKey}`;
+    statusPill.innerHTML = `${esc(p.status)}<span class="status-pill-caret">▾</span>`;
+    statusPill.className = `status-pill status-pill-clickable status-pill-${statusKey}`;
+    statusPill.dataset.currentStatus = p.status;
+    statusPill.dataset.entityId = p.id;
   }
   // v2.15.2: Status-Weiterbringen-Aktion im Aktionen-Sidebar rendern
   renderStatusAdvanceAction('project', p.id, p.status, 'project-status-action');
@@ -22232,9 +22256,12 @@ async function loadAppointmentDetail(appointmentId) {
   // Status-Pille
   const statusPill = document.getElementById('appt-status-pill');
   if (a.status) {
-    statusPill.textContent = a.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant';
+    const label = a.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant';
     const cls = a.status === 'durchgefuehrt' ? 'durchgefhrt' : 'geplant';
-    statusPill.className = `status-pill status-pill-${cls}`;
+    statusPill.innerHTML = `${esc(label)}<span class="status-pill-caret">▾</span>`;
+    statusPill.className = `status-pill status-pill-clickable status-pill-${cls}`;
+    statusPill.dataset.currentStatus = a.status;
+    statusPill.dataset.entityId = appointmentId;
   }
   // v2.15.2: Status-Weiterbringen-Aktion im Aktionen-Sidebar rendern
   renderStatusAdvanceAction('appointment', appointmentId, a.status, 'appt-status-action');
@@ -22443,8 +22470,10 @@ async function loadDeploymentDetail(deploymentId) {
   const statusPill = document.getElementById('dep-status-pill');
   if (d.status) {
     const cls = d.status.toLowerCase().replace(/[^a-z]/g, '');
-    statusPill.textContent = d.status;
-    statusPill.className = `status-pill status-pill-${cls}`;
+    statusPill.innerHTML = `${esc(d.status)}<span class="status-pill-caret">▾</span>`;
+    statusPill.className = `status-pill status-pill-clickable status-pill-${cls}`;
+    statusPill.dataset.currentStatus = d.status;
+    statusPill.dataset.entityId = deploymentId;
   }
   // v2.15.2: Status-Weiterbringen-Aktion im Aktionen-Sidebar rendern
   renderStatusAdvanceAction('deployment', deploymentId, d.status, 'dep-status-action');
@@ -22931,6 +22960,106 @@ async function advanceEntityStatus(entityType, entityId, fromStatus, toStatus) {
   if (error) { showToast(error.message, true); return; }
   showToast(`Status: ${toStatus}.`);
   // Refresh der jeweiligen Detail-Page
+  if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
+  if (entityType === 'deployment' && currentDeploymentDetailId) loadDeploymentDetail(currentDeploymentDetailId);
+  if (entityType === 'appointment'&& currentAppointmentDetailId) loadAppointmentDetail(currentAppointmentDetailId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.15.3 — STATUS-PICKER (Klick auf Status-Pille)
+// ═══════════════════════════════════════════════════════════
+
+/** Lookup-Kategorie je Entitäts-Typ */
+const _STATUS_LOOKUP_CAT = {
+  project:     'projekt_status',
+  deployment:  'einsatz_status',
+  appointment: 'termin_status'
+};
+
+const _statusOptionsCache = {};
+
+async function _loadStatusOptions(entityType) {
+  if (_statusOptionsCache[entityType]) return _statusOptionsCache[entityType];
+  const cat = _STATUS_LOOKUP_CAT[entityType];
+  if (!cat) return [];
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe, reihenfolge')
+    .eq('kategorie', cat).eq('ist_aktiv', true).order('reihenfolge');
+  if (error) return [];
+  _statusOptionsCache[entityType] = data || [];
+  return _statusOptionsCache[entityType];
+}
+
+/** Click-Handler für die Status-Pille: öffnet (oder schließt) das Popup
+ *  mit allen erlaubten Status-Werten direkt unter der Pille. */
+async function toggleStatusPicker(entityType, anchorEl) {
+  // Schließe alle anderen offenen Picker
+  document.querySelectorAll('.status-pill-popup').forEach(p => {
+    if (!p.id.startsWith(_statusPopupIdFromAnchor(anchorEl))) p.style.display = 'none';
+  });
+
+  const popupId = anchorEl.id.replace('-pill', '-popup');
+  const popup = document.getElementById(popupId);
+  if (!popup) return;
+  if (popup.style.display !== 'none' && popup.dataset.openFor === anchorEl.id) {
+    popup.style.display = 'none'; popup.dataset.openFor = ''; return;
+  }
+
+  const entityId      = anchorEl.dataset.entityId;
+  const currentStatus = anchorEl.dataset.currentStatus;
+  const options = await _loadStatusOptions(entityType);
+  if (options.length === 0) {
+    popup.innerHTML = '<div class="status-pill-popup-empty">Keine Status-Werte hinterlegt.</div>';
+  } else {
+    popup.innerHTML = options.map(o => {
+      const isCurrent = o.wert === currentStatus;
+      const farbe = o.farbe || 'var(--muted)';
+      return `
+        <button type="button" class="status-pill-popup-item ${isCurrent ? 'is-current' : ''}"
+                onclick="event.stopPropagation();selectEntityStatus('${esc(entityType)}','${esc(entityId)}','${esc(o.wert)}','${esc(currentStatus)}')">
+          <span class="status-pill-popup-dot" style="background:${esc(farbe)}"></span>
+          <span class="status-pill-popup-label">${esc(o.wert)}</span>
+          ${isCurrent ? '<span class="status-pill-popup-check">✓</span>' : ''}
+        </button>`;
+    }).join('');
+  }
+  popup.style.display = '';
+  popup.dataset.openFor = anchorEl.id;
+}
+
+function _statusPopupIdFromAnchor(anchorEl) {
+  return (anchorEl?.id || '').replace('-pill', '-popup').split('-')[0];
+}
+
+/** Schließt alle Status-Picker, wenn außerhalb geklickt wird. */
+document.addEventListener('click', (ev) => {
+  if (ev.target.closest('.status-pill-clickable, .status-pill-popup')) return;
+  document.querySelectorAll('.status-pill-popup').forEach(p => {
+    p.style.display = 'none'; p.dataset.openFor = '';
+  });
+}, true);
+
+/** Wählt einen Status aus dem Picker — gleicher Update-Pfad wie
+ *  advanceEntityStatus, aber freie Wahl (auch Rückwärts / Storniert /
+ *  Verloren). Confirm bestätigt den Sprung; Race-Schutz via from-Status. */
+async function selectEntityStatus(entityType, entityId, newStatus, currentStatus) {
+  if (!entityType || !entityId || !newStatus) return;
+  // Picker schließen
+  const popup = document.getElementById(entityType === 'project' ? 'project-status-popup'
+                                     : entityType === 'deployment' ? 'dep-status-popup'
+                                     : 'appt-status-popup');
+  if (popup) { popup.style.display = 'none'; popup.dataset.openFor = ''; }
+
+  if (newStatus === currentStatus) return; // No-op
+  if (!confirm(`Status ändern?\n\n${currentStatus}  →  ${newStatus}`)) return;
+
+  const flow = _STATUS_FLOW[entityType];
+  const table = flow?.table;
+  if (!table) return;
+  const { error } = await db.from(table)
+    .update({ status: newStatus }).eq('id', entityId).eq('status', currentStatus);
+  if (error) { showToast(error.message, true); return; }
+  showToast(`Status: ${newStatus}.`);
   if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
   if (entityType === 'deployment' && currentDeploymentDetailId) loadDeploymentDetail(currentDeploymentDetailId);
   if (entityType === 'appointment'&& currentAppointmentDetailId) loadAppointmentDetail(currentAppointmentDetailId);
