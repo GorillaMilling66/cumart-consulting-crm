@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.2 („Anlegen & öffnen"-Button im Projekt-Modal +
+   Default-Status „Lead"). Zwei UX-Polish-Punkte zur
+   Projekt-Anlage:
+   1) Default-Status für neue Projekte ist jetzt „Lead"
+      (Pipeline-Start) statt „Angebot" — Projekte landen ohnehin
+      meistens zuerst als Lead, der manuelle Wechsel war
+      reibungsbehaftet. Im Edit-Mode bleibt der gespeicherte
+      Status unverändert.
+   2) Neben „Anlegen" sitzt im New-Mode ein zweiter Button
+      „Anlegen & öffnen". Wird er gewählt, schließt sich der
+      Modal nach erfolgreichem Insert und der User springt
+      direkt auf die Projekt-Detail-Seite — überspringt die
+      bisherige „Aktivitäten im Modal anlegen"-Folge-Sektion.
+      Flag-State `_saveProjectAndOpen` wird in
+      closeProjectModal und im Error-Fall zurückgesetzt.
    Version 2.13.1 (Globale Themen-Bibliothek + Picker im
    Projekt). Bisher leben Themen ausschließlich pro Projekt
    (`project_themes`). Wiederkehrende Themen wie „TNC7
@@ -9994,8 +10009,16 @@ async function openProjectModal(mode, projectId = null) {
   document.getElementById('p-enddatum').value = '';
   document.getElementById('p-umsatz').value = '';
   document.getElementById('p-notizen').value = '';
-  statusSelect.value = 'Angebot';
+  // v2.13.2: Default für neue Projekte ist „Lead" (Pipeline-Start), nicht
+  // mehr „Angebot" — Projekte starten faktisch immer als Lead.
+  statusSelect.value = (mode === 'new')
+    ? (projektStatusCache.find(s => s.wert === 'Lead')?.wert || projektStatusCache[0]?.wert || '')
+    : 'Angebot';
   setCompanyComboboxValue('p-company', 'p-company-list', '');
+
+  // v2.13.2: „Anlegen & öffnen"-Button nur im New-Mode sichtbar
+  const saveOpenBtn = document.getElementById('p-save-and-open-btn');
+  if (saveOpenBtn) saveOpenBtn.style.display = (mode === 'new') ? '' : 'none';
 
   if (mode === 'new') {
     document.getElementById('modal-project-title').textContent = 'Neues Projekt';
@@ -10066,6 +10089,7 @@ function closeProjectModal() {
   projectModalPrefillCompanyId = null;
   projectModalPrefillHauptkontaktId = null;
   _activeProjectTemplateId = null;
+  _saveProjectAndOpen = false;   // v2.13.2: Flag zurücksetzen
   // v1.51.0: Aktivitäten-Bereich zurücksetzen + Save-Button-Verhalten reset
   const sec = document.getElementById('p-activities-section');
   if (sec) sec.style.display = 'none';
@@ -10074,6 +10098,15 @@ function closeProjectModal() {
     btn.textContent = 'Anlegen';
     btn.onclick = saveProject;
   }
+}
+
+// v2.13.2: Flag — wenn true, schließt saveProject() nach Erfolg den Modal
+// und navigiert direkt zur Projekt-Detail-Page (statt im Modal zu bleiben).
+let _saveProjectAndOpen = false;
+
+function saveProjectAndOpen() {
+  _saveProjectAndOpen = true;
+  saveProject();
 }
 
 async function saveProject() {
@@ -10176,6 +10209,17 @@ async function saveProject() {
       : baseToast;
     showToast(toastMsg);
 
+    // v2.13.2: „Anlegen & öffnen"-Flow: Modal schließen und direkt auf die
+    // Projekt-Detail-Seite springen, statt die Aktivitäten-Sektion im Modal
+    // einzublenden. Hat Vorrang vor der bestehenden „Modal offen halten"-Logik.
+    if (isNewProject && newProjectId && _saveProjectAndOpen) {
+      _saveProjectAndOpen = false;
+      _activeProjectTemplateId = null;
+      closeProjectModal();
+      navigateTo('projekt', newProjectId);
+      return;
+    }
+
     // v1.51.0: Bei neuen Projekten Modal nicht schließen — stattdessen Aktivitäten-
     // Bereich einblenden, damit der User direkt weitere Aktivitäten anlegen kann.
     if (isNewProject && newProjectId) {
@@ -10187,6 +10231,9 @@ async function saveProject() {
       btn.onclick = closeProjectModalFromActivities;
       const delBtn = document.getElementById('p-delete-btn');
       if (delBtn) delBtn.style.display = 'inline-block';
+      // v2.13.2: „Anlegen & öffnen"-Button im Folge-Modus ausblenden
+      const saveOpenBtn = document.getElementById('p-save-and-open-btn');
+      if (saveOpenBtn) saveOpenBtn.style.display = 'none';
       // Template-Auswahl ausblenden (Template kann nur einmal angewandt werden)
       const tplRow = document.getElementById('p-template-row');
       if (tplRow) tplRow.style.display = 'none';
@@ -10209,6 +10256,7 @@ async function saveProject() {
     }
   } catch (e) {
     showToast(e.message, true);
+    _saveProjectAndOpen = false;   // v2.13.2: Flag bei Fehler zurücksetzen
   } finally {
     btn.disabled = false;
     if (!editingProjectId || btn.textContent === 'Wird angelegt ...' || btn.textContent === 'Wird gespeichert ...') {
