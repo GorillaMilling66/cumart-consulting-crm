@@ -1,5 +1,33 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.0 (Modulare Workflow-Schritte pro Projekt und
+   pro Einsatz). Bisher waren die Vorbereitungs-/Dokumentations-
+   Checklisten als JS-Konstante (`WORKFLOW_STEPS`) hartcodiert:
+   alle Projekte hatten dieselben 4 Schritte, alle Einsätze
+   dieselben 5. Jedes Projekt soll aber andere Vorbereitung
+   brauchen, jeder Einsatz andere Dokumentation.
+   Migration v2.13.0_workflow_steps_per_entity.sql legt eine
+   neue jsonb-Spalte `workflow_steps` auf `projects` und
+   `deployments` an, mit den bisherigen Defaults als DEFAULT-
+   Wert. `workflow_state` (bestehend) verwendet weiterhin die
+   gleichen Step-IDs als Keys — keine Daten-Migration nötig.
+   `renderWorkflowChecklist` liest die Schritt-Liste jetzt aus
+   der Entität (mit Fallback auf WORKFLOW_STEPS). Neuer
+   „Schritte bearbeiten"-Button öffnet einen Inline-Editor im
+   selben Container: + Schritt, Umbenennen, Reihenfolge per
+   ↑/↓, Pflicht-Toggle, Entfernen, Speichern/Abbrechen. Edit-
+   State liegt in `_workflowEditState`-Map pro Container.
+   Helper: `_loadWorkflowSteps`, `_saveWorkflowSteps`,
+   `openWorkflowEditor`, `_renderWorkflowEditor`,
+   `addWorkflowStep`, `removeWorkflowStep`, `moveWorkflowStep`,
+   `updateWorkflowStepField`, `saveWorkflowEditor`,
+   `cancelWorkflowEditor`. Termine (`appointments`) nutzen
+   weiterhin die WORKFLOW_STEPS-Konstante — keine Spalte
+   nötig in v1.
+   Projekt-Template-Apply (createTemplateSubItems): wenn das
+   Template `daten.workflow_steps` enthält, wird die Liste
+   beim Anlegen des neuen Projekts in `projects.workflow_steps`
+   übernommen.
    Version 2.12.4 (Detail-Tab bleibt nach Save erhalten —
    Projekt, Firma, Kontakt). Bug: nach jedem Save an einem
    Einsatz/Produkt/Aufgabe etc. im Projekt-Detail wurde der
@@ -10098,6 +10126,22 @@ async function saveProject() {
     let subitemsCreated = 0;
     if (isNewProject && _activeProjectTemplateId && newProjectId) {
       subitemsCreated = await createTemplateSubItems(_activeProjectTemplateId, newProjectId, startdatum);
+
+      // v2.13.0: Wenn das Projekt-Template eine eigene workflow_steps-Liste
+      // mitbringt (daten.workflow_steps jsonb-Array), übernehmen wir die auf
+      // das neu angelegte Projekt — sonst greift die DB-DEFAULT-Liste.
+      try {
+        const tpls = await fetchActiveTemplates('projekt');
+        const tpl = tpls.find(t => t.id === _activeProjectTemplateId);
+        const tplSteps = tpl?.daten?.workflow_steps;
+        if (Array.isArray(tplSteps) && tplSteps.length > 0) {
+          await db.from('projects')
+            .update({ workflow_steps: tplSteps })
+            .eq('id', newProjectId);
+        }
+      } catch (e) {
+        console.warn('Workflow-Steps aus Template konnten nicht übernommen werden:', e?.message);
+      }
     }
 
     const baseToast = savedId ? 'Projekt aktualisiert.' : 'Projekt angelegt.';
@@ -10453,8 +10497,9 @@ async function renderProjectDetail(p) {
 
   // v2.0.3: Vorbereitungs-Pille im Hero pre-rendern. v2.0.4: workflow_state
   // aus dem schon geladenen Projekt-Datensatz durchreichen (kein extra DB-Trip).
+  // v2.13.0: zusätzlich workflow_steps (jetzt projekt-spezifisch) durchreichen.
   renderWorkflowChecklist('project_prepare', 'project', p.id,
-    'project-workflow-checklist', 'project-workflow-pill', p.workflow_state);
+    'project-workflow-checklist', 'project-workflow-pill', p.workflow_state, p.workflow_steps);
 
   // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang vor Default.
   // v2.12.4: Wenn die Page ein Refresh derselben Projekt-ID ist (nach
@@ -21568,8 +21613,9 @@ async function loadDeploymentDetail(deploymentId) {
 
   // v2.0.3: Dokumentations-Checkliste + Hero-Pille rendern.
   // v2.0.4: State aus geladenem Datensatz durchreichen.
+  // v2.13.0: workflow_steps durchreichen (einsatz-spezifisch konfigurierbar).
   renderWorkflowChecklist('deployment_document', 'deployment', deploymentId,
-    'dep-workflow-checklist', 'dep-workflow-pill', d.workflow_state);
+    'dep-workflow-checklist', 'dep-workflow-pill', d.workflow_state, d.workflow_steps);
 
   // v2.9.0: Datei-Anhänge laden
   renderAttachmentZone('deployment', deploymentId, 'dep-attachments');
@@ -21752,7 +21798,35 @@ const WORKFLOW_TABLE_MAP = {
   project:     'projects'
 };
 
-/** Ist die Workflow-Checkliste vollständig? */
+/** v2.13.0: Welche Entity-Typen haben eine eigene `workflow_steps`-Spalte?
+ *  Projekt und Einsatz dürfen ihre Checklisten projekt-/einsatz-spezifisch
+ *  pflegen; Termin nutzt weiterhin die WORKFLOW_STEPS-Konstante als
+ *  Default (kann später nachgezogen werden). */
+const WORKFLOW_HAS_STEPS_COLUMN = { project: true, deployment: true, appointment: false };
+
+/** v2.13.0: Holt die Schritt-Liste für eine konkrete Entität. Bei Projekt/
+ *  Einsatz aus der `workflow_steps`-Spalte; bei Termin (oder fehlenden Daten)
+ *  Fallback auf WORKFLOW_STEPS[workflowKey].steps. */
+async function _loadWorkflowSteps(workflowKey, entityType, entityId, prefetchedSteps) {
+  const fallback = WORKFLOW_STEPS[workflowKey]?.steps || [];
+  if (!WORKFLOW_HAS_STEPS_COLUMN[entityType]) return fallback;
+  if (Array.isArray(prefetchedSteps) && prefetchedSteps.length > 0) return prefetchedSteps;
+  const table = WORKFLOW_TABLE_MAP[entityType];
+  if (!table || !entityId) return fallback;
+  const { data, error } = await db.from(table)
+    .select('workflow_steps').eq('id', entityId).single();
+  if (error) return fallback;
+  const stored = data?.workflow_steps;
+  if (Array.isArray(stored) && stored.length > 0) return stored;
+  return fallback;
+}
+
+/** Ist die Workflow-Checkliste vollständig? — v2.13.0 nimmt die Schritt-
+ *  Definition als Parameter, da sie pro Entität variieren kann. */
+function _isWorkflowCompleteForSteps(steps, state) {
+  if (!Array.isArray(steps) || steps.length === 0 || !state) return false;
+  return steps.every(s => !!state[s.id]);
+}
 function _isWorkflowComplete(workflowKey, state) {
   const def = WORKFLOW_STEPS[workflowKey];
   if (!def || !state) return false;
@@ -21781,12 +21855,31 @@ async function _saveWorkflowStep(entityType, entityId, workflowKey, stepId, chec
   return state;
 }
 
+/** v2.13.0: Persistiert ein neues Schritt-Array in workflow_steps. */
+async function _saveWorkflowSteps(entityType, entityId, steps) {
+  const table = WORKFLOW_TABLE_MAP[entityType];
+  if (!table || !entityId || !WORKFLOW_HAS_STEPS_COLUMN[entityType]) return false;
+  const clean = (Array.isArray(steps) ? steps : []).map((s, i) => ({
+    id: (s.id || `step_${i}_${Date.now().toString(36)}`).toString(),
+    label: (s.label || '').toString().trim(),
+    required: s.required !== false
+  })).filter(s => s.label);
+  const { error } = await db.from(table).update({ workflow_steps: clean }).eq('id', entityId);
+  if (error) { showToast('Fehler: ' + error.message, true); return false; }
+  return true;
+}
+
+/** Edit-State pro Container: ist der Editor offen? Workflow-Bearbeitungs-Buffer. */
+const _workflowEditState = new Map(); // containerId → { steps, workflowKey, entityType, entityId, pillId }
+
 /** Rendert die Checkliste in `containerId` und befüllt die Hero-Pille
  *  `pillId` (optional), wenn alle Schritte abgehakt sind.
  *  v2.0.4: `prefetchedState` (optional) erlaubt es dem Caller, den schon
  *  geladenen workflow_state aus dem Detail-Page-SELECT durchzureichen, um
- *  einen extra Roundtrip beim Hero-Pre-Render zu sparen. */
-async function renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId, prefetchedState) {
+ *  einen extra Roundtrip beim Hero-Pre-Render zu sparen.
+ *  v2.13.0: Schritt-Liste kommt nicht mehr aus der WORKFLOW_STEPS-Konstante,
+ *  sondern aus der `workflow_steps`-Spalte der Entität (mit Fallback). */
+async function renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId, prefetchedState, prefetchedSteps) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const def = WORKFLOW_STEPS[workflowKey];
@@ -21796,24 +21889,39 @@ async function renderWorkflowChecklist(workflowKey, entityType, entityId, contai
     ? (prefetchedState || {})
     : await _loadWorkflowState(entityType, entityId);
   const wfState = state[workflowKey] || {};
-  const done = def.steps.filter(s => wfState[s.id]).length;
-  const total = def.steps.length;
-  const allDone = done === total;
+
+  const steps = await _loadWorkflowSteps(workflowKey, entityType, entityId, prefetchedSteps);
+  const done = steps.filter(s => wfState[s.id]).length;
+  const total = steps.length;
+  const allDone = total > 0 && done === total;
+  const canEdit = WORKFLOW_HAS_STEPS_COLUMN[entityType];
+
+  const isEditing = _workflowEditState.has(containerId);
+  if (isEditing) {
+    container.innerHTML = _renderWorkflowEditor(containerId);
+    return;
+  }
 
   container.innerHTML = `
     <div class="workflow-checklist">
       <div class="workflow-head">
         <div class="workflow-title">${esc(def.title)}</div>
-        <div class="workflow-progress">${done} / ${total}${allDone ? ` · <strong>${esc(def.completedLabel)}</strong>` : ''}</div>
+        <div class="workflow-head-meta">
+          <span class="workflow-progress">${done} / ${total}${allDone ? ` · <strong>${esc(def.completedLabel)}</strong>` : ''}</span>
+          ${canEdit ? `<button type="button" class="workflow-edit-btn"
+                          onclick="openWorkflowEditor('${esc(workflowKey)}','${esc(entityType)}','${esc(entityId)}','${esc(containerId)}','${esc(pillId || '')}')"
+                          title="Schritte bearbeiten">Schritte bearbeiten</button>` : ''}
+        </div>
       </div>
       <div class="workflow-intro">${esc(def.intro)}</div>
       <div class="workflow-steps">
-        ${def.steps.map(s => `
+        ${steps.map(s => `
           <label class="workflow-step ${wfState[s.id] ? 'is-done' : ''}">
             <input type="checkbox" ${wfState[s.id] ? 'checked' : ''}
                    onchange="onWorkflowStepToggle('${esc(workflowKey)}','${esc(entityType)}','${esc(entityId)}','${esc(s.id)}',this.checked,'${esc(containerId)}','${esc(pillId || '')}')">
             <span class="workflow-step-label">${esc(s.label)}</span>
           </label>`).join('')}
+        ${steps.length === 0 ? '<div class="info-card-empty" style="padding:10px">Noch keine Schritte. Klicke oben auf „Schritte bearbeiten".</div>' : ''}
       </div>
     </div>`;
 
@@ -21832,6 +21940,105 @@ async function onWorkflowStepToggle(workflowKey, entityType, entityId, stepId, c
   await _saveWorkflowStep(entityType, entityId, workflowKey, stepId, checked);
   // Re-render mit aktualisiertem State (für Progress-Counter und Hero-Pille)
   await renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId);
+}
+
+// ───────── v2.13.0: Inline-Editor für Workflow-Schritte ─────────
+
+async function openWorkflowEditor(workflowKey, entityType, entityId, containerId, pillId) {
+  if (!WORKFLOW_HAS_STEPS_COLUMN[entityType]) return;
+  const steps = await _loadWorkflowSteps(workflowKey, entityType, entityId);
+  _workflowEditState.set(containerId, {
+    workflowKey, entityType, entityId, pillId,
+    steps: steps.map(s => ({ ...s }))   // deep-ish copy
+  });
+  await renderWorkflowChecklist(workflowKey, entityType, entityId, containerId, pillId);
+}
+
+function _renderWorkflowEditor(containerId) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx) return '';
+  const def = WORKFLOW_STEPS[ctx.workflowKey];
+  return `
+    <div class="workflow-checklist workflow-checklist-edit">
+      <div class="workflow-head">
+        <div class="workflow-title">${esc(def?.title || 'Schritte')} · Bearbeiten</div>
+        <div class="workflow-head-meta">
+          <button type="button" class="workflow-edit-btn workflow-edit-btn-secondary"
+                  onclick="cancelWorkflowEditor('${esc(containerId)}')">Abbrechen</button>
+          <button type="button" class="workflow-edit-btn workflow-edit-btn-primary"
+                  onclick="saveWorkflowEditor('${esc(containerId)}')">Speichern</button>
+        </div>
+      </div>
+      <div class="workflow-intro">${esc(def?.intro || '')}</div>
+      <div class="workflow-edit-list">
+        ${ctx.steps.map((s, i) => `
+          <div class="workflow-edit-row" data-step-idx="${i}">
+            <button type="button" class="workflow-edit-move" title="Nach oben"
+                    onclick="moveWorkflowStep('${esc(containerId)}',${i},-1)" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" class="workflow-edit-move" title="Nach unten"
+                    onclick="moveWorkflowStep('${esc(containerId)}',${i},1)" ${i === ctx.steps.length - 1 ? 'disabled' : ''}>↓</button>
+            <input type="text" class="workflow-edit-label" value="${esc(s.label || '')}"
+                   placeholder="Schritt-Beschreibung"
+                   oninput="updateWorkflowStepField('${esc(containerId)}',${i},'label',this.value)">
+            <label class="workflow-edit-required" title="Erforderlich">
+              <input type="checkbox" ${s.required !== false ? 'checked' : ''}
+                     onchange="updateWorkflowStepField('${esc(containerId)}',${i},'required',this.checked)"> Pflicht
+            </label>
+            <button type="button" class="workflow-edit-remove" title="Entfernen"
+                    onclick="removeWorkflowStep('${esc(containerId)}',${i})">×</button>
+          </div>`).join('')}
+      </div>
+      <button type="button" class="workflow-edit-add"
+              onclick="addWorkflowStep('${esc(containerId)}')">+ Schritt hinzufügen</button>
+    </div>`;
+}
+
+function addWorkflowStep(containerId) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx) return;
+  ctx.steps.push({ id: `step_${Date.now().toString(36)}_${ctx.steps.length}`, label: '', required: true });
+  document.getElementById(containerId).innerHTML = _renderWorkflowEditor(containerId);
+}
+
+function removeWorkflowStep(containerId, idx) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx) return;
+  ctx.steps.splice(idx, 1);
+  document.getElementById(containerId).innerHTML = _renderWorkflowEditor(containerId);
+}
+
+function moveWorkflowStep(containerId, idx, delta) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx) return;
+  const target = idx + delta;
+  if (target < 0 || target >= ctx.steps.length) return;
+  const tmp = ctx.steps[idx];
+  ctx.steps[idx] = ctx.steps[target];
+  ctx.steps[target] = tmp;
+  document.getElementById(containerId).innerHTML = _renderWorkflowEditor(containerId);
+}
+
+function updateWorkflowStepField(containerId, idx, field, value) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx || !ctx.steps[idx]) return;
+  ctx.steps[idx][field] = value;
+}
+
+async function saveWorkflowEditor(containerId) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx) return;
+  const ok = await _saveWorkflowSteps(ctx.entityType, ctx.entityId, ctx.steps);
+  if (!ok) return;
+  showToast('Schritte aktualisiert.');
+  _workflowEditState.delete(containerId);
+  await renderWorkflowChecklist(ctx.workflowKey, ctx.entityType, ctx.entityId, containerId, ctx.pillId);
+}
+
+function cancelWorkflowEditor(containerId) {
+  const ctx = _workflowEditState.get(containerId);
+  if (!ctx) return;
+  _workflowEditState.delete(containerId);
+  renderWorkflowChecklist(ctx.workflowKey, ctx.entityType, ctx.entityId, containerId, ctx.pillId);
 }
 
 // ═══════════════════════════════════════════════════════════
