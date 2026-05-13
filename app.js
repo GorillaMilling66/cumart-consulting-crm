@@ -1,5 +1,33 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.7 (Briefing: Wochenplan-Sub-Divider, DIESER-
+   MONAT-Admin-Filter, KW-Marker im Kalenderstreifen,
+   Kalender-Mitarbeiter-Dropdown Admin-gated). Vier kleine
+   UX-Verbesserungen im Briefing-Dashboard:
+   1) Zwischen TAGESPLAN und der „ab morgen"-Folgeliste sitzt
+      jetzt ein eigener Sub-Divider „WOCHENPLAN · KW XX · DD.
+      MM. – DD.MM. · Monat Jahr". Wird ausgeblendet, wenn keine
+      Folge-Items existieren. Verhindert die optisch verwirrende
+      direkt aneinanderklebende Darstellung von Tagesplan + Folge.
+   2) DIESER MONAT bekommt rechts einen Admin-only Mitarbeiter-
+      Selektor mit Standardauswahl = eingeloggter User und
+      Zusatzoption „Alle Mitarbeiter". `loadBriefingData`
+      unterstützt jetzt `userId === '__all__'` — alle
+      user-gebundenen Filter (`erstellt_von`, `assigned_to`,
+      `deployment_technicians.user_id`) werden konditional
+      übersprungen bzw. auf eine direkte `deployments`-Query
+      umgeschaltet. Nicht-Admins sehen den Selektor nicht und
+      bleiben automatisch auf ihrer eigenen Sicht.
+   3) KW-Marker im Kalender-Streifen unten: vor jedem Montag
+      (und am Monatsanfang) erscheint ein vertikaler „KW XX"-
+      Trenner. Hilft beim horizontalen Scrollen die Woche zu
+      erkennen.
+   4) Das Mitarbeiter-Dropdown in der Kalenderleiste ist jetzt
+      `data-admin-only="true"`. Die Option „Alle Mitarbeiter"
+      ist außerdem nur noch für Admins in der Liste — Nicht-
+      Admins können dort keine anderen User mehr aufrufen.
+      `applyAdminOnlyUI()` blendet das Wrapper-Label für Nicht-
+      Admins komplett aus.
    Version 2.11.6 (Letzter Login pro Benutzer in der Admin-
    Benutzerverwaltung). `auth.users.last_sign_in_at` ist für
    authenticated-Clients nicht direkt lesbar (auth-Schema).
@@ -3404,6 +3432,9 @@ function showPage(name) {
 // in Phasen 2-5 mit echten Inhalten gefüllt.
 
 // v2.0.0 — Briefing als Section-Layout (alle drei Bereiche scrollbar in einer Page)
+// v2.11.7: Admin-Filter für DIESER MONAT — eingeloggter User ist Default,
+//          Admins können auf andere User oder „Alle Mitarbeiter" wechseln.
+let _briefingMonatUserId = null;
 async function loadBriefingV2() {
   const userId = currentProfile?.id;
   if (!userId) return;
@@ -3422,11 +3453,16 @@ async function loadBriefingV2() {
     dateEl.textContent = `${WEEKDAYS_DE[d.getDay()]}, ${d.getDate()}. ${MONTHS_DE[d.getMonth()]} ${d.getFullYear()}`;
   }
 
+  // v2.11.7: Monat-Filter aufsetzen (nur Admin sieht das Dropdown)
+  if (!_briefingMonatUserId) _briefingMonatUserId = userId;
+  await setupBriefingMonatUserSelect();
+  const monatUserId = isAdmin() ? _briefingMonatUserId : userId;
+
   // Drei Datensätze parallel laden (Heute / Woche / Monat)
   const [heute, woche, monat] = await Promise.all([
     loadBriefingData(userId, 'heute'),
     loadBriefingData(userId, 'woche'),
-    loadBriefingData(userId, 'monat')
+    loadBriefingData(monatUserId, 'monat')
   ]);
 
   renderBriefingHeute(heute);
@@ -3795,6 +3831,11 @@ function renderBriefingWoche(data) {
   // Tag im Wochen-Strip. v2.11.5: vorher Filter `> todayISO`, was bei Auswahl
   // eines zukünftigen Wochentags die Items des Tages doppelt anzeigte (einmal
   // in TAGESPLAN, einmal in Upcoming).
+  // v2.11.7: Divider „WOCHENPLAN · KW XX · DD.MM. – DD.MM. · Monat Jahr"
+  // — taucht zwischen Tagesplan und Folge-Tagen auf, damit der visuelle
+  // Abstand erklärt ist. Wird ausgeblendet, wenn keine Folge-Tage existieren.
+  const upDivider = document.getElementById('bv2-week-upcoming-divider');
+  const upHintEl  = document.getElementById('bv2-week-upcoming-hint');
   const upEl = document.getElementById('bv2-week-upcoming');
   if (upEl) {
     const cutoffISO = _bv2SelectedDayISO || toISODate(new Date());
@@ -3816,7 +3857,15 @@ function renderBriefingWoche(data) {
 
     if (items.length === 0) {
       upEl.innerHTML = '';
+      if (upDivider) upDivider.style.display = 'none';
     } else {
+      if (upDivider) upDivider.style.display = '';
+      if (upHintEl) {
+        const sundayDt = new Date(endISO + 'T00:00:00');
+        const mondayDt = start;
+        upHintEl.textContent =
+          `KW ${kw} · ${fmt(mondayDt)} – ${fmt(sundayDt)} · ${MONTHS_DE[mondayDt.getMonth()]} ${mondayDt.getFullYear()}`;
+      }
       upEl.innerHTML = `
         <div class="bv2-upcoming">
           ${items.map(it => {
@@ -3833,6 +3882,35 @@ function renderBriefingWoche(data) {
         </div>`;
     }
   }
+}
+
+/** v2.11.7: User-Dropdown im DIESER MONAT-Block für Admins. Nicht-Admins sehen
+ *  das Label dank `data-admin-only="true"` gar nicht erst. */
+async function setupBriefingMonatUserSelect() {
+  const sel = document.getElementById('bv2-monat-user-select');
+  if (!sel) return;
+  if (!isAdmin()) return;
+  await loadUserProfilesCache();
+  // Nur einmal pro Session vorbefüllen — der User behält seine Auswahl.
+  if (!sel.dataset.wired) {
+    sel.innerHTML = `<option value="__all__">Alle Mitarbeiter</option>`
+      + userProfilesCache.map(u =>
+          `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
+    sel.value = _briefingMonatUserId || currentProfile?.id || '__all__';
+    sel.onchange = async () => {
+      _briefingMonatUserId = sel.value;
+      await reloadBriefingMonat();
+    };
+    sel.dataset.wired = '1';
+  }
+}
+
+/** v2.11.7: Nur den Monats-Block neu laden — wenn der Admin-Filter umgeschaltet
+ *  wird. Spart die Re-Renders der Heute- und Wochen-Sektionen. */
+async function reloadBriefingMonat() {
+  const monatUserId = isAdmin() ? (_briefingMonatUserId || currentProfile?.id) : currentProfile?.id;
+  const monat = await loadBriefingData(monatUserId, 'monat');
+  renderBriefingMonat(monat);
 }
 
 function renderBriefingMonat(data) {
@@ -15295,8 +15373,13 @@ async function initCalendarBar() {
 
   await loadUserProfilesCache();
   const select = document.getElementById('calendar-user-select');
-  // v1.43: „Alle Mitarbeiter" als zusätzliche Option oben
-  select.innerHTML = `<option value="__all__">Alle Mitarbeiter</option>`
+  // v1.43: „Alle Mitarbeiter" als zusätzliche Option oben (nur Admin).
+  // v2.11.7: Nicht-Admins sehen das Mitarbeiter-Dropdown jetzt komplett nicht
+  //          (via data-admin-only auf .calendar-user-wrap); Datenfilter bleibt
+  //          trotzdem auf currentProfile.id gepinnt, falls der Schalter doch
+  //          erscheint. „Alle Mitarbeiter" nur Admin-Option.
+  const adminOpts = isAdmin() ? `<option value="__all__">Alle Mitarbeiter</option>` : '';
+  select.innerHTML = adminOpts
     + userProfilesCache
     .map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || '?')}</option>`).join('');
   if (currentProfile?.id) select.value = currentProfile.id;
@@ -15432,6 +15515,12 @@ async function renderCalendarBar() {
     // bei Feiertag-Einsatz.
     const conflict   = hasEinsatz && (isHoliday || isWeekend);
     const conflictTitle = isHoliday ? 'Einsatz an Feiertag' : 'Einsatz am Wochenende';
+
+    // v2.11.7: KW-Label vor jedem Montag (sowie ganz am Monatsanfang) — gibt
+    // beim horizontalen Scrollen der Kalenderleiste eine klare Orientierung.
+    if (dow === 1 || day === 1) {
+      parts.push(`<div class="calendar-kw" title="Kalenderwoche">KW ${isoWeekNumber(dt)}</div>`);
+    }
 
     const classes = ['calendar-day'];
     if (isWeekend)              classes.push('cal-day-weekend');
@@ -15999,10 +16088,27 @@ async function loadIncompleteRecordsStats() {
   };
 }
 
-/** Lädt die Datenbasis für ein Briefing parallel. */
+/** Lädt die Datenbasis für ein Briefing parallel.
+ *  v2.11.7: `userId === '__all__'` wird unterstützt — alle user-gebundenen
+ *  Filter werden dann übersprungen, deployment_technicians-Joins werden auf
+ *  direkte deployments-Queries umgeschaltet. Genutzt vom Admin-Filter im
+ *  DIESER MONAT-Block. */
 async function loadBriefingData(userId, scope) {
   const range = briefingRangeForScope(scope);
   const todayISO = toISODate(new Date());
+  const isAll = userId === '__all__';
+
+  // Helper: hängt .eq(field, userId) nur an, wenn nicht __all__.
+  const userEq = (q, field) => isAll ? q : q.eq(field, userId);
+
+  // Helper: deployments-Query gibt entweder direkten Datensatz oder
+  // deployment_technicians-Join zurück — Mapping in `extractDeps`.
+  const depsQuery = (cols) => isAll
+    ? db.from('deployments').select(cols).is('deleted_at', null)
+    : db.from('deployment_technicians').select(`deployment:deployments!inner(${cols})`).eq('user_id', userId);
+  const extractDeps = (res) => isAll
+    ? (res.data || []).filter(d => d && !d.deleted_at)
+    : (res.data || []).map(r => r.deployment).filter(d => d && !d.deleted_at);
 
   // Sehr alter Termin als Heuristik für „X Tage kein neuer Termin" — wir laden den
   // jüngsten von uns erstellten Termin und rechnen die Tage seit dann.
@@ -16017,53 +16123,49 @@ async function loadBriefingData(userId, scope) {
     weekDoneDeps,     // dito Einsätze
     incompleteStats   // v1.43: Datenpflege
   ] = await Promise.all([
-    db.from('appointments')
+    userEq(db.from('appointments')
       .select('id, titel, datum, uhrzeit_von, uhrzeit_bis, status, ort, company:companies(id, name), contact:contacts(id, vorname, nachname), typ:lookup_values!appointments_typ_id_fkey(wert, farbe), deployment_id')
-      .is('deleted_at', null).eq('erstellt_von', userId)
+      .is('deleted_at', null), 'erstellt_von')
       .gte('datum', range.startISO).lte('datum', range.endISO)
       .order('datum', { ascending: true }).order('uhrzeit_von', { ascending: true, nullsFirst: false }),
-    db.from('deployment_technicians')
-      .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name))')
-      .eq('user_id', userId),
-    db.from('tasks')
+    depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name)'),
+    userEq(db.from('tasks')
       .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
-      .is('deleted_at', null).eq('assigned_to', userId)
+      .is('deleted_at', null), 'assigned_to')
       .gte('faelligkeit', range.startISO).lte('faelligkeit', range.endISO)
       .neq('status', 'erledigt'),
-    db.from('tasks')
+    userEq(db.from('tasks')
       .select('id, titel, faelligkeit, status, company:companies(id, name)')
-      .is('deleted_at', null).eq('assigned_to', userId)
+      .is('deleted_at', null), 'assigned_to')
       .lt('faelligkeit', todayISO).neq('status', 'erledigt')
       .order('faelligkeit', { ascending: true }),
-    db.from('tasks')
+    userEq(db.from('tasks')
       .select('id, titel, created_at, faelligkeit')
-      .is('deleted_at', null).eq('assigned_to', userId)
+      .is('deleted_at', null), 'assigned_to')
       .neq('status', 'erledigt')
       .lt('created_at', new Date(Date.now() - 14 * 86400000).toISOString()),
-    db.from('appointments')
-      .select('id, datum, created_at').is('deleted_at', null).eq('erstellt_von', userId)
+    userEq(db.from('appointments')
+      .select('id, datum, created_at').is('deleted_at', null), 'erstellt_von')
       .order('created_at', { ascending: false }).limit(1),
-    db.from('appointments')
-      .select('id, datum').is('deleted_at', null).eq('erstellt_von', userId)
+    userEq(db.from('appointments')
+      .select('id, datum').is('deleted_at', null), 'erstellt_von')
       .eq('status', 'durchgefuehrt')
       .gte('datum', toISODate(new Date(Date.now() - 7 * 86400000)))
       .lte('datum', todayISO),
-    db.from('deployment_technicians')
-      .select('deployment:deployments!inner(id, datum_von, status, deleted_at)')
-      .eq('user_id', userId),
+    depsQuery('id, datum_von, status, deleted_at'),
     loadIncompleteRecordsStats()
   ]);
 
   // Einsätze filtern auf Range + nicht gelöscht
-  const allDeps = (depInRange.data || []).map(r => r.deployment).filter(d => d && !d.deleted_at);
+  const allDeps = extractDeps(depInRange);
   const depsInRangeFiltered = allDeps.filter(d => {
     if (!d.datum_von) return false;
     const von = d.datum_von;
     const bis = d.datum_bis || von;
     return von <= range.endISO && bis >= range.startISO;
   });
-  const depsThisWeekDone = (weekDoneDeps.data || [])
-    .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von)
+  const depsThisWeekDone = extractDeps(weekDoneDeps)
+    .filter(d => d.datum_von)
     .filter(d => d.datum_von >= toISODate(new Date(Date.now() - 7 * 86400000)) && d.datum_von <= todayISO)
     .filter(d => d.status === 'Durchgeführt' || d.status === 'Abgerechnet');
 
@@ -16147,39 +16249,35 @@ async function loadBriefingData(userId, scope) {
     const [pipelineRes, recentDepsRes, prev3DepsRes,
            createdApptsRes, createdDepsRes, conversionRes, tasksDoneRes,
            membershipsRes, entitlementsRes, redemptionsRes] = await Promise.all([
-      // Pipeline: Projekte aus den relevanten Stages
+      // Pipeline: Projekte aus den relevanten Stages (kein User-Filter)
       db.from('projects')
         .select('id, name, status, geschaetzter_umsatz, company:companies(id, name)')
         .is('deleted_at', null)
         .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase']),
-      // v1.46.0: titel/ort/service ergänzt für Restmonat-Liste & Pflegerückstand
-      db.from('deployment_technicians')
-        .select('deployment:deployments!inner(id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name))')
-        .eq('user_id', userId),
-      // Vorige 3 Monate für Ziel-Berechnung
-      db.from('deployment_technicians')
-        .select('deployment:deployments!inner(id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis)')
-        .eq('user_id', userId),
+      // v1.46.0: titel/ort/service ergänzt; v2.11.7: __all__-Branch via depsQuery.
+      depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name)'),
+      // Vorige 3 Monate für Ziel-Berechnung; v2.11.7: __all__-Branch.
+      depsQuery('id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis'),
       // v1.45.6: Im Monat erstellte Termine (Vertrieb)
-      db.from('appointments')
+      userEq(db.from('appointments')
         .select('id', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('erstellt_von', userId)
+        .is('deleted_at', null), 'erstellt_von')
         .gte('created_at', monthStartISO).lte('created_at', monthEndISO + 'T23:59:59'),
       // v1.45.6: Im Monat erstellte Einsätze (Vertrieb)
-      db.from('deployments')
+      userEq(db.from('deployments')
         .select('id', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('erstellt_von', userId)
+        .is('deleted_at', null), 'erstellt_von')
         .gte('created_at', monthStartISO).lte('created_at', monthEndISO + 'T23:59:59'),
       // v1.45.6: Conversion — durchgef. Termine im Monat mit/ohne Einsatz-Folge
-      db.from('appointments')
+      userEq(db.from('appointments')
         .select('id, deployment_id')
-        .is('deleted_at', null).eq('erstellt_von', userId)
+        .is('deleted_at', null), 'erstellt_von')
         .eq('status', 'durchgefuehrt')
         .gte('datum', monthStartISO).lte('datum', monthEndISO),
       // v1.45.6: Im Monat erledigte Aufgaben (Technik)
-      db.from('tasks')
+      userEq(db.from('tasks')
         .select('id', { count: 'exact', head: true })
-        .is('deleted_at', null).eq('assigned_to', userId)
+        .is('deleted_at', null), 'assigned_to')
         .eq('status', 'erledigt')
         .gte('erledigt_am', monthStartISO).lte('erledigt_am', monthEndISO + 'T23:59:59'),
       // v1.46.0: Aktive Mitgliedschaften (für Ablauf-Sektion + Kontingent-Stand)
@@ -16195,8 +16293,7 @@ async function loadBriefingData(userId, scope) {
         .select('entitlement_id, menge_eingeloest')
     ]);
 
-    const allDepsBroad = (recentDepsRes.data || [])
-      .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von);
+    const allDepsBroad = extractDeps(recentDepsRes).filter(d => d.datum_von);
 
     // 30-Tage-Sparkline: pro Tag den Umsatz aus durchgef.+abgerechn. Einsätzen
     const sparkMap = {};
@@ -16340,8 +16437,7 @@ async function loadBriefingData(userId, scope) {
     .slice(0, 6);
 
     // Ziel-Default: Mittel der letzten 3 abgeschlossenen Monatsumsätze
-    const prev3Deps = (prev3DepsRes.data || [])
-      .map(r => r.deployment).filter(d => d && !d.deleted_at && d.datum_von);
+    const prev3Deps = extractDeps(prev3DepsRes).filter(d => d.datum_von);
     const prev3Start_ISO = toISODate(prev3Start);
     const prev3End_ISO   = toISODate(prev3End);
     const monthlySum = {};
@@ -16900,12 +16996,14 @@ function monthKpiTile(kicker, value, sub, color, onclick, sparkData) {
     </button>`;
 }
 
-/** Helper für Auslastung — extrahiert, wird von Technik + Beides genutzt. */
+/** Helper für Auslastung — extrahiert, wird von Technik + Beides genutzt.
+ *  v2.11.7: Zusätzlich `geplant` = Werktage mit Status `Geplant`, die NICHT
+ *  bereits durch Durchgeführt/Abgerechnet abgedeckt sind (kein Doppelzählen). */
 function computeMonthAuslastung(data, todayISO) {
   const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
   const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
   const yearHolidays = computeBwHolidays(monthStart.getFullYear());
-  let werk = 0, belegt = 0;
+  let werk = 0, belegt = 0, geplant = 0;
   let cur = new Date(monthStart);
   while (cur <= monthEnd) {
     const iso = toISODate(cur);
@@ -16913,15 +17011,24 @@ function computeMonthAuslastung(data, todayISO) {
     const isWorkday = dow !== 0 && dow !== 6 && !yearHolidays.has(iso);
     if (isWorkday) {
       werk++;
-      if (data.deployments.some(dep =>
+      const isBelegt = data.deployments.some(dep =>
         ['Durchgeführt', 'Abgerechnet'].includes(dep.status) &&
         iso >= dep.datum_von &&
         iso <= (dep.datum_bis || dep.datum_von)
-      )) belegt++;
+      );
+      if (isBelegt) {
+        belegt++;
+      } else if (data.deployments.some(dep =>
+        dep.status === 'Geplant' &&
+        iso >= dep.datum_von &&
+        iso <= (dep.datum_bis || dep.datum_von)
+      )) {
+        geplant++;
+      }
     }
     cur.setDate(cur.getDate() + 1);
   }
-  return { werk, belegt };
+  return { werk, belegt, geplant };
 }
 
 /** ALT (vor v1.45.6) — wird durch die neuen renderMonthDash*-Funktionen ersetzt.

@@ -542,6 +542,25 @@ body {
 .bv2-divider::after {
   content: ""; flex: 1; height: 0.5px; background: var(--border);
 }
+/* v2.11.7: Kleinerer Sub-Divider (Wochenplan zwischen Tagesplan und Folgen). */
+.bv2-divider-sub { margin: 18px 0 8px; }
+.bv2-divider-sub .bv2-divider-label { font-size: 11px; color: var(--muted); }
+/* v2.11.7: Admin-only Filter-Select rechts im Divider (DIESER MONAT). */
+.bv2-divider-filter {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px; color: var(--muted);
+  text-transform: none; letter-spacing: 0;
+}
+.bv2-divider-filter-label { font-weight: 500; }
+.bv2-divider-filter select {
+  font-size: 12px; padding: 4px 8px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+}
 
 .bv2-greeting-line {
   font-size: 14px; color: var(--muted);
@@ -4439,6 +4458,28 @@ tr.expanded-row > td {
   gap: 2px;
   overflow-x: auto;
   padding-bottom: 2px;
+}
+/* v2.11.7: KW-Marker vor jedem Montag im Kalenderstreifen — orientiert sich
+   farblich am Border, beim horizontalen Scrollen sieht man so schnell, in
+   welcher Kalenderwoche man steht. */
+.calendar-kw {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  border-left: 1px solid var(--border);
+  margin-left: 4px;
+  text-transform: uppercase;
+  user-select: none;
+}
+.calendar-kw:first-child {
+  border-left: 0;
+  margin-left: 0;
 }
 
 .calendar-day {

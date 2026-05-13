@@ -406,12 +406,23 @@
       </div>
       <div id="bv2-week-strip"></div>
       <div id="bv2-day-plan"></div>
+      <!-- v2.11.7: Wochenplan-Header zwischen Tagesplan und der Liste der
+           Folge-Tage, sonst rutschen beide Bereiche optisch ineinander. -->
+      <div class="bv2-divider bv2-divider-sub" id="bv2-week-upcoming-divider" style="display:none">
+        <span class="bv2-divider-label">WOCHENPLAN</span>
+        <span class="bv2-divider-hint" id="bv2-week-upcoming-hint">&nbsp;</span>
+      </div>
       <div id="bv2-week-upcoming"></div>
 
       <!-- DIESER MONAT -->
       <div class="bv2-divider">
         <span class="bv2-divider-label">DIESER MONAT</span>
         <span class="bv2-divider-hint" id="bv2-month-hint">&nbsp;</span>
+        <!-- v2.11.7: Admin-only Filter — Standard ist eingeloggter User. -->
+        <label class="bv2-divider-filter" data-admin-only="true">
+          <span class="bv2-divider-filter-label">Mitarbeiter</span>
+          <select id="bv2-monat-user-select"></select>
+        </label>
       </div>
       <div id="bv2-month-kpis"></div>
       <div id="bv2-month-chart"></div>
@@ -2737,7 +2748,7 @@
       <div class="calendar-month-label" id="calendar-month-label">—</div>
       <button class="calendar-nav-btn" id="calendar-next" aria-label="Nächster Monat" title="Nächster Monat">›</button>
       <button class="calendar-today-btn" id="calendar-today" title="Zum aktuellen Monat">Heute</button>
-      <label class="calendar-user-wrap">
+      <label class="calendar-user-wrap" data-admin-only="true">
         <span class="calendar-user-label">Mitarbeiter</span>
         <select class="calendar-user-select" id="calendar-user-select" title="Mitarbeiter"></select>
       </label>
