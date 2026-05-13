@@ -1,5 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.3 (Template-Sub-Items mit Firma + Ort, Edit-
+   Modal fängt fehlende Firma aus Projekt nach). Zwei Bugs in
+   einem Schlag:
+   1) createTemplateSubItems setzte beim Anlegen von Termin/
+      Einsatz/Aufgabe aus einem Projekt-Template nur die
+      `project_id`, aber keine `company_id` und kein `ort`. Beim
+      späteren Bearbeiten öffnete sich der Modal daher ohne
+      Firma vorbefüllt; das Projekt-Dropdown wurde nicht
+      gerebuildet, sodass auch das Projekt-Feld leer (= „Kein
+      Projekt") wirkte. Fix: Projekt-Datensatz inkl. companies-
+      Join nachladen, company_id + Firmenadresse als Ort an
+      alle drei Sub-Item-Typen propagieren.
+   2) openDeploymentModal-Edit: Wenn `data.company_id` fehlt,
+      aber `data.project_id` da ist, wird die Firma jetzt
+      defensiv aus dem Projekt nachgeladen — bestehende Alt-
+      Einsätze (die vor v2.11.3 ohne Firma erstellt wurden)
+      öffnen sich dann ebenfalls korrekt mit Firma, Projekt
+      und Ort vorbelegt.
+   Bestehende 4 Einsätze in 1 Projekt per einmaligem UPDATE
+   mit company_id + ort aus Projekt+Firma nachgezogen.
    Version 2.11.2 (Einsatz-Modal: Service-Wechsel respektiert
    manuellen Preis, Aktualisieren-Button signalisiert Abweichung
    farbig). Drei zusammengehörige Änderungen:
@@ -6370,6 +6390,21 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
   // einzelpreis hinterlegt hat (häufiger Fall — User pickt nur den Service).
   await loadServicesCache();
 
+  // v2.11.3: company_id + Adresse aus dem Projekt nachladen, damit Termine/
+  // Einsätze/Aufgaben aus dem Template direkt mit der Firma verknüpft sind
+  // und Ort sinnvoll vorbelegt ist — sonst öffnen sich die Edit-Modals
+  // später ohne Firma + ohne Ort.
+  const { data: projRow } = await db.from('projects')
+    .select('company_id, company:companies(id, strasse, plz, stadt)')
+    .is('deleted_at', null).eq('id', projectId).single();
+  const projectCompanyId = projRow?.company_id || null;
+  const projectCompanyOrt = (() => {
+    const c = projRow?.company;
+    if (!c) return null;
+    const parts = [c.strasse, [c.plz, c.stadt].filter(Boolean).join(' ')].filter(p => p && p.trim());
+    return parts.length > 0 ? parts.join(', ') : null;
+  })();
+
   const userId = currentProfile?.id || currentUser?.id || null;
   const apptRows = [];
   const taskRows = [];
@@ -6383,6 +6418,8 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
         datum,
         status: 'geplant',
         project_id: projectId,
+        company_id: projectCompanyId,
+        ort: projectCompanyOrt,
         erstellt_von: userId
       });
     } else if (it.typ === 'aufgabe') {
@@ -6391,6 +6428,7 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
         faelligkeit: datum,
         status: 'offen',
         project_id: projectId,
+        company_id: projectCompanyId,
         assigned_to: userId,
         erstellt_von: userId
       });
@@ -6410,6 +6448,8 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
         datum_bis: datum,
         status: 'Geplant',
         project_id: projectId,
+        company_id: projectCompanyId,
+        ort: projectCompanyOrt,
         service_id: it.service_id || null,
         menge: it.menge ?? 1,
         einzelpreis,
@@ -11029,9 +11069,19 @@ async function openDeploymentModal(mode, deploymentId = null) {
       renderDocumentationBlock('einsatz', data.dokumentation, { idPrefix: 'd-doc' });
     document.getElementById('d-externe-techniker').value = data.externe_techniker || '';
 
-    if (data.company_id) {
-      setCompanyComboboxValue('d-company', 'd-company-list', data.company_id);
-      await rebuildProjectDropdownForDeployment(data.company_id);
+    // v2.11.3: Wenn der Einsatz ein Projekt hat, aber keine Firma (z.B. weil er
+    // vor v2.11.3 aus einem Template angelegt wurde), Firma aus dem Projekt
+    // nachladen — sonst öffnet sich der Edit-Modal mit leerem Firma-Feld und
+    // Projekt-Dropdown ohne passende Option.
+    let effectiveCompanyId = data.company_id;
+    if (!effectiveCompanyId && data.project_id) {
+      const { data: projRow } = await db.from('projects')
+        .select('company_id').is('deleted_at', null).eq('id', data.project_id).single();
+      effectiveCompanyId = projRow?.company_id || null;
+    }
+    if (effectiveCompanyId) {
+      setCompanyComboboxValue('d-company', 'd-company-list', effectiveCompanyId);
+      await rebuildProjectDropdownForDeployment(effectiveCompanyId);
       if (data.project_id) document.getElementById('d-project').value = data.project_id;
       updateDeploymentOrtHint();
     }
