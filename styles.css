@@ -764,6 +764,20 @@ body {
   background: var(--bg);
 }
 .bv2-week-day.is-off { opacity: 0.5; }
+/* v2.11.5: Warn-Icon für Einsatz an Feiertag / Wochenende — analog zur
+   Kalender-Bar. Sitzt rechts oben in der Strip-Kachel und zieht den Blick. */
+.bv2-week-day { position: relative; }
+.bv2-week-day-warn {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 13px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.4;
+}
 
 /* Tagesplan-Tafel unter dem Wochen-Strip (v2.0.1, Punkt 4) */
 .bv2-day-plan {

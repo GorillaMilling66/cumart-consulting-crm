@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.5 (Briefing: Wochen-Strip auf Mo–So + Konflikt-
+   Warnung bei Wochenend-/Feiertags-Einsatz + kein Doppel-Render
+   im Tagesplan). Drei Bugs im Briefing-Dashboard:
+   1) `briefingRangeForScope('woche')` lieferte seit v1.47.0
+      nur Mo–Fr. Wochenend-Einsätze (Sa/So) waren damit gar
+      nicht im Strip-Datensatz drin und das Sa-Feld zeigte
+      „frei", obwohl ein Einsatz hinterlegt war. Jetzt volle
+      Mo–So-Range — KPIs für Werktage-Auslastung bleiben am
+      Monat unverändert.
+   2) Im Tagesplan-Block tauchte derselbe Einsatz doppelt auf,
+      sobald der User in der „Diese Woche"-Strip einen
+      zukünftigen Tag (z.B. Fr) anklickte: einmal in der
+      Tagesplan-Tafel, einmal in der „Upcoming"-Liste, die mit
+      `> todayISO` filterte. Fix: Upcoming filtert jetzt
+      `> selectedDayISO` — Items des ausgewählten Tages sitzen
+      damit ausschließlich im Tagesplan.
+   3) Einsätze an Wochenenden / Feiertagen markiert das CRM
+      jetzt mit einem ⚠-Icon. Greift in der Wochen-Strip-
+      Kachel (oben rechts) und in der Kalenderleiste unten —
+      bisher gab es die Warnung nur für Feiertag-Konflikte in
+      der Kalenderleiste. Neue CSS-Klasse `.bv2-week-day-warn`
+      (gelb mit dunklem Text).
    Version 2.11.4 (Menge ↻-Button leuchtet jetzt auch gelb,
    Menge + Preis untereinander statt nebeneinander). Zwei UX-
    Nachzüge im Einsatz-Modal:
@@ -3721,20 +3743,27 @@ function renderBriefingWoche(data) {
       else if (dayAppts.length > 0) barCls = 'is-termin';
 
       const noActivity = dayDeps.length === 0 && dayAppts.length === 0 && !isHoliday;
+      // v2.11.5: Warnsignal, wenn ein Einsatz auf einen Feiertag oder ein
+      // Wochenende fällt — die UI markiert das mit einem ⚠ in der Strip-Kachel.
+      const hasConflict = dayDeps.length > 0 && (isHoliday || isWeekend);
+      const conflictReason = isHoliday ? 'Einsatz an Feiertag' : 'Einsatz am Wochenende';
       days.push({
         iso, dow, name: WEEKDAYS_DE[dow].substring(0, 2),
         num: dow === 0 || dow === 6 || iso.endsWith('-01') ? d.getDate() + (iso.endsWith('-01') ? '.' + (d.getMonth() + 1) : '') : d.getDate(),
         isToday: iso === todayISO,
         isOff: isWeekend && noActivity,
+        hasConflict,
+        conflictReason,
         barCls,
-        countText: isHoliday ? '0 · 1' : noActivity ? (isWeekend ? 'frei' : 'frei') : `${dayDeps.length} · ${dayAppts.length}`,
-        sumText: isHoliday ? 'Feiertag' : noActivity ? '—' : sumE > 0 ? formatPreis(sumE) : '—'
+        countText: isHoliday ? `${dayDeps.length} · 1` : noActivity ? (isWeekend ? 'frei' : 'frei') : `${dayDeps.length} · ${dayAppts.length}`,
+        sumText: isHoliday ? (dayDeps.length > 0 ? formatPreis(sumE) + ' · Feiertag' : 'Feiertag') : noActivity ? '—' : sumE > 0 ? formatPreis(sumE) : '—'
       });
     }
     stripEl.innerHTML = `
       <div class="bv2-week-strip">
         ${days.map(d => `
           <div class="bv2-week-day ${d.isToday ? 'is-today' : ''} ${d.isOff ? 'is-off' : ''} ${d.iso === _bv2SelectedDayISO ? 'is-active' : ''}" onclick="selectBriefingDay('${esc(d.iso)}')">
+            ${d.hasConflict ? `<span class="bv2-week-day-warn" title="${esc(d.conflictReason)}">⚠</span>` : ''}
             <div class="bv2-week-day-name">${esc(d.name)}</div>
             <div class="bv2-week-day-num">${d.num}</div>
             <div class="bv2-week-day-bar ${d.barCls}"></div>
@@ -3747,18 +3776,21 @@ function renderBriefingWoche(data) {
   // Tagesplan-Tafel unter dem Wochen-Strip
   renderBriefingDayPlan();
 
-  // Upcoming-Liste — kommende Termine + Einsätze ab morgen
+  // Upcoming-Liste — kommende Termine + Einsätze ab dem Tag NACH dem ausgewählten
+  // Tag im Wochen-Strip. v2.11.5: vorher Filter `> todayISO`, was bei Auswahl
+  // eines zukünftigen Wochentags die Items des Tages doppelt anzeigte (einmal
+  // in TAGESPLAN, einmal in Upcoming).
   const upEl = document.getElementById('bv2-week-upcoming');
   if (upEl) {
-    const todayISO = toISODate(new Date());
+    const cutoffISO = _bv2SelectedDayISO || toISODate(new Date());
     const items = [
-      ...(data.deployments || []).filter(d => d.datum_von > todayISO).map(d => ({
+      ...(data.deployments || []).filter(d => d.datum_von > cutoffISO).map(d => ({
         ts: d.datum_von, type: 'EINSATZ', cls: 'is-amber',
         title: d.titel || '—',
         sub: [d.company?.name, d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1))].filter(Boolean).join(' · '),
         click: `navigateTo('einsatz','${d.id}')`
       })),
-      ...(data.appointments || []).filter(a => a.datum > todayISO).map(a => ({
+      ...(data.appointments || []).filter(a => a.datum > cutoffISO).map(a => ({
         ts: a.datum + 'T' + (a.uhrzeit_von || '00:00'),
         type: 'TERMIN', cls: 'is-blue',
         title: a.titel || '—',
@@ -15340,10 +15372,14 @@ async function renderCalendarBar() {
     const hasTermin  = !!ev?.termine?.length;
     const hasEinsatz = !!ev?.einsatze?.length;
     const isHoliday  = _calendarState.holidays.has(iso);
-    const conflict   = isHoliday && hasEinsatz;
+    const isWeekend  = dow === 0 || dow === 6;
+    // v2.11.5: Konflikt-Warnung jetzt auch bei Wochenend-Einsatz, nicht nur
+    // bei Feiertag-Einsatz.
+    const conflict   = hasEinsatz && (isHoliday || isWeekend);
+    const conflictTitle = isHoliday ? 'Einsatz an Feiertag' : 'Einsatz am Wochenende';
 
     const classes = ['calendar-day'];
-    if (dow === 0 || dow === 6) classes.push('cal-day-weekend');
+    if (isWeekend)              classes.push('cal-day-weekend');
     if (iso === todayISO)       classes.push('cal-day-today');
     if (isHoliday)              classes.push('cal-day-feiertag');
     else if (hasEinsatz)        classes.push('cal-day-einsatz');
@@ -15351,7 +15387,7 @@ async function renderCalendarBar() {
 
     parts.push(`
       <div class="${classes.join(' ')}" data-day="${iso}" onclick="openCalendarDayPopover('${iso}', event)">
-        ${conflict ? '<span class="calendar-day-warn" title="Einsatz an Feiertag">⚠</span>' : ''}
+        ${conflict ? `<span class="calendar-day-warn" title="${esc(conflictTitle)}">⚠</span>` : ''}
         <div class="calendar-day-num">${day}</div>
         <div class="calendar-day-dow">${DOW[dow]}</div>
       </div>`);
@@ -15856,14 +15892,15 @@ function briefingRangeForScope(scope) {
     return { startISO: todayISO, endISO: todayISO, label: 'heute' };
   }
   if (scope === 'woche') {
-    // v1.47.0: nur Werktage (Mo–Fr). Samstag/Sonntag werden im Dashboard
-    // weder als Karten noch in der Agenda angezeigt — Range entsprechend
-    // verkürzt, damit Tagessummen/KPIs nicht durch Wochenend-Daten verfälscht.
+    // v2.11.5: vorher nur Mo–Fr (v1.47.0). Wochenend-Einsätze (Sa/So) tauchten
+    // dadurch im Strip als „frei" auf — Bug, weil Trainer ab und zu am
+    // Wochenende arbeiten. Jetzt volle Mo–So-Range; KPIs für Werktage
+    // berechnen sich weiterhin separat aus dem Monat (Auslastung).
     const dow = now.getDay(); // 0=So..6=Sa
     const monOffset = dow === 0 ? -6 : 1 - dow;
     const monday = new Date(now); monday.setDate(now.getDate() + monOffset);
-    const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
-    return { startISO: toISODate(monday), endISO: toISODate(friday), label: 'diese Woche' };
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    return { startISO: toISODate(monday), endISO: toISODate(sunday), label: 'diese Woche' };
   }
   // Monat
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
