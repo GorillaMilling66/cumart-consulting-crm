@@ -1,5 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.12.3 (Aktiver Mitarbeiter-Filter sichtbar im
+   DIESER-MONAT-Header). Der Admin-Filter im Briefing reagiert
+   technisch korrekt auf den Dropdown-Wechsel, aber wenn
+   mehrere User auf denselben Einsätzen als Techniker stehen
+   (z. B. weil das Bündel-Team auf alle Tage propagiert wurde),
+   sind die KPI-Werte identisch — der User dachte, der Filter
+   ist kaputt. `renderBriefingMonat` zeigt jetzt zusätzlich
+   den Namen des gefilterten Mitarbeiters (bzw. „Alle
+   Mitarbeiter") rechts neben dem Monatsnamen im Divider-Hint.
+   So ist der Wechsel auf einen Blick als Aktion bestätigt.
    Version 2.12.2 (Bündel-Override-Schutz pro Einsatz-Tag). Der
    Hybrid-Modus aus v2.12.0 ist jetzt vollständig: jeder Tag
    kann individuell Felder vom Bündel entkoppeln.
@@ -4016,11 +4026,21 @@ function renderBriefingMonat(data) {
   const monthName = MONTHS_DE[new Date(todayISO).getMonth()];
   const year = new Date(todayISO).getFullYear();
 
-  // Hint
+  // Hint — v2.12.3: zeigt zusätzlich, welcher Mitarbeiter gerade gefiltert ist,
+  // damit das Wechseln im Dropdown visuell quittiert wird (auch wenn die Werte
+  // sich nicht ändern, weil mehrere User auf denselben Einsätzen sitzen).
   const hintEl = document.getElementById('bv2-month-hint');
   if (hintEl) {
-    const total = data.range ? Math.round((new Date(data.range.endISO) - new Date(data.range.startISO)) / 86400000) + 1 : 0;
-    hintEl.textContent = `${monthName} ${year}`;
+    let userLabel = '';
+    if (isAdmin()) {
+      const uid = _briefingMonatUserId || currentProfile?.id;
+      if (uid === '__all__') userLabel = ' · Alle Mitarbeiter';
+      else {
+        const u = userProfilesCache.find(x => x.id === uid);
+        if (u) userLabel = ` · ${u.name || u.email || ''}`;
+      }
+    }
+    hintEl.textContent = `${monthName} ${year}${userLabel}`;
   }
 
   // KPIs: Abgerechnet · Geplant · Auslastung · Pipeline
