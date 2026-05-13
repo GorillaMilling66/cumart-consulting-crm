@@ -1359,6 +1359,7 @@ body {
 .arbeitsplatz-inbox-badge.is-today   { background: #fef3c7; color: #92400e; }
 .arbeitsplatz-inbox-badge.is-soon    { background: #e0e7ff; color: #3730a3; }
 .arbeitsplatz-inbox-badge.is-warn    { background: #fef3c7; color: #92400e; }
+.arbeitsplatz-inbox-badge.is-neutral { background: #f3f4f6; color: #6b7280; }
 .arbeitsplatz-inbox-title { font-weight: 500; }
 .arbeitsplatz-inbox-meta { font-size: 11px; color: var(--muted); }
 

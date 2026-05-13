@@ -1,5 +1,31 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.10.3 (Einsatz darf unvollständig gespeichert
+   werden — Vorbereitungsphase im Kundendeal). Drei Änderungen
+   am Einsatz-Flow:
+   1) saveDeployment verlangt nicht mehr „beide Datumsfelder
+      oder keine" und blockiert auch nicht mehr Uhrzeiten ohne
+      Datum. Der User soll mitten im Kundendeal einen Einsatz
+      vorbereitend anlegen können, ohne dass er auf Datum/
+      Uhrzeit warten muss.
+   2) Damit der DB-CHECK `deployments_datum_consistency`
+      (entweder beide NULL oder beide NOT NULL und bis>=von)
+      erfüllt ist, spiegelt die Save-Logik nun beim Sichern
+      ein einzelnes gesetztes Datum auf das jeweils andere
+      (Single-Day-Default). Sind beide leer, bleiben beide
+      NULL. Status springt zudem automatisch von „Geplant" auf
+      „Ungeplant", wenn kein Datum vorhanden ist — der vom
+      User in den Lookup-Werten bereits angelegte Status
+      `Ungeplant` wird damit als Default für unfertige
+      Einsätze verdrahtet. Durchgeführt/Abgerechnet/Storniert
+      bleiben unangetastet.
+   3) Im Arbeitsplatz unter „Dranbleiben" tauchen jetzt
+      Einsätze ohne Datum (Status ∈ Ungeplant/Geplant) als
+      eigene Zeile mit Badge „Noch nicht geplant" auf — neuer
+      neutraler Inbox-Badge `is-neutral` (grau), Klick öffnet
+      den Einsatz direkt. Damit verliert man die im Deal-
+      Vorlauf angelegten Einsätze nicht aus dem Blick, bis
+      ein Termin steht.
    Version 2.10.2 (Marge-Card refresht nach Produkt-CRUD ohne
    Browser-Reload). Bug: nach dem Anlegen/Bearbeiten/Löschen
    einer Produkt-Verkaufsposition aktualisierten sich nur die
@@ -3960,7 +3986,7 @@ async function renderArbeitsplatzInbox() {
   const todayISO = toISODate(new Date());
   const tomorrowISO = toISODate(new Date(Date.now() + 86400000));
 
-  const [overdueTasks, todayTasks, todayAppts, tomorrowAppts, doneDeps] = await Promise.all([
+  const [overdueTasks, todayTasks, todayAppts, tomorrowAppts, doneDeps, unplannedDeps] = await Promise.all([
     db.from('tasks').select('id, titel, faelligkeit')
       .is('deleted_at', null).neq('status', 'erledigt')
       .lt('faelligkeit', todayISO).order('faelligkeit', { ascending: true }).limit(10),
@@ -3975,7 +4001,14 @@ async function renderArbeitsplatzInbox() {
       .order('uhrzeit_von', { ascending: true, nullsFirst: false }),
     db.from('deployments').select('id, titel, datum_von, company:companies(name)')
       .is('deleted_at', null).eq('status', 'Durchgeführt')
-      .order('datum_von', { ascending: false, nullsFirst: false }).limit(10)
+      .order('datum_von', { ascending: false, nullsFirst: false }).limit(10),
+    // v2.10.3: Einsätze ohne Datum (Status Ungeplant ODER datum_von leer
+    // und nicht abgeschlossen) — damit angefangene Kundendeals nicht aus
+    // dem Blick rutschen, solange der Termin noch fehlt.
+    db.from('deployments').select('id, titel, status, datum_von, company:companies(name)')
+      .is('deleted_at', null).is('datum_von', null)
+      .not('status', 'in', '(Abgerechnet,Storniert)')
+      .order('created_at', { ascending: false }).limit(10)
   ]);
 
   const sections = [];
@@ -3997,12 +4030,19 @@ async function renderArbeitsplatzInbox() {
       <span class="arbeitsplatz-inbox-title">${esc(d.titel || '—')}</span>
       <span class="arbeitsplatz-inbox-meta">${esc([d.datum_von ? formatDateCompact(d.datum_von) : '', d.company?.name].filter(Boolean).join(' · '))}</span>
     </button>`;
+  const renderUnplannedDepRow = (d) => `
+    <button class="arbeitsplatz-inbox-row" onclick="navigateTo('einsatz','${esc(d.id)}')">
+      <span class="arbeitsplatz-inbox-badge is-neutral">Noch nicht geplant</span>
+      <span class="arbeitsplatz-inbox-title">${esc(d.titel || '—')}</span>
+      <span class="arbeitsplatz-inbox-meta">${esc(d.company?.name || 'Ohne Firma')}</span>
+    </button>`;
 
   (overdueTasks.data || []).forEach(t => sections.push(renderTaskRow(t, { cls: 'is-overdue', label: 'Überfällig' })));
   (todayTasks.data   || []).forEach(t => sections.push(renderTaskRow(t, { cls: 'is-today',   label: 'Heute fällig' })));
   (todayAppts.data   || []).forEach(a => sections.push(renderApptRow(a, { cls: 'is-today',   label: 'Termin heute' })));
   (tomorrowAppts.data|| []).forEach(a => sections.push(renderApptRow(a, { cls: 'is-soon',    label: 'Morgen' })));
   (doneDeps.data     || []).forEach(d => sections.push(renderDepRow(d)));
+  (unplannedDeps.data|| []).forEach(d => sections.push(renderUnplannedDepRow(d)));
 
   if (sections.length === 0) {
     wrap.innerHTML = '<div class="info-card-empty">Nichts liegt an. Saubere Sache.</div>';
@@ -11044,28 +11084,26 @@ async function saveDeployment() {
   if (!finalTitel) { showToast('Bitte Titel eingeben (oder Leistung/Firma wählen für Auto-Titel).', true); return; }
   if (!company_id) { showToast('Bitte Firma auswählen oder neuen Namen tippen.', true); return; }
 
-  // Datum: entweder beide gesetzt oder beide leer (Ungeplant)
+  // v2.10.3: Datum und Uhrzeit dürfen jederzeit teilweise oder gar nicht
+  // gefüllt sein — der Einsatz darf in jeder Vorbereitungsstufe gespeichert
+  // werden. Nachgezogen werden später automatisch:
+  //   1) datum_bis spiegelt datum_von (falls leer), um den DB-CHECK
+  //      `deployments_datum_consistency` (entweder beide NULL oder beide
+  //      NOT NULL) zu erfüllen — siehe Payload-Bau unten.
+  //   2) status springt auf „Ungeplant", wenn kein datum_von gesetzt ist
+  //      und der User noch keinen finalen Status vergeben hat.
   const vonGesetzt = !!datum_von;
   const bisGesetzt = !!datum_bis;
-  if (vonGesetzt !== bisGesetzt) {
-    showToast('Bitte entweder beide Daten setzen oder beide leer lassen (Ungeplant).', true);
-    return;
-  }
   if (vonGesetzt && bisGesetzt && datum_bis < datum_von) {
     showToast('Datum bis muss nach Datum von liegen.', true); return;
   }
 
-  if (!['Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert'].includes(status) &&
+  if (!['Ungeplant', 'Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert'].includes(status) &&
       !einsatzStatusCache.some(s => s.wert === status)) {
     showToast('Status ungültig. Bitte aus Liste wählen.', true); return;
   }
   if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
     showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true); return;
-  }
-  // Uhrzeit ohne Datum macht keinen Sinn — Warnung
-  if (!vonGesetzt && (uhrzeit_von || uhrzeit_bis)) {
-    showToast('Uhrzeit ohne Datum nicht möglich. Bitte Datum setzen oder Uhrzeit leeren.', true);
-    return;
   }
 
   const menge = mengeRaw === '' ? 1 : Number(mengeRaw);
@@ -11077,13 +11115,27 @@ async function saveDeployment() {
   btn.textContent = editingDeploymentId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
   try {
+    // v2.10.3: Teil-gefüllte Daten/Uhrzeiten ergänzen, damit der DB-CHECK
+    // `deployments_datum_consistency` (entweder beide NULL oder beide gesetzt)
+    // erfüllt ist und der Status zur Realität passt.
+    let effDatumVon = datum_von || null;
+    let effDatumBis = datum_bis || null;
+    if (effDatumVon && !effDatumBis) effDatumBis = effDatumVon;        // Single-Day-Default
+    else if (!effDatumVon && effDatumBis) effDatumVon = effDatumBis;   // umgekehrt analog
+    // Status auto-flippen: Kein Datum + noch „Geplant" → „Ungeplant"
+    // (Durchgeführt/Abgerechnet/Storniert bleiben unangetastet — die haben
+    // Bestandsschutz, falls der User einen abgeschlossenen Einsatz nachträglich
+    // ohne Datum bearbeiten muss.)
+    let effStatus = status;
+    if (!effDatumVon && effStatus === 'Geplant') effStatus = 'Ungeplant';
+
     const payload = {
       titel: finalTitel,
-      datum_von: datum_von || null,
-      datum_bis: datum_bis || null,
+      datum_von: effDatumVon,
+      datum_bis: effDatumBis,
       uhrzeit_von: uhrzeit_von || null,
       uhrzeit_bis: uhrzeit_bis || null,
-      status,
+      status: effStatus,
       company_id, project_id, service_id,
       menge, einzelpreis,
       ort: ort || null,
