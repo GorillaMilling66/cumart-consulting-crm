@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.1 (Globale Themen-Bibliothek + Picker im
+   Projekt). Bisher leben Themen ausschließlich pro Projekt
+   (`project_themes`). Wiederkehrende Themen wie „TNC7
+   Grundlagen", „Werkzeugverwaltung", „Schraubstock-
+   Programmierung" mussten in jedem neuen Projekt frisch
+   eingetippt werden. Neu: zentrale `theme_library` als Pool.
+   Migration `v2.13.1_theme_library.sql`: neue Tabelle (id,
+   name, beschreibung, kategorie, farbe, ist_aktiv, audit) +
+   RLS-Pattern + Snapshot-FK `project_themes.library_theme_id`,
+   damit am Projekt sichtbar ist, woher ein Thema kam.
+   UI: neue Settings-Sub-Page „Themen-Bibliothek" (#/themen)
+   mit Such- und Kategorie-Filter + Modal für Anlage/Edit/
+   Löschen. Im Projekt-Brief-Tab gibt es jetzt einen
+   zusätzlichen Button „+ Aus Bibliothek", der einen Picker
+   öffnet (Multi-Select mit Suche). Beim Übernehmen werden die
+   Bibliotheks-Themen als `project_themes`-Zeilen mit Snapshot
+   von Name/Beschreibung kopiert; `library_theme_id` zeigt
+   zurück zur Quelle. Schon zugewiesene Themen werden im
+   Picker ausgeblendet. Helper: `loadThemeLibraryPage`,
+   `filterThemeLibrary`, `openThemeLibraryModal`,
+   `saveThemeLibrary`, `deleteThemeLibrary`,
+   `openThemePickerForProject`, `applyThemePickerSelection`.
    Version 2.13.0 (Modulare Workflow-Schritte pro Projekt und
    pro Einsatz). Bisher waren die Vorbereitungs-/Dokumentations-
    Checklisten als JS-Konstante (`WORKFLOW_STEPS`) hartcodiert:
@@ -3556,6 +3578,7 @@ function showPage(name) {
   if (name === 'templates') loadTemplates();
   if (name === 'tags') loadTagsPage?.();
   if (name === 'products') loadProductsPage?.();
+  if (name === 'themes')   loadThemeLibraryPage?.();
   if (name === 'dubletten') loadDublettenPage?.();
   if (name === 'shortcuts') loadShortcutsPage?.();
   if (name === 'import') resetImportPage?.();
@@ -4935,7 +4958,7 @@ function setListenTabCount(page, count) {
  *  v2.3.2: Counts für ALLE Listen-Tabs vorladen (nicht nur den aktiven),
  *  damit der User auf einen Blick sieht wieviel pro Tab steckt. */
 const LISTEN_PAGES = ['companies','contacts','projects','appointments','deployments','tasks','notes'];
-const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','dubletten','shortcuts','import'];
+const EINSTELLUNGEN_PAGES = ['lookups','services','programs','templates','users','tags','products','themes','dubletten','shortcuts','import'];
 function updateListenTabBar(pageName) {
   const listenBar = document.getElementById('listen-tab-bar');
   const settingsBar = document.getElementById('einstellungen-tab-bar');
@@ -5111,6 +5134,8 @@ function navigateTo(page, param) {
     hash = '#/tags';
   } else if (page === 'products') {
     hash = '#/produkte';
+  } else if (page === 'themes') {
+    hash = '#/themen';
   } else if (page === 'dubletten') {
     hash = '#/dubletten';
   } else if (page === 'shortcuts') {
@@ -5267,6 +5292,7 @@ function handleHashChange() {
   if (hash === '#/templates')  { showPage('templates'); return; }
   if (hash === '#/tags')       { showPage('tags'); return; }
   if (hash === '#/produkte')   { showPage('products'); return; }
+  if (hash === '#/themen')     { showPage('themes'); return; }
   if (hash === '#/dubletten')  { showPage('dubletten'); return; }
   if (hash === '#/shortcuts')  { showPage('shortcuts'); return; }
   if (hash === '#/import')     { showPage('import'); return; }
@@ -22913,6 +22939,8 @@ if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-merge']   = () => closeMergeModal();
   MODAL_CLOSERS['modal-project-product'] = () => closeProjectProductModal();
   MODAL_CLOSERS['modal-deployment-bundle'] = () => closeDeploymentBundleModal();
+  MODAL_CLOSERS['modal-theme-library']     = () => closeThemeLibraryModal();
+  MODAL_CLOSERS['modal-theme-picker']      = () => closeThemePickerModal();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -24500,6 +24528,257 @@ function _removeMergedGroupFromUI(masterId, dupIds) {
 
 let _productsCache = [];
 let _editingProductId = null;
+
+// ═══════════════════════════════════════════════════════════
+//  v2.13.1 — THEMEN-BIBLIOTHEK (Settings)
+// ═══════════════════════════════════════════════════════════
+
+let _themeLibraryCache = [];
+let _editingThemeLibraryId = null;
+
+async function loadThemeLibraryPage() {
+  const tbody = document.getElementById('theme-library-table-body');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade Themen …</div></td></tr>';
+  const { data, error } = await db.from('theme_library')
+    .select('*').is('deleted_at', null)
+    .order('kategorie', { ascending: true, nullsFirst: false })
+    .order('name', { ascending: true });
+  if (error) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    return;
+  }
+  _themeLibraryCache = data || [];
+  populateThemeLibraryKategorieFilter();
+  filterThemeLibrary();
+}
+
+function populateThemeLibraryKategorieFilter() {
+  const sel = document.getElementById('theme-library-kategorie-filter');
+  if (!sel) return;
+  const current = sel.value;
+  const kats = [...new Set(_themeLibraryCache.map(t => t.kategorie).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Alle Kategorien</option>'
+    + kats.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  if (kats.includes(current)) sel.value = current;
+  // Datalist fürs Modal mitversorgen
+  const dl = document.getElementById('tl-kategorie-list');
+  if (dl) dl.innerHTML = kats.map(k => `<option value="${esc(k)}">`).join('');
+}
+
+function filterThemeLibrary() {
+  const tbody = document.getElementById('theme-library-table-body');
+  if (!tbody) return;
+  const q = (document.getElementById('theme-library-search')?.value || '').toLowerCase().trim();
+  const kat = (document.getElementById('theme-library-kategorie-filter')?.value || '').trim();
+  const filtered = _themeLibraryCache.filter(t => {
+    if (kat && t.kategorie !== kat) return false;
+    if (!q) return true;
+    return (t.name || '').toLowerCase().includes(q)
+        || (t.beschreibung || '').toLowerCase().includes(q)
+        || (t.kategorie || '').toLowerCase().includes(q);
+  });
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Keine Themen — Filter ändern oder „+ Neues Thema" oben.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(t => {
+    const beschr = (t.beschreibung || '').substring(0, 100);
+    return `
+      <tr>
+        <td><div class="cell-link" onclick="openThemeLibraryModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
+        <td class="col-tablet" style="color:var(--muted);font-size:12px">${esc(beschr)}${t.beschreibung && t.beschreibung.length > 100 ? '…' : ''}</td>
+        <td>${t.kategorie ? `<span class="badge" style="background:#eef2ff;color:#3730a3">${esc(t.kategorie)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+        <td>${t.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#166534">Aktiv</span>' : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Inaktiv</span>'}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openThemeLibraryModal('edit','${esc(t.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function openThemeLibraryModal(mode, id = null) {
+  _editingThemeLibraryId = (mode === 'edit') ? id : null;
+  const titleEl = document.getElementById('theme-library-modal-title');
+  const deleteBtn = document.getElementById('tl-delete-btn');
+  if (titleEl) titleEl.textContent = (mode === 'edit') ? 'Thema bearbeiten' : 'Neues Bibliotheks-Thema';
+  if (deleteBtn) deleteBtn.style.display = (mode === 'edit') ? '' : 'none';
+
+  document.getElementById('tl-name').value = '';
+  document.getElementById('tl-kategorie').value = '';
+  document.getElementById('tl-beschreibung').value = '';
+  document.getElementById('tl-ist-aktiv').checked = true;
+
+  if (mode === 'edit' && id) {
+    const t = _themeLibraryCache.find(x => x.id === id);
+    if (t) {
+      document.getElementById('tl-name').value = t.name || '';
+      document.getElementById('tl-kategorie').value = t.kategorie || '';
+      document.getElementById('tl-beschreibung').value = t.beschreibung || '';
+      document.getElementById('tl-ist-aktiv').checked = t.ist_aktiv !== false;
+    }
+  }
+  populateThemeLibraryKategorieFilter();   // refresht das datalist
+  document.getElementById('modal-theme-library').classList.add('open');
+  setTimeout(() => document.getElementById('tl-name')?.focus(), 100);
+}
+
+function closeThemeLibraryModal() {
+  document.getElementById('modal-theme-library').classList.remove('open');
+  _editingThemeLibraryId = null;
+}
+
+async function saveThemeLibrary() {
+  const name = document.getElementById('tl-name').value.trim();
+  if (!name) { showToast('Bitte Name eingeben.', true); return; }
+  const payload = {
+    name,
+    kategorie: document.getElementById('tl-kategorie').value.trim() || null,
+    beschreibung: document.getElementById('tl-beschreibung').value.trim() || null,
+    ist_aktiv: document.getElementById('tl-ist-aktiv').checked
+  };
+  if (!_editingThemeLibraryId && currentProfile?.id) payload.erstellt_von = currentProfile.id;
+  try {
+    if (_editingThemeLibraryId) {
+      const { error } = await db.from('theme_library').update(payload).eq('id', _editingThemeLibraryId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await db.from('theme_library').insert(payload);
+      if (error) throw new Error(error.message);
+    }
+    closeThemeLibraryModal();
+    showToast(_editingThemeLibraryId ? 'Thema aktualisiert.' : 'Thema angelegt.');
+    await loadThemeLibraryPage();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function deleteThemeLibrary() {
+  if (!_editingThemeLibraryId) return;
+  if (!confirm('Thema aus der Bibliothek löschen? (Projekt-Themen, die schon kopiert wurden, bleiben unangetastet.)')) return;
+  try {
+    const { error } = await db.from('theme_library')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', _editingThemeLibraryId);
+    if (error) throw new Error(error.message);
+    closeThemeLibraryModal();
+    showToast('Thema gelöscht.');
+    await loadThemeLibraryPage();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ──── PICKER: Bibliothek → Projekt-Themen ─────────────────
+let _themePickerSelected = new Set();
+let _themePickerProjectId = null;
+
+async function openThemePickerForProject(projectId) {
+  _themePickerProjectId = projectId;
+  _themePickerSelected = new Set();
+  const wrap = document.getElementById('theme-picker-list');
+  if (wrap) wrap.innerHTML = '<div class="empty" style="padding:14px">Lade …</div>';
+  document.getElementById('modal-theme-picker').classList.add('open');
+  const { data } = await db.from('theme_library')
+    .select('id, name, beschreibung, kategorie').is('deleted_at', null).eq('ist_aktiv', true)
+    .order('kategorie', { ascending: true, nullsFirst: false })
+    .order('name', { ascending: true });
+  const list = data || [];
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="empty" style="padding:14px">Noch keine Themen in der Bibliothek. Lege welche unter „Einstellungen → Themen-Bibliothek" an.</div>';
+    return;
+  }
+  // Bereits am Projekt zugewiesene Themen aus der Library ausblenden (anhand library_theme_id).
+  const { data: existing } = await db.from('project_themes')
+    .select('library_theme_id').is('deleted_at', null).eq('project_id', projectId)
+    .not('library_theme_id', 'is', null);
+  const alreadyAssigned = new Set((existing || []).map(r => r.library_theme_id));
+  const eligible = list.filter(t => !alreadyAssigned.has(t.id));
+  if (eligible.length === 0) {
+    wrap.innerHTML = '<div class="empty" style="padding:14px">Alle Bibliotheks-Themen sind bereits am Projekt zugewiesen.</div>';
+    return;
+  }
+  wrap.dataset.items = JSON.stringify(eligible);
+  renderThemePickerList();
+}
+
+function renderThemePickerList() {
+  const wrap = document.getElementById('theme-picker-list');
+  if (!wrap || !wrap.dataset.items) return;
+  const items = JSON.parse(wrap.dataset.items);
+  const q = (document.getElementById('theme-picker-search')?.value || '').toLowerCase().trim();
+  const filtered = items.filter(t => !q
+    || (t.name || '').toLowerCase().includes(q)
+    || (t.beschreibung || '').toLowerCase().includes(q)
+    || (t.kategorie || '').toLowerCase().includes(q));
+  if (filtered.length === 0) {
+    wrap.innerHTML = '<div class="empty" style="padding:14px">Kein Treffer.</div>';
+    return;
+  }
+  wrap.innerHTML = filtered.map(t => {
+    const checked = _themePickerSelected.has(t.id);
+    return `
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:8px 4px;border-bottom:0.5px solid var(--border);cursor:pointer">
+        <input type="checkbox" ${checked ? 'checked' : ''}
+               style="width:16px;height:16px;margin:3px 0 0 0;flex-shrink:0"
+               onchange="toggleThemePickerSelection('${esc(t.id)}',this.checked)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--text);font-weight:500">${esc(t.name)}</div>
+          ${t.kategorie ? `<div style="font-size:11px;color:#3730a3;background:#eef2ff;display:inline-block;padding:1px 6px;border-radius:4px;margin-top:2px">${esc(t.kategorie)}</div>` : ''}
+          ${t.beschreibung ? `<div style="font-size:12px;color:var(--muted);margin-top:3px">${esc(t.beschreibung)}</div>` : ''}
+        </div>
+      </label>`;
+  }).join('');
+}
+
+function filterThemePickerList() {
+  renderThemePickerList();
+}
+
+function toggleThemePickerSelection(id, checked) {
+  if (checked) _themePickerSelected.add(id);
+  else _themePickerSelected.delete(id);
+}
+
+function closeThemePickerModal() {
+  document.getElementById('modal-theme-picker').classList.remove('open');
+  _themePickerSelected = new Set();
+  _themePickerProjectId = null;
+}
+
+async function applyThemePickerSelection() {
+  if (!_themePickerProjectId || _themePickerSelected.size === 0) {
+    showToast('Bitte mindestens ein Thema auswählen.', true);
+    return;
+  }
+  const ids = [..._themePickerSelected];
+  // Themen aus Library laden, dann als project_themes mit library_theme_id einfügen.
+  const { data: libRows } = await db.from('theme_library')
+    .select('id, name, beschreibung').in('id', ids);
+  if (!libRows || libRows.length === 0) {
+    showToast('Themen konnten nicht geladen werden.', true);
+    return;
+  }
+  const userId = currentProfile?.id || null;
+  const rows = libRows.map((t, idx) => ({
+    project_id: _themePickerProjectId,
+    name: t.name,
+    beschreibung: t.beschreibung,
+    library_theme_id: t.id,
+    owner_id: userId,
+    reihenfolge: 100 + idx,
+    status: 'offen'
+  }));
+  const { error } = await db.from('project_themes').insert(rows);
+  if (error) { showToast(error.message, true); return; }
+  showToast(`${rows.length} Thema${rows.length === 1 ? '' : 'tha'} übernommen.`);
+  closeThemePickerModal();
+  // Wenn die Projekt-Detail-Seite aktiv ist, Themen-Liste neu rendern.
+  if (typeof renderProjectThemes === 'function' && currentProjectDetailId) {
+    invalidateThemesCache?.(currentProjectDetailId);
+    renderProjectThemes(currentProjectDetailId);
+  }
+}
 
 async function loadProductsPage() {
   await loadProductsAndLieferanten();
