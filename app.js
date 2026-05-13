@@ -1,5 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.1 (Projekt-Template legt Einsätze mit Service-
+   Standardpreis an statt 0 €). Bug: createTemplateSubItems
+   setzte beim Anlegen eines Einsatzes aus einem Template
+   `einzelpreis: it.einzelpreis ?? 0` — wenn das Template
+   selbst kein einzelpreis-Feld am Sub-Item hinterlegt hatte,
+   landeten die Einsätze mit 0 € in der DB, obwohl der gewählte
+   Service einen Standardpreis hatte. Die Wirtschaftlichkeit
+   des Projekts zeigte daher 0 € Aufwand statt
+   menge × standardpreis.
+   Fix: Vor dem Insert wird der Services-Cache geladen, und
+   wenn `einzelpreis === 0 && service_id` gesetzt ist, greift
+   ein Fallback auf `services.standardpreis`. Explizit im
+   Template gepflegte Preise gewinnen (also wenn jemand einen
+   einzelpreis im Template hinterlegt, bleibt der erhalten).
+   Bestehende 4 Einsätze (1 Projekt) wurden per einmaligem
+   UPDATE auf den Service-Standardpreis nachgezogen.
    Version 2.11.0 (Termin: weitere Kunden-Kontakte + Internes
    Team als Multi-Select-Chips). Bisher hatte der Termin nur
    einen Hauptkontakt (`appointments.contact_id`) und keine
@@ -6326,6 +6342,11 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
   const subitems = tpl.daten?._subitems;
   if (!Array.isArray(subitems) || subitems.length === 0) return 0;
 
+  // v2.11.1: Services-Cache sicherstellen, damit der Standardpreis-Fallback
+  // für Einsatz-Sub-Items greift, falls das Template selbst keinen
+  // einzelpreis hinterlegt hat (häufiger Fall — User pickt nur den Service).
+  await loadServicesCache();
+
   const userId = currentProfile?.id || currentUser?.id || null;
   const apptRows = [];
   const taskRows = [];
@@ -6351,6 +6372,15 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
         erstellt_von: userId
       });
     } else if (it.typ === 'einsatz') {
+      // v2.11.1: Wenn das Template keinen expliziten einzelpreis hinterlegt
+      // hat, aber ein Service gewählt ist, nehmen wir den Service-Standardpreis.
+      // Ohne diesen Fallback landeten Einsätze mit 0 € im Projekt, obwohl der
+      // Service einen Standardpreis hat (Wirtschaftlichkeit zeigte 0 € Aufwand).
+      let einzelpreis = Number(it.einzelpreis ?? 0);
+      if (einzelpreis === 0 && it.service_id) {
+        const svc = servicesCache.find(s => s.id === it.service_id);
+        if (svc?.standardpreis) einzelpreis = Number(svc.standardpreis);
+      }
       depRows.push({
         titel: it.titel,
         datum_von: datum,
@@ -6359,7 +6389,7 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
         project_id: projectId,
         service_id: it.service_id || null,
         menge: it.menge ?? 1,
-        einzelpreis: it.einzelpreis ?? 0,
+        einzelpreis,
         erstellt_von: userId
       });
     }
