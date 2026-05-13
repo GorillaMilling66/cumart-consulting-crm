@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.12.4 (Detail-Tab bleibt nach Save erhalten —
+   Projekt, Firma, Kontakt). Bug: nach jedem Save an einem
+   Einsatz/Produkt/Aufgabe etc. im Projekt-Detail wurde der
+   sichtbare Tab auf „Aktivitäten" zurückgesetzt, weil
+   renderProjectV2Layout am Ende immer
+   `_currentProjectV2Tab = 'aktivitaeten'` setzte. Der User
+   verlor seinen Kontext (z. B. den Wirtschaftlichkeit-Tab).
+   Fix: zusätzlicher State `_lastRenderedProjectId` (sowie
+   `_lastRenderedCompanyId`, `_lastRenderedContactId`).
+   Bei Refresh derselben Detail-ID bleibt der aktive Tab
+   stehen; nur beim Wechsel auf eine ANDERE Detail-Seite oder
+   bei explizit gesetztem `_pendingDetailTab` (z. B.
+   Prepare-Picker) wird auf den Default zurückgegangen.
    Version 2.12.3 (Aktiver Mitarbeiter-Filter sichtbar im
    DIESER-MONAT-Header). Der Admin-Filter im Briefing reagiert
    technisch korrekt auf den Dropdown-Wechsel, aber wenn
@@ -10443,13 +10456,30 @@ async function renderProjectDetail(p) {
   renderWorkflowChecklist('project_prepare', 'project', p.id,
     'project-workflow-checklist', 'project-workflow-pill', p.workflow_state);
 
-  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang vor Default
-  const projTab = _pendingDetailTab || 'aktivitaeten';
+  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang vor Default.
+  // v2.12.4: Wenn die Page ein Refresh derselben Projekt-ID ist (nach
+  // saveDeployment / saveProduct / …), bleibt der aktuell sichtbare Tab
+  // stehen. Vorher sprang der User zurück auf „Aktivitäten", obwohl er
+  // gerade auf „Wirtschaftlichkeit" gearbeitet hat.
+  const isSameProjectRefresh = _lastRenderedProjectId === p.id && !!_currentProjectV2Tab;
+  let projTab;
+  if (_pendingDetailTab) {
+    projTab = _pendingDetailTab;
+  } else if (isSameProjectRefresh) {
+    projTab = _currentProjectV2Tab;
+  } else {
+    projTab = 'aktivitaeten';
+    _currentProjectActivityFilter = 'alle';
+  }
   _pendingDetailTab = null;
   _currentProjectV2Tab = projTab;
-  _currentProjectActivityFilter = 'alle';
+  _lastRenderedProjectId = p.id;
   switchProjectV2Tab(projTab);
 }
+
+// v2.12.4: Merkt sich das zuletzt gerenderte Projekt, um beim Refresh derselben
+// Projekt-Detail-Seite den aktiven Tab nicht zurückzuspringen.
+let _lastRenderedProjectId = null;
 
 async function loadProjectAppointments(projectId) {
   closeExpandedRow();
@@ -20898,10 +20928,16 @@ async function renderCompanyV2Layout(c) {
   const noteAvatar = document.getElementById('company-note-avatar');
   if (noteAvatar) noteAvatar.textContent = ini(currentProfile?.name || '?');
 
-  _currentCompanyV2Tab = 'aktivitaeten';
-  _currentCompanyActivityFilter = 'alle';
-  switchCompanyV2Tab('aktivitaeten');
+  // v2.12.4: bei Refresh derselben Firma den aktiven Tab nicht zurücksetzen.
+  const isSameCompanyRefresh = _lastRenderedCompanyId === c.id && !!_currentCompanyV2Tab;
+  const compTab = isSameCompanyRefresh ? _currentCompanyV2Tab : 'aktivitaeten';
+  if (!isSameCompanyRefresh) _currentCompanyActivityFilter = 'alle';
+  _currentCompanyV2Tab = compTab;
+  _lastRenderedCompanyId = c.id;
+  switchCompanyV2Tab(compTab);
 }
+
+let _lastRenderedCompanyId = null;
 
 async function loadCompanyActivityStream(companyId) {
   if (!companyId) return;
@@ -21084,10 +21120,16 @@ async function renderContactV2Layout(k) {
   const noteAvatar = document.getElementById('contact-note-avatar');
   if (noteAvatar) noteAvatar.textContent = ini(currentProfile?.name || '?');
 
-  _currentContactV2Tab = 'aktivitaeten';
-  _currentContactActivityFilter = 'alle';
-  switchContactV2Tab('aktivitaeten');
+  // v2.12.4: bei Refresh desselben Kontakts den aktiven Tab nicht zurücksetzen.
+  const isSameContactRefresh = _lastRenderedContactId === k.id && !!_currentContactV2Tab;
+  const ctTab = isSameContactRefresh ? _currentContactV2Tab : 'aktivitaeten';
+  if (!isSameContactRefresh) _currentContactActivityFilter = 'alle';
+  _currentContactV2Tab = ctTab;
+  _lastRenderedContactId = k.id;
+  switchContactV2Tab(ctTab);
 }
+
+let _lastRenderedContactId = null;
 
 async function loadContactActivityStream(contactId) {
   if (!contactId) return;
