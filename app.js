@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.6 (Letzter Login pro Benutzer in der Admin-
+   Benutzerverwaltung). `auth.users.last_sign_in_at` ist für
+   authenticated-Clients nicht direkt lesbar (auth-Schema).
+   Migration v2.11.6_user_last_logins.sql legt eine
+   SECURITY-DEFINER-Funktion `public.user_last_logins()` an, die
+   intern auf `auth.users` zugreift und vorher den Aufrufer
+   gegen `user_profiles.role = Admin` prüft — Nicht-Admins
+   bekommen 42501 zurück. Im UI: neue Spalte „Letzter Login"
+   in der Benutzertabelle (`#page-users`), markiert mit
+   `data-admin-only="true"`, sodass `applyAdminOnlyUI` sie für
+   Nicht-Admins ausblendet. Anzeige als „heute · 13:20",
+   „gestern · 09:15", „vor 3 Tagen" oder „DD.MM.YYYY · HH:MM"
+   via Helper formatLastLogin. Daten werden parallel zur
+   user_profiles-Query via db.rpc('user_last_logins') geholt;
+   Map by user_id → ISO-Timestamp.
    Version 2.11.5 (Briefing: Wochen-Strip auf Mo–So + Konflikt-
    Warnung bei Wochenend-/Feiertags-Einsatz + kein Doppel-Render
    im Tagesplan). Drei Bugs im Briefing-Dashboard:
@@ -5323,20 +5338,31 @@ async function loadRoles() {
 
 async function loadUsers() {
   const tbody = document.getElementById('users-table-body');
-  tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Lade ...</div></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade ...</div></td></tr>';
 
-  const { data: users, error } = await db.from('user_profiles').select('*, roles(name)').order('name');
+  const canAdminister = isAdmin();
+
+  // v2.11.6: Login-Zeitstempel parallel via SECURITY-DEFINER-Funktion holen
+  // (nur für Admins; Nicht-Admin-Aufrufe würden mit 42501 abgelehnt, daher
+  // gar nicht erst senden).
+  const [usersRes, loginsRes] = await Promise.all([
+    db.from('user_profiles').select('*, roles(name)').order('name'),
+    canAdminister ? db.rpc('user_last_logins') : Promise.resolve({ data: [] })
+  ]);
+  const users = usersRes.data;
+  const error = usersRes.error;
 
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     return;
   }
   if (!users || users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Noch keine Benutzer.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Noch keine Benutzer.</div></td></tr>';
     return;
   }
 
-  const canAdminister = isAdmin();
+  const loginById = new Map();
+  (loginsRes?.data || []).forEach(r => loginById.set(r.id, r.last_sign_in_at));
 
   tbody.innerHTML = users.map(u => {
     const isMe = u.id === currentUser?.id;
@@ -5355,6 +5381,11 @@ async function loadUsers() {
       ? `<div class="cell-link" onclick="openUserModal('edit', '${esc(u.id)}')">${esc(u.name)}</div>`
       : `<div style="font-weight:500">${esc(u.name)}</div>`;
 
+    const lastLoginIso = loginById.get(u.id);
+    const lastLoginCell = canAdminister
+      ? `<td data-admin-only="true" style="color:var(--muted);font-size:12px">${esc(formatLastLogin(lastLoginIso))}</td>`
+      : '';
+
     return `
       <tr>
         <td>
@@ -5369,9 +5400,33 @@ async function loadUsers() {
         <td style="color:var(--muted)">${esc(u.email)}</td>
         <td><span class="badge" style="background:${roleBg};color:${roleColor}">${esc(u.roles?.name || '—')}</span></td>
         <td><span class="badge" style="background:${statusBg(u.status)};color:${statusColor(u.status)}">${esc(statusLabel(u.status))}</span></td>
+        ${lastLoginCell}
         <td class="col-action" style="text-align:right"><div class="btn-row" style="justify-content:flex-end">${actions}</div></td>
       </tr>`;
   }).join('');
+
+  // applyAdminOnlyUI rendert ggf. das data-admin-only="true"-th + die Zellen aus,
+  // falls der aktuelle User kein Admin ist (Nicht-Admins sehen die Spalte gar nicht).
+  applyAdminOnlyUI();
+}
+
+/** v2.11.6: Login-Zeitstempel kompakt formatieren — „heute 13:20", „gestern 09:15",
+ *  „vor 3 Tagen", sonst „13.05.2026 · 13:20". */
+function formatLastLogin(iso) {
+  if (!iso) return 'noch nie eingeloggt';
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return '—';
+  const now = new Date();
+  const startToday = new Date(now); startToday.setHours(0,0,0,0);
+  const diffMs = startToday - new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const diffDays = Math.round(diffMs / 86400000);
+  const hhmm = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+  if (diffDays === 0) return `heute · ${hhmm}`;
+  if (diffDays === 1) return `gestern · ${hhmm}`;
+  if (diffDays <= 7)  return `vor ${diffDays} Tagen`;
+  const dd = String(t.getDate()).padStart(2,'0');
+  const mm = String(t.getMonth() + 1).padStart(2,'0');
+  return `${dd}.${mm}.${t.getFullYear()} · ${hhmm}`;
 }
 
 async function openUserModal(mode, userId = null) {
