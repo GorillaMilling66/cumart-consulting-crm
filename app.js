@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.14.3 (Alt-Doku konsolidiert — die drei statischen
+   Bericht-Textfelder (WAS WURDE GEMACHT / ERKENNTNISSE &
+   ENTWICKLUNG / LOG-EINTRAG) sind aus dem Einsatz-Bericht-Tab
+   entfernt, weil sie 1:1 mit den Capture-Stream-Kategorien
+   was_gemacht / erkenntnis / log überlappten. Migration v2.14.3
+   kopiert bestehende Inhalte aus `dokumentation.was_wurde_gemacht`
+   / `durchgefuehrte_themen` / `erkenntnisse` und der Top-Level-
+   Spalte `log_eintrag` als eigene Stream-Einträge in
+   `deployment_log` und räumt die Quell-Felder auf. UI-seitig:
+   - Bericht-Tab enthält nur noch Behandelte Themen + Action Items
+     (zusätzlich zum Capture-Stream + Status-Briefing-Karte).
+   - Entwicklungs-Log im Projekt liest jetzt aus deployment_log
+     (kategorie log + erkenntnis) und zeigt Kategorie-Pille +
+     Einsatz-Themen + Inhalt.
+   - Care-Counter „Einsätze ohne Bericht" zählt jetzt Einsätze
+     ohne irgendeinen deployment_log-Eintrag.
+   Entfernt: saveDeploymentLogEintrag (war einzige Schreibrolle
+   für die jetzt geleerte log_eintrag-Spalte).
    Version 2.14.2 (Status-Cards am Einsatz — eine Briefing-Karte
    am Anfang des Bericht-Tabs, deren Inhalt sich an `deployments.
    status` orientiert: bei „Geplant" zeigt sie drei Vor-Einsatz-
@@ -4691,7 +4709,7 @@ async function renderArbeitsplatzCare() {
   const block = document.getElementById('arbeitsplatz-care-block');
   if (!wrap || !block) return;
 
-  const [companiesIncomplete, apptsNoDoc, depsNoReport] = await Promise.all([
+  const [companiesIncomplete, apptsNoDoc, depsForReport] = await Promise.all([
     // Firmen ohne Adresse — alle drei Felder leer (strasse + plz + stadt)
     db.from('companies').select('id', { count: 'exact', head: true })
       .is('deleted_at', null).is('strasse', null).is('plz', null).is('stadt', null),
@@ -4699,16 +4717,21 @@ async function renderArbeitsplatzCare() {
     db.from('appointments').select('id', { count: 'exact', head: true })
       .is('deleted_at', null).eq('status', 'durchgefuehrt')
       .or('dokumentation->>gespraechsinhalt.is.null,dokumentation->>gespraechsinhalt.eq.'),
-    // Durchgeführte Einsätze ohne Bericht (was_wurde_gemacht leer)
-    db.from('deployments').select('id', { count: 'exact', head: true })
+    // v2.14.3: Durchgeführte/Abgerechnete Einsätze ohne Stream-Eintrag
+    // (statt wie früher `dokumentation->>was_wurde_gemacht` zu prüfen —
+    // dieses Feld gibt es nicht mehr). Embed der zugehörigen
+    // `deployment_log`-Zeilen und Zählen client-seitig: kein Stream-
+    // Eintrag = kein Bericht.
+    db.from('deployments')
+      .select('id, deployment_log(id)')
       .is('deleted_at', null).in('status', ['Durchgeführt','Abgerechnet'])
-      .or('dokumentation->>was_wurde_gemacht.is.null,dokumentation->>was_wurde_gemacht.eq.')
   ]);
 
   const items = [];
   const cIncomplete = companiesIncomplete.count || 0;
   const aNoDoc      = apptsNoDoc.count || 0;
-  const dNoReport   = depsNoReport.count || 0;
+  const dNoReport   = (depsForReport.data || [])
+    .filter(d => !(d.deployment_log || []).length).length;
 
   if (cIncomplete > 0) items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('companies')" title="Zur Firmen-Liste">${cIncomplete} Firmen ohne Adresse</button>`);
   if (aNoDoc > 0)      items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('appointments')" title="Zur Termin-Liste">${aNoDoc} Termine ohne Doku</button>`);
@@ -21270,40 +21293,69 @@ async function deleteProjectSuccessCriterion(id) {
   await renderProjectSuccessCriteria(currentProjectDetailId);
 }
 
-/** Entwicklungs-Log — automatisch aus Einsatz-log_eintrag. */
+/** v2.14.3: Entwicklungs-Log — aus dem Capture-Stream (`deployment_log`)
+ *  der zum Projekt gehörenden Einsätze. Vorher las die Funktion noch aus
+ *  `dokumentation.erkenntnisse` / `log_eintrag`; diese Felder existieren
+ *  nicht mehr und ihr Inhalt wurde per Migration v2.14.3 in den Stream
+ *  überführt. Anzeige: alle Stream-Einträge mit kategorie `log` oder
+ *  `erkenntnis`, chronologisch absteigend, mit Datum + Kategorie-Pille
+ *  + Themen-Pillen des Einsatzes + Text. */
 async function renderProjectDevelopmentLog(projectId) {
   const wrap = document.getElementById('project-development-log');
   if (!wrap) return;
-  const { data: deps } = await db.from('deployments')
-    .select('id, titel, datum_von, dokumentation, deployment_themes(theme:project_themes(name, farbe))')
-    .is('deleted_at', null).eq('project_id', projectId)
-    .order('datum_von', { ascending: false });
 
-  // Filter: nur Einsätze mit log_eintrag oder erkenntnisse
-  const items = (deps || []).map(d => {
-    const log = d.dokumentation?.log_eintrag || (d.dokumentation?.erkenntnisse || '').substring(0, 140);
+  // 1) Alle Einsätze des Projekts (für Themen-Lookup)
+  const { data: deps } = await db.from('deployments')
+    .select('id, datum_von, deployment_themes(theme:project_themes(name, farbe))')
+    .is('deleted_at', null).eq('project_id', projectId);
+  const depMap = new Map();
+  (deps || []).forEach(d => depMap.set(d.id, {
+    datum: d.datum_von,
+    themen: (d.deployment_themes || []).map(dt => dt.theme).filter(Boolean)
+  }));
+
+  const depIds = Array.from(depMap.keys());
+  if (depIds.length === 0) {
+    wrap.innerHTML = '<div class="empty-state-mini">Noch nichts protokolliert — wächst automatisch aus den Stream-Einträgen (Log / Erkenntnis) deiner Einsätze.</div>';
+    return;
+  }
+
+  // 2) Stream-Einträge der Kategorien log + erkenntnis
+  const { data: logs } = await db.from('deployment_log')
+    .select('id, deployment_id, kategorie, inhalt, created_at')
+    .is('deleted_at', null)
+    .in('deployment_id', depIds)
+    .in('kategorie', ['log', 'erkenntnis'])
+    .order('created_at', { ascending: false });
+
+  const items = (logs || []).map(l => {
+    const dep = depMap.get(l.deployment_id) || {};
     return {
-      id: d.id,
-      datum: d.datum_von,
-      log,
-      themen: (d.deployment_themes || []).map(dt => dt.theme).filter(Boolean)
+      id: l.id,
+      kategorie: l.kategorie,
+      // Datum: vom Einsatz, Fallback auf Stream-Zeitstempel
+      datum: dep.datum || l.created_at,
+      text: l.inhalt,
+      themen: dep.themen || []
     };
-  }).filter(i => i.log && i.log.trim());
+  });
 
   if (items.length === 0) {
-    // v2.13.6: Mini-Empty-State — kein vollformatiger Block, sondern eine
-    // eingerückte einzeilige Andeutung. Spart Platz, bleibt informativ.
-    wrap.innerHTML = '<div class="empty-state-mini">Noch nichts protokolliert — wächst automatisch aus den Erkenntnissen / Log-Einträgen deiner Einsätze.</div>';
+    wrap.innerHTML = '<div class="empty-state-mini">Noch nichts protokolliert — wächst automatisch aus den Stream-Einträgen (Log / Erkenntnis) deiner Einsätze.</div>';
     return;
   }
 
   wrap.innerHTML = `<div class="proj-log-table">
-    ${items.map(it => `
+    ${items.map(it => {
+      const kat = _CAPTURE_KATEGORIEN[it.kategorie] || { emoji: '·', label: it.kategorie, color: 'var(--muted)' };
+      const pill = `<span class="proj-log-cat" style="background:${esc(kat.color)}22;color:${esc(kat.color)}">${kat.emoji} ${esc(kat.label)}</span>`;
+      return `
       <div class="proj-log-row">
         <div class="proj-log-date">${esc(formatDateCompact(it.datum))}</div>
-        <div class="proj-log-themes">${it.themen.map(t => `<span class="theme-pill" style="background:${esc(t.farbe||'#E6F1FB')}">${esc(t.name)}</span>`).join('')}</div>
-        <div class="proj-log-text">${esc(it.log)}</div>
-      </div>`).join('')}
+        <div class="proj-log-themes">${pill}${it.themen.map(t => `<span class="theme-pill" style="background:${esc(t.farbe||'#E6F1FB')}">${esc(t.name)}</span>`).join('')}</div>
+        <div class="proj-log-text">${esc(it.text)}</div>
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -22013,10 +22065,10 @@ async function loadDeploymentDetail(deploymentId) {
   document.getElementById('dep-hero-leistung-sub').textContent = d.ganztag ? 'Ganztag' : ' ';
 
   // Bericht-Tab Inhalte
+  // v2.14.3: WAS WURDE GEMACHT / ERKENNTNISSE / LOG-EINTRAG sind als
+  // statische Felder entfernt — gleicher Inhalt lebt jetzt im Capture-
+  // Stream (`deployment_log`) mit Kategorien was_gemacht / erkenntnis / log.
   const dok = d.dokumentation || {};
-  document.getElementById('dep-bericht-was').value = dok.was_wurde_gemacht || dok.durchgefuehrte_themen || '';
-  document.getElementById('dep-bericht-erkenntnisse').value = dok.erkenntnisse || '';
-  document.getElementById('dep-bericht-log').value = d.log_eintrag || '';
   // v2.1.2: leeres Anfahrt-Feld bekommt Firma-Adresse als Default
   // (Bullet-Defaults aus v2.1.1 wieder entfernt — bringen nichts).
   document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '';
@@ -22351,11 +22403,6 @@ async function saveDeploymentDokuField(key, value) {
   const dok = d?.dokumentation || {};
   dok[key] = (value || '').trim();
   await db.from('deployments').update({ dokumentation: dok }).eq('id', currentDeploymentDetailId);
-}
-
-async function saveDeploymentLogEintrag(value) {
-  if (!currentDeploymentDetailId) return;
-  await db.from('deployments').update({ log_eintrag: (value || '').trim() || null }).eq('id', currentDeploymentDetailId);
 }
 
 async function renderDeploymentActionItems(deploymentId) {

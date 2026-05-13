@@ -2041,6 +2041,14 @@ body {
 .proj-log-date { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .proj-log-themes { display: flex; flex-wrap: wrap; gap: 4px; }
 .proj-log-text { font-size: 13px; color: var(--text); line-height: 1.4; }
+/* v2.14.3: Kategorie-Pille im Entwicklungs-Log (Log / Erkenntnis) */
+.proj-log-cat {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 600;
+  white-space: nowrap;
+}
 
 /* Theme-Pille (für Entwicklungs-Log) */
 .theme-pill {
