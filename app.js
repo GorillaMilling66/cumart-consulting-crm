@@ -1,5 +1,40 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.12.0 (Einsatz-Bündel — Mehrtages-Klammer mit
+   gemeinsamen Stammdaten + Tage-Liste). Use-Case: ein Trainer
+   hat z. B. Mo + Mi + Fr beim selben Kunden im selben Projekt
+   und will Vorbereitung, Doku, Abrechnung, Team nur einmal
+   pflegen. Migration v2.12.0_deployment_bundles.sql legt die
+   Tabellen `deployment_bundles` (Stammdaten) und
+   `deployment_bundle_technicians` (internes Team am Bündel) an
+   und erweitert `deployments` um `bundle_id` (FK SET NULL) und
+   `bundle_overrides` jsonb-Array (Field-Keys, die der einzelne
+   Tag manuell überschrieben hat — Per-Day-Override-Schutz
+   für v2; in v1 wird er noch nicht angewandt). RLS-Pattern
+   wie bei allen operativen Tabellen.
+   UI: neues Modal `modal-deployment-bundle` mit Prefix b-*
+   (Stammdaten oben, Tage-Liste in der Mitte, Doku/Notizen
+   unten). Tage-Liste ist eine kleine Tabelle mit + Tag /
+   × pro Zeile (Datum, Uhrzeit von/bis, Menge, Status). Save
+   propagiert die geteilten Felder auf alle Mitglieds-Einsätze
+   per direct UPDATE/INSERT. Internes Team am Bündel wird nach
+   Save zudem auf alle Mitglieds-Einsätze in der bestehenden
+   `deployment_technicians`-Junction repliziert.
+   Wirtschaftlichkeit-Tab: zwei neue Buttons „+ Bündel" und
+   „Einsätze bündeln…". Letzterer öffnet einen Picker mit
+   Checkbox-Liste ungebündelter Einsätze und startet das
+   Bündel-Modal mit den gewählten als Tage vorbefüllt.
+   Listen-Gruppierung: gebündelte Einsätze stehen unter einer
+   Bündel-Header-Zeile (klickbar zum Ein-/Ausklappen,
+   indigo-Farbgebung, „N Tage · Gesamt"-Stats, „Bündel
+   bearbeiten"-Button). Mitglieder-Zeilen sind eingerückt.
+   Helper: openDeploymentBundleModal, saveDeploymentBundle,
+   deleteDeploymentBundle (löscht Bündel, lässt Einsätze als
+   ungebündelt zurück), openBundleFromExistingPicker,
+   addBundleDayRow, renderBundleDayRows, renderBundleTeamChips,
+   toggleBundleCollapse. State: editingBundleId,
+   selectedBundleTeamIds, _bundleDayRows, _bundleDeletedDayIds,
+   _collapsedBundleIds.
    Version 2.11.7 (Briefing: Wochenplan-Sub-Divider, DIESER-
    MONAT-Admin-Filter, KW-Marker im Kalenderstreifen,
    Kalender-Mitarbeiter-Dropdown Admin-gated, Auslastung
@@ -12254,22 +12289,30 @@ async function loadProjectDeployments(projectId) {
 
   await loadEinsatzStatus();
 
-  const { data, error } = await db.from('deployments')
-    .select('*, service:services(id, name)').is('deleted_at', null)
-    .eq('project_id', projectId)
-    .order('datum_von', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true });
+  // v2.12.0: Bündel + zugehörige Einsätze parallel laden.
+  const [depsRes, bundlesRes] = await Promise.all([
+    db.from('deployments')
+      .select('*, service:services(id, name)').is('deleted_at', null)
+      .eq('project_id', projectId)
+      .order('datum_von', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true }),
+    db.from('deployment_bundles')
+      .select('id, titel').is('deleted_at', null).eq('project_id', projectId)
+      .order('created_at', { ascending: true })
+  ]);
   if (!isStillOnDetail('project', projectId)) return;  // v2.0.6: race-guard
 
-  if (error) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+  if (depsRes.error) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(depsRes.error.message)}</div></td></tr>`;
     countEl.textContent = 'Einsätze';
     summaryEl.style.display = 'none';
     if (leistungsUmsatzEl) leistungsUmsatzEl.textContent = '—';
     return;
   }
 
-  const all = data || [];
+  const all = depsRes.data || [];
+  const bundles = bundlesRes.data || [];
+  _projectBundlesCache = bundles;
   const total = all.length;
   setTabCount('project', 'einsaetze', total);
 
@@ -12280,7 +12323,7 @@ async function loadProjectDeployments(projectId) {
     leistungsUmsatzEl.style.color = leistungsUmsatz > 0 ? 'var(--text)' : 'var(--muted)';
   }
 
-  if (total === 0) {
+  if (total === 0 && bundles.length === 0) {
     countEl.textContent = 'Keine Einsätze';
     tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Einsätze für dieses Projekt. Klicke oben auf „+ Einsatz hinzufügen".</div></td></tr>';
     summaryEl.style.display = 'none';
@@ -12295,24 +12338,25 @@ async function loadProjectDeployments(projectId) {
 
   let countText = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
   if (anzUngeplant > 0) countText += ` · ${anzUngeplant} ohne Datum`;
+  if (bundles.length > 0) countText += ` · ${bundles.length} Bündel`;
   countEl.textContent = countText;
 
-  tbody.innerHTML = all.map(d => {
+  // v2.12.0: Zeile bauen — Helper, wird sowohl für ungebündelte als auch für
+  // Bündel-Mitglieder genutzt. `isMember`-Flag setzt eine CSS-Klasse für die
+  // Einrückung der Tage unter dem Bündel-Header.
+  const renderRow = (d, isMember) => {
     const statusColor = einsatzStatusFarbe(d.status);
     const leistungHtml = d.service
       ? esc(d.service.name)
       : '<span style="color:var(--muted);font-style:italic">—</span>';
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
-
-    // Checkbox-State: Durchgeführt oder Abgerechnet = checked
     const isDone = d.status === 'Durchgeführt' || d.status === 'Abgerechnet';
     const isLocked = d.status === 'Abgerechnet' || d.status === 'Storniert';
     const checkboxTitle = isLocked
       ? `Status „${d.status}" kann nicht per Checkbox geändert werden`
       : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
-
     return `
-      <tr data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
+      <tr class="${isMember ? 'bundle-member-row' : ''}" data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="deployment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -12332,7 +12376,36 @@ async function loadProjectDeployments(projectId) {
           <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
         </td>
       </tr>`;
-  }).join('');
+  };
+
+  // v2.12.0: Bündel als Gruppe rendern — Header + Mitglieder-Zeilen.
+  const ungebuendelt = all.filter(d => !d.bundle_id);
+  const htmlParts = [];
+  ungebuendelt.forEach(d => htmlParts.push(renderRow(d, false)));
+  bundles.forEach(b => {
+    const members = all.filter(d => d.bundle_id === b.id);
+    if (members.length === 0) return;
+    const bundleSum = members.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+    const dateLabels = members.filter(d => d.datum_von).map(d => formatDateDE(d.datum_von)).join(' · ');
+    const collapsed = _collapsedBundleIds.has(b.id);
+    htmlParts.push(`
+      <tr class="bundle-header-row${collapsed ? ' is-collapsed' : ''}" data-bundle-id="${esc(b.id)}" onclick="toggleBundleCollapse('${esc(b.id)}')">
+        <td colspan="7" class="bundle-header-cell">
+          <div class="bundle-header-cell-inner">
+            <span class="bundle-header-chevron">▼</span>
+            <span class="bundle-header-label">Bündel</span>
+            <span class="bundle-header-title">${esc(b.titel)}</span>
+            <span style="font-size:11px;color:var(--muted)">${esc(dateLabels)}</span>
+            <span class="bundle-header-stats">${members.length} Tag${members.length === 1 ? '' : 'e'} · ${esc(formatPreis(bundleSum))}</span>
+            <button class="btn btn-sm" style="margin-left:8px" onclick="event.stopPropagation();openDeploymentBundleModal('edit','${esc(b.id)}')">Bündel bearbeiten</button>
+          </div>
+        </td>
+      </tr>`);
+    if (!collapsed) members.forEach(d => htmlParts.push(renderRow(d, true)));
+  });
+
+  tbody.innerHTML = htmlParts.join('') ||
+    '<tr><td colspan="7"><div class="empty">Noch keine Einsätze für dieses Projekt.</div></td></tr>';
 
   // Summary mit Aufwands-Info
   summaryEl.style.display = '';
@@ -22394,6 +22467,7 @@ if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-product'] = () => closeProductModal();
   MODAL_CLOSERS['modal-merge']   = () => closeMergeModal();
   MODAL_CLOSERS['modal-project-product'] = () => closeProjectProductModal();
+  MODAL_CLOSERS['modal-deployment-bundle'] = () => closeDeploymentBundleModal();
 }
 
 // ═══════════════════════════════════════════════════════════

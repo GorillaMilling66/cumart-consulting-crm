@@ -1536,7 +1536,11 @@
             <div class="info-card">
               <div class="info-card-title-row">
                 <div class="info-card-title">Einsätze und Erlöse</div>
-                <button class="btn btn-sm btn-primary" id="project-detail-add-deployment-btn">+ Einsatz hinzufügen</button>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-sm" id="project-detail-bundle-from-existing-btn" title="Mehrere bestehende Einsätze zu einem Bündel zusammenfassen">Einsätze bündeln…</button>
+                  <button class="btn btn-sm" id="project-detail-add-bundle-btn" title="Neuer Mehrtages-Einsatz mit gemeinsamer Doku/Abrechnung">+ Bündel</button>
+                  <button class="btn btn-sm btn-primary" id="project-detail-add-deployment-btn">+ Einsatz hinzufügen</button>
+                </div>
               </div>
               <div class="table-wrap">
                 <table>
@@ -4346,6 +4350,93 @@
       <div>
         <button class="btn" onclick="closeProjectProductModal()">Abbrechen</button>
         <button class="btn btn-primary" onclick="saveProjectProduct()">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- v2.12.0: Modal — Einsatz-Bündel (Mehrtages-Klammer mit shared Stammdaten + Tage-Liste) -->
+<div class="modal-overlay" id="modal-deployment-bundle" onclick="if(event.target===this)closeDeploymentBundleModal()">
+  <div class="modal" style="width:880px;max-width:96vw;max-height:92vh;overflow-y:auto">
+    <div class="modal-title" id="modal-deployment-bundle-title">Neues Einsatz-Bündel</div>
+
+    <section class="bundle-section">
+      <div class="bundle-section-title">Stammdaten · gelten für alle Tage des Bündels</div>
+      <div class="form-group">
+        <label>Titel *</label>
+        <input type="text" id="b-titel" placeholder="z. B. Bauteilfertigung an Kundenmaschine">
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Service</label>
+          <select id="b-service"></select>
+        </div>
+        <div class="form-group">
+          <label>Einzelpreis pro Tag (€)</label>
+          <div class="input-with-action">
+            <input type="number" id="b-einzelpreis" min="0" step="0.01" placeholder="0.00">
+            <button type="button" class="input-action-btn" id="b-einzelpreis-reset"
+                    title="Einzelpreis auf Service-Standardpreis aktualisieren">↻</button>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Ort</label>
+        <input type="text" id="b-ort" placeholder="z. B. Adresse, Zoom-Link, Raum">
+      </div>
+      <div class="form-group">
+        <label>Beschreibung</label>
+        <textarea id="b-beschreibung" rows="2" placeholder="Was wird in diesem Bündel gemacht?"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Internes Team</label>
+        <div id="b-team-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
+      </div>
+      <div class="form-group">
+        <label>Externe Techniker (Freitext)</label>
+        <input type="text" id="b-externe-techniker" placeholder="z. B. Max Mustermann (extern)">
+      </div>
+    </section>
+
+    <section class="bundle-section">
+      <div class="bundle-section-title-row">
+        <div class="bundle-section-title">Tage · einzelne Termine im Bündel</div>
+        <button type="button" class="btn btn-sm btn-primary" id="b-add-day">+ Tag hinzufügen</button>
+      </div>
+      <div class="bundle-days-wrap">
+        <table class="bundle-days-table">
+          <thead>
+            <tr>
+              <th style="width:130px">Datum</th>
+              <th style="width:90px">Von</th>
+              <th style="width:90px">Bis</th>
+              <th style="width:80px">Menge</th>
+              <th>Status</th>
+              <th style="width:36px"></th>
+            </tr>
+          </thead>
+          <tbody id="b-days-body">
+            <tr><td colspan="6"><div class="empty" style="padding:14px">Noch keine Tage. Klicke oben auf „+ Tag hinzufügen".</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="b-days-summary" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+    </section>
+
+    <section class="bundle-section">
+      <div class="bundle-section-title">Dokumentation · zentral für das Bündel</div>
+      <div id="b-documentation-block"></div>
+      <div class="form-group" style="margin-top:8px">
+        <label>Notizen</label>
+        <textarea id="b-notizen" rows="2" placeholder="Interne Anmerkungen"></textarea>
+      </div>
+    </section>
+
+    <div class="modal-footer" style="display:flex;justify-content:space-between">
+      <button class="btn btn-danger" id="b-delete-btn" onclick="deleteDeploymentBundle()" style="display:none">Bündel löschen</button>
+      <div>
+        <button class="btn" onclick="closeDeploymentBundleModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveDeploymentBundle()">Speichern</button>
       </div>
     </div>
   </div>
