@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.15.2 (Status weiterbringen — Primary-Aktion in
+   jedem Aktionen-Bereich mit Status-Flow. Im Aktionen-Sidebar
+   von Projekt / Einsatz / Termin sitzt als erste Aktion ein
+   dynamischer „→ {NächsterStatus}"-Button. Klick rückt den
+   Status eine Stufe weiter, mit Bestätigungs-Confirm
+   („Lead → Angebot", „Geplant → Durchgeführt" usw.) und
+   Race-Schutz via from-Status-Equality im UPDATE. Bei
+   Terminal-Status (Abgeschlossen / Abgerechnet / durchgeführt)
+   erscheint statt eines Buttons ein Read-only-Hinweis. Bei
+   Storniert / Verloren wird gar nichts gezeigt — der Pfad ist
+   ohne weiteren Schritt zu Ende. Die alten Spezial-Buttons
+   „Bericht abschließen" am Einsatz und „Als durchgeführt
+   markieren" am Termin sind entfernt; die Status-Logik geht
+   jetzt über die generische Aktion. Firma- und Kontakt-Sidebars
+   bleiben unverändert (keine Status-Kette). JS-Flow-Tabelle:
+   _STATUS_FLOW (project / deployment / appointment), Helper
+   _statusFlowNext, renderStatusAdvanceAction,
+   advanceEntityStatus. CSS: .proj-status-action-done.
    Version 2.15.1 (Themen-Quick-Add — flüssige Themen-Eingabe
    im Projekt-Planung-Tab. Statt zweier separater „+ Aus
    Bibliothek" / „+ Thema"-Knöpfe sitzt jetzt ein Eingabefeld
@@ -21082,6 +21100,8 @@ async function renderProjectV2Layout(p) {
     statusPill.textContent = p.status;
     statusPill.className = `status-pill status-pill-${statusKey}`;
   }
+  // v2.15.2: Status-Weiterbringen-Aktion im Aktionen-Sidebar rendern
+  renderStatusAdvanceAction('project', p.id, p.status, 'project-status-action');
 
   // Subline: Firma · Verantwortlich
   const subline = document.getElementById('project-detail-subline');
@@ -22216,6 +22236,8 @@ async function loadAppointmentDetail(appointmentId) {
     const cls = a.status === 'durchgefuehrt' ? 'durchgefhrt' : 'geplant';
     statusPill.className = `status-pill status-pill-${cls}`;
   }
+  // v2.15.2: Status-Weiterbringen-Aktion im Aktionen-Sidebar rendern
+  renderStatusAdvanceAction('appointment', appointmentId, a.status, 'appt-status-action');
 
   // Hero-Metriken
   document.getElementById('appt-hero-datum').textContent = a.datum ? formatDateDE(a.datum).split(',')[0] : '—';
@@ -22339,13 +22361,6 @@ async function toggleAppointmentActionItem(taskId, done) {
   await renderAppointmentActionItems(currentAppointmentDetailId);
 }
 
-async function markAppointmentDone() {
-  if (!currentAppointmentDetailId) return;
-  await db.from('appointments').update({ status: 'durchgefuehrt' }).eq('id', currentAppointmentDetailId);
-  showToast('Termin als durchgeführt markiert.');
-  loadAppointmentDetail(currentAppointmentDetailId);
-}
-
 async function createFollowupAppointment() {
   if (!currentAppointmentDetailId) return;
   const { data: a } = await db.from('appointments').select('*').eq('id', currentAppointmentDetailId).single();
@@ -22431,6 +22446,8 @@ async function loadDeploymentDetail(deploymentId) {
     statusPill.textContent = d.status;
     statusPill.className = `status-pill status-pill-${cls}`;
   }
+  // v2.15.2: Status-Weiterbringen-Aktion im Aktionen-Sidebar rendern
+  renderStatusAdvanceAction('deployment', deploymentId, d.status, 'dep-status-action');
 
   // Hero-Metriken
   const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
@@ -22838,16 +22855,85 @@ async function toggleDeploymentActionItem(taskId, done) {
   await renderDeploymentActionItems(currentDeploymentDetailId);
 }
 
-async function finishDeploymentReport() {
-  if (!currentDeploymentDetailId) return;
-  await db.from('deployments').update({ status: 'Durchgeführt' }).eq('id', currentDeploymentDetailId);
-  showToast('Bericht abgeschlossen — Status: Durchgeführt.');
-  loadDeploymentDetail(currentDeploymentDetailId);
-}
-
 function uploadDeploymentAttachment(files) {
   if (!files || files.length === 0) return;
   showToast('Datei-Anhänge kommen in Phase 9 (Storage-Sub-Spec). Bis dahin: extern speichern und in der Notiz verlinken.', false);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.15.2 — STATUS-WEITERBRINGEN (Primary Action je Detail-Seite)
+// ═══════════════════════════════════════════════════════════
+
+/** Status-Flow je Entität. `current → next` als geordnete Kette.
+ *  Werte müssen 1:1 mit `lookup_values` und mit den im Code referenzierten
+ *  Strings übereinstimmen. */
+const _STATUS_FLOW = {
+  project: {
+    table: 'projects',
+    order: ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase', 'Abgeschlossen'],
+    terminal: ['Abgeschlossen', 'Verloren']
+  },
+  deployment: {
+    table: 'deployments',
+    order: ['Geplant', 'Durchgeführt', 'Abgerechnet'],
+    terminal: ['Abgerechnet', 'Storniert']
+  },
+  appointment: {
+    table: 'appointments',
+    order: ['geplant', 'durchgefuehrt'],
+    terminal: ['durchgefuehrt']
+  }
+};
+
+function _statusFlowNext(entityType, currentStatus) {
+  const flow = _STATUS_FLOW[entityType];
+  if (!flow) return null;
+  const idx = flow.order.indexOf(currentStatus);
+  if (idx < 0 || idx === flow.order.length - 1) return null;
+  return flow.order[idx + 1];
+}
+
+/** Rendert den „→ {NächsterStatus}"-Button in den passenden Container im
+ *  Aktionen-Bereich. Bei Terminal-Status: kompakte Anzeige (kein Button).
+ *  Bei abweichendem Status (z. B. Verloren / Storniert): ebenfalls ohne
+ *  Button — der Pfad ist abgeschlossen. */
+function renderStatusAdvanceAction(entityType, entityId, currentStatus, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const flow = _STATUS_FLOW[entityType];
+  if (!flow) { el.innerHTML = ''; return; }
+
+  const next = _statusFlowNext(entityType, currentStatus);
+  if (!next) {
+    const isTerminal = flow.terminal.includes(currentStatus);
+    el.innerHTML = isTerminal
+      ? `<div class="proj-status-action-done">Status: <strong>${esc(currentStatus)}</strong></div>`
+      : '';
+    return;
+  }
+  el.innerHTML = `
+    <button class="proj-action proj-action-primary"
+            onclick="advanceEntityStatus('${esc(entityType)}','${esc(entityId)}','${esc(currentStatus)}','${esc(next)}')"
+            title="Aktueller Status: ${esc(currentStatus)} — Klick setzt auf „${esc(next)}".">
+      → ${esc(next)}
+    </button>`;
+}
+
+/** Setzt den Status der Entität auf den nächsten Wert und löst ein Refresh
+ *  der jeweiligen Detail-Page aus. Die `from`-Bedingung verhindert Race-
+ *  Conditions bei Doppelklick / parallelen Tabs. */
+async function advanceEntityStatus(entityType, entityId, fromStatus, toStatus) {
+  const flow = _STATUS_FLOW[entityType];
+  if (!flow || !entityId || !toStatus) return;
+  if (!confirm(`Status weiterbringen?\n\n${fromStatus}  →  ${toStatus}`)) return;
+  const { error } = await db.from(flow.table)
+    .update({ status: toStatus }).eq('id', entityId).eq('status', fromStatus);
+  if (error) { showToast(error.message, true); return; }
+  showToast(`Status: ${toStatus}.`);
+  // Refresh der jeweiligen Detail-Page
+  if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
+  if (entityType === 'deployment' && currentDeploymentDetailId) loadDeploymentDetail(currentDeploymentDetailId);
+  if (entityType === 'appointment'&& currentAppointmentDetailId) loadAppointmentDetail(currentAppointmentDetailId);
 }
 
 // ═══════════════════════════════════════════════════════════

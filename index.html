@@ -1695,7 +1695,9 @@
           </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">AKTIONEN</div>
-            <button class="proj-action proj-action-primary" onclick="focusProjectNoteInput()">Notiz hinzufügen</button>
+            <!-- v2.15.2: Status-weiterbringen als erste Aktion -->
+            <div id="project-status-action"></div>
+            <button class="proj-action" onclick="focusProjectNoteInput()">Notiz hinzufügen</button>
             <button class="proj-action" id="project-quick-deployment">+ Einsatz anlegen</button>
             <button class="proj-action" id="project-quick-product">+ Produkt anlegen</button>
             <button class="proj-action" id="project-quick-appointment">+ Termin anlegen</button>
@@ -1912,7 +1914,8 @@
           </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">AKTIONEN</div>
-            <button class="proj-action proj-action-primary" onclick="markAppointmentDone()">Als durchgeführt markieren</button>
+            <!-- v2.15.2: Status-weiterbringen als erste Aktion -->
+            <div id="appt-status-action"></div>
             <button class="proj-action" onclick="createFollowupAppointment()">+ Folgetermin (+ 1 Woche)</button>
             <button class="proj-action" onclick="createTaskFromAppointment()">+ Aufgabe aus Termin</button>
             <button class="proj-action" onclick="createDeploymentFromAppointment()">+ Einsatz aus Termin</button>
@@ -2077,7 +2080,8 @@
           </div>
           <div class="proj-side-card">
             <div class="proj-side-card-title">AKTIONEN</div>
-            <button class="proj-action proj-action-primary" onclick="finishDeploymentReport()">Bericht abschließen</button>
+            <!-- v2.15.2: Status-weiterbringen als erste Aktion -->
+            <div id="dep-status-action"></div>
             <button class="proj-action" onclick="duplicateDeployment(currentDeploymentDetailId)">+ Folgeeinsatz</button>
             <button class="proj-action" onclick="document.getElementById('dep-attach-input').click()">Datei anhängen</button>
             <input type="file" id="dep-attach-input" style="display:none" onchange="uploadDeploymentAttachment(this.files)" multiple>
