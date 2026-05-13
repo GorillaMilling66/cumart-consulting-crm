@@ -1,5 +1,24 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.14.1 (Capture-Stream am Einsatz-Bericht — ein
+   Eingabefeld + 4 Kategorie-Chips (📝 Erledigt · 💡 Erkenntnis ·
+   🎯 Folge · 📋 Log), darunter eine chronologische Liste der
+   Einträge. Statt 5 statischer Bericht-Textfelder kann der Nutzer
+   jetzt schnell Mikro-Einträge protokollieren — jede Zeile mit
+   Kategorie-Pille + Zeitstempel + Lösch-Button. Datenmodell in
+   eigener Tabelle `deployment_log` (v2.14.0-Migration). Die alten
+   `dokumentation`-Felder bleiben unverändert und werden weiterhin
+   daneben gerendert.
+   JS: renderDeploymentCaptureStream, setCaptureKategorie,
+   postDeploymentLogEntry, deleteDeploymentLogEntry,
+   formatDateTimeCompact, _currentCaptureKategorie-State,
+   _CAPTURE_KATEGORIEN-Map.
+   UI: ⌘↵ / Strg↵ postet den Eintrag direkt aus dem Textarea.
+   Version 2.14.0 (Schema-Migration für Capture-Stream — neue
+   Tabelle `deployment_log` mit Spalten kategorie / inhalt /
+   erstellt_von / created_at, soft-delete via deleted_at, RLS
+   PERMISSIVE+RESTRICTIVE, Index auf (deployment_id, created_at).
+   Reine DB-Vorbereitung; UI in v2.14.1.)
    Version 2.13.7 (Phase-Driven Brief — Felder erscheinen passend
    zur Projekt-Phase). Der Brief-Tab zeigt nicht mehr alle 5–6
    Felder von Anfang an, sondern blendet sie passend zur
@@ -21998,6 +22017,9 @@ async function loadDeploymentDetail(deploymentId) {
   // Action Items (Tasks mit deployment_id)
   await renderDeploymentActionItems(deploymentId);
 
+  // v2.14.1: Capture-Stream-Liste laden
+  await renderDeploymentCaptureStream(deploymentId);
+
   // Sidepanel
   const projSide = document.getElementById('dep-side-projekt');
   if (d.project) {
@@ -22094,6 +22116,107 @@ async function renderDeploymentReportThemes(d) {
 function _jumpToProjectBriefFromEinsatz(projectId) {
   _pendingDetailTab = 'brief';
   navigateTo('projekt', projectId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.14.1 — CAPTURE-STREAM am Einsatz-Bericht
+// ═══════════════════════════════════════════════════════════
+
+let _currentCaptureKategorie = 'was_gemacht';
+
+const _CAPTURE_KATEGORIEN = {
+  was_gemacht: { label: 'Erledigt',   emoji: '📝', color: '#1d4ed8' },
+  erkenntnis:  { label: 'Erkenntnis', emoji: '💡', color: '#b45309' },
+  folge:       { label: 'Folge',      emoji: '🎯', color: '#7c3aed' },
+  log:         { label: 'Log',        emoji: '📋', color: '#16a34a' }
+};
+
+function setCaptureKategorie(kat) {
+  if (!_CAPTURE_KATEGORIEN[kat]) return;
+  _currentCaptureKategorie = kat;
+  document.querySelectorAll('.capture-stream-chip').forEach(c => {
+    c.classList.toggle('is-active', c.dataset.kategorie === kat);
+  });
+}
+
+async function postDeploymentLogEntry() {
+  if (!currentDeploymentDetailId) return;
+  const input = document.getElementById('dep-capture-input');
+  if (!input) return;
+  const inhalt = (input.value || '').trim();
+  if (!inhalt) { showToast('Bitte Inhalt eingeben.', true); return; }
+  const { error } = await db.from('deployment_log').insert({
+    deployment_id: currentDeploymentDetailId,
+    kategorie: _currentCaptureKategorie,
+    inhalt,
+    erstellt_von: currentProfile?.id || null
+  });
+  if (error) { showToast(error.message, true); return; }
+  input.value = '';
+  await renderDeploymentCaptureStream(currentDeploymentDetailId);
+}
+
+async function renderDeploymentCaptureStream(deploymentId) {
+  const list = document.getElementById('dep-capture-stream-list');
+  if (!list) return;
+
+  // Initial-Chip-State setzen (was_gemacht aktiv)
+  document.querySelectorAll('.capture-stream-chip').forEach(c => {
+    c.classList.toggle('is-active', c.dataset.kategorie === _currentCaptureKategorie);
+  });
+
+  const { data, error } = await db.from('deployment_log')
+    .select('id, kategorie, inhalt, created_at, user:user_profiles(name)')
+    .is('deleted_at', null).eq('deployment_id', deploymentId)
+    .order('created_at', { ascending: false });
+  if (error) {
+    list.innerHTML = `<div class="empty-state-mini">Fehler beim Laden: ${esc(error.message)}</div>`;
+    return;
+  }
+  const items = data || [];
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state-mini">Noch nichts protokolliert — wähle eine Kategorie und tippe los.</div>';
+    return;
+  }
+  list.innerHTML = items.map(it => {
+    const kat = _CAPTURE_KATEGORIEN[it.kategorie] || { label: it.kategorie, emoji: '·', color: 'var(--muted)' };
+    const when = formatDateTimeCompact(it.created_at);
+    return `
+      <div class="capture-stream-item" data-id="${esc(it.id)}">
+        <span class="capture-stream-item-chip" style="background:${esc(kat.color)}22;color:${esc(kat.color)}">${kat.emoji} ${esc(kat.label)}</span>
+        <div class="capture-stream-item-body">
+          <div class="capture-stream-item-text">${esc(it.inhalt)}</div>
+          <div class="capture-stream-item-meta">${esc(when)}${it.user?.name ? ' · ' + esc(it.user.name) : ''}</div>
+        </div>
+        <button type="button" class="capture-stream-item-delete" title="Eintrag löschen"
+                onclick="deleteDeploymentLogEntry('${esc(it.id)}')">×</button>
+      </div>`;
+  }).join('');
+}
+
+async function deleteDeploymentLogEntry(id) {
+  if (!confirm('Eintrag wirklich löschen?')) return;
+  const { error } = await db.from('deployment_log')
+    .update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  if (error) { showToast(error.message, true); return; }
+  if (currentDeploymentDetailId) await renderDeploymentCaptureStream(currentDeploymentDetailId);
+}
+
+// Helper: kompakter Zeitstempel — „heute 14:32", „gestern 09:15", „13.05. 14:32"
+function formatDateTimeCompact(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const startToday = new Date(now); startToday.setHours(0,0,0,0);
+  const diffDays = Math.round((startToday - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  const hhmm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  if (diffDays === 0) return `heute ${hhmm}`;
+  if (diffDays === 1) return `gestern ${hhmm}`;
+  if (diffDays <= 7)  return `vor ${diffDays} Tagen`;
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth() + 1).padStart(2,'0');
+  return `${dd}.${mm}. ${hhmm}`;
 }
 
 async function toggleDeploymentReportTheme(deploymentId, themeId, checked) {

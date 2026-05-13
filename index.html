@@ -1966,6 +1966,26 @@
             <!-- v2.0.3: Dokumentations-Checkliste oben im Bericht -->
             <div id="dep-workflow-checklist" style="margin-bottom:20px"></div>
 
+            <!-- v2.14.1: Capture-Stream — Eintrag oben, Liste darunter -->
+            <div class="capture-stream-section">
+              <div class="capture-stream-input-row">
+                <textarea id="dep-capture-input" class="capture-stream-input"
+                          placeholder="Was möchtest du festhalten? Tipp: Kategorie unten wählen + ⌘↵ zum Posten"
+                          rows="2"
+                          onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();postDeploymentLogEntry();}"></textarea>
+              </div>
+              <div class="capture-stream-categories">
+                <button type="button" class="capture-stream-chip" data-kategorie="was_gemacht" onclick="setCaptureKategorie('was_gemacht')" title="Was wurde gemacht?">📝 Erledigt</button>
+                <button type="button" class="capture-stream-chip" data-kategorie="erkenntnis" onclick="setCaptureKategorie('erkenntnis')" title="Neue Erkenntnis / Lessons Learned">💡 Erkenntnis</button>
+                <button type="button" class="capture-stream-chip" data-kategorie="folge"      onclick="setCaptureKategorie('folge')"      title="Folge-Aufgabe / Open Item">🎯 Folge</button>
+                <button type="button" class="capture-stream-chip" data-kategorie="log"        onclick="setCaptureKategorie('log')"        title="Log-Eintrag für die Projekt-Zeitleiste">📋 Log</button>
+                <button type="button" class="capture-stream-post-btn" onclick="postDeploymentLogEntry()">Posten · ⌘↵</button>
+              </div>
+              <div id="dep-capture-stream-list" class="capture-stream-list">
+                <div class="empty-state-mini">Noch nichts protokolliert — wähle eine Kategorie und tippe los.</div>
+              </div>
+            </div>
+
             <div class="proj-brief-section">
               <div class="proj-brief-label-row">
                 <div class="proj-brief-label">BEHANDELTE THEMEN</div>

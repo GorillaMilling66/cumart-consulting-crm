@@ -2584,6 +2584,118 @@ body {
 }
 .proj-brief-phase-bar-toggle:hover { background: var(--bg); border-color: #3730a3; }
 
+/* v2.14.1: Capture-Stream am Einsatz-Bericht — ein Eingabefeld + Kategorie-
+   Chips, darunter eine chronologische Liste der Einträge. */
+.capture-stream-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.capture-stream-input-row { margin-bottom: 10px; }
+.capture-stream-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+  min-height: 56px;
+  box-sizing: border-box;
+}
+.capture-stream-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+}
+.capture-stream-categories {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.capture-stream-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s ease;
+}
+.capture-stream-chip:hover { background: var(--surface); border-color: var(--primary); }
+.capture-stream-chip.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.capture-stream-post-btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.capture-stream-post-btn:hover { background: #2563eb; }
+.capture-stream-list {
+  display: flex; flex-direction: column; gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.capture-stream-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  position: relative;
+}
+.capture-stream-item-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.capture-stream-item-body { flex: 1; min-width: 0; }
+.capture-stream-item-text {
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.capture-stream-item-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.capture-stream-item-delete {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.capture-stream-item-delete:hover { background: #fee2e2; color: #b91c1c; }
+
 .last-activity-item { display: flex; gap: 12px; align-items: flex-start; padding: 2px 0; }
 .last-activity-date {
   font-size: 12px;
