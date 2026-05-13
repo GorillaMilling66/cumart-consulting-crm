@@ -1,5 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.5 (Time-Filter rechts in der Filter-Leiste der
+   Activity-Streams). Ergänzung zu v2.13.4: neben den
+   bestehenden Entity-Type-Pillen (Alle/Termine/Einsätze/…)
+   gibt es rechts in der Leiste drei zusätzliche Time-Filter-
+   Pillen — „Heute", „Bevorstehend", „Geschehen". Klick filtert
+   den Stream auf die jeweilige Zeit-Sektion; zweiter Klick
+   schaltet ihn wieder aus. State pro Page:
+   `_currentXxxTimeFilter`. Helper `filterCompanyTime`,
+   `filterContactTime`, `filterProjectTime`. Aktive Pille ist
+   amber-akzentuiert wie der „Heute"-Section-Header. Spacer-
+   Element (`.proj-filter-pills-spacer`) trennt die Type- von
+   den Time-Pillen optisch durch flex:1.
    Version 2.13.4 (Heute-Sektion im Activity-Stream + Notiz-
    Kontext-Icons werden Filter-Toggle). Zwei UX-Erweiterungen
    in den Aktivitäten-Tabs von Firma/Kontakt/Projekt:
@@ -1869,6 +1881,12 @@ let _currentCompanyNoteContextFilter = null;
 let _currentContactNoteContextFilter = null;
 let _currentProjectNoteContextFilter = null;
 
+// v2.13.5: Zeit-Filter pro Detail-Page (null | 'heute' | 'bevorstehend' | 'geschehen').
+// Zweiter Klick auf dieselbe Pille schaltet ihn wieder aus.
+let _currentCompanyTimeFilter = null;
+let _currentContactTimeFilter = null;
+let _currentProjectTimeFilter = null;
+
 function toggleNoteContextFilter(entityType, contextKey, inputId, prefix) {
   const stateKey = `_current${entityType[0].toUpperCase()}${entityType.slice(1)}NoteContextFilter`;
   // entityType: 'company' | 'contact' | 'project'
@@ -2005,23 +2023,28 @@ async function deleteNotizFromModal() {
   if (document.getElementById('page-notes')?.classList.contains('active')) loadNotesList();
 }
 
-function renderActivityStreamSections(filtered) {
+function renderActivityStreamSections(filtered, timeFilter) {
   if (filtered.length === 0) {
     return '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
   }
   const { heute, future, past } = _splitActivities(filtered);
   const parts = [];
-  if (heute.length > 0) {
+  const show = (sec) => !timeFilter || timeFilter === sec;
+  if (show('heute') && heute.length > 0) {
     parts.push('<div class="activity-section-header activity-section-header-today">Heute</div>');
     parts.push(heute.map(_activityItemHTML).join(''));
   }
-  if (future.length > 0) {
+  if (show('bevorstehend') && future.length > 0) {
     parts.push('<div class="activity-section-header">Bevorstehend</div>');
     parts.push(future.map(_activityItemHTML).join(''));
   }
-  if (past.length > 0) {
+  if (show('geschehen') && past.length > 0) {
     parts.push('<div class="activity-section-header">Geschehen</div>');
     parts.push(past.map(_activityItemHTML).join(''));
+  }
+  if (parts.length === 0) {
+    const label = timeFilter === 'heute' ? 'heute' : timeFilter === 'bevorstehend' ? 'in der Zukunft' : 'in der Vergangenheit';
+    return `<div class="info-card-empty">Keine Aktivitäten ${label}.</div>`;
   }
   return parts.join('');
 }
@@ -20849,7 +20872,8 @@ async function loadProjectActivityStream(projectId) {
   }
 
   // v2.1.0: Bevorstehend / Geschehen-Sektionen statt linearem Stream
-  wrap.innerHTML = renderActivityStreamSections(filtered);
+  // v2.13.5: Time-Filter (Heute / Bevorstehend / Geschehen) durchreichen.
+  wrap.innerHTML = renderActivityStreamSections(filtered, _currentProjectTimeFilter);
 }
 
 function filterProjectActivity(filter) {
@@ -20859,8 +20883,18 @@ function filterProjectActivity(filter) {
     _currentProjectNoteContextFilter = null;
     document.querySelectorAll('#page-project-detail .proj-note-icons .proj-note-icon').forEach(b => b.classList.remove('is-active'));
   }
-  document.querySelectorAll('.proj-filter-pill').forEach(p => {
+  document.querySelectorAll('#page-project-detail .proj-filter-pill[data-filter]').forEach(p => {
     p.classList.toggle('active', p.dataset.filter === filter);
+  });
+  loadProjectActivityStream(currentProjectDetailId);
+}
+
+// v2.13.5: Time-Filter pro Detail-Page — Heute / Bevorstehend / Geschehen.
+// Zweiter Klick auf die aktive Pille hebt den Filter wieder auf.
+function filterProjectTime(sec) {
+  _currentProjectTimeFilter = (_currentProjectTimeFilter === sec) ? null : sec;
+  document.querySelectorAll('#page-project-detail .proj-filter-pill[data-time-filter]').forEach(p => {
+    p.classList.toggle('active', p.dataset.timeFilter === _currentProjectTimeFilter);
   });
   loadProjectActivityStream(currentProjectDetailId);
 }
@@ -21208,7 +21242,7 @@ async function loadCompanyActivityStream(companyId) {
   }
 
   // v2.1.0: Bevorstehend / Geschehen-Sektionen
-  wrap.innerHTML = renderActivityStreamSections(filtered);
+  wrap.innerHTML = renderActivityStreamSections(filtered, _currentCompanyTimeFilter);
 }
 
 function filterCompanyActivity(filter) {
@@ -21217,8 +21251,15 @@ function filterCompanyActivity(filter) {
     _currentCompanyNoteContextFilter = null;
     document.querySelectorAll('#page-company-detail .proj-note-icons .proj-note-icon').forEach(b => b.classList.remove('is-active'));
   }
-  document.querySelectorAll('#page-company-detail .proj-filter-pill').forEach(p =>
+  document.querySelectorAll('#page-company-detail .proj-filter-pill[data-filter]').forEach(p =>
     p.classList.toggle('active', p.dataset.filter === filter));
+  loadCompanyActivityStream(currentCompanyDetailId);
+}
+
+function filterCompanyTime(sec) {
+  _currentCompanyTimeFilter = (_currentCompanyTimeFilter === sec) ? null : sec;
+  document.querySelectorAll('#page-company-detail .proj-filter-pill[data-time-filter]').forEach(p =>
+    p.classList.toggle('active', p.dataset.timeFilter === _currentCompanyTimeFilter));
   loadCompanyActivityStream(currentCompanyDetailId);
 }
 
@@ -21399,7 +21440,7 @@ async function loadContactActivityStream(contactId) {
   }
 
   // v2.1.0: Bevorstehend / Geschehen-Sektionen
-  wrap.innerHTML = renderActivityStreamSections(filtered);
+  wrap.innerHTML = renderActivityStreamSections(filtered, _currentContactTimeFilter);
 }
 
 function filterContactActivity(filter) {
@@ -21408,8 +21449,15 @@ function filterContactActivity(filter) {
     _currentContactNoteContextFilter = null;
     document.querySelectorAll('#page-contact-detail .proj-note-icons .proj-note-icon').forEach(b => b.classList.remove('is-active'));
   }
-  document.querySelectorAll('#page-contact-detail .proj-filter-pill').forEach(p =>
+  document.querySelectorAll('#page-contact-detail .proj-filter-pill[data-filter]').forEach(p =>
     p.classList.toggle('active', p.dataset.filter === filter));
+  loadContactActivityStream(currentContactDetailId);
+}
+
+function filterContactTime(sec) {
+  _currentContactTimeFilter = (_currentContactTimeFilter === sec) ? null : sec;
+  document.querySelectorAll('#page-contact-detail .proj-filter-pill[data-time-filter]').forEach(p =>
+    p.classList.toggle('active', p.dataset.timeFilter === _currentContactTimeFilter));
   loadContactActivityStream(currentContactDetailId);
 }
 

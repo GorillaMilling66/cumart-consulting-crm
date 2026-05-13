@@ -1803,6 +1803,20 @@ body {
   background: var(--text); color: var(--surface);
   border-color: var(--text); font-weight: 500;
 }
+/* v2.13.5: rechts ausgerichtete Time-Filter (Heute · Bevorstehend · Geschehen) */
+.proj-filter-pills-spacer { flex: 1 1 auto; min-width: 4px; }
+.proj-filter-pill-time {
+  border-style: dashed;
+  color: var(--muted);
+  font-style: normal;
+}
+.proj-filter-pill-time.active {
+  background: #b45309;          /* amber-700, gleich wie Heute-Section-Header */
+  color: #fff;
+  border-style: solid;
+  border-color: #b45309;
+}
+.proj-filter-pill-time.active:hover { background: #92400e; border-color: #92400e; }
 
 /* Schnelleingabe-Typ-Pillen über dem Notiz-Input (v2.0.1, Punkt 7a) */
 .proj-note-types {
