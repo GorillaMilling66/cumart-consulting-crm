@@ -1502,14 +1502,29 @@
                         onblur="saveProjectBriefField('ziel', this.value)"></textarea>
             </div>
 
-            <!-- Themen — von Anfang an sichtbar -->
+            <!-- Themen — von Anfang an sichtbar.
+                 v2.15.1: Quick-Add — Eingabefeld mit Live-Bibliotheks-
+                 Vorschlägen. Enter = projekt-spezifisches Thema; Klick
+                 auf einen Vorschlag = aus Bibliothek übernehmen. -->
             <div class="proj-brief-section" data-min-status="">
               <div class="proj-brief-label-row">
                 <div class="proj-brief-label">THEMEN · Schulungsthemen für das Projekt</div>
-                <div style="display:flex;gap:6px">
-                  <button class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)" title="Mehrere Themen aus der Bibliothek auswählen">+ Aus Bibliothek</button>
-                  <button class="btn btn-sm btn-primary" onclick="openThemeModal('new', null, currentProjectDetailId)">+ Thema</button>
+                <button type="button" class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)" title="Mehrere Themen aus der Bibliothek auswählen">Aus Bibliothek …</button>
+              </div>
+              <div class="theme-quickadd">
+                <div class="theme-quickadd-row">
+                  <input type="text" id="theme-quickadd-input"
+                         class="theme-quickadd-input"
+                         placeholder="Thema eingeben — Vorschläge aus der Bibliothek erscheinen darunter"
+                         autocomplete="off"
+                         oninput="onProjectThemeQuickInput(this.value)"
+                         onkeydown="if(event.key==='Enter'){event.preventDefault();addProjectThemeAdHoc(this.value);}"
+                         onfocus="onProjectThemeQuickInput(this.value)">
+                  <button type="button" class="theme-quickadd-btn"
+                          onclick="addProjectThemeAdHoc(document.getElementById('theme-quickadd-input').value)"
+                          title="Als Projekt-Thema anlegen (oder ⏎)">+</button>
                 </div>
+                <div id="theme-quickadd-suggestions" class="theme-quickadd-suggestions" style="display:none"></div>
               </div>
               <div id="project-themes-banner" style="display:none"></div>
               <div id="project-themes-list">

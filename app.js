@@ -1,5 +1,28 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.15.1 (Themen-Quick-Add — flüssige Themen-Eingabe
+   im Projekt-Planung-Tab. Statt zweier separater „+ Aus
+   Bibliothek" / „+ Thema"-Knöpfe sitzt jetzt ein Eingabefeld
+   ganz oben in der Themen-Sektion. Tippen liefert Live-
+   Vorschläge aus der Bibliothek (Substring-Match, max. 5,
+   bereits genutzte ausgeblendet); Klick auf einen Vorschlag
+   übernimmt das Bibliotheks-Thema mit Snapshot in
+   `project_themes` und `library_theme_id`. Enter (oder das
+   „+"-Symbol rechts neben dem Feld) legt ein projekt-
+   spezifisches Thema ohne `library_theme_id` an. Jede
+   projekt-spezifische Zeile bekommt ein „+ Bibliothek"-
+   Pille-Button, der das Thema in die zentrale Bibliothek
+   heben kann (Dupe-Check via case-insensitive Namens-Match);
+   bibliotheks-basierte Zeilen tragen ein „⇡ Bibliothek"-Badge.
+   Der vorherige Smart-Empty-State mit 5-Checkbox-Vorschlägen
+   ist entfernt — das Eingabefeld ist jetzt der primäre Pfad.
+   JS: onProjectThemeQuickInput, _renderThemeQuickSuggestions,
+   addProjectThemeFromLibrary, addProjectThemeAdHoc,
+   promoteThemeToLibrary, _clearThemeQuickInput. CSS-Klassen:
+   .theme-quickadd (+ -row/-input/-btn/-suggestions),
+   .theme-suggestion-item (+ -body/-name/-cat/-desc),
+   .theme-suggestion-empty, .theme-row-promote, .theme-row-lib-badge.
+   .theme-row-Grid auf 5 Spalten erweitert.
    Version 2.15.0 (Planung / Brief — Werkbank-Trennung am Projekt.
    Der bisherige Brief-Tab am Projekt war halb Formular, halb
    Doku. Jetzt sauber getrennt:
@@ -7234,7 +7257,7 @@ async function loadProjectThemesData(projectId) {
   if (themesCacheByProject[projectId]) return themesCacheByProject[projectId];
 
   const { data: themes, error } = await db.from('project_themes')
-    .select('id, name, beschreibung, status, owner_id, farbe, reihenfolge, owner:user_profiles!project_themes_owner_id_fkey(id, name)')
+    .select('id, name, beschreibung, status, owner_id, farbe, reihenfolge, library_theme_id, owner:user_profiles!project_themes_owner_id_fkey(id, name)')
     .is('deleted_at', null).eq('project_id', projectId)
     .order('reihenfolge').order('name');
   if (error) return [];
@@ -7281,50 +7304,9 @@ async function renderProjectThemes(projectId) {
   }
 
   if (themes.length === 0) {
-    // v2.13.6: Smart Empty State — wenn die Themen-Bibliothek befüllt ist,
-    // zeigen wir die ersten 5 Vorschläge mit Übernahme-Knopf statt nur einen
-    // Hinweistext. Ist die Bibliothek leer, kompakter Hint mit zwei Action-
-    // Links.
-    list.innerHTML = '<div class="info-card-empty" style="padding:14px">Lade Themen-Bibliothek …</div>';
-    const { data: libRows } = await db.from('theme_library')
-      .select('id, name, beschreibung, kategorie')
-      .is('deleted_at', null).eq('ist_aktiv', true)
-      .order('kategorie', { ascending: true, nullsFirst: false })
-      .order('name', { ascending: true })
-      .limit(5);
-    const libSuggestions = libRows || [];
-    if (libSuggestions.length === 0) {
-      list.innerHTML = `
-        <div class="empty-state-card">
-          <div class="empty-state-title">Noch keine Themen — und keine Bibliothek</div>
-          <div class="empty-state-hint">Mit „+ Thema" legst du ein projekt-spezifisches Thema an. Oder du baust eine Bibliothek auf, aus der du in jedem Projekt schöpfen kannst.</div>
-          <div class="empty-state-actions">
-            <button class="btn btn-sm btn-primary" onclick="openThemeModal('new', null, currentProjectDetailId)">+ Erstes Thema</button>
-            <button class="btn btn-sm" onclick="navigateTo('themes')">Themen-Bibliothek öffnen</button>
-          </div>
-        </div>`;
-    } else {
-      list.innerHTML = `
-        <div class="empty-state-card">
-          <div class="empty-state-title">Schnellstart aus deiner Themen-Bibliothek</div>
-          <div class="empty-state-hint">${libSuggestions.length} Vorschläge — alle oder einzelne übernehmen:</div>
-          <div class="empty-state-suggestions">
-            ${libSuggestions.map(t => `
-              <label class="empty-state-suggestion">
-                <input type="checkbox" value="${esc(t.id)}" checked>
-                <div>
-                  <div class="empty-state-suggestion-name">${esc(t.name)}</div>
-                  ${t.kategorie ? `<div class="empty-state-suggestion-meta">${esc(t.kategorie)}</div>` : ''}
-                </div>
-              </label>`).join('')}
-          </div>
-          <div class="empty-state-actions">
-            <button class="btn btn-sm btn-primary" onclick="applyThemeSuggestionsForEmptyState('${esc(projectId)}')">Auswahl übernehmen</button>
-            <button class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)">Mehr aus Bibliothek …</button>
-            <button class="btn btn-sm" onclick="openThemeModal('new', null, currentProjectDetailId)">Eigenes Thema</button>
-          </div>
-        </div>`;
-    }
+    // v2.15.1: Schlanker Empty-State — der Quick-Add-Input sitzt jetzt
+    // direkt darüber und ist der primäre Pfad. Hinweis nur kompakt.
+    list.innerHTML = '<div class="empty-state-mini">Noch keine Themen — tippe oben los, Bibliotheks-Vorschläge erscheinen unterhalb des Felds.</div>';
     return;
   }
 
@@ -7372,6 +7354,13 @@ function renderThemeRow(t, projectId) {
   const einsatzText = t.einsatz_count === 0
     ? 'kein Einsatz'
     : `${t.einsatz_count} Einsa${t.einsatz_count === 1 ? 'tz' : 'tze'}`;
+  // v2.15.1: projekt-spezifisches Thema (kein library_theme_id) bekommt
+  // einen „In Bibliothek übernehmen"-Button am rechten Rand.
+  const isAdHoc = !t.library_theme_id;
+  const promoteBtn = isAdHoc
+    ? `<button type="button" class="theme-row-promote" title="In die Themen-Bibliothek aufnehmen (auch für andere Projekte nutzbar)"
+              onclick="event.stopPropagation();promoteThemeToLibrary('${esc(t.id)}','${esc(projectId)}')">+ Bibliothek</button>`
+    : `<span class="theme-row-lib-badge" title="Aus der Themen-Bibliothek übernommen">⇡ Bibliothek</span>`;
   return `
     <div class="theme-row" onclick="openThemeModal('edit','${esc(t.id)}','${esc(projectId)}')">
       <span class="theme-color-dot" style="background:${esc(farbe)}"></span>
@@ -7379,12 +7368,167 @@ function renderThemeRow(t, projectId) {
         <div class="theme-row-name">${esc(t.name)}</div>
         ${t.beschreibung ? `<div class="theme-row-desc">${esc(t.beschreibung)}</div>` : ''}
       </div>
+      ${promoteBtn}
       <span class="theme-row-status status-${esc(t.status || 'offen')}">${esc(statusLabel)}</span>
       <span class="theme-row-meta">
         ${ownerInitials ? `<span class="theme-row-owner" title="${esc(ownerName)}">${esc(ownerInitials)}</span>` : ''}
         <span class="theme-row-count">${esc(einsatzText)}</span>
       </span>
     </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.15.1 — THEMEN-QUICK-ADD am Projekt
+// ═══════════════════════════════════════════════════════════
+
+let _themeQuickAddDebounce = null;
+
+/** Live-Vorschläge aus der Themen-Bibliothek einblenden — case-insensitive
+ *  Substring-Match auf `name`, max. 5 Treffer. Leere Eingabe ⇒ Vorschläge
+ *  verstecken. */
+function onProjectThemeQuickInput(value) {
+  if (_themeQuickAddDebounce) clearTimeout(_themeQuickAddDebounce);
+  _themeQuickAddDebounce = setTimeout(() => _renderThemeQuickSuggestions(value || ''), 120);
+}
+
+async function _renderThemeQuickSuggestions(value) {
+  const sugBox = document.getElementById('theme-quickadd-suggestions');
+  if (!sugBox) return;
+  const q = (value || '').trim();
+  if (q.length < 1) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
+
+  // Welche library_theme_ids sind im aktuellen Projekt bereits aktiv?
+  const usedLibIds = new Set();
+  if (currentProjectDetailId) {
+    const { data: existing } = await db.from('project_themes')
+      .select('library_theme_id').is('deleted_at', null)
+      .eq('project_id', currentProjectDetailId)
+      .not('library_theme_id', 'is', null);
+    (existing || []).forEach(r => r.library_theme_id && usedLibIds.add(r.library_theme_id));
+  }
+
+  const { data, error } = await db.from('theme_library')
+    .select('id, name, beschreibung, kategorie, farbe')
+    .is('deleted_at', null).eq('ist_aktiv', true)
+    .ilike('name', `%${q}%`)
+    .order('name').limit(8);
+  if (error) { sugBox.innerHTML = `<div class="theme-suggestion-empty">Fehler: ${esc(error.message)}</div>`; sugBox.style.display = ''; return; }
+
+  const hits = (data || []).filter(r => !usedLibIds.has(r.id)).slice(0, 5);
+  if (hits.length === 0) {
+    sugBox.innerHTML = `<div class="theme-suggestion-empty">Kein Bibliotheks-Treffer für „${esc(q)}" — Enter legt es als projekt-spezifisches Thema an.</div>`;
+    sugBox.style.display = '';
+    return;
+  }
+  sugBox.innerHTML = hits.map(r => `
+    <button type="button" class="theme-suggestion-item"
+            onclick="addProjectThemeFromLibrary('${esc(r.id)}')">
+      <span class="theme-color-dot" style="background:${esc(r.farbe || '#1d4ed8')}"></span>
+      <span class="theme-suggestion-body">
+        <span class="theme-suggestion-name">${esc(r.name)}</span>
+        ${r.kategorie ? `<span class="theme-suggestion-cat">${esc(r.kategorie)}</span>` : ''}
+        ${r.beschreibung ? `<span class="theme-suggestion-desc">${esc(r.beschreibung)}</span>` : ''}
+      </span>
+    </button>`).join('');
+  sugBox.style.display = '';
+}
+
+/** v2.15.1: Bibliotheks-Thema auf das aktuelle Projekt anwenden — entspricht
+ *  einem Klick auf einen Vorschlag aus dem Quick-Add-Dropdown. */
+async function addProjectThemeFromLibrary(libraryId) {
+  if (!currentProjectDetailId) return;
+  const { data: lib, error: libErr } = await db.from('theme_library')
+    .select('id, name, beschreibung, farbe').eq('id', libraryId).single();
+  if (libErr || !lib) { showToast(libErr?.message || 'Bibliotheks-Thema nicht gefunden.', true); return; }
+  const { error } = await db.from('project_themes').insert({
+    project_id:       currentProjectDetailId,
+    name:             lib.name,
+    beschreibung:     lib.beschreibung,
+    farbe:            lib.farbe,
+    library_theme_id: lib.id,
+    owner_id:         currentProfile?.id || null,
+    reihenfolge:      100,
+    status:           'offen'
+  });
+  if (error) { showToast(error.message, true); return; }
+  showToast(`„${lib.name}" übernommen.`);
+  _clearThemeQuickInput();
+  invalidateThemesCache?.(currentProjectDetailId);
+  renderProjectThemes(currentProjectDetailId);
+}
+
+/** v2.15.1: Ad-hoc-Thema anlegen — nimmt einfach den Input-Text, legt ein
+ *  projekt-spezifisches `project_themes` ohne `library_theme_id` an. Kann
+ *  später per „+ Bibliothek" promoted werden. */
+async function addProjectThemeAdHoc(value) {
+  if (!currentProjectDetailId) return;
+  const name = (value || '').trim();
+  if (!name) { showToast('Bitte Thema-Namen eingeben.', true); return; }
+  // Doppel-Eingabe: gibt's das Thema schon im Projekt (case-insensitive)? Dann nichts tun.
+  const { data: existing } = await db.from('project_themes')
+    .select('id, name').is('deleted_at', null)
+    .eq('project_id', currentProjectDetailId)
+    .ilike('name', name);
+  if ((existing || []).length > 0) {
+    showToast(`„${name}" gibt es schon im Projekt.`, true);
+    return;
+  }
+  const { error } = await db.from('project_themes').insert({
+    project_id:  currentProjectDetailId,
+    name,
+    owner_id:    currentProfile?.id || null,
+    reihenfolge: 100,
+    status:      'offen'
+  });
+  if (error) { showToast(error.message, true); return; }
+  showToast(`„${name}" angelegt.`);
+  _clearThemeQuickInput();
+  invalidateThemesCache?.(currentProjectDetailId);
+  renderProjectThemes(currentProjectDetailId);
+}
+
+/** v2.15.1: Projekt-spezifisches Thema in die zentrale Bibliothek heben —
+ *  legt eine `theme_library`-Zeile mit denselben Stamm-Daten an und setzt
+ *  `library_theme_id` auf der Projekt-Zeile. Andere Projekte sehen das
+ *  Thema danach als Vorschlag im Quick-Add. */
+async function promoteThemeToLibrary(themeId, projectId) {
+  if (!themeId) return;
+  if (!confirm('Dieses Thema in die zentrale Themen-Bibliothek aufnehmen?\n\nDas Thema bleibt am aktuellen Projekt unverändert — andere Projekte können es danach als Vorschlag übernehmen.')) return;
+  const { data: t, error: tErr } = await db.from('project_themes')
+    .select('id, name, beschreibung, farbe, library_theme_id').eq('id', themeId).single();
+  if (tErr || !t) { showToast(tErr?.message || 'Thema nicht gefunden.', true); return; }
+  if (t.library_theme_id) { showToast('Thema ist bereits aus der Bibliothek.', true); return; }
+
+  // Dupe-Check: gibt's das Thema schon in der Bibliothek?
+  const { data: dupe } = await db.from('theme_library')
+    .select('id, name').is('deleted_at', null).eq('ist_aktiv', true)
+    .ilike('name', t.name).limit(1);
+  let libId;
+  if (dupe && dupe.length > 0) {
+    libId = dupe[0].id;
+  } else {
+    const { data: lib, error: libErr } = await db.from('theme_library').insert({
+      name:         t.name,
+      beschreibung: t.beschreibung,
+      farbe:        t.farbe,
+      ist_aktiv:    true
+    }).select('id').single();
+    if (libErr || !lib) { showToast(libErr?.message || 'Bibliotheks-Anlage fehlgeschlagen.', true); return; }
+    libId = lib.id;
+  }
+  const { error: linkErr } = await db.from('project_themes')
+    .update({ library_theme_id: libId }).eq('id', themeId);
+  if (linkErr) { showToast(linkErr.message, true); return; }
+  showToast(`„${t.name}" ist jetzt in der Bibliothek.`);
+  invalidateThemesCache?.(projectId);
+  renderProjectThemes(projectId);
+}
+
+function _clearThemeQuickInput() {
+  const inp = document.getElementById('theme-quickadd-input');
+  if (inp) inp.value = '';
+  const sug = document.getElementById('theme-quickadd-suggestions');
+  if (sug) { sug.style.display = 'none'; sug.innerHTML = ''; }
 }
 
 /** Öffnet das Theme-Modal — Anlage oder Bearbeiten. */
