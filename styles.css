@@ -1951,10 +1951,20 @@ body {
   padding: 12px 14px;
   font-family: inherit; font-size: 14px; color: var(--text);
   resize: vertical;
-  min-height: 80px;
-  line-height: 1.5;
+  /* v2.13.3: groessere Default-Hoehe + Auto-Grow via field-sizing.
+     Moderne Browser (Chrome 123+, Safari 18+) lassen die Textarea
+     automatisch mit dem Inhalt wachsen; aelteren Browsern bleibt
+     resize:vertical fuer manuelle Anpassung. max-height verhindert
+     dass extrem lange Texte die Seite sprengen. */
+  min-height: 140px;
+  max-height: 640px;
+  field-sizing: content;
+  line-height: 1.55;
 }
-.proj-brief-ziel { font-size: 16px; min-height: 64px; }
+.proj-brief-ziel { font-size: 16px; min-height: 72px; }
+/* v2.13.3: kompakte Variante fuer einzeilige/zweizeilige Felder (z. B. Log-
+   Eintrag). rows="2" wird respektiert, field-sizing waechst trotzdem. */
+.proj-brief-text[rows="2"] { min-height: 64px; }
 .proj-brief-ziel:focus, .proj-brief-text:focus {
   outline: none; border-color: var(--text);
 }

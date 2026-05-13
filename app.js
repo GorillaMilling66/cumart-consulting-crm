@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.3 (Brief-/Bericht-Textareas wachsen mit dem
+   Inhalt + größere Default-Höhe). Die Doku-Felder im Projekt-
+   Brief, Termin-Inhalt und Einsatz-Bericht/Plan/Abrechnung
+   sahen klein und gequetscht aus, weil sie mit min-height
+   80 px starteten und nur per `resize:vertical` manuell
+   gezogen werden konnten — beim Tippen blieb die Höhe gleich,
+   man musste scrollen.
+   Fix in `.proj-brief-text` (CSS): min-height auf 140 px,
+   max-height 640 px als Sicherheits-Deckel, und
+   `field-sizing: content` lässt moderne Browser (Chrome 123+,
+   Safari 18+) die Textarea automatisch mit dem Inhalt
+   wachsen. resize:vertical bleibt als Fallback für ältere
+   Browser. Kompakte Variante für `rows="2"`-Felder (Log-
+   Eintrag): min-height 64 px. Greift auch in der Doku-
+   Sektion des Termin-Inhalt-Tabs und allen Einsatz-Tabs.
    Version 2.13.2 („Anlegen & öffnen"-Button im Projekt-Modal +
    Default-Status „Lead"). Zwei UX-Polish-Punkte zur
    Projekt-Anlage:
