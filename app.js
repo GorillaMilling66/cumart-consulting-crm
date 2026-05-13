@@ -1,5 +1,33 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.15.0 (Planung / Brief — Werkbank-Trennung am Projekt.
+   Der bisherige Brief-Tab am Projekt war halb Formular, halb
+   Doku. Jetzt sauber getrennt:
+   • **Planung-Tab** (umbenannt aus „Vorbereitung") ist die
+     Werkbank: Workflow-Checkliste „project_prepare" oben, dann
+     alle definierenden Felder als Eingabe-Formular — ZIEL,
+     THEMEN, HERAUSFORDERUNGEN (des Kunden), LÖSUNGSANSATZ,
+     ERFOLGSKRITERIEN. Phase-Driven Visibility wie zuvor im
+     Brief: `data-min-status` blendet Sektionen für spätere
+     Phasen aus (bis Inhalt vorhanden).
+   • **Brief-Tab** ist Lese-Dokument: Card-Layout, Hero-Ziel mit
+     großer Typografie, Themen als Pill-Wolke, Herausforderungen
+     /Lösungsansatz 2-spaltig, Erfolgskriterien mit Fortschritts-
+     Balken + Check-Liste, Entwicklungs-Log darunter. Text-Cards
+     sind click-to-edit (Inline-Textarea + ⌘↵ + Escape); Listen-
+     Cards (Themen, Erfolgskriterien) verlinken via „→ Planung".
+   Tab „Plan & Lieferobjekte" → „Termine & Aufgaben" umbenannt,
+   um Namens-Kollision mit „Planung" zu vermeiden.
+   JS: renderProjectPlanTab (ersetzt renderProjectBriefTab),
+   renderProjectBriefView, openProjectBriefInlineEdit,
+   _commitProjectBriefInlineEdit, _cancelProjectBriefInlineEdit,
+   applyProjectPlanPhaseVisibility (ersetzt …BriefPhase…),
+   toggleProjectPlanAllSections, _projectPlanForceShowAll.
+   CSS-Klassen: .brief-card (+ -ziel/-themen/-text/-crits/-log),
+   .brief-card-eyebrow / -head / -empty / -action,
+   .brief-edit-icon, .brief-themen-cloud, .theme-pill-lg,
+   .brief-2col, .brief-crits-bar / -fill, .brief-crits-list /
+   -item / -mark / -text, .brief-inline-edit (+ -area /-actions).
    Version 2.14.3 (Alt-Doku konsolidiert — die drei statischen
    Bericht-Textfelder (WAS WURDE GEMACHT / ERKENNTNISSE &
    ENTWICKLUNG / LOG-EINTRAG) sind aus dem Einsatz-Bericht-Tab
@@ -20893,12 +20921,11 @@ function switchProjectV2Tab(tab) {
   document.querySelectorAll('.proj-tab-panel').forEach(p => {
     p.style.display = p.dataset.tab === tab ? '' : 'none';
   });
-  // Lazy-Render: Brief / Plan-Tabs werden erst beim Anzeigen geladen
-  if (tab === 'brief')   renderProjectBriefTab(currentProjectDetailId);
+  // Lazy-Render
+  if (tab === 'brief')   renderProjectBriefView(currentProjectDetailId);
   if (tab === 'aktivitaeten') loadProjectActivityStream(currentProjectDetailId);
-  if (tab === 'vorbereitung' && currentProjectDetailId) {
-    renderWorkflowChecklist('project_prepare', 'project', currentProjectDetailId,
-      'project-workflow-checklist', 'project-workflow-pill');
+  if (tab === 'planung' && currentProjectDetailId) {
+    renderProjectPlanTab(currentProjectDetailId);
   }
 }
 
@@ -21138,11 +21165,20 @@ async function postProjectQuickInput() {
 }
 
 /** Brief-Tab — Ziel + Erfolgskriterien + Themen + Entwicklungs-Log. */
-async function renderProjectBriefTab(projectId) {
+/** v2.15.0: Planung-Tab — die „Werkbank". Workflow-Checkliste + alle
+ *  Brief-Felder als Eingabe-Formular. Vorher hieß die Funktion
+ *  `renderProjectBriefTab`; die Felder leben jetzt im Planung-Tab,
+ *  weil der Brief zur Lese-Sicht wird. */
+async function renderProjectPlanTab(projectId) {
   if (!projectId) return;
-  // v2.13.7: status mitlesen für die Phasen-Sichtbarkeit
-  const { data: p } = await db.from('projects').select('id, status, dokumentation').eq('id', projectId).single();
+  // status + dokumentation für Phasen-Sichtbarkeit und Feld-Werte
+  const { data: p } = await db.from('projects')
+    .select('id, status, dokumentation, workflow_state, workflow_steps').eq('id', projectId).single();
   const dok = p?.dokumentation || {};
+
+  // Workflow-Checkliste (oben)
+  renderWorkflowChecklist('project_prepare', 'project', projectId,
+    'project-workflow-checklist', 'project-workflow-pill', p?.workflow_state, p?.workflow_steps);
 
   const setField = (id, val) => {
     const el = document.getElementById(id);
@@ -21154,11 +21190,9 @@ async function renderProjectBriefTab(projectId) {
 
   await renderProjectSuccessCriteria(projectId);
   await renderProjectThemes(projectId);
-  await renderProjectDevelopmentLog(projectId);
 
-  // v2.13.7: Phasen-Sichtbarkeit anwenden (Felder, deren min-status > aktueller
-  // Status und die leer sind, werden ausgeblendet).
-  applyProjectBriefPhaseVisibility(p?.status || 'Lead');
+  // Phasen-Sichtbarkeit anwenden — jetzt im Planung-Panel
+  applyProjectPlanPhaseVisibility(p?.status || 'Lead');
 }
 
 // v2.13.7: Phasen-Rangfolge für die Sichtbarkeit der Brief-Sektionen.
@@ -21171,7 +21205,7 @@ const _PROJEKT_PHASE_RANG = {
   'Abschlussphase': 40, 'Abgeschlossen': 50, 'Verloren': 50
 };
 
-let _projectBriefForceShowAll = false;
+let _projectPlanForceShowAll = false;
 
 function _projektPhaseHasContent(section) {
   // Hat irgendein <textarea> / <input> / <li> Inhalt?
@@ -21185,8 +21219,12 @@ function _projektPhaseHasContent(section) {
   return false;
 }
 
-function applyProjectBriefPhaseVisibility(currentStatus) {
-  const panel = document.getElementById('project-panel-brief');
+/** v2.15.0: Phasen-Sichtbarkeit für das Planung-Panel (vorher Brief-Panel —
+ *  umbenannt, weil die Edit-UI jetzt unter „Planung" sitzt). Sektionen mit
+ *  `data-min-status` werden ausgeblendet, wenn der Projekt-Status noch nicht
+ *  in der Phase ist UND das Feld leer ist. */
+function applyProjectPlanPhaseVisibility(currentStatus) {
+  const panel = document.getElementById('project-panel-planung');
   if (!panel) return;
   const currentRang = _PROJEKT_PHASE_RANG[currentStatus] || 10;
   const sections = panel.querySelectorAll('[data-min-status]');
@@ -21197,22 +21235,21 @@ function applyProjectBriefPhaseVisibility(currentStatus) {
     const minRang = _PROJEKT_PHASE_RANG[minStatus] || 10;
     const isReached = currentRang >= minRang;
     const hasContent = _projektPhaseHasContent(sec);
-    const visible = _projectBriefForceShowAll || isReached || hasContent;
+    const visible = _projectPlanForceShowAll || isReached || hasContent;
     sec.style.display = visible ? '' : 'none';
     if (!visible) hiddenCount++;
   });
 
   // Phasen-Bar oben: Hinweis + Toggle „Alle anzeigen"
-  const bar = document.getElementById('project-brief-phase-bar');
-  const lbl = document.getElementById('project-brief-phase-bar-label');
-  const tgl = document.getElementById('project-brief-phase-bar-toggle');
+  const bar = document.getElementById('project-plan-phase-bar');
+  const lbl = document.getElementById('project-plan-phase-bar-label');
+  const tgl = document.getElementById('project-plan-phase-bar-toggle');
   if (bar && lbl && tgl) {
-    if (hiddenCount > 0 && !_projectBriefForceShowAll) {
+    if (hiddenCount > 0 && !_projectPlanForceShowAll) {
       bar.style.display = '';
       lbl.textContent = `Phase „${currentStatus}" — ${hiddenCount} Sektion${hiddenCount === 1 ? '' : 'en'} sind für spätere Phasen versteckt.`;
       tgl.textContent = 'Alle Sektionen zeigen';
-    } else if (_projectBriefForceShowAll && hiddenCount === 0) {
-      // Show-All ist aktiv und es gibt was Verstecktes (sonst kein Toggle nötig)
+    } else if (_projectPlanForceShowAll && hiddenCount === 0) {
       bar.style.display = '';
       lbl.textContent = `Phase „${currentStatus}" — alle Sektionen sichtbar (auch zukünftige).`;
       tgl.textContent = 'Auf Phase reduzieren';
@@ -21222,12 +21259,11 @@ function applyProjectBriefPhaseVisibility(currentStatus) {
   }
 }
 
-function toggleProjectBriefAllSections() {
-  _projectBriefForceShowAll = !_projectBriefForceShowAll;
-  // Re-Render-Trigger: status neu holen + apply
+function toggleProjectPlanAllSections() {
+  _projectPlanForceShowAll = !_projectPlanForceShowAll;
   if (currentProjectDetailId) {
     db.from('projects').select('status').eq('id', currentProjectDetailId).single()
-      .then(({ data }) => applyProjectBriefPhaseVisibility(data?.status || 'Lead'));
+      .then(({ data }) => applyProjectPlanPhaseVisibility(data?.status || 'Lead'));
   }
 }
 
@@ -21239,6 +21275,207 @@ async function saveProjectBriefField(key, value) {
   if (key === 'ziel') dok.kundenherausforderung = value || '';
   else dok[key] = value || '';
   await db.from('projects').update({ dokumentation: dok }).eq('id', currentProjectDetailId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.15.0 — BRIEF als Lese-Dokument (Card-Layout)
+// ═══════════════════════════════════════════════════════════
+
+/** v2.15.0: Brief-Tab rendert die gleichen Felder wie der Planung-Tab,
+ *  aber als poliertes Lese-Dokument (Card-Layout, Hero-Ziel, Themen als
+ *  Pill-Wolke, Erfolgskriterien mit Fortschritt, Herausforderungen/
+ *  Lösungsansatz nebeneinander, Entwicklungs-Log am Ende). Jede Card
+ *  ist click-to-edit: Klick öffnet einen Inline-Editor (Textarea +
+ *  Speichern/Abbrechen). Listen-Cards (Themen, Erfolgskriterien) haben
+ *  einen „→ Planung"-Button, weil die volle CRUD-UI da sitzt.
+ *  Phasen-Sichtbarkeit: Sektionen für spätere Phasen werden
+ *  ausgeblendet, wenn sie leer sind (gleiche Logik wie Planung). */
+async function renderProjectBriefView(projectId) {
+  const wrap = document.getElementById('project-brief-view');
+  if (!wrap || !projectId) return;
+
+  // 1) Projekt-Daten + alle Listen parallel laden
+  const [{ data: p }, themesResp, critsResp] = await Promise.all([
+    db.from('projects').select('id, name, status, dokumentation').eq('id', projectId).single(),
+    db.from('project_themes').select('id, name, farbe, beschreibung')
+      .is('deleted_at', null).eq('project_id', projectId)
+      .order('reihenfolge').order('created_at'),
+    db.from('project_success_criteria').select('id, text, ist_erreicht')
+      .is('deleted_at', null).eq('project_id', projectId)
+      .order('reihenfolge').order('created_at')
+  ]);
+
+  const dok = p?.dokumentation || {};
+  const status = p?.status || 'Lead';
+  const ziel = dok.kundenherausforderung || dok.ziel || '';
+  const herausforderungen = dok.herausforderungen || '';
+  const loesungsansatz    = dok.loesungsansatz || '';
+  const themes = themesResp.data || [];
+  const crits  = critsResp.data || [];
+  const critsDone  = crits.filter(c => c.ist_erreicht).length;
+  const critsTotal = crits.length;
+
+  const phaseRang = _PROJEKT_PHASE_RANG[status] || 10;
+  const showFromAngebot   = phaseRang >= _PROJEKT_PHASE_RANG['Angebot']   || herausforderungen.trim() || loesungsansatz.trim();
+  const showFromInArbeit  = phaseRang >= _PROJEKT_PHASE_RANG['In Arbeit'] || critsTotal > 0;
+
+  // Hilfs-Markups
+  const editIcon = '<span class="brief-edit-icon" title="Klicken zum Bearbeiten">✎</span>';
+  const goToPlan = `<button type="button" class="brief-card-action" onclick="switchProjectV2Tab('planung')" title="In Planung bearbeiten">→ Planung</button>`;
+
+  // ─── Karten zusammensetzen ────────────────────────────────────────
+  const cards = [];
+
+  // ZIEL — Hero-Statement (klick = inline-edit)
+  cards.push(`
+    <div class="brief-card brief-card-ziel ${ziel ? '' : 'is-empty'}"
+         data-field="ziel" onclick="openProjectBriefInlineEdit('ziel', this)">
+      <div class="brief-card-eyebrow">ZIEL</div>
+      <div class="brief-card-ziel-text">${ziel ? esc(ziel) : 'Noch kein Ziel definiert — Klick öffnet den Editor.'}</div>
+      ${editIcon}
+    </div>`);
+
+  // THEMEN — Pill-Wolke
+  cards.push(`
+    <div class="brief-card brief-card-themen">
+      <div class="brief-card-head">
+        <div class="brief-card-eyebrow">THEMEN · Schulungsthemen</div>
+        ${goToPlan}
+      </div>
+      ${themes.length === 0
+        ? '<div class="brief-card-empty">Noch keine Themen — in Planung definieren.</div>'
+        : `<div class="brief-themen-cloud">${themes.map(t =>
+            `<span class="theme-pill theme-pill-lg" style="background:${esc(t.farbe || '#E6F1FB')}"
+                   title="${esc(t.beschreibung || '')}">${esc(t.name)}</span>`).join('')}</div>`}
+    </div>`);
+
+  // HERAUSFORDERUNGEN + LÖSUNGSANSATZ (2-spaltig, ab „Angebot")
+  if (showFromAngebot) {
+    cards.push(`
+      <div class="brief-2col">
+        <div class="brief-card brief-card-text ${herausforderungen ? '' : 'is-empty'}"
+             data-field="herausforderungen" onclick="openProjectBriefInlineEdit('herausforderungen', this)">
+          <div class="brief-card-eyebrow">HERAUSFORDERUNGEN · des Kunden</div>
+          <div class="brief-card-text-body">${herausforderungen
+            ? esc(herausforderungen).replace(/\n/g, '<br>')
+            : 'Noch keine Herausforderungen notiert.'}</div>
+          ${editIcon}
+        </div>
+        <div class="brief-card brief-card-text ${loesungsansatz ? '' : 'is-empty'}"
+             data-field="loesungsansatz" onclick="openProjectBriefInlineEdit('loesungsansatz', this)">
+          <div class="brief-card-eyebrow">LÖSUNGSANSATZ</div>
+          <div class="brief-card-text-body">${loesungsansatz
+            ? esc(loesungsansatz).replace(/\n/g, '<br>')
+            : 'Noch kein Lösungsansatz formuliert.'}</div>
+          ${editIcon}
+        </div>
+      </div>`);
+  }
+
+  // ERFOLGSKRITERIEN — Fortschritt + Liste (ab „In Arbeit")
+  if (showFromInArbeit) {
+    const pct = critsTotal === 0 ? 0 : Math.round(critsDone / critsTotal * 100);
+    cards.push(`
+      <div class="brief-card brief-card-crits">
+        <div class="brief-card-head">
+          <div class="brief-card-eyebrow">ERFOLGSKRITERIEN${critsTotal ? ` · ${critsDone} / ${critsTotal} erreicht` : ''}</div>
+          ${goToPlan}
+        </div>
+        ${critsTotal === 0
+          ? '<div class="brief-card-empty">Noch keine Kriterien — in Planung definieren.</div>'
+          : `<div class="brief-crits-bar"><div class="brief-crits-bar-fill" style="width:${pct}%"></div></div>
+             <ul class="brief-crits-list">
+               ${crits.map(c => `
+                 <li class="brief-crits-item ${c.ist_erreicht ? 'is-done' : ''}">
+                   <span class="brief-crits-mark">${c.ist_erreicht ? '✓' : '○'}</span>
+                   <span class="brief-crits-text">${esc(c.text || '')}</span>
+                 </li>`).join('')}
+             </ul>`}
+      </div>`);
+  }
+
+  // ENTWICKLUNGS-LOG — Container, dann renderProjectDevelopmentLog
+  if (showFromInArbeit) {
+    cards.push(`
+      <div class="brief-card brief-card-log">
+        <div class="brief-card-eyebrow">ENTWICKLUNGS-LOG · automatisch aus Einsätzen</div>
+        <div id="project-development-log">
+          <div class="empty-state-mini">Lade …</div>
+        </div>
+      </div>`);
+  }
+
+  wrap.innerHTML = cards.join('');
+
+  // Entwicklungs-Log nachladen (Container existiert jetzt)
+  if (showFromInArbeit) await renderProjectDevelopmentLog(projectId);
+}
+
+/** v2.15.0: Inline-Edit aus dem Brief-Lese-Dokument — klick auf eine
+ *  Card öffnet einen leichten Editor (Textarea) direkt an Ort und Stelle.
+ *  Speichern via Speichern-Button oder ⌘↵ / Strg↵. Schließen ohne
+ *  Änderungen über „Abbrechen" oder Escape. */
+function openProjectBriefInlineEdit(field, cardEl) {
+  if (!cardEl || cardEl.classList.contains('is-editing')) return;
+  // Aktuelle Werte aus dem DOM holen (Single-Source-of-Truth bleibt die DB,
+  // aber das DOM ist nach renderProjectBriefView synchron)
+  const current = (cardEl.querySelector('.brief-card-ziel-text, .brief-card-text-body')?.innerText || '').trim();
+  const placeholder = ({
+    ziel:               'Was soll dieses Projekt erreichen? (Ein bis zwei Sätze)',
+    herausforderungen:  'Bekannte Hürden, Risiken, offene Punkte',
+    loesungsansatz:     'Wie gehen wir\'s an? Welche Methodik?'
+  })[field] || '';
+
+  // Stelle den vorhandenen Inhalt sicher: wenn Card im is-empty-State war
+  // ist die innerText die Placeholder-Zeile — die wollen wir nicht im Editor.
+  const initial = cardEl.classList.contains('is-empty') ? '' : current;
+
+  cardEl.classList.add('is-editing');
+  const editorId = `brief-inline-${field}`;
+  const editorHTML = `
+    <div class="brief-inline-edit">
+      <textarea id="${editorId}" class="brief-inline-edit-area"
+                placeholder="${esc(placeholder)}"
+                rows="3">${esc(initial)}</textarea>
+      <div class="brief-inline-edit-actions">
+        <button type="button" class="btn btn-sm btn-primary"
+                onclick="event.stopPropagation();_commitProjectBriefInlineEdit('${esc(field)}', this)">Speichern · ⌘↵</button>
+        <button type="button" class="btn btn-sm"
+                onclick="event.stopPropagation();_cancelProjectBriefInlineEdit(this)">Abbrechen</button>
+      </div>
+    </div>`;
+  // Ersetze nur die Text-Zelle, nicht die ganze Card (sonst geht das edit-Icon verloren)
+  const textCell = cardEl.querySelector('.brief-card-ziel-text, .brief-card-text-body');
+  if (textCell) textCell.outerHTML = editorHTML;
+  const ta = document.getElementById(editorId);
+  if (ta) {
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    ta.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); _cancelProjectBriefInlineEdit(ta); }
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+        ev.preventDefault();
+        _commitProjectBriefInlineEdit(field, ta);
+      }
+    });
+  }
+}
+
+async function _commitProjectBriefInlineEdit(field, originEl) {
+  const card = originEl.closest('.brief-card');
+  if (!card) return;
+  const ta = card.querySelector('.brief-inline-edit-area');
+  const newValue = (ta?.value || '').trim();
+  await saveProjectBriefField(field, newValue);
+  // Brief-Tab neu rendern (zeigt jetzt den neuen Wert sauber an)
+  await renderProjectBriefView(currentProjectDetailId);
+  // Falls Planung-Tab im Hintergrund offen ist: Felder ziehen den Wert beim
+  // nächsten Tab-Wechsel via Lazy-Render automatisch nach.
+}
+
+function _cancelProjectBriefInlineEdit(originEl) {
+  // Komplettes Re-Render — kommt vom DB-Stand, ohne dass wir Diffs tracken
+  renderProjectBriefView(currentProjectDetailId);
 }
 
 /** Erfolgskriterien — Checkbox-Liste mit eigener Tabelle. */

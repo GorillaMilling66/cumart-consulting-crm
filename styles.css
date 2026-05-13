@@ -2007,6 +2007,153 @@ body {
 }
 @media (max-width: 800px) { .proj-brief-2col { grid-template-columns: 1fr; } }
 
+/* v2.15.0: Brief als Lese-Dokument — Card-Layout, click-to-edit auf
+   Text-Karten, Listen-Karten verlinken in den Planung-Tab. */
+.brief-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+.brief-card:last-child { margin-bottom: 0; }
+.brief-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.brief-card-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.brief-card-head .brief-card-eyebrow { margin-bottom: 0; }
+.brief-card-empty {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+.brief-card-action {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+}
+.brief-card-action:hover { background: var(--bg); border-color: var(--primary); }
+.brief-edit-icon {
+  position: absolute;
+  top: 12px; right: 14px;
+  font-size: 14px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.brief-card[data-field]:hover { cursor: pointer; border-color: var(--primary); }
+.brief-card[data-field]:hover .brief-edit-icon { opacity: 1; }
+.brief-card.is-empty .brief-card-ziel-text,
+.brief-card.is-empty .brief-card-text-body { color: var(--muted); font-style: italic; }
+.brief-card.is-editing { border-color: var(--primary); cursor: default; }
+.brief-card.is-editing .brief-edit-icon { opacity: 0; }
+
+/* Hero-Ziel */
+.brief-card-ziel { padding: 28px 28px 24px; }
+.brief-card-ziel-text {
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* Themen-Wolke */
+.brief-themen-cloud {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.theme-pill-lg {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+/* 2-Spalten-Layout im Brief (Herausforderungen / Lösungsansatz) */
+.brief-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.brief-2col .brief-card { margin-bottom: 0; }
+@media (max-width: 800px) { .brief-2col { grid-template-columns: 1fr; } }
+
+.brief-card-text-body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* Erfolgskriterien — Fortschrittsbalken + Liste */
+.brief-crits-bar {
+  height: 6px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.brief-crits-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #059669);
+  transition: width .3s ease;
+}
+.brief-crits-list { list-style: none; padding: 0; margin: 0; }
+.brief-crits-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0;
+  font-size: 14px;
+  color: var(--text);
+}
+.brief-crits-mark {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  width: 16px; text-align: center;
+}
+.brief-crits-item.is-done .brief-crits-mark { color: #059669; }
+.brief-crits-item.is-done .brief-crits-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* Inline-Edit aus dem Brief heraus */
+.brief-inline-edit { display: flex; flex-direction: column; gap: 8px; }
+.brief-inline-edit-area {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+.brief-inline-edit-area:focus { outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+.brief-inline-edit-actions { display: flex; gap: 6px; }
+
 /* Erfolgskriterien */
 .proj-criterion {
   display: flex; align-items: center; gap: 10px;

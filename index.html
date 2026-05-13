@@ -1436,10 +1436,10 @@
       <!-- Tabs -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten"     onclick="switchProjectV2Tab('aktivitaeten')">Aktivitäten</button>
-        <button class="proj-tab"        data-tab="vorbereitung"     onclick="switchProjectV2Tab('vorbereitung')">Vorbereitung</button>
+        <button class="proj-tab"        data-tab="planung"          onclick="switchProjectV2Tab('planung')">Planung</button>
         <button class="proj-tab"        data-tab="brief"            onclick="switchProjectV2Tab('brief')">Brief</button>
         <button class="proj-tab"        data-tab="wirtschaftlichkeit" onclick="switchProjectV2Tab('wirtschaftlichkeit')">Wirtschaftlichkeit</button>
-        <button class="proj-tab"        data-tab="plan"             onclick="switchProjectV2Tab('plan')">Plan &amp; Lieferobjekte</button>
+        <button class="proj-tab"        data-tab="plan"             onclick="switchProjectV2Tab('plan')">Termine &amp; Aufgaben</button>
       </div>
 
       <div class="proj-grid">
@@ -1480,19 +1480,19 @@
             </div>
           </div>
 
-          <!-- v2.0.3: Vorbereitung-Tab (Punkt 9) -->
-          <div class="proj-tab-panel" data-tab="vorbereitung" id="project-panel-vorbereitung" style="display:none">
-            <div id="project-workflow-checklist"><div class="info-card-empty">Lade Checkliste …</div></div>
-          </div>
-
-          <!-- Brief-Tab -->
-          <div class="proj-tab-panel" data-tab="brief" id="project-panel-brief" style="display:none">
-            <!-- v2.13.7: Phasen-Hinweis + Expand-All-Toggle. Wird dynamisch befüllt. -->
-            <div class="proj-brief-phase-bar" id="project-brief-phase-bar" style="display:none">
-              <span class="proj-brief-phase-bar-label" id="project-brief-phase-bar-label"></span>
-              <button type="button" class="proj-brief-phase-bar-toggle" id="project-brief-phase-bar-toggle"
-                      onclick="toggleProjectBriefAllSections()">Alle Sektionen zeigen</button>
+          <!-- v2.15.0: Planung-Tab — die „Werkbank" zum Definieren des Projekts.
+               Workflow-Checkliste + alle Brief-Felder als Eingabe-Formular.
+               Inhalte fließen 1:1 in den Brief-Tab als Lese-Dokument. -->
+          <div class="proj-tab-panel" data-tab="planung" id="project-panel-planung" style="display:none">
+            <!-- Phasen-Hinweis + Expand-All-Toggle (gleiche Logik wie früher im Brief) -->
+            <div class="proj-brief-phase-bar" id="project-plan-phase-bar" style="display:none">
+              <span class="proj-brief-phase-bar-label" id="project-plan-phase-bar-label"></span>
+              <button type="button" class="proj-brief-phase-bar-toggle" id="project-plan-phase-bar-toggle"
+                      onclick="toggleProjectPlanAllSections()">Alle Sektionen zeigen</button>
             </div>
+
+            <!-- Workflow-Checkliste „project_prepare" -->
+            <div id="project-workflow-checklist" style="margin-bottom:20px"><div class="info-card-empty">Lade Checkliste …</div></div>
 
             <!-- Ziel -->
             <div class="proj-brief-section" data-min-status="">
@@ -1502,13 +1502,17 @@
                         onblur="saveProjectBriefField('ziel', this.value)"></textarea>
             </div>
 
-            <!-- Erfolgskriterien (Checkboxen) — ab „In Arbeit" -->
-            <div class="proj-brief-section" data-min-status="In Arbeit">
+            <!-- Themen — von Anfang an sichtbar -->
+            <div class="proj-brief-section" data-min-status="">
               <div class="proj-brief-label-row">
-                <div class="proj-brief-label">ERFOLGSKRITERIEN</div>
-                <button class="btn btn-sm" onclick="addProjectSuccessCriterion()">+ Kriterium</button>
+                <div class="proj-brief-label">THEMEN · Schulungsthemen für das Projekt</div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)" title="Mehrere Themen aus der Bibliothek auswählen">+ Aus Bibliothek</button>
+                  <button class="btn btn-sm btn-primary" onclick="openThemeModal('new', null, currentProjectDetailId)">+ Thema</button>
+                </div>
               </div>
-              <div id="project-success-criteria">
+              <div id="project-themes-banner" style="display:none"></div>
+              <div id="project-themes-list">
                 <div class="info-card-empty">Lade …</div>
               </div>
             </div>
@@ -1516,7 +1520,7 @@
             <!-- 2-Spalten: Herausforderungen + Lösungsansatz — ab „Angebot" -->
             <div class="proj-brief-2col" data-min-status="Angebot">
               <div class="proj-brief-section">
-                <div class="proj-brief-label">HERAUSFORDERUNGEN</div>
+                <div class="proj-brief-label">HERAUSFORDERUNGEN · des Kunden</div>
                 <textarea class="proj-brief-text" id="project-brief-herausforderungen"
                           placeholder="Bekannte Hürden, Risiken, offene Punkte"
                           onblur="saveProjectBriefField('herausforderungen', this.value)"></textarea>
@@ -1529,28 +1533,23 @@
               </div>
             </div>
 
-            <!-- Themen (existing v1.53) — von Anfang an sichtbar -->
-            <div class="proj-brief-section" data-min-status="">
+            <!-- Erfolgskriterien (Checkboxen) — ab „In Arbeit" -->
+            <div class="proj-brief-section" data-min-status="In Arbeit">
               <div class="proj-brief-label-row">
-                <div class="proj-brief-label">THEMEN</div>
-                <div style="display:flex;gap:6px">
-                  <button class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)" title="Mehrere Themen aus der Bibliothek auswählen">+ Aus Bibliothek</button>
-                  <button class="btn btn-sm btn-primary" onclick="openThemeModal('new', null, currentProjectDetailId)">+ Thema</button>
-                </div>
+                <div class="proj-brief-label">ERFOLGSKRITERIEN</div>
+                <button class="btn btn-sm" onclick="addProjectSuccessCriterion()">+ Kriterium</button>
               </div>
-              <div id="project-themes-banner" style="display:none"></div>
-              <div id="project-themes-list">
+              <div id="project-success-criteria">
                 <div class="info-card-empty">Lade …</div>
               </div>
             </div>
+          </div>
 
-            <!-- Entwicklungs-Log — ab „In Arbeit" (vorher gibt's keine Einsätze) -->
-            <div class="proj-brief-section" data-min-status="In Arbeit">
-              <div class="proj-brief-label">ENTWICKLUNGS-LOG · automatisch aus Einsatzberichten</div>
-              <div id="project-development-log">
-                <div class="info-card-empty">Wird automatisch aus Log-Einträgen der Einsätze gefüllt.</div>
-              </div>
-            </div>
+          <!-- v2.15.0: Brief-Tab — Lese-Dokument. Wird dynamisch durch
+               renderProjectBriefView befüllt. Inline-Edit über Click auf
+               Sektion → öffnet einen Modal-Editor oder springt nach Planung. -->
+          <div class="proj-tab-panel" data-tab="brief" id="project-panel-brief" style="display:none">
+            <div id="project-brief-view"><div class="info-card-empty">Lade Brief …</div></div>
           </div>
 
           <!-- Wirtschaftlichkeit-Tab -->
