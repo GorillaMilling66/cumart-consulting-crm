@@ -1849,6 +1849,18 @@ body {
   transform: scale(1.05);
 }
 .proj-note-icon:active { transform: scale(0.95); }
+/* v2.13.4: aktiver Filter-Zustand — dunkel, klar als „Filter an" sichtbar */
+.proj-note-icon.is-active {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--surface);
+  transform: scale(1.05);
+}
+.proj-note-icon.is-active:hover {
+  background: #000;
+  border-color: #000;
+  transform: scale(1.08);
+}
 
 .proj-note-input {
   display: grid;
@@ -1910,6 +1922,11 @@ body {
   border-bottom: 0.5px solid var(--border);
 }
 .activity-section-header:first-child { margin-top: 0; padding-top: 6px; }
+/* v2.13.4: Heute-Section visuell hervorheben (orange Accent) */
+.activity-section-header-today {
+  color: #b45309;
+  border-bottom-color: #fcd34d;
+}
 .proj-activity-date {
   font-size: 11px; color: var(--muted);
   font-variant-numeric: tabular-nums;

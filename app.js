@@ -1,5 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.4 (Heute-Sektion im Activity-Stream + Notiz-
+   Kontext-Icons werden Filter-Toggle). Zwei UX-Erweiterungen
+   in den Aktivitäten-Tabs von Firma/Kontakt/Projekt:
+   1) `_splitActivities` liefert jetzt drei Gruppen — heute,
+      future (ab morgen), past. `renderActivityStreamSections`
+      zeigt entsprechend „Heute" (orange Header) vor
+      „Bevorstehend" und „Geschehen". Items mit Datum = heute
+      landen in der Heute-Sektion statt in Bevorstehend.
+   2) Die Kontext-Icons (📞 Call · ✉️ Mail · 🤝 Meeting · 💬
+      Chat) sind jetzt zugleich Filter-Toggles: Klick aktiviert
+      einen Sub-Filter, der den Stream auf Notizen mit
+      entsprechendem Präfix einschränkt (Top-Filter springt
+      automatisch auf „Notizen"). Aktive Icons sind dunkel
+      hervorgehoben; zweiter Klick schaltet den Filter aus.
+      Wechselt der User den Top-Filter auf etwas anderes als
+      „Notizen", wird der Sub-Filter automatisch entfernt.
+      State pro Page: `_currentCompanyNoteContextFilter`,
+      `_currentContactNoteContextFilter`,
+      `_currentProjectNoteContextFilter`. Neuer Helper
+      `toggleNoteContextFilter(entityType, contextKey, …)`.
    Version 2.13.3 (Brief-/Bericht-Textareas wachsen mit dem
    Inhalt + größere Default-Höhe). Die Doku-Felder im Projekt-
    Brief, Termin-Inhalt und Einsatz-Bericht/Plan/Abrechnung
@@ -1842,20 +1862,61 @@ function setNoteContext(inputId, prefix) {
   if (typeof input.setSelectionRange === 'function') input.setSelectionRange(len, len);
 }
 
+// v2.13.4: Note-Icons doppelte Funktion — Prefix setzen UND Activity-Stream
+// auf Notizen mit diesem Prefix filtern. Zweiter Klick auf dasselbe Icon
+// hebt den Filter wieder auf.
+let _currentCompanyNoteContextFilter = null;
+let _currentContactNoteContextFilter = null;
+let _currentProjectNoteContextFilter = null;
+
+function toggleNoteContextFilter(entityType, contextKey, inputId, prefix) {
+  const stateKey = `_current${entityType[0].toUpperCase()}${entityType.slice(1)}NoteContextFilter`;
+  // entityType: 'company' | 'contact' | 'project'
+  const currentValue = (entityType === 'company') ? _currentCompanyNoteContextFilter
+                     : (entityType === 'contact') ? _currentContactNoteContextFilter
+                     : _currentProjectNoteContextFilter;
+  const newValue = (currentValue === contextKey) ? null : contextKey;
+
+  if (entityType === 'company') _currentCompanyNoteContextFilter = newValue;
+  else if (entityType === 'contact') _currentContactNoteContextFilter = newValue;
+  else _currentProjectNoteContextFilter = newValue;
+
+  // Visual mark: aktiver Icon-Button bekommt .is-active
+  const iconRow = document.getElementById(inputId)?.closest('.proj-activity-pane')?.querySelector('.proj-note-icons')
+              || document.querySelector(`#${entityType}-panel-aktivitaeten .proj-note-icons`);
+  if (iconRow) {
+    iconRow.querySelectorAll('.proj-note-icon').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.contextKey === newValue);
+    });
+  }
+
+  // Prefix nur setzen, wenn Filter aktiviert wird (nicht beim Deaktivieren)
+  if (newValue) setNoteContext(inputId, prefix);
+
+  // Wenn Filter aktiv: Top-Filter auch auf „Notizen" setzen, sonst zurück auf „Alle".
+  const targetTopFilter = newValue ? 'notizen' : 'alle';
+  if (entityType === 'company')      filterCompanyActivity(targetTopFilter);
+  else if (entityType === 'contact') filterContactActivity(targetTopFilter);
+  else                                filterProjectActivity(targetTopFilter);
+}
+
 // v2.1.0 — Activity-Stream in "Bevorstehend" + "Geschehen" splitten.
 // Bevorstehend: alle items mit ts >= heute, aufsteigend (nächstes oben).
 // Geschehen: alle items mit ts < heute (oder ohne ts), absteigend (neuestes oben).
 function _splitActivities(items) {
   const today = toISODate(new Date());
-  const future = [], past = [];
+  const heute = [], future = [], past = [];
   items.forEach(it => {
     const itDate = (it.ts || '').substring(0, 10);
-    if (itDate && itDate >= today) future.push(it);
-    else past.push(it);
+    if (!itDate) { past.push(it); return; }
+    if (itDate === today)      heute.push(it);
+    else if (itDate > today)   future.push(it);
+    else                       past.push(it);
   });
+  heute.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
   future.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
   past.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  return { future, past };
+  return { heute, future, past };
 }
 
 function _activityItemHTML(it) {
@@ -1948,8 +2009,12 @@ function renderActivityStreamSections(filtered) {
   if (filtered.length === 0) {
     return '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
   }
-  const { future, past } = _splitActivities(filtered);
+  const { heute, future, past } = _splitActivities(filtered);
   const parts = [];
+  if (heute.length > 0) {
+    parts.push('<div class="activity-section-header activity-section-header-today">Heute</div>');
+    parts.push(heute.map(_activityItemHTML).join(''));
+  }
   if (future.length > 0) {
     parts.push('<div class="activity-section-header">Bevorstehend</div>');
     parts.push(future.map(_activityItemHTML).join(''));
@@ -20774,9 +20839,14 @@ async function loadProjectActivityStream(projectId) {
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
 
   // Filter anwenden
-  const filtered = _currentProjectActivityFilter === 'alle'
+  let filtered = _currentProjectActivityFilter === 'alle'
     ? items
     : items.filter(i => i.kind === _currentProjectActivityFilter);
+  // v2.13.4: Note-Context-Filter
+  if (_currentProjectNoteContextFilter) {
+    const ctx = _currentProjectNoteContextFilter + ':';
+    filtered = filtered.filter(i => i.kind === 'notizen' && (i.title || '').toLowerCase().startsWith(ctx));
+  }
 
   // v2.1.0: Bevorstehend / Geschehen-Sektionen statt linearem Stream
   wrap.innerHTML = renderActivityStreamSections(filtered);
@@ -20784,6 +20854,11 @@ async function loadProjectActivityStream(projectId) {
 
 function filterProjectActivity(filter) {
   _currentProjectActivityFilter = filter;
+  // v2.13.4: Sub-Filter (Note-Context) zurücksetzen, wenn Top-Filter NICHT mehr Notizen ist.
+  if (filter !== 'notizen') {
+    _currentProjectNoteContextFilter = null;
+    document.querySelectorAll('#page-project-detail .proj-note-icons .proj-note-icon').forEach(b => b.classList.remove('is-active'));
+  }
   document.querySelectorAll('.proj-filter-pill').forEach(p => {
     p.classList.toggle('active', p.dataset.filter === filter);
   });
@@ -21123,8 +21198,14 @@ async function loadCompanyActivityStream(companyId) {
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
 
-  const filtered = _currentCompanyActivityFilter === 'alle'
+  let filtered = _currentCompanyActivityFilter === 'alle'
     ? items : items.filter(i => i.kind === _currentCompanyActivityFilter);
+  // v2.13.4: Note-Context-Filter (📞/✉️/🤝/💬) — nur Notizen mit dem
+  // entsprechenden Präfix durchlassen.
+  if (_currentCompanyNoteContextFilter) {
+    const ctx = _currentCompanyNoteContextFilter + ':';
+    filtered = filtered.filter(i => i.kind === 'notizen' && (i.title || '').toLowerCase().startsWith(ctx));
+  }
 
   // v2.1.0: Bevorstehend / Geschehen-Sektionen
   wrap.innerHTML = renderActivityStreamSections(filtered);
@@ -21132,6 +21213,10 @@ async function loadCompanyActivityStream(companyId) {
 
 function filterCompanyActivity(filter) {
   _currentCompanyActivityFilter = filter;
+  if (filter !== 'notizen') {
+    _currentCompanyNoteContextFilter = null;
+    document.querySelectorAll('#page-company-detail .proj-note-icons .proj-note-icon').forEach(b => b.classList.remove('is-active'));
+  }
   document.querySelectorAll('#page-company-detail .proj-filter-pill').forEach(p =>
     p.classList.toggle('active', p.dataset.filter === filter));
   loadCompanyActivityStream(currentCompanyDetailId);
@@ -21306,7 +21391,12 @@ async function loadContactActivityStream(contactId) {
   }));
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  const filtered = _currentContactActivityFilter === 'alle' ? items : items.filter(i => i.kind === _currentContactActivityFilter);
+  let filtered = _currentContactActivityFilter === 'alle' ? items : items.filter(i => i.kind === _currentContactActivityFilter);
+  // v2.13.4: Note-Context-Filter
+  if (_currentContactNoteContextFilter) {
+    const ctx = _currentContactNoteContextFilter + ':';
+    filtered = filtered.filter(i => i.kind === 'notizen' && (i.title || '').toLowerCase().startsWith(ctx));
+  }
 
   // v2.1.0: Bevorstehend / Geschehen-Sektionen
   wrap.innerHTML = renderActivityStreamSections(filtered);
@@ -21314,6 +21404,10 @@ async function loadContactActivityStream(contactId) {
 
 function filterContactActivity(filter) {
   _currentContactActivityFilter = filter;
+  if (filter !== 'notizen') {
+    _currentContactNoteContextFilter = null;
+    document.querySelectorAll('#page-contact-detail .proj-note-icons .proj-note-icon').forEach(b => b.classList.remove('is-active'));
+  }
   document.querySelectorAll('#page-contact-detail .proj-filter-pill').forEach(p =>
     p.classList.toggle('active', p.dataset.filter === filter));
   loadContactActivityStream(currentContactDetailId);
