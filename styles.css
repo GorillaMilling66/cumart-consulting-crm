@@ -2696,6 +2696,96 @@ body {
 }
 .capture-stream-item-delete:hover { background: #fee2e2; color: #b91c1c; }
 
+/* v2.14.2: Status-Briefing am Einsatz — eine Karte am Anfang des Bericht-
+   Tabs, die je nach Einsatz-Status (geplant/durchgeführt/abgerechnet)
+   anders aussieht. */
+.dep-briefing-card {
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+.dep-briefing-planned {
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%);
+  border-color: #bfdbfe;
+}
+.dep-briefing-done {
+  background: linear-gradient(180deg, #ecfdf5 0%, #f8fafc 100%);
+  border-color: #bbf7d0;
+}
+.dep-briefing-billed {
+  background: linear-gradient(180deg, #fafafb 0%, var(--surface) 100%);
+  border-color: var(--border);
+}
+.dep-briefing-head { margin-bottom: 12px; }
+.dep-briefing-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.dep-briefing-hint { font-size: 12px; color: var(--muted); }
+.dep-briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.dep-briefing-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: all .15s ease;
+}
+.dep-briefing-tile:hover {
+  border-color: var(--primary);
+  background: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.05);
+}
+.dep-briefing-emoji { font-size: 20px; line-height: 1; }
+.dep-briefing-tile-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.dep-briefing-tile-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+.dep-briefing-actions {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.dep-briefing-action {
+  padding: 6px 12px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dep-briefing-action:hover { background: #2563eb; }
+.dep-briefing-action-ghost {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.dep-briefing-action-ghost:hover { background: var(--bg); border-color: var(--primary); }
+@media (max-width: 720px) {
+  .dep-briefing-grid { grid-template-columns: 1fr; }
+}
+
 .last-activity-item { display: flex; gap: 12px; align-items: flex-start; padding: 2px 0; }
 .last-activity-date {
   font-size: 12px;

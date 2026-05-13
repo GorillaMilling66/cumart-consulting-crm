@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.14.2 (Status-Cards am Einsatz — eine Briefing-Karte
+   am Anfang des Bericht-Tabs, deren Inhalt sich an `deployments.
+   status` orientiert: bei „Geplant" zeigt sie drei Vor-Einsatz-
+   Prompts (📦 Was bringe ich mit? · 🎯 Was erwarte ich? · ⚠️
+   Risiken & Checks) — Klick füllt die Capture-Eingabe vor mit
+   einer Bullet-Vorlage und setzt die passende Kategorie. Bei
+   „Durchgeführt" eine grüne Pulse-Card mit Eintrags-Zähler und
+   den Quick-Actions „+ Stream-Eintrag" / „+ Action Item". Bei
+   „Abgerechnet" eine kompakte Read-only-Zusammenfassung (Datum,
+   Honorar, Rechnungsnummer). Bei unbekanntem Status bleibt die
+   Karte leer. JS: renderDeploymentStatusBriefing,
+   prefillCaptureFromBriefing. CSS-Klassen: .dep-briefing-card,
+   .dep-briefing-planned / -done / -billed, .dep-briefing-tile,
+   .dep-briefing-action (+ -ghost).
    Version 2.14.1 (Capture-Stream am Einsatz-Bericht — ein
    Eingabefeld + 4 Kategorie-Chips (📝 Erledigt · 💡 Erkenntnis ·
    🎯 Folge · 📋 Log), darunter eine chronologische Liste der
@@ -22020,6 +22034,9 @@ async function loadDeploymentDetail(deploymentId) {
   // v2.14.1: Capture-Stream-Liste laden
   await renderDeploymentCaptureStream(deploymentId);
 
+  // v2.14.2: Status-Briefing rendern (passt sich an Einsatz-Status an)
+  renderDeploymentStatusBriefing(d);
+
   // Sidepanel
   const projSide = document.getElementById('dep-side-projekt');
   if (d.project) {
@@ -22217,6 +22234,106 @@ function formatDateTimeCompact(iso) {
   const dd = String(d.getDate()).padStart(2,'0');
   const mm = String(d.getMonth() + 1).padStart(2,'0');
   return `${dd}.${mm}. ${hhmm}`;
+}
+
+/** v2.14.2: Status-Briefing am Einsatz — Card am Anfang des Bericht-Tabs,
+ *  die je nach `einsatz_status` einen anderen Schwerpunkt zeigt:
+ *    • geplant       → Vor-Einsatz-Briefing mit 3 Prompts (klick = füllt
+ *                      die Capture-Eingabe vor)
+ *    • durchgefuehrt → Pulse-Card mit Eintrags-Zähler + Aufruf
+ *                      „Workflow abschließen"
+ *    • Abgerechnet   → kompakte Read-only-Zusammenfassung
+ *  Bei unbekanntem Status wird die Karte ausgeblendet. */
+function renderDeploymentStatusBriefing(d) {
+  const el = document.getElementById('dep-status-briefing');
+  if (!el) return;
+  const status = (d?.status || '').toString();
+
+  // STATUS „Geplant" — Vor-Einsatz-Briefing
+  if (status === 'Geplant') {
+    const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
+    el.innerHTML = `
+      <div class="dep-briefing-card dep-briefing-planned">
+        <div class="dep-briefing-head">
+          <div class="dep-briefing-title">VOR DEM EINSATZ · ${esc(datum)}</div>
+          <div class="dep-briefing-hint">Klick auf einen Vorschlag — die Capture-Zeile wird vorbefüllt.</div>
+        </div>
+        <div class="dep-briefing-grid">
+          <button type="button" class="dep-briefing-tile" onclick="prefillCaptureFromBriefing('was_gemacht','Vorbereitung:\\n- ')">
+            <span class="dep-briefing-emoji">📦</span>
+            <span class="dep-briefing-tile-title">Was bringe ich mit?</span>
+            <span class="dep-briefing-tile-sub">Unterlagen, Hardware, Beispiele</span>
+          </button>
+          <button type="button" class="dep-briefing-tile" onclick="prefillCaptureFromBriefing('folge','Ziel des Einsatzes:\\n- ')">
+            <span class="dep-briefing-emoji">🎯</span>
+            <span class="dep-briefing-tile-title">Was erwarte ich?</span>
+            <span class="dep-briefing-tile-sub">Ziel, Erfolgskriterium</span>
+          </button>
+          <button type="button" class="dep-briefing-tile" onclick="prefillCaptureFromBriefing('erkenntnis','Risiken / offene Punkte:\\n- ')">
+            <span class="dep-briefing-emoji">⚠️</span>
+            <span class="dep-briefing-tile-title">Risiken &amp; Checks</span>
+            <span class="dep-briefing-tile-sub">Was könnte schief gehen?</span>
+          </button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // STATUS „Durchgeführt" — Pulse-Card mit Eintrags-Zähler
+  if (status === 'Durchgeführt') {
+    const entryCountEl = document.getElementById('dep-capture-stream-list');
+    const entryCount = entryCountEl
+      ? entryCountEl.querySelectorAll('.capture-stream-item').length
+      : 0;
+    el.innerHTML = `
+      <div class="dep-briefing-card dep-briefing-done">
+        <div class="dep-briefing-head">
+          <div class="dep-briefing-title">EINSATZ DURCHGEFÜHRT</div>
+          <div class="dep-briefing-hint">${entryCount === 0
+            ? 'Noch nichts protokolliert — wenigstens einen Stream-Eintrag erfassen.'
+            : `${entryCount} Eintrag${entryCount === 1 ? '' : 'e'} im Stream. Action Items nicht vergessen.`}</div>
+        </div>
+        <div class="dep-briefing-actions">
+          <button type="button" class="dep-briefing-action" onclick="document.getElementById('dep-capture-input')?.focus()">+ Stream-Eintrag</button>
+          <button type="button" class="dep-briefing-action dep-briefing-action-ghost" onclick="addDeploymentActionItem()">+ Action Item</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // STATUS „Abgerechnet" — kompakte Read-only-Zusammenfassung
+  if (status === 'Abgerechnet') {
+    const datum  = d.datum_von ? formatDateDE(d.datum_von) : '—';
+    const honor  = (d.menge != null && d.einzelpreis != null)
+      ? formatPreis(Number(d.menge) * Number(d.einzelpreis))
+      : '—';
+    const rNr    = d.dokumentation?.rechnungsnummer || '—';
+    el.innerHTML = `
+      <div class="dep-briefing-card dep-briefing-billed">
+        <div class="dep-briefing-head">
+          <div class="dep-briefing-title">ABGERECHNET · ${esc(datum)}</div>
+          <div class="dep-briefing-hint">Honorar ${esc(honor)} · Rechnung ${esc(rNr)}</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Unbekannter / leerer Status — Karte verstecken
+  el.innerHTML = '';
+}
+
+/** v2.14.2: Briefing-Tile-Klick — füllt Capture-Eingabe vor und setzt
+ *  die passende Kategorie. */
+function prefillCaptureFromBriefing(kategorie, text) {
+  const input = document.getElementById('dep-capture-input');
+  if (!input) return;
+  // Inhalt nur ersetzen, wenn das Feld leer ist — sonst anhängen
+  const existing = (input.value || '').trim();
+  input.value = existing ? `${existing}\n\n${text}` : text;
+  setCaptureKategorie(kategorie);
+  input.focus();
+  // Cursor ans Ende
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 
 async function toggleDeploymentReportTheme(deploymentId, themeId, checked) {
