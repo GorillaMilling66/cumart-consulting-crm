@@ -1,5 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.4 (Menge ↻-Button leuchtet jetzt auch gelb,
+   Menge + Preis untereinander statt nebeneinander). Zwei UX-
+   Nachzüge im Einsatz-Modal:
+   1) Neue Layout-Anordnung: „Menge" und „Einzelpreis (€)"
+      stehen jetzt **untereinander** statt in einer 2-Spalten-
+      Row — beide Felder bekommen ihre eigene volle Breite mit
+      dem ↻-Reset-Button rechts daneben.
+   2) Der Menge-↻-Button leuchtet jetzt analog zum Preis-↻-
+      Button gelb (`.is-outdated`), sobald die aktuelle Menge
+      nicht mehr zur Werktage-Zahl im Datumsbereich passt —
+      also entweder weil der User die Menge manuell überschrieben
+      hat oder weil das Datum nachträglich geändert wurde.
+      Trigger: Datums-Change, manueller Edit, Reset-Click,
+      Modal-Open. Helper updateMengeOutdatedState analog zu
+      updateEinzelpreisOutdatedState.
    Version 2.11.3 (Template-Sub-Items mit Firma + Ort, Edit-
    Modal fängt fehlende Firma aus Projekt nach). Zwei Bugs in
    einem Schlag:
@@ -11122,8 +11137,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
 
   // v2.11.2: Einmaliger initialer Check für den Aktualisieren-Button — wenn
   // Edit-Preis vom Service-Standard abweicht, leuchtet der Button sofort beim
-  // Öffnen des Modals.
+  // Öffnen des Modals. v2.11.4: dasselbe für die Menge.
   updateEinzelpreisOutdatedState();
+  updateMengeOutdatedState();
 
   await populateTemplateDropdown('einsatz', mode);
 
@@ -11219,6 +11235,10 @@ function setupDeploymentModalListeners() {
       datumBis.value = datumVon.value;
     }
     recomputeDeploymentMengeFromDates();
+    // v2.11.4: Auch wenn die Menge wegen Manual-Override stehen blieb, soll
+    // der ↻-Button warnfarbig leuchten, falls die Menge zum neuen Datums-
+    // bereich nicht mehr passt.
+    updateMengeOutdatedState();
   };
   datumVon.onchange = onDatumChange;
   datumBis.onchange = onDatumChange;
@@ -11228,6 +11248,7 @@ function setupDeploymentModalListeners() {
   menge.addEventListener('input', (e) => {
     if (e.isTrusted) _deploymentMengeManuallyEdited = true;
     updateDeploymentPriceHint();
+    updateMengeOutdatedState();
   });
   // v2.11.2: User-Edit am Einzelpreis setzt analog den Manual-Override-Flag,
   // damit der nächste Service-Wechsel den Preis nicht überschreibt. Außerdem
@@ -11244,6 +11265,7 @@ function setupDeploymentModalListeners() {
     resetBtn.onclick = () => {
       _deploymentMengeManuallyEdited = false;
       recomputeDeploymentMengeFromDates(true);
+      updateMengeOutdatedState();   // v2.11.4
     };
   }
 
@@ -11279,6 +11301,30 @@ function updateEinzelpreisOutdatedState() {
   btn.title = showOutdated
     ? `Einzelpreis abweichend von Service-Standardpreis (${formatPreis(standard)}). Klick übernimmt den Standardpreis.`
     : 'Einzelpreis auf Service-Standardpreis aktualisieren';
+}
+
+/** v2.11.4: Markiert den Aktualisieren-Button neben der Menge farblich, sobald
+ *  die aktuelle Menge nicht mehr zur Werktage-Zahl im gewählten Datumsbereich
+ *  passt — also entweder der User die Menge manuell überschrieben hat, oder
+ *  das Datum nachträglich geändert wurde. Greift bei Datums-Change, manuellem
+ *  Edit und beim Öffnen im Edit-Modus. */
+function updateMengeOutdatedState() {
+  const btn = document.getElementById('d-menge-reset');
+  if (!btn) return;
+  const von = document.getElementById('d-datum-von').value;
+  const bis = document.getElementById('d-datum-bis').value || von;
+  if (!von) {
+    btn.classList.remove('is-outdated');
+    btn.title = 'Menge aus Datumsbereich neu berechnen (Werktage)';
+    return;
+  }
+  const workdays = countWorkdaysInclusive(von, bis);
+  const aktuell  = Number(document.getElementById('d-menge').value || 0);
+  const showOutdated = workdays >= 1 && aktuell !== workdays;
+  btn.classList.toggle('is-outdated', showOutdated);
+  btn.title = showOutdated
+    ? `Menge passt nicht zur Werktage-Zahl im Datumsbereich (${workdays} WT). Klick berechnet neu.`
+    : 'Menge aus Datumsbereich neu berechnen (Werktage)';
 }
 
 /** Werktags-Menge aus datum_von/bis berechnen (v1.33). Überschreibt Menge nicht,
