@@ -4576,6 +4576,39 @@ tr.expanded-row > td {
   border-color: #fca5a5;
 }
 
+/* v2.12.2: Bündel-Banner im Einsatz-Modal-Drawer */
+.drawer__bundle-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 16px;
+  padding: 10px 14px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #3730a3;
+}
+.drawer__bundle-banner-icon {
+  font-size: 14px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.drawer__bundle-banner-body { flex: 1; min-width: 0; }
+.drawer__bundle-banner-link {
+  font-weight: 600;
+  color: #3730a3;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.drawer__bundle-banner-link:hover { color: #1e1b4b; }
+.drawer__bundle-banner-hint {
+  font-size: 11px;
+  color: #4f46e5;
+  margin-top: 4px;
+}
+
 /* v2.12.0: Bündel-Header-Zeile im Projekt-Einsatz-Listing */
 .bundle-header-row {
   background: linear-gradient(to right, #eef2ff, var(--surface));

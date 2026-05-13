@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.12.2 (Bündel-Override-Schutz pro Einsatz-Tag). Der
+   Hybrid-Modus aus v2.12.0 ist jetzt vollständig: jeder Tag
+   kann individuell Felder vom Bündel entkoppeln.
+   Im saveDeployment-Pfad: ist der Einsatz Teil eines Bündels,
+   vergleicht der Save jeden shared Feld-Wert (titel, service_
+   id, einzelpreis, ort, externe_techniker, beschreibung,
+   dokumentation) mit dem aktuellen Bündel-Wert. Abweichende
+   Felder kommen in `deployments.bundle_overrides` (jsonb-
+   Array von Keys). Beim Bündel-Save werden Felder, die in
+   diesem Array stehen, NICHT mehr auf den Tag propagiert —
+   der manuell gesetzte Wert bleibt erhalten. Felder, die
+   wieder mit dem Bündel übereinstimmen, fliegen automatisch
+   aus dem Override-Set.
+   UI: neuer indigo-Banner im Einsatz-Edit-Modal-Drawer, wenn
+   der Einsatz Teil eines Bündels ist — zeigt den Bündel-Titel
+   als Link (öffnet das Bündel-Modal) plus Hinweis, dass
+   geänderte Felder geschützt sind. Schon entkoppelte Felder
+   werden im Hint-Text aufgezählt.
    Version 2.12.1 (Bug-Fix: Bericht-Felder aus der Einsatz-
    Detail-Page wurden vom Edit-Modal überschrieben). Die
    Einsatz-Detail-Page schreibt Doku-Felder mit einem
@@ -11285,6 +11303,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-redeem-wrap').style.display = 'none';
   const datumHintWrap = document.getElementById('d-datum-hint-wrap');
   if (datumHintWrap) datumHintWrap.style.display = '';
+  // v2.12.2: Bündel-Banner per default verstecken; wird im Edit-Pfad ggf. wieder eingeblendet.
+  const _bundleBanner = document.getElementById('d-bundle-banner');
+  if (_bundleBanner) _bundleBanner.style.display = 'none';
 
   renderTechnikerChipsForDeployment();
   await rebuildProjectDropdownForDeployment('');
@@ -11376,6 +11397,34 @@ async function openDeploymentModal(mode, deploymentId = null) {
     }
 
     if (data.service_id) serviceSelect.value = data.service_id;
+
+    // v2.12.2: Bündel-Banner anzeigen, wenn der Einsatz Teil eines Bündels ist.
+    const banner = document.getElementById('d-bundle-banner');
+    if (banner && data.bundle_id) {
+      const { data: bundleRow } = await db.from('deployment_bundles')
+        .select('id, titel').is('deleted_at', null).eq('id', data.bundle_id).single();
+      if (bundleRow) {
+        const link = document.getElementById('d-bundle-banner-link');
+        if (link) {
+          link.textContent = bundleRow.titel || 'Bündel öffnen';
+          link.onclick = (e) => {
+            e.preventDefault();
+            closeDeploymentModal();
+            openDeploymentBundleModal('edit', bundleRow.id);
+          };
+        }
+        const hint = document.getElementById('d-bundle-banner-hint');
+        if (hint) {
+          const overrides = Array.isArray(data.bundle_overrides) ? data.bundle_overrides : [];
+          hint.textContent = overrides.length === 0
+            ? 'Felder, die du hier änderst, werden beim nächsten Bündel-Save nicht mehr überschrieben.'
+            : `Schon entkoppelte Felder: ${overrides.join(', ')}. Weitere Änderungen werden ebenfalls geschützt.`;
+        }
+        banner.style.display = '';
+      }
+    } else if (banner) {
+      banner.style.display = 'none';
+    }
 
     // Techniker laden
     const { data: techRows } = await db.from('deployment_technicians')
@@ -11726,11 +11775,17 @@ async function saveDeployment() {
   // v2.12.1: Beim Bearbeiten bestehende dokumentation reinmergen, damit
   // Nicht-Schema-Keys (z. B. „was_wurde_gemacht"/„vorbereitung"/„anfahrt"
   // aus dem Bericht-Tab der Einsatz-Detail-Page) erhalten bleiben.
+  // v2.12.2: Zusätzlich bundle_id + bundle_overrides reinladen, damit beim
+  // Save der Override-Schutz für Bündel-Mitglieder gepflegt werden kann.
   let _existingDeploymentDoc = null;
+  let _existingDeploymentBundleId = null;
+  let _existingDeploymentOverrides = [];
   if (editingDeploymentId) {
     const { data: _existing } = await db.from('deployments')
-      .select('dokumentation').eq('id', editingDeploymentId).single();
+      .select('dokumentation, bundle_id, bundle_overrides').eq('id', editingDeploymentId).single();
     _existingDeploymentDoc = _existing?.dokumentation || null;
+    _existingDeploymentBundleId = _existing?.bundle_id || null;
+    _existingDeploymentOverrides = Array.isArray(_existing?.bundle_overrides) ? _existing.bundle_overrides : [];
   }
   const dokumentation = readDocumentationFromDom('einsatz', 'd-doc', _existingDeploymentDoc);
   const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
@@ -11815,6 +11870,31 @@ async function saveDeployment() {
       externe_techniker: externe_techniker || null
     };
     if (!editingDeploymentId) payload.erstellt_von = currentUser?.id || null;
+
+    // v2.12.2: Override-Schutz für Bündel-Mitglieder. Wenn der Einsatz an einem
+    // Bündel hängt, vergleichen wir jeden shared Feld-Wert mit dem aktuellen
+    // Bündel-Wert. Felder, die abweichen, kommen ins bundle_overrides-Array
+    // und werden bei der nächsten Bündel-Speicherung NICHT mehr überschrieben.
+    // Felder, die wieder mit dem Bündel übereinstimmen, fliegen aus dem Array
+    // raus → die Standard-Propagation greift wieder.
+    if (editingDeploymentId && _existingDeploymentBundleId) {
+      const { data: bundleRow } = await db.from('deployment_bundles')
+        .select('titel, service_id, einzelpreis, ort, externe_techniker, beschreibung, dokumentation')
+        .eq('id', _existingDeploymentBundleId).single();
+      if (bundleRow) {
+        const sharedKeys = ['titel', 'service_id', 'einzelpreis', 'ort', 'externe_techniker', 'beschreibung', 'dokumentation'];
+        const overrides = [];
+        for (const k of sharedKeys) {
+          const a = payload[k] ?? null;
+          const b = bundleRow[k] ?? null;
+          const same = (typeof a === 'object' || typeof b === 'object')
+            ? JSON.stringify(a || {}) === JSON.stringify(b || {})
+            : a === b;
+          if (!same) overrides.push(k);
+        }
+        payload.bundle_overrides = overrides;
+      }
+    }
 
     let saved;
     if (editingDeploymentId) {
@@ -13093,10 +13173,9 @@ async function saveDeploymentBundle() {
     }
 
     // v2.12.1: Beim Propagieren der Bündel-Doku auf die Mitgliedstage NUR die
-    // Schema-Keys (durchgefuehrte_themen, teilnehmer, erkenntnisse,
-    // folge_massnahmen, anmerkungen) ersetzen. Per-Tag Nicht-Schema-Keys
-    // (was_wurde_gemacht, vorbereitung, anfahrt, rechnungsnummer,
-    // abrechnungs_notiz aus der Detail-Page) bleiben so erhalten.
+    // Schema-Keys ersetzen, Nicht-Schema-Keys bleiben erhalten.
+    // v2.12.2: Per-Tag-Override-Schutz — Felder, die in `bundle_overrides`
+    // eines Mitglieds stehen, werden NICHT mehr vom Bündel überschrieben.
     const SCHEMA_KEYS = (DOCUMENTATION_SCHEMAS.einsatz || []).map(f => f.key);
     const bundleSchemaSlice = {};
     for (const k of SCHEMA_KEYS) {
@@ -13104,14 +13183,19 @@ async function saveDeploymentBundle() {
         bundleSchemaSlice[k] = payload.dokumentation[k];
       }
     }
-    const sharedFieldsWithoutDoc = {
-      bundle_id: bundle.id,
+    // Mapping shared-field-key → Bündel-Wert (das was beim Bundle-Save
+    // gespeichert wird). Wird pro Mitglied gefiltert nach bundle_overrides.
+    const bundleSharedValues = {
       titel: payload.titel,
       beschreibung: payload.beschreibung,
       service_id: payload.service_id,
       einzelpreis: payload.einzelpreis,
       ort: payload.ort,
-      externe_techniker: payload.externe_techniker,
+      externe_techniker: payload.externe_techniker
+    };
+    const baseFieldsForNew = {
+      bundle_id: bundle.id,
+      ...bundleSharedValues,
       company_id: companyId,
       project_id: currentProjectDetailId
     };
@@ -13125,23 +13209,35 @@ async function saveDeploymentBundle() {
         status: r.status || 'Geplant'
       };
       if (r.id) {
-        // Bestehender Einsatz — bestehende Doku einholen, Schema-Slice
-        // überschreiben, Rest behalten.
+        // Bestehender Einsatz — bundle_overrides respektieren.
         const { data: existing } = await db.from('deployments')
-          .select('dokumentation').eq('id', r.id).single();
-        const memberDoc = { ...(existing?.dokumentation || {}) };
-        for (const k of SCHEMA_KEYS) {
-          if (Object.prototype.hasOwnProperty.call(bundleSchemaSlice, k)) memberDoc[k] = bundleSchemaSlice[k];
-          else delete memberDoc[k];
+          .select('dokumentation, bundle_overrides').eq('id', r.id).single();
+        const overrides = new Set(Array.isArray(existing?.bundle_overrides) ? existing.bundle_overrides : []);
+
+        const updateFields = {
+          bundle_id: bundle.id,
+          company_id: companyId,
+          project_id: currentProjectDetailId,
+          ...perDayFields
+        };
+        // Shared-Felder nur überschreiben, wenn nicht in overrides.
+        for (const [key, val] of Object.entries(bundleSharedValues)) {
+          if (!overrides.has(key)) updateFields[key] = val;
         }
-        await db.from('deployments').update({
-          ...sharedFieldsWithoutDoc,
-          ...perDayFields,
-          dokumentation: memberDoc
-        }).eq('id', r.id);
+        // Dokumentation: wenn nicht overridden, Schema-Keys vom Bündel
+        // mergen; existierende Nicht-Schema-Keys bleiben erhalten.
+        if (!overrides.has('dokumentation')) {
+          const memberDoc = { ...(existing?.dokumentation || {}) };
+          for (const k of SCHEMA_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(bundleSchemaSlice, k)) memberDoc[k] = bundleSchemaSlice[k];
+            else delete memberDoc[k];
+          }
+          updateFields.dokumentation = memberDoc;
+        }
+        await db.from('deployments').update(updateFields).eq('id', r.id);
       } else {
         await db.from('deployments').insert({
-          ...sharedFieldsWithoutDoc,
+          ...baseFieldsForNew,
           ...perDayFields,
           dokumentation: bundleSchemaSlice,
           erstellt_von: currentProfile?.id || null,
