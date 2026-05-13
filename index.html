@@ -3333,10 +3333,22 @@
             <datalist id="t-company-list"></datalist>
           </div>
           <div class="form-group">
-            <label>Kontakt</label>
+            <label>Hauptkontakt</label>
             <input id="t-contact" list="t-contact-list" autocomplete="off" placeholder="Neuen Namen tippen …">
             <datalist id="t-contact-list"></datalist>
           </div>
+        </div>
+        <!-- v2.11.0: Weitere Kunden-Kontakte (junction appointment_contacts) -->
+        <div class="form-group" id="t-additional-contacts-group">
+          <label>Weitere Teilnehmer (Kunde)</label>
+          <div id="t-additional-contacts-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0">
+            <span style="font-size:12px;color:var(--muted)">Erst Firma wählen, um zusätzliche Kontakte als Teilnehmer hinzuzufügen.</span>
+          </div>
+        </div>
+        <!-- v2.11.0: Internes Team (junction appointment_participants) -->
+        <div class="form-group">
+          <label>Internes Team</label>
+          <div id="t-team-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0"></div>
         </div>
         <div class="form-row-2">
           <div class="form-group">

@@ -1,5 +1,35 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.11.0 (Termin: weitere Kunden-Kontakte + Internes
+   Team als Multi-Select-Chips). Bisher hatte der Termin nur
+   einen Hauptkontakt (`appointments.contact_id`) und keine
+   Möglichkeit, interne Kollegen oder mehrere Kunden-
+   Ansprechpartner einzubinden. Die Tabelle `appointment_
+   participants` (id, appointment_id, user_id) existierte zwar
+   aus der Initial-Migration, war aber nie an die UI angebunden.
+   Migration `v2.11.0_appointment_teams.sql`: (1) neue Junction
+   `appointment_contacts (appointment_id, contact_id)` mit
+   UNIQUE-Constraint + Indexen + RLS-Pattern (PERMISSIVE +
+   RESTRICTIVE) für weitere Kunden-Kontakte; (2) RLS-Policies
+   für `appointment_participants` idempotent absichern.
+   UI im Termin-Modal (Drawer „Neuer Termin / Termin
+   bearbeiten"): Section WER & WO bekommt zwei neue Chip-
+   Multi-Selects nach Hauptkontakt:
+     • „Weitere Teilnehmer (Kunde)" — Chips für alle Kontakte
+       der gewählten Firma außer dem Hauptkontakt, persistiert
+       in appointment_contacts.
+     • „Internes Team" — Chips aller aktiven user_profiles,
+       persistiert in appointment_participants.
+   Beide Listen werden im delete-then-insert Pattern (analog
+   deployment_technicians) bei Save synchronisiert. Beim Edit
+   eines Termins werden die bestehenden Junction-Einträge ge-
+   laden und die Sets vorbefüllt. Firmen-Wechsel leert die
+   Zusatz-Kontakt-Auswahl (Kontakte sind firmen-gebunden);
+   Hauptkontakt-Änderung re-rendert die Chip-Liste, damit der
+   neue Hauptkontakt dort nicht doppelt erscheint. State-Vars
+   selectedAppointmentTeamIds, selectedAppointmentContactIds
+   am Top. Neue Helper renderAppointmentTeamChips,
+   renderAppointmentAdditionalContactChips, toggle-Funktionen.
    Version 2.10.4 (Arbeitsplatz: Projekte in „Heute von dir" +
    30 statt 5/12 Einträge mit Scroll-Liste). Drei Verbesserungen:
    1) renderArbeitsplatzToday fragt jetzt zusätzlich Projekte
@@ -1627,6 +1657,12 @@ let companyContactsMap = {};
 // Selected Techniker IDs im Einsatz-Modal — Set wird beim Modal-Open neu befüllt
 // und beim saveDeployment ausgewertet (Persistierung in deployment_technicians-Tabelle).
 let selectedTechnikerIds = new Set();
+
+// v2.11.0: Termin-Teilnehmer im Termin-Modal — analog zu selectedTechnikerIds.
+// Persistierung in appointment_participants (interne User) bzw.
+// appointment_contacts (zusätzliche Kunden-Kontakte neben dem Hauptkontakt).
+let selectedAppointmentTeamIds      = new Set();
+let selectedAppointmentContactIds   = new Set();
 
 // Map: companyId → { next: {datum, titel, id} | null, last: {datum, titel, id} | null }
 let companyAppointmentMap = {};
@@ -8639,6 +8675,13 @@ async function openAppointmentModal(mode, appointmentId = null) {
   lastAutoFilledOrt = '';
   renderDateShortcuts();  // v1.33: aktuelle Monats-Buttons
 
+  // v2.11.0: Teilnehmer-Sets zurücksetzen (werden im Edit-Pfad neu befüllt)
+  selectedAppointmentTeamIds    = new Set();
+  selectedAppointmentContactIds = new Set();
+
+  // User-Profile-Cache für die Team-Chips
+  await loadUserProfilesCache();
+
   // Firmen laden
   if (companiesCache.length === 0) {
     const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
@@ -8761,7 +8804,22 @@ async function openAppointmentModal(mode, appointmentId = null) {
       const projSelect = document.getElementById('t-project');
       if (projSelect) projSelect.value = data.project_id;
     }
+
+    // v2.11.0: Bestehende Junction-Einträge nachladen (Internes Team +
+    // weitere Kunden-Kontakte) und in die Sets übernehmen.
+    const [teamRows, contactRows] = await Promise.all([
+      db.from('appointment_participants').select('user_id').eq('appointment_id', appointmentId),
+      db.from('appointment_contacts').select('contact_id').eq('appointment_id', appointmentId)
+    ]);
+    selectedAppointmentTeamIds    = new Set((teamRows.data    || []).map(r => r.user_id));
+    selectedAppointmentContactIds = new Set((contactRows.data || []).map(r => r.contact_id));
   }
+
+  // v2.11.0: Chips für die beiden Multi-Selects rendern — passiert nach dem
+  // Edit-Load, damit die Selektionen schon im Set stehen.
+  renderAppointmentTeamChips();
+  const _companyIdForChips = getCompanyComboboxId('t-company', 't-company-list');
+  await renderAppointmentAdditionalContactChips(_companyIdForChips);
 
   setupAppointmentAutoFill();
   setupAppointmentPreviewListeners();  // v1.37
@@ -8779,10 +8837,86 @@ function closeAppointmentModal() {
   appointmentModalPrefillProjectId = null;
   appointmentModalPrefillContactId = null;
   lastAutoFilledOrt = '';
+  // v2.11.0: Teilnehmer-Sets aufräumen, damit der nächste Öffnung sauber startet.
+  selectedAppointmentTeamIds    = new Set();
+  selectedAppointmentContactIds = new Set();
 }
 
 async function rebuildContactDropdownForAppointment(companyId) {
   await fillContactCombobox('t-contact', 't-contact-list', companyId);
+  // v2.11.0: Chip-Liste der weiteren Kontakte spiegelt die aktuelle Firma.
+  await renderAppointmentAdditionalContactChips(companyId);
+}
+
+// v2.11.0 — Termin-Teilnehmer (interne Kollegen) als Chip-Multi-Select.
+function renderAppointmentTeamChips() {
+  const wrap = document.getElementById('t-team-list');
+  if (!wrap) return;
+  if (userProfilesCache.length === 0) {
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">Keine internen Kollegen verfügbar.</span>';
+    return;
+  }
+  wrap.innerHTML = userProfilesCache.map(u => {
+    const selected = selectedAppointmentTeamIds.has(u.id);
+    return `
+      <div class="techniker-chip${selected ? ' selected' : ''}" data-user-id="${esc(u.id)}"
+           onclick="toggleAppointmentTeamChip('${esc(u.id)}')">
+        <span class="techniker-chip-avatar">${esc(ini(u.name))}</span>
+        <span>${esc(u.name)}</span>
+      </div>`;
+  }).join('');
+}
+
+function toggleAppointmentTeamChip(userId) {
+  if (selectedAppointmentTeamIds.has(userId)) selectedAppointmentTeamIds.delete(userId);
+  else selectedAppointmentTeamIds.add(userId);
+  renderAppointmentTeamChips();
+}
+
+// v2.11.0 — Weitere Kunden-Kontakte als Chip-Multi-Select. Listet die Kontakte
+// der aktuell gewählten Firma. Der Hauptkontakt (t-contact) wird ausgeblendet,
+// um Dubletten zu vermeiden — er ist die separate Rolle „Hauptkontakt".
+async function renderAppointmentAdditionalContactChips(companyId) {
+  const wrap = document.getElementById('t-additional-contacts-list');
+  if (!wrap) return;
+  if (!companyId) {
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">Erst Firma wählen, um zusätzliche Kontakte als Teilnehmer hinzuzufügen.</span>';
+    return;
+  }
+  const { data: contacts } = await db.from('contacts')
+    .select('id, vorname, nachname').is('deleted_at', null)
+    .eq('company_id', companyId).order('nachname', { ascending: true });
+  const list = contacts || [];
+  const hauptkontaktId = document.getElementById('t-contact')?.dataset?.resolvedId || null;
+  // Auswahl bereinigen: Kontakte, die nicht mehr zur Firma gehören oder
+  // jetzt Hauptkontakt sind, raus.
+  const validIds = new Set(list.map(c => c.id));
+  [...selectedAppointmentContactIds].forEach(id => {
+    if (!validIds.has(id) || id === hauptkontaktId) selectedAppointmentContactIds.delete(id);
+  });
+  const renderable = list.filter(c => c.id !== hauptkontaktId);
+  if (renderable.length === 0) {
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">Keine weiteren Kontakte bei dieser Firma.</span>';
+    return;
+  }
+  wrap.innerHTML = renderable.map(c => {
+    const name = [c.vorname, c.nachname].filter(Boolean).join(' ') || '—';
+    const selected = selectedAppointmentContactIds.has(c.id);
+    return `
+      <div class="techniker-chip${selected ? ' selected' : ''}" data-contact-id="${esc(c.id)}"
+           onclick="toggleAppointmentAdditionalContactChip('${esc(c.id)}')">
+        <span class="techniker-chip-avatar">${esc(ini(name))}</span>
+        <span>${esc(name)}</span>
+      </div>`;
+  }).join('');
+}
+
+function toggleAppointmentAdditionalContactChip(contactId) {
+  if (selectedAppointmentContactIds.has(contactId)) selectedAppointmentContactIds.delete(contactId);
+  else selectedAppointmentContactIds.add(contactId);
+  // Nur re-rendern (kein Re-Fetch nötig — Daten sind im DOM)
+  const companyId = getCompanyComboboxId('t-company', 't-company-list');
+  renderAppointmentAdditionalContactChips(companyId);
 }
 
 function updateOrtHint() {
@@ -8964,17 +9098,31 @@ function applyGanztag(prefix) {
 function setupAppointmentAutoFill() {
   const companyInput = document.getElementById('t-company');
   const typSelect = document.getElementById('t-typ');
+  const contactInput = document.getElementById('t-contact');
 
   // v1.44.11: Combobox-Input statt Select. `input`-Event triggert auch beim
   // Auswählen aus dem Datalist. Wir laden Kontakt/Projekt nur, wenn der Text
   // exakt zu einer Firma matcht — sonst leer.
   companyInput.oninput = async () => {
     const id = getCompanyComboboxId('t-company', 't-company-list');
+    // v2.11.0: Wenn die Firma wechselt, ist die Auswahl der Zusatzkontakte
+    // hinfällig (Kontakte gehören zu einer Firma).
+    selectedAppointmentContactIds = new Set();
     await rebuildContactDropdownForAppointment(id);
     await rebuildProjectDropdownForAppointment(id);
     updateOrtHint();
     autoFillOrtIfAppropriate();
   };
+
+  // v2.11.0: Wenn der Hauptkontakt geändert wird, muss die Chip-Liste der
+  // weiteren Kontakte neu gerendert werden, damit der neue Hauptkontakt
+  // dort nicht doppelt erscheint.
+  if (contactInput) {
+    contactInput.oninput = async () => {
+      const cid = getCompanyComboboxId('t-company', 't-company-list');
+      await renderAppointmentAdditionalContactChips(cid);
+    };
+  }
 
   typSelect.onchange = () => {
     autoFillOrtIfAppropriate();
@@ -9035,10 +9183,31 @@ async function saveAppointment() {
     };
     if (!editingAppointmentId) payload.erstellt_von = currentUser?.id || null;
 
-    let error;
-    if (editingAppointmentId) { ({ error } = await db.from('appointments').update(payload).eq('id', editingAppointmentId)); }
-    else { ({ error } = await db.from('appointments').insert(payload)); }
-    if (error) throw new Error(error.message);
+    let saved;
+    if (editingAppointmentId) {
+      const { data, error } = await db.from('appointments').update(payload).eq('id', editingAppointmentId).select().single();
+      if (error) throw new Error(error.message);
+      saved = data;
+    } else {
+      const { data, error } = await db.from('appointments').insert(payload).select().single();
+      if (error) throw new Error(error.message);
+      saved = data;
+    }
+
+    // v2.11.0: Junctions synchronisieren (delete-then-insert, analog
+    // deployment_technicians). Auswahl-Sets im Modal sind die Wahrheit.
+    await db.from('appointment_participants').delete().eq('appointment_id', saved.id);
+    if (selectedAppointmentTeamIds.size > 0) {
+      const partRows = [...selectedAppointmentTeamIds].map(uid => ({ appointment_id: saved.id, user_id: uid }));
+      const { error: partErr } = await db.from('appointment_participants').insert(partRows);
+      if (partErr) console.warn('appointment_participants insert failed:', partErr.message);
+    }
+    await db.from('appointment_contacts').delete().eq('appointment_id', saved.id);
+    if (selectedAppointmentContactIds.size > 0) {
+      const contactRows = [...selectedAppointmentContactIds].map(cid => ({ appointment_id: saved.id, contact_id: cid }));
+      const { error: contErr } = await db.from('appointment_contacts').insert(contactRows);
+      if (contErr) console.warn('appointment_contacts insert failed:', contErr.message);
+    }
 
     closeAppointmentModal();
     showToast(editingAppointmentId ? 'Termin aktualisiert.' : 'Termin angelegt.');
