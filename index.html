@@ -1645,6 +1645,7 @@
             <div class="proj-side-card-title">AKTIONEN</div>
             <button class="proj-action proj-action-primary" onclick="focusProjectNoteInput()">Notiz hinzufügen</button>
             <button class="proj-action" id="project-quick-deployment">+ Einsatz anlegen</button>
+            <button class="proj-action" id="project-quick-product">+ Produkt anlegen</button>
             <button class="proj-action" id="project-quick-appointment">+ Termin anlegen</button>
             <button class="proj-action" id="project-quick-task">+ Aufgabe anlegen</button>
             <button class="proj-action" onclick="attachFileFromActions('project', currentProjectDetailId, document.getElementById('project-note-input').value)">+ Anhang hochladen</button>
@@ -2466,7 +2467,7 @@
           <textarea id="pr-notizen" rows="2" placeholder="Interne Bemerkungen, Lieferzeit, …"></textarea>
         </div>
         <div class="form-group">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <label class="checkbox-row">
             <input type="checkbox" id="pr-ist-aktiv" checked>
             <span>Aktiv (in Auswahl-Listen anzeigen)</span>
           </label>
@@ -2696,8 +2697,8 @@
         <div class="card-title">4 — Importieren</div>
         <!-- v2.9.9: Update-Modus für Produkte (Match auf Artikelnummer) -->
         <div id="import-product-update-mode" style="display:none;background:var(--bg-soft);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="import-update-existing">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="checkbox" id="import-update-existing" style="margin-top:3px;flex-shrink:0">
             <span><strong>Bestehende Produkte aktualisieren statt neu anlegen</strong> — Match-Spalte: <code>artikelnummer</code>. Wenn ein Produkt mit der gleichen Artikelnummer existiert, werden die importierten Spalten überschrieben (UPDATE), sonst wird das Produkt neu angelegt.</span>
           </label>
         </div>
@@ -3101,7 +3102,7 @@
           <input type="text" id="c-website" placeholder="www.firma.de">
         </div>
         <div class="form-group">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <label class="checkbox-row">
             <input type="checkbox" id="c-ist-lieferant">
             <span>Auch als Lieferant — taucht im Produkt-Modal als auswählbarer Lieferant auf</span>
           </label>
@@ -4299,7 +4300,7 @@
       </div>
     </div>
     <div class="form-group">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <label class="checkbox-row">
         <input type="checkbox" id="pp-im-paket">
         <span>Im Projektpreis enthalten (kein zusätzlicher Erlös, nur EK als Aufwand)</span>
       </label>

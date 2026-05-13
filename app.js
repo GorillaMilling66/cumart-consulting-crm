@@ -1,5 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.10.1 (Checkbox-Layout-Fix + Produkt-Schnellaktion
+   im Projekt-Sidepanel). Zwei Nachzüge zu v2.10.0:
+   1) Bei allen Modal-Checkboxen mit Label-Text daneben war die
+      Beschriftung optisch zerrissen — die generische .form-group
+      input-Regel (width:100%; padding:8px 12px) hat auch das
+      Häkchen-Kästchen voll-stretched, sodass das Label in eine
+      neue Spalte rutschte. Neue globale Regel
+      `.form-group input[type="checkbox"]/[type="radio"]
+      { width:auto; padding:0; margin:0; flex-shrink:0 }`
+      hält Checkboxen klein. Zusätzlich Utility-Klasse
+      `.form-group label.checkbox-row` für das Inline-Pattern
+      „Häkchen + Aussage in einer Zeile" — ersetzt vorher
+      inline gestylte `style="display:flex;…"`-Labels in
+      Projekt-Produkt-, Firma- und Produkt-Modals sowie im
+      CSV-Import-Update-Modus.
+   2) Im Projekt-Sidepanel unter AKTIONEN gibt es jetzt
+      „+ Produkt anlegen" zwischen „+ Einsatz anlegen" und
+      „+ Termin anlegen" — verdrahtet auf
+      openProjectProductModal('new') und übernimmt analog zu
+      den anderen Schnellaktionen einen ggf. vorhandenen
+      Notiz-Text als Bezeichnung über openModalWithNoteAsTitle.
    Version 2.10.0 (Produkt-Verkaufspositionen am Projekt —
    Phase 2 zu v2.6.0). Bisher floss in die Wirtschaftlichkeit
    eines Projekts nur die Summe der Einsätze (menge × einzel-
@@ -9739,6 +9760,10 @@ async function renderProjectDetail(p) {
   if (qcTask) qcTask.onclick = () => {
     taskModalPrefillProjectId = p.id;
     openModalWithNoteAsTitle('project-note-input', () => openTaskModal('new'), 'a-titel');
+  };
+  const qcProd = document.getElementById('project-quick-product');
+  if (qcProd) qcProd.onclick = () => {
+    openModalWithNoteAsTitle('project-note-input', () => openProjectProductModal('new'), 'pp-bezeichnung');
   };
 
   // Dashboard-Stats asynchron laden (v1.30 — schreibt in versteckte Backwards-Kompat-Felder)

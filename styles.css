@@ -2751,6 +2751,32 @@ body {
 .form-group select:disabled,
 .form-group textarea:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
 .form-group input[type="color"] { padding: 2px; height: 38px; cursor: pointer; }
+/* v2.10.1: Checkbox/Radio im .form-group nicht voll-stretchen — sonst übernimmt
+   die generische `.form-group input { width:100%; padding:8px 12px }`-Regel
+   auch sie, sodass das Häkchen-Kästchen 100 % breit wird und die nebenstehende
+   Beschriftung visuell zerreißt. */
+.form-group input[type="checkbox"],
+.form-group input[type="radio"] {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+}
+/* Utility-Klasse für „Label mit Checkbox + Text in einer Zeile". Ersetzt das
+   bisher inline gestylte `style="display:flex;align-items:center;gap:8px"` in
+   Modal-Form-Groups (Konvention v2.10.1). Schrift- und Farbwerte überschreiben
+   die `.form-group label`-Defaults (12 px / muted), weil eine Checkbox-Aussage
+   eine reguläre Aussage ist und nicht eine Feld-Caption. */
+.form-group label.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  line-height: 1.4;
+}
 .field-hint {
   display: block;
   font-size: 11px; color: var(--muted);
