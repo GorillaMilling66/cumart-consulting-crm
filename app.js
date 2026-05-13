@@ -5132,12 +5132,17 @@ async function loadPrepareSuggestions(typ) {
 
 async function arbeitsplatzCreate(typ) {
   const captureText = (_arbeitsplatzCaptureText || '').trim();
-  // Kontext-Vorbelegung — alle aktiven Bezüge anwenden
+  // Kontext-Vorbelegung — alle aktiven Bezüge anwenden.
+  // v2.15.4: Bezüge gehen jetzt auch in das Projekt-Modal (Firma →
+  // p-company, Kontakt → p-hauptkontakt). Vorher waren die Prefills
+  // im Projekt-Pfad nicht gesetzt, weshalb das Modal leer aufging,
+  // obwohl in der Eingabeleiste Bezüge ausgewählt waren.
   for (const ctx of _arbeitsplatzContexts) {
     if (ctx.type === 'firma') {
       appointmentModalPrefillCompanyId = ctx.id;
       taskModalPrefillCompanyId = ctx.id;
       deploymentModalPrefillCompanyId = ctx.id;
+      projectModalPrefillCompanyId = ctx.id;
     } else if (ctx.type === 'projekt') {
       appointmentModalPrefillProjectId = ctx.id;
       taskModalPrefillProjectId = ctx.id;
@@ -5145,6 +5150,7 @@ async function arbeitsplatzCreate(typ) {
     } else if (ctx.type === 'kontakt') {
       appointmentModalPrefillContactId = ctx.id;
       taskModalPrefillContactId = ctx.id;
+      projectModalPrefillHauptkontaktId = ctx.id;
     }
   }
 
