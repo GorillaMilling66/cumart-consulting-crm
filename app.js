@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.10.4 (Arbeitsplatz: Projekte in „Heute von dir" +
+   30 statt 5/12 Einträge mit Scroll-Liste). Drei Verbesserungen:
+   1) renderArbeitsplatzToday fragt jetzt zusätzlich Projekte
+      (`projects.erstellt_von=userId`) und Projekt-Produkt-
+      positionen (`project_products.erstellt_von=userId`) heute
+      an — vorher waren Projekte aus dem Filter rausgefallen.
+      Slice von 12 auf 30 hochgezogen, Sub-Limits auf 30/50.
+   2) Zuletzt-bearbeitet (`RECENT_VISITS_MAX`) von 5 auf 30
+      angehoben, sodass der lokale Verlauf mehr Tiefe hat.
+   3) `#arbeitsplatz-recent` und `#arbeitsplatz-today` bekommen
+      eine max-height von 380 px mit `overflow-y:auto` und
+      dünner Scrollbar — visuell sind ~10 Zeilen sichtbar, der
+      Rest scrollt bis 30 Einträge runter. Keine Schema-Changes.
    Version 2.10.3 (Einsatz darf unvollständig gespeichert
    werden — Vorbereitungsphase im Kundendeal). Drei Änderungen
    am Einsatz-Flow:
@@ -4246,23 +4259,28 @@ async function renderArbeitsplatzToday() {
   // Parallel-Queries: heute erstellte Datensätze in allen relevanten Tabellen.
   // v2.6.6: Firma, Kontakt, Notiz, Produkt mit dazu — Importe und Anlagen via
   // Listen / Einstellungen tauchen jetzt auch hier auf.
-  const [apptRes, depRes, taskRes, taskDoneRes, companyRes, contactRes, noteRes, productRes] = await Promise.all([
+  // v2.10.4: Projekte und Projekt-Produktpositionen mit dabei.
+  const [apptRes, depRes, taskRes, taskDoneRes, companyRes, contactRes, noteRes, productRes, projectRes, projectProductRes] = await Promise.all([
     db.from('appointments').select('id, titel, created_at').is('deleted_at', null)
-      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(30),
     db.from('deployments').select('id, titel, created_at').is('deleted_at', null)
-      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(30),
     db.from('tasks').select('id, titel, created_at').is('deleted_at', null)
-      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(30),
     db.from('tasks').select('id, titel, erledigt_am').is('deleted_at', null)
-      .eq('status', 'erledigt').gte('erledigt_am', todayStartISO).order('erledigt_am', { ascending: false }).limit(20),
+      .eq('status', 'erledigt').gte('erledigt_am', todayStartISO).order('erledigt_am', { ascending: false }).limit(30),
     db.from('companies').select('id, name, created_at').is('deleted_at', null)
       .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50),
     db.from('contacts').select('id, vorname, nachname, created_at').is('deleted_at', null)
       .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50),
     db.from('notes').select('id, inhalt, created_at')
-      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(20),
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(30),
     db.from('products').select('id, name, created_at').is('deleted_at', null)
-      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(50),
+    db.from('projects').select('id, name, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(30),
+    db.from('project_products').select('id, bezeichnung, project_id, created_at').is('deleted_at', null)
+      .eq('erstellt_von', userId).gte('created_at', todayStartISO).order('created_at', { ascending: false }).limit(30)
   ]);
 
   const items = [
@@ -4273,8 +4291,10 @@ async function renderArbeitsplatzToday() {
     ...((companyRes.data) || []).map(c => ({ type: 'FIRMA', ts: c.created_at, label: c.name, id: c.id, click: `navigateTo('firma','${esc(c.id)}')` })),
     ...((contactRes.data) || []).map(k => ({ type: 'KONTAKT', ts: k.created_at, label: [k.vorname, k.nachname].filter(Boolean).join(' ') || '—', id: k.id, click: `navigateTo('kontakt','${esc(k.id)}')` })),
     ...((noteRes.data) || []).map(n => ({ type: 'NOTIZ', ts: n.created_at, label: (n.inhalt || '').substring(0, 80), id: n.id })),
-    ...((productRes.data) || []).map(p => ({ type: 'PRODUKT', ts: p.created_at, label: p.name, id: p.id, click: `openProductModal('edit','${esc(p.id)}')` }))
-  ].filter(i => i.ts).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 12);
+    ...((productRes.data) || []).map(p => ({ type: 'PRODUKT', ts: p.created_at, label: p.name, id: p.id, click: `openProductModal('edit','${esc(p.id)}')` })),
+    ...((projectRes.data) || []).map(p => ({ type: 'PROJEKT', ts: p.created_at, label: p.name, id: p.id, click: `navigateTo('projekt','${esc(p.id)}')` })),
+    ...((projectProductRes.data) || []).map(pp => ({ type: 'PRODUKT', ts: pp.created_at, label: pp.bezeichnung, id: pp.id, click: pp.project_id ? `navigateTo('projekt','${esc(pp.project_id)}')` : '' }))
+  ].filter(i => i.ts).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 30);
 
   if (counter) counter.textContent = `${items.length} Aktion${items.length === 1 ? '' : 'en'}`;
 
@@ -12354,7 +12374,7 @@ let searchResults = [];        // flache Liste {type, id, title, subtitle}
 let searchActiveIndex = -1;
 
 const RECENT_VISITS_KEY = 'cumart_recent_visits';
-const RECENT_VISITS_MAX = 5;
+const RECENT_VISITS_MAX = 30;   // v2.10.4: 10 sichtbar, scrollbar bis 30
 
 function getRecentlyVisited() {
   try { return JSON.parse(localStorage.getItem(RECENT_VISITS_KEY) || '[]'); }

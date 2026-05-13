@@ -1461,6 +1461,19 @@ body {
 }
 .arbeitsplatz-side-link:hover { color: var(--text); text-decoration: underline; }
 
+/* v2.10.4: max-Höhe entspricht ~10 Zeilen, Rest scrollt — bis zu 30 Einträge
+   in beiden Listen erreichbar, ohne dass der Arbeitsplatz endlos wird. */
+#arbeitsplatz-recent,
+#arbeitsplatz-today {
+  max-height: 380px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+#arbeitsplatz-recent::-webkit-scrollbar,
+#arbeitsplatz-today::-webkit-scrollbar { width: 8px; }
+#arbeitsplatz-recent::-webkit-scrollbar-thumb,
+#arbeitsplatz-today::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
 .arbeitsplatz-recent-row {
   display: grid;
   grid-template-columns: 70px 1fr;
