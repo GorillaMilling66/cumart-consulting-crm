@@ -42,7 +42,16 @@
       „X erbracht · Y geplant / Z Tage" in allen drei Sichten
       (bv2-Briefing, Technik, Beides). CSS:
       `.auslastung-stack`/`.auslastung-stack-fill-done`/
-      `.auslastung-stack-fill-plan`.
+      `.auslastung-stack-fill-plan`. Im „Alle Mitarbeiter"-
+      Modus rechnet die Kachel in Personentagen: Nenner =
+      aktive `user_profiles` (`ist_aktiv = true`) × Werktage,
+      Zähler aus `deployment_technicians`-Slots pro (User, Tag)
+      mit Status-Priorität Durchgeführt/Abgerechnet > Geplant
+      (kein Doppelzählen bei Mehrfach-Einsätzen am gleichen Tag).
+      Sub-Text wechselt im All-Modus auf „… / N Pers.tage".
+      `loadBriefingData` liefert dafür `activeUserIds` (nur im
+      isAll-Pfad geladen) und erweitert die `deployments`-Query
+      um `deployment_technicians(user_id)`.
    Version 2.11.6 (Letzter Login pro Benutzer in der Admin-
    Benutzerverwaltung). `auth.users.last_sign_in_at` ist für
    authenticated-Clients nicht direkt lesbar (auth-Schema).
@@ -3953,16 +3962,17 @@ function renderBriefingMonat(data) {
   const umsatzAbg = sumDays(depsAbgerechnet);
   const umsatzGep = sumDays(depsGeplant);
 
-  // Auslastung aus existing computeMonthAuslastung (v2.11.7: + geplant)
+  // Auslastung aus existing computeMonthAuslastung (v2.11.7: + geplant + Personentage)
   let auslastungPct = 0, werk = 0, belegt = 0, geplantTage = 0;
-  let donePct = 0, planPct = 0;
+  let donePct = 0, planPct = 0, isAllMode = false;
   if (typeof computeMonthAuslastung === 'function') {
     const a = computeMonthAuslastung(data, todayISO);
-    werk = a.werk; belegt = a.belegt; geplantTage = a.geplant || 0;
+    werk = a.werk; belegt = a.belegt; geplantTage = a.geplant || 0; isAllMode = !!a.isAllMode;
     auslastungPct = werk > 0 ? Math.round(((belegt + geplantTage) / werk) * 100) : 0;
     donePct = werk > 0 ? (belegt / werk) * 100 : 0;
     planPct = werk > 0 ? (geplantTage / werk) * 100 : 0;
   }
+  const tageEinheit = isAllMode ? 'Pers.tage' : 'Tage';
 
   const pipeline = data.pipelineProjects || [];
   const pipelineSum = pipeline.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
@@ -3984,11 +3994,11 @@ function renderBriefingMonat(data) {
         <div class="bv2-month-kpi is-amber">
           <div class="bv2-month-kpi-label">Auslastung</div>
           <div class="bv2-month-kpi-value">${auslastungPct} %</div>
-          <div class="auslastung-stack" title="${belegt} erbracht · ${geplantTage} geplant von ${werk} Werktagen">
+          <div class="auslastung-stack" title="${belegt} erbracht · ${geplantTage} geplant von ${werk} ${tageEinheit}">
             <div class="auslastung-stack-fill-done" style="width:${donePct}%"></div>
             <div class="auslastung-stack-fill-plan" style="width:${planPct}%"></div>
           </div>
-          <div class="bv2-month-kpi-sub">${belegt} erbracht · ${geplantTage} geplant / ${werk} Tage</div>
+          <div class="bv2-month-kpi-sub">${belegt} erbracht · ${geplantTage} geplant / ${werk} ${tageEinheit}</div>
         </div>
         <div class="bv2-month-kpi is-purple">
           <div class="bv2-month-kpi-label">Pipeline</div>
@@ -10237,6 +10247,9 @@ async function renderProjectDetail(p) {
     openDeploymentModal('new');
   });
   wire('project-detail-add-product-btn', () => openProjectProductModal('new'));
+  // v2.12.0: Bündel-Aktionen
+  wire('project-detail-add-bundle-btn', () => openDeploymentBundleModal('new'));
+  wire('project-detail-bundle-from-existing-btn', () => openBundleFromExistingPicker());
   wire('project-detail-add-task-btn', () => {
     taskModalPrefillProjectId = p.id;
     openTaskModal('new');
@@ -12635,8 +12648,450 @@ async function refreshProjectAfterFinanceChange(projectId) {
     .is('deleted_at', null).eq('id', projectId).single();
   await Promise.all([
     loadProjectProducts(projectId),
+    loadProjectDeployments(projectId),
     p ? loadProjectDashboard(p) : Promise.resolve()
   ]);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.12.0 — EINSATZ-BÜNDEL (Mehrtages-Klammer)
+//  Tabellen: deployment_bundles, deployment_bundle_technicians,
+//  deployments.bundle_id + bundle_overrides
+// ═══════════════════════════════════════════════════════════
+
+let editingBundleId = null;
+let selectedBundleTeamIds = new Set();
+let _bundleDayRows = [];       // [{ id?, datum_von, uhrzeit_von, uhrzeit_bis, menge, status }]
+let _bundleDeletedDayIds = []; // existierende Einsätze, die aus der Tage-Liste entfernt wurden
+
+/** Öffnet das Bündel-Modal entweder leer (für ein neues Bündel) oder mit
+ *  vorbefüllten Werten + Tagen aus einem bestehenden Bündel. Optional kann
+ *  eine Liste vorhandener Deployment-IDs als Tage-Vorbefüllung übergeben
+ *  werden — das ist der Konvertier-Flow „Auswahl bündeln". */
+async function openDeploymentBundleModal(mode, bundleId = null, opts = {}) {
+  if (!currentProjectDetailId) {
+    showToast('Bündel können aktuell nur aus einem Projekt heraus angelegt werden.', true);
+    return;
+  }
+  editingBundleId = (mode === 'edit') ? bundleId : null;
+
+  // Caches sicherstellen
+  await Promise.all([loadEinsatzStatus(), loadServicesCache(), loadUserProfilesCache()]);
+
+  // Titel + Delete-Button
+  document.getElementById('modal-deployment-bundle-title').textContent =
+    (mode === 'edit') ? 'Einsatz-Bündel bearbeiten' : 'Neues Einsatz-Bündel';
+  const deleteBtn = document.getElementById('b-delete-btn');
+  if (deleteBtn) deleteBtn.style.display = (mode === 'edit') ? '' : 'none';
+
+  // Service-Dropdown füllen (mit data-Attributen für Auto-Fill)
+  const serviceSelect = document.getElementById('b-service');
+  serviceSelect.innerHTML = '<option value="">— Keine Leistung —</option>'
+    + servicesCache.map(s =>
+        `<option value="${esc(s.id)}" data-preis="${s.standardpreis || 0}">${esc(s.name)} (${esc(s.einheit || '—')})</option>`
+      ).join('');
+  serviceSelect.onchange = onBundleServiceChange;
+
+  // Felder zurücksetzen
+  document.getElementById('b-titel').value = '';
+  document.getElementById('b-einzelpreis').value = '';
+  document.getElementById('b-ort').value = '';
+  document.getElementById('b-beschreibung').value = '';
+  document.getElementById('b-notizen').value = '';
+  document.getElementById('b-externe-techniker').value = '';
+  document.getElementById('b-documentation-block').innerHTML =
+    renderDocumentationBlock('einsatz', null, { idPrefix: 'b-doc' });
+  selectedBundleTeamIds = new Set();
+  _bundleDayRows = [];
+  _bundleDeletedDayIds = [];
+
+  // Reset-Button am Preis verdrahten
+  const priceReset = document.getElementById('b-einzelpreis-reset');
+  if (priceReset) {
+    priceReset.onclick = () => {
+      const opt = serviceSelect.options[serviceSelect.selectedIndex];
+      const preis = opt?.getAttribute('data-preis');
+      if (!preis) { showToast('Kein Service mit Standardpreis gewählt.', true); return; }
+      document.getElementById('b-einzelpreis').value = preis;
+    };
+  }
+
+  // + Tag hinzufügen
+  document.getElementById('b-add-day').onclick = () => addBundleDayRow();
+
+  if (mode === 'edit' && bundleId) {
+    const { data: bundle, error } = await db.from('deployment_bundles')
+      .select('*').eq('id', bundleId).single();
+    if (error || !bundle) {
+      showToast('Bündel konnte nicht geladen werden.', true);
+      return;
+    }
+    document.getElementById('b-titel').value         = bundle.titel || '';
+    document.getElementById('b-einzelpreis').value   = bundle.einzelpreis ?? '';
+    document.getElementById('b-ort').value           = bundle.ort || '';
+    document.getElementById('b-beschreibung').value  = bundle.beschreibung || '';
+    document.getElementById('b-notizen').value       = bundle.notizen || '';
+    document.getElementById('b-externe-techniker').value = bundle.externe_techniker || '';
+    if (bundle.service_id) serviceSelect.value = bundle.service_id;
+    document.getElementById('b-documentation-block').innerHTML =
+      renderDocumentationBlock('einsatz', bundle.dokumentation, { idPrefix: 'b-doc' });
+
+    const [teamRows, deps] = await Promise.all([
+      db.from('deployment_bundle_technicians').select('user_id').eq('bundle_id', bundleId),
+      db.from('deployments').select('id, datum_von, uhrzeit_von, uhrzeit_bis, menge, status')
+        .is('deleted_at', null).eq('bundle_id', bundleId).order('datum_von', { ascending: true })
+    ]);
+    selectedBundleTeamIds = new Set((teamRows.data || []).map(r => r.user_id));
+    (deps.data || []).forEach(d => _bundleDayRows.push({
+      id: d.id,
+      datum_von: d.datum_von || '',
+      uhrzeit_von: d.uhrzeit_von ? d.uhrzeit_von.substring(0,5) : '',
+      uhrzeit_bis: d.uhrzeit_bis ? d.uhrzeit_bis.substring(0,5) : '',
+      menge: d.menge ?? 1,
+      status: d.status || 'Geplant'
+    }));
+  } else if (Array.isArray(opts.fromDeploymentIds) && opts.fromDeploymentIds.length > 0) {
+    // Konvertier-Flow: bestehende Einsätze in ein neues Bündel ziehen.
+    const { data: deps } = await db.from('deployments')
+      .select('id, titel, datum_von, uhrzeit_von, uhrzeit_bis, menge, status, einzelpreis, service_id, ort, beschreibung, dokumentation, externe_techniker')
+      .is('deleted_at', null)
+      .in('id', opts.fromDeploymentIds)
+      .order('datum_von', { ascending: true });
+    const list = deps || [];
+    if (list.length > 0) {
+      const first = list[0];
+      document.getElementById('b-titel').value         = first.titel || '';
+      document.getElementById('b-einzelpreis').value   = first.einzelpreis ?? '';
+      document.getElementById('b-ort').value           = first.ort || '';
+      document.getElementById('b-beschreibung').value  = first.beschreibung || '';
+      document.getElementById('b-externe-techniker').value = first.externe_techniker || '';
+      if (first.service_id) serviceSelect.value = first.service_id;
+      if (first.dokumentation) {
+        document.getElementById('b-documentation-block').innerHTML =
+          renderDocumentationBlock('einsatz', first.dokumentation, { idPrefix: 'b-doc' });
+      }
+      // Techniker-Vereinigung aus allen Einsätzen
+      const { data: techRows } = await db.from('deployment_technicians')
+        .select('user_id').in('deployment_id', list.map(d => d.id));
+      selectedBundleTeamIds = new Set((techRows || []).map(r => r.user_id));
+      list.forEach(d => _bundleDayRows.push({
+        id: d.id,
+        datum_von: d.datum_von || '',
+        uhrzeit_von: d.uhrzeit_von ? d.uhrzeit_von.substring(0,5) : '',
+        uhrzeit_bis: d.uhrzeit_bis ? d.uhrzeit_bis.substring(0,5) : '',
+        menge: d.menge ?? 1,
+        status: d.status || 'Geplant'
+      }));
+    }
+  }
+
+  // Wenn weder Edit noch Konvertierung: starte mit einer leeren Zeile
+  if (_bundleDayRows.length === 0) addBundleDayRow();
+
+  renderBundleTeamChips();
+  renderBundleDayRows();
+  updateBundleDaysSummary();
+
+  document.getElementById('modal-deployment-bundle').classList.add('open');
+  setTimeout(() => document.getElementById('b-titel')?.focus(), 100);
+}
+
+function closeDeploymentBundleModal() {
+  document.getElementById('modal-deployment-bundle').classList.remove('open');
+  editingBundleId = null;
+  selectedBundleTeamIds = new Set();
+  _bundleDayRows = [];
+  _bundleDeletedDayIds = [];
+}
+
+function onBundleServiceChange() {
+  const sel = document.getElementById('b-service');
+  const opt = sel.options[sel.selectedIndex];
+  const preis = opt?.getAttribute('data-preis');
+  const aktuell = document.getElementById('b-einzelpreis').value;
+  if (preis && (!aktuell || Number(aktuell) === 0)) {
+    document.getElementById('b-einzelpreis').value = preis;
+  }
+}
+
+function renderBundleTeamChips() {
+  const wrap = document.getElementById('b-team-list');
+  if (!wrap) return;
+  if (userProfilesCache.length === 0) {
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">Keine internen Kollegen verfügbar.</span>';
+    return;
+  }
+  wrap.innerHTML = userProfilesCache.map(u => {
+    const selected = selectedBundleTeamIds.has(u.id);
+    return `
+      <div class="techniker-chip${selected ? ' selected' : ''}" data-user-id="${esc(u.id)}"
+           onclick="toggleBundleTeamChip('${esc(u.id)}')">
+        <span class="techniker-chip-avatar">${esc(ini(u.name))}</span>
+        <span>${esc(u.name)}</span>
+      </div>`;
+  }).join('');
+}
+
+function toggleBundleTeamChip(userId) {
+  if (selectedBundleTeamIds.has(userId)) selectedBundleTeamIds.delete(userId);
+  else selectedBundleTeamIds.add(userId);
+  renderBundleTeamChips();
+}
+
+function addBundleDayRow() {
+  const last = _bundleDayRows[_bundleDayRows.length - 1];
+  _bundleDayRows.push({
+    id: null,
+    datum_von: last?.datum_von ? _addWorkday(last.datum_von) : toISODate(new Date()),
+    uhrzeit_von: last?.uhrzeit_von || '',
+    uhrzeit_bis: last?.uhrzeit_bis || '',
+    menge: last?.menge || 1,
+    status: 'Geplant'
+  });
+  renderBundleDayRows();
+  updateBundleDaysSummary();
+}
+
+function _addWorkday(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return toISODate(d);
+}
+
+function removeBundleDayRow(idx) {
+  const row = _bundleDayRows[idx];
+  if (!row) return;
+  if (row.id) _bundleDeletedDayIds.push(row.id);
+  _bundleDayRows.splice(idx, 1);
+  renderBundleDayRows();
+  updateBundleDaysSummary();
+}
+
+function renderBundleDayRows() {
+  const tbody = document.getElementById('b-days-body');
+  if (!tbody) return;
+  if (_bundleDayRows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty" style="padding:14px">Noch keine Tage. Klicke oben auf „+ Tag hinzufügen".</div></td></tr>';
+    return;
+  }
+  const statusOptions = einsatzStatusCache
+    .map(s => `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
+  tbody.innerHTML = _bundleDayRows.map((r, i) => `
+    <tr data-bundle-day-idx="${i}">
+      <td><input type="date" value="${esc(r.datum_von || '')}" onchange="updateBundleDayField(${i},'datum_von',this.value)"></td>
+      <td><input type="time" value="${esc(r.uhrzeit_von || '')}" onchange="updateBundleDayField(${i},'uhrzeit_von',this.value)"></td>
+      <td><input type="time" value="${esc(r.uhrzeit_bis || '')}" onchange="updateBundleDayField(${i},'uhrzeit_bis',this.value)"></td>
+      <td><input type="number" min="0" step="0.5" value="${esc(String(r.menge ?? 1))}" onchange="updateBundleDayField(${i},'menge',this.value)"></td>
+      <td><select onchange="updateBundleDayField(${i},'status',this.value)">${statusOptions.replace(`value="${esc(r.status)}"`, `value="${esc(r.status)}" selected`)}</select></td>
+      <td style="text-align:center"><button type="button" class="b-day-remove" title="Tag entfernen" onclick="removeBundleDayRow(${i})">×</button></td>
+    </tr>`).join('');
+}
+
+function updateBundleDayField(idx, field, value) {
+  if (!_bundleDayRows[idx]) return;
+  _bundleDayRows[idx][field] = value;
+  if (field === 'datum_von' || field === 'menge') updateBundleDaysSummary();
+}
+
+function updateBundleDaysSummary() {
+  const el = document.getElementById('b-days-summary');
+  if (!el) return;
+  const days = _bundleDayRows.filter(r => r.datum_von).length;
+  const totalMenge = _bundleDayRows.reduce((s, r) => s + (Number(r.menge) || 0), 0);
+  const einzel = Number(document.getElementById('b-einzelpreis')?.value || 0);
+  const gesamt = totalMenge * einzel;
+  el.textContent = `${days} Tag${days === 1 ? '' : 'e'} · Gesamt-Aufwand: ${formatPreis(gesamt)}`;
+}
+
+async function saveDeploymentBundle() {
+  if (!currentProjectDetailId) return;
+
+  const titel = document.getElementById('b-titel').value.trim();
+  if (!titel) { showToast('Bitte Titel eingeben.', true); return; }
+  const valid = _bundleDayRows.filter(r => r.datum_von);
+  if (valid.length === 0 && _bundleDeletedDayIds.length === 0) {
+    showToast('Bitte mindestens einen Tag mit Datum hinzufügen.', true);
+    return;
+  }
+
+  // Bundle-Projekt-Firma ableiten
+  const { data: proj } = await db.from('projects')
+    .select('company_id').is('deleted_at', null).eq('id', currentProjectDetailId).single();
+  const companyId = proj?.company_id || null;
+
+  const payload = {
+    titel,
+    beschreibung: document.getElementById('b-beschreibung').value.trim() || null,
+    notizen: document.getElementById('b-notizen').value.trim() || null,
+    service_id: document.getElementById('b-service').value || null,
+    einzelpreis: Number(document.getElementById('b-einzelpreis').value) || 0,
+    ort: document.getElementById('b-ort').value.trim() || null,
+    externe_techniker: document.getElementById('b-externe-techniker').value.trim() || null,
+    company_id: companyId,
+    project_id: currentProjectDetailId,
+    dokumentation: readDocumentationFromDom('einsatz', 'b-doc') || {}
+  };
+  if (!editingBundleId && currentProfile?.id) payload.erstellt_von = currentProfile.id;
+
+  try {
+    let bundle;
+    if (editingBundleId) {
+      const { data, error } = await db.from('deployment_bundles')
+        .update(payload).eq('id', editingBundleId).select().single();
+      if (error) throw new Error(error.message);
+      bundle = data;
+    } else {
+      const { data, error } = await db.from('deployment_bundles')
+        .insert(payload).select().single();
+      if (error) throw new Error(error.message);
+      bundle = data;
+    }
+
+    // Internes Team syncen (delete-then-insert)
+    await db.from('deployment_bundle_technicians').delete().eq('bundle_id', bundle.id);
+    if (selectedBundleTeamIds.size > 0) {
+      const techRows = [...selectedBundleTeamIds].map(uid => ({ bundle_id: bundle.id, user_id: uid }));
+      await db.from('deployment_bundle_technicians').insert(techRows);
+    }
+
+    // Tage-Liste syncen — gelöschte Einträge soft-löschen
+    if (_bundleDeletedDayIds.length > 0) {
+      await db.from('deployments')
+        .update({ deleted_at: new Date().toISOString() })
+        .in('id', _bundleDeletedDayIds);
+    }
+
+    // Einsätze pro Tag: UPDATE bestehende, INSERT neue
+    const sharedFields = {
+      bundle_id: bundle.id,
+      titel: payload.titel,
+      beschreibung: payload.beschreibung,
+      service_id: payload.service_id,
+      einzelpreis: payload.einzelpreis,
+      ort: payload.ort,
+      externe_techniker: payload.externe_techniker,
+      company_id: companyId,
+      project_id: currentProjectDetailId,
+      dokumentation: payload.dokumentation
+    };
+    for (const r of valid) {
+      const perDayFields = {
+        datum_von: r.datum_von,
+        datum_bis: r.datum_von,
+        uhrzeit_von: r.uhrzeit_von || null,
+        uhrzeit_bis: r.uhrzeit_bis || null,
+        menge: Number(r.menge) || 1,
+        status: r.status || 'Geplant'
+      };
+      if (r.id) {
+        // Bestehender Einsatz — shared-Felder überschreiben (bundle_overrides
+        // bleibt unangetastet; in v1 wird der Override-Schutz noch nicht angewandt).
+        await db.from('deployments').update({ ...sharedFields, ...perDayFields }).eq('id', r.id);
+      } else {
+        await db.from('deployments').insert({
+          ...sharedFields, ...perDayFields,
+          erstellt_von: currentProfile?.id || null,
+          bundle_overrides: []
+        });
+      }
+    }
+
+    // Technician-Sync auf alle Bundle-Member: vereinheitlichtes Team aus dem Bundle
+    const memberIds = (await db.from('deployments').select('id').is('deleted_at', null).eq('bundle_id', bundle.id)).data?.map(r => r.id) || [];
+    if (memberIds.length > 0) {
+      await db.from('deployment_technicians').delete().in('deployment_id', memberIds);
+      if (selectedBundleTeamIds.size > 0) {
+        const rows = [];
+        memberIds.forEach(did => selectedBundleTeamIds.forEach(uid => rows.push({ deployment_id: did, user_id: uid })));
+        await db.from('deployment_technicians').insert(rows);
+      }
+    }
+
+    closeDeploymentBundleModal();
+    showToast(editingBundleId ? 'Bündel aktualisiert.' : 'Bündel angelegt.');
+    await refreshProjectAfterFinanceChange(currentProjectDetailId);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function deleteDeploymentBundle() {
+  if (!editingBundleId) return;
+  const ok = await confirmDialog({
+    title: 'Bündel löschen?',
+    message: 'Das Bündel wird soft-gelöscht. Die zugehörigen Einsätze bleiben erhalten — sie werden nur aus dem Bündel gelöst.',
+    confirmLabel: 'Bündel auflösen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+  try {
+    await db.from('deployments').update({ bundle_id: null }).eq('bundle_id', editingBundleId);
+    await db.from('deployment_bundles').update({ deleted_at: new Date().toISOString() }).eq('id', editingBundleId);
+    closeDeploymentBundleModal();
+    showToast('Bündel aufgelöst — Einsätze sind wieder einzelne Datensätze.');
+    if (currentProjectDetailId) await refreshProjectAfterFinanceChange(currentProjectDetailId);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// Bündel-Liste am Projekt — wird im Wirtschaftlichkeit-Tab gerendert.
+let _projectBundlesCache = [];
+let _collapsedBundleIds = new Set();   // UI-State: welche Bündel sind eingeklappt
+
+/** Picker-Dialog: zeigt alle ungebündelten Einsätze des aktuellen Projekts mit
+ *  Checkboxen und öffnet das Bündel-Modal mit den ausgewählten als Tagen. */
+async function openBundleFromExistingPicker() {
+  if (!currentProjectDetailId) return;
+  const { data: deps } = await db.from('deployments')
+    .select('id, titel, datum_von, datum_bis, einzelpreis, menge, status')
+    .is('deleted_at', null).is('bundle_id', null).eq('project_id', currentProjectDetailId)
+    .order('datum_von', { ascending: true, nullsFirst: false });
+  const list = deps || [];
+  if (list.length === 0) {
+    showToast('Keine ungebündelten Einsätze in diesem Projekt.', false);
+    return;
+  }
+
+  const rowsHtml = list.map(d => {
+    const date = d.datum_von ? formatDateDE(d.datum_von) : 'Ungeplant';
+    const wert = formatPreis((Number(d.menge) || 0) * (Number(d.einzelpreis) || 0));
+    return `<label class="bundle-picker-row" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:0.5px solid var(--border);cursor:pointer">
+      <input type="checkbox" value="${esc(d.id)}" style="width:16px;height:16px;margin:0">
+      <span style="font-size:12px;color:var(--muted);min-width:90px">${esc(date)}</span>
+      <span style="flex:1;font-size:13px;color:var(--text)">${esc(d.titel || '—')}</span>
+      <span style="font-size:12px;color:var(--muted)">${esc(d.status)}</span>
+      <span style="font-size:12px;color:var(--text);font-variant-numeric:tabular-nums">${esc(wert)}</span>
+    </label>`;
+  }).join('');
+
+  const ok = await confirmDialog({
+    title: 'Einsätze zu Bündel zusammenfassen',
+    message: `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">
+        Wähle mindestens zwei Einsätze aus, die als Tage in einem neuen Bündel
+        zusammengefasst werden sollen. Die gemeinsamen Werte des ersten Einsatzes
+        (Titel, Service, Preis, Ort, Doku, Team) werden ins Bündel übernommen.
+      </div>
+      <div id="bundle-picker-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px 8px">${rowsHtml}</div>`,
+    confirmLabel: 'Bündel anlegen',
+    cancelLabel: 'Abbrechen',
+    danger: false
+  });
+  if (!ok) return;
+
+  const checked = Array.from(document.querySelectorAll('#bundle-picker-list input[type=checkbox]:checked'))
+    .map(cb => cb.value);
+  if (checked.length < 2) {
+    showToast('Bitte mindestens zwei Einsätze auswählen.', true);
+    return;
+  }
+  openDeploymentBundleModal('new', null, { fromDeploymentIds: checked });
+}
+
+function toggleBundleCollapse(bundleId) {
+  if (_collapsedBundleIds.has(bundleId)) _collapsedBundleIds.delete(bundleId);
+  else _collapsedBundleIds.add(bundleId);
+  if (currentProjectDetailId) loadProjectDeployments(currentProjectDetailId);
 }
 
 /**
@@ -16150,7 +16605,7 @@ async function loadBriefingData(userId, scope) {
       .is('deleted_at', null), 'erstellt_von')
       .gte('datum', range.startISO).lte('datum', range.endISO)
       .order('datum', { ascending: true }).order('uhrzeit_von', { ascending: true, nullsFirst: false }),
-    depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name)'),
+    depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name), deployment_technicians(user_id)'),
     userEq(db.from('tasks')
       .select('id, titel, faelligkeit, status, company:companies(id, name), contact:contacts(id, vorname, nachname)')
       .is('deleted_at', null), 'assigned_to')
@@ -16177,6 +16632,16 @@ async function loadBriefingData(userId, scope) {
     depsQuery('id, datum_von, status, deleted_at'),
     loadIncompleteRecordsStats()
   ]);
+
+  // v2.11.7: Personentage-Modus für „Alle Mitarbeiter" — aktive User-IDs laden.
+  let activeUserIds = null;
+  if (isAll && scope === 'monat') {
+    const { data: activeUsersRes } = await db
+      .from('user_profiles')
+      .select('id')
+      .eq('ist_aktiv', true);
+    activeUserIds = (activeUsersRes || []).map(u => u.id);
+  }
 
   // Einsätze filtern auf Range + nicht gelöscht
   const allDeps = extractDeps(depInRange);
@@ -16277,7 +16742,7 @@ async function loadBriefingData(userId, scope) {
         .is('deleted_at', null)
         .in('status', ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase']),
       // v1.46.0: titel/ort/service ergänzt; v2.11.7: __all__-Branch via depsQuery.
-      depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name)'),
+      depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name), deployment_technicians(user_id)'),
       // Vorige 3 Monate für Ziel-Berechnung; v2.11.7: __all__-Branch.
       depsQuery('id, datum_von, datum_bis, status, deleted_at, menge, einzelpreis'),
       // v1.45.6: Im Monat erstellte Termine (Vertrieb)
@@ -16505,7 +16970,9 @@ async function loadBriefingData(userId, scope) {
     tasksDoneInMonth,
     overdueGeplant,
     restmonatGeplant,
-    membershipAttention
+    membershipAttention,
+    activeUserIds,
+    isAllMode: isAll
   };
 }
 
@@ -16682,8 +17149,9 @@ function renderMonthDashTechnik(data) {
   const auslastungPct = arbeitsTage.werk > 0
     ? Math.round(((arbeitsTage.belegt + geplantTage) / arbeitsTage.werk) * 100)
     : 0;
-  const auslastungBar = renderAuslastungStackBar(arbeitsTage.belegt, geplantTage, arbeitsTage.werk);
-  const auslastungSub = `${arbeitsTage.belegt} erbracht · ${geplantTage} geplant / ${arbeitsTage.werk} Tage`;
+  const tageEinheit = arbeitsTage.isAllMode ? 'Pers.tage' : 'Tage';
+  const auslastungBar = renderAuslastungStackBar(arbeitsTage.belegt, geplantTage, arbeitsTage.werk, tageEinheit);
+  const auslastungSub = `${arbeitsTage.belegt} erbracht · ${geplantTage} geplant / ${arbeitsTage.werk} ${tageEinheit}`;
 
   // Pflegerückstand: Geplant aber Datum < heute
   const overdue = data.overdueGeplant || [];
@@ -16946,8 +17414,9 @@ function renderMonthDashBeides(data) {
   const auslastungPct = arbeitsTage.werk > 0
     ? Math.round(((arbeitsTage.belegt + geplantTage) / arbeitsTage.werk) * 100)
     : 0;
-  const auslastungBar = renderAuslastungStackBar(arbeitsTage.belegt, geplantTage, arbeitsTage.werk);
-  const auslastungSub = `${arbeitsTage.belegt} erbracht · ${geplantTage} geplant / ${arbeitsTage.werk} Tage`;
+  const tageEinheit = arbeitsTage.isAllMode ? 'Pers.tage' : 'Tage';
+  const auslastungBar = renderAuslastungStackBar(arbeitsTage.belegt, geplantTage, arbeitsTage.werk, tageEinheit);
+  const auslastungSub = `${arbeitsTage.belegt} erbracht · ${geplantTage} geplant / ${arbeitsTage.werk} ${tageEinheit}`;
 
   const pipelineProjects = data.pipelineProjects || [];
   const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
@@ -17014,11 +17483,12 @@ function renderMonthDashBeides(data) {
 
 /** Helper für KPI-Kachel mit optionaler Sparkline. */
 /** v2.11.7: Stacked-Bar Erbracht (dunkel) + Geplant (heller) für Auslastung-Kachel. */
-function renderAuslastungStackBar(belegt, geplant, werk) {
+function renderAuslastungStackBar(belegt, geplant, werk, einheit) {
   const donePct = werk > 0 ? (belegt / werk) * 100 : 0;
   const planPct = werk > 0 ? (geplant / werk) * 100 : 0;
+  const label = einheit || 'Werktagen';
   return `
-    <div class="auslastung-stack" title="${belegt} erbracht · ${geplant} geplant von ${werk} Werktagen">
+    <div class="auslastung-stack" title="${belegt} erbracht · ${geplant} geplant von ${werk} ${label}">
       <div class="auslastung-stack-fill-done" style="width:${donePct}%"></div>
       <div class="auslastung-stack-fill-plan" style="width:${planPct}%"></div>
     </div>`;
@@ -17038,19 +17508,46 @@ function monthKpiTile(kicker, value, sub, color, onclick, sparkData, extraHtml) 
 }
 
 /** Helper für Auslastung — extrahiert, wird von Technik + Beides genutzt.
- *  v2.11.7: Zusätzlich `geplant` = Werktage mit Status `Geplant`, die NICHT
- *  bereits durch Durchgeführt/Abgerechnet abgedeckt sind (kein Doppelzählen). */
+ *  v2.11.7: Zwei Modi.
+ *  - Single-User: `werk` = Werktage des Monats. `belegt`/`geplant` zählen
+ *    Tage, an denen der User mindestens einen Einsatz hat.
+ *  - All-Modus (data.activeUserIds gesetzt): Personentage. `werk` = aktive
+ *    User × Werktage. `belegt`/`geplant` zählen pro (User, Werktag) einen
+ *    Slot, wenn der User als Techniker auf einem Einsatz an dem Tag steht.
+ *    Status-Priorität: Durchgeführt/Abgerechnet > Geplant. */
 function computeMonthAuslastung(data, todayISO) {
   const monthStart = new Date(todayISO + 'T00:00:00'); monthStart.setDate(1);
   const monthEnd   = new Date(monthStart); monthEnd.setMonth(monthStart.getMonth() + 1); monthEnd.setDate(0);
   const yearHolidays = computeBwHolidays(monthStart.getFullYear());
+  const isAllMode = Array.isArray(data.activeUserIds) && data.activeUserIds.length > 0;
+
   let werk = 0, belegt = 0, geplant = 0;
   let cur = new Date(monthStart);
   while (cur <= monthEnd) {
     const iso = toISODate(cur);
     const dow = cur.getDay();
     const isWorkday = dow !== 0 && dow !== 6 && !yearHolidays.has(iso);
-    if (isWorkday) {
+    if (!isWorkday) { cur.setDate(cur.getDate() + 1); continue; }
+
+    if (isAllMode) {
+      const depsAtDay = data.deployments.filter(dep =>
+        iso >= dep.datum_von && iso <= (dep.datum_bis || dep.datum_von)
+      );
+      for (const uid of data.activeUserIds) {
+        werk++;
+        let userBelegt = false, userGeplant = false;
+        for (const dep of depsAtDay) {
+          const techs = (dep.deployment_technicians || []).map(t => t.user_id);
+          if (!techs.includes(uid)) continue;
+          if (dep.status === 'Durchgeführt' || dep.status === 'Abgerechnet') {
+            userBelegt = true; break;
+          }
+          if (dep.status === 'Geplant') userGeplant = true;
+        }
+        if (userBelegt) belegt++;
+        else if (userGeplant) geplant++;
+      }
+    } else {
       werk++;
       const isBelegt = data.deployments.some(dep =>
         ['Durchgeführt', 'Abgerechnet'].includes(dep.status) &&
@@ -17069,7 +17566,7 @@ function computeMonthAuslastung(data, todayISO) {
     }
     cur.setDate(cur.getDate() + 1);
   }
-  return { werk, belegt, geplant };
+  return { werk, belegt, geplant, isAllMode };
 }
 
 /** ALT (vor v1.45.6) — wird durch die neuen renderMonthDash*-Funktionen ersetzt.
