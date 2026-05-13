@@ -888,6 +888,26 @@ body {
 .bv2-month-kpi-value { font-size: 22px; font-weight: 500; margin-top: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
 .bv2-month-kpi-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
+/* Auslastung — Stacked-Bar (Erbracht + Geplant) */
+.auslastung-stack {
+  display: flex;
+  height: 6px;
+  width: 100%;
+  margin-top: 6px;
+  background: var(--border, #e5e7eb);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.auslastung-stack-fill-done {
+  background: var(--status-done-accent);
+  height: 100%;
+}
+.auslastung-stack-fill-plan {
+  background: var(--status-plan-accent);
+  height: 100%;
+  opacity: 0.45;
+}
+
 /* Monat — Chart-Card */
 .bv2-chart-card {
   background: var(--surface);

@@ -2,7 +2,8 @@
    Cumart CRM – Application Script
    Version 2.11.7 (Briefing: Wochenplan-Sub-Divider, DIESER-
    MONAT-Admin-Filter, KW-Marker im Kalenderstreifen,
-   Kalender-Mitarbeiter-Dropdown Admin-gated). Vier kleine
+   Kalender-Mitarbeiter-Dropdown Admin-gated, Auslastung
+   zeigt Erbracht + Geplant als Stacked-Bar). Fünf kleine
    UX-Verbesserungen im Briefing-Dashboard:
    1) Zwischen TAGESPLAN und der „ab morgen"-Folgeliste sitzt
       jetzt ein eigener Sub-Divider „WOCHENPLAN · KW XX · DD.
@@ -28,6 +29,20 @@
       Admins können dort keine anderen User mehr aufrufen.
       `applyAdminOnlyUI()` blendet das Wrapper-Label für Nicht-
       Admins komplett aus.
+   5) Auslastung-Kachel zeigt jetzt Erbracht + Geplant als
+      Stacked-Bar (dunkel = Durchgeführt/Abgerechnet, heller =
+      Geplant) plus Headline-% gesamt. So sieht man auf einen
+      Blick, wie gut der Restmonat schon gebucht ist, ohne den
+      Status-Wechsel auf „Durchgeführt" abwarten zu müssen.
+      `computeMonthAuslastung` liefert zusätzlich `geplant`
+      (Werktage mit Geplant-Status, ohne die bereits in
+      `belegt` enthaltenen Tage doppelt zu zählen). Neuer
+      Render-Helper `renderAuslastungStackBar`; `monthKpiTile`
+      bekommt einen optionalen `extraHtml`-Slot. Sub-Text
+      „X erbracht · Y geplant / Z Tage" in allen drei Sichten
+      (bv2-Briefing, Technik, Beides). CSS:
+      `.auslastung-stack`/`.auslastung-stack-fill-done`/
+      `.auslastung-stack-fill-plan`.
    Version 2.11.6 (Letzter Login pro Benutzer in der Admin-
    Benutzerverwaltung). `auth.users.last_sign_in_at` ist für
    authenticated-Clients nicht direkt lesbar (auth-Schema).
@@ -3938,12 +3953,15 @@ function renderBriefingMonat(data) {
   const umsatzAbg = sumDays(depsAbgerechnet);
   const umsatzGep = sumDays(depsGeplant);
 
-  // Auslastung aus existing computeMonthAuslastung
-  let auslastungPct = 0, werk = 0, belegt = 0;
+  // Auslastung aus existing computeMonthAuslastung (v2.11.7: + geplant)
+  let auslastungPct = 0, werk = 0, belegt = 0, geplantTage = 0;
+  let donePct = 0, planPct = 0;
   if (typeof computeMonthAuslastung === 'function') {
     const a = computeMonthAuslastung(data, todayISO);
-    werk = a.werk; belegt = a.belegt;
-    auslastungPct = werk > 0 ? Math.round((belegt / werk) * 100) : 0;
+    werk = a.werk; belegt = a.belegt; geplantTage = a.geplant || 0;
+    auslastungPct = werk > 0 ? Math.round(((belegt + geplantTage) / werk) * 100) : 0;
+    donePct = werk > 0 ? (belegt / werk) * 100 : 0;
+    planPct = werk > 0 ? (geplantTage / werk) * 100 : 0;
   }
 
   const pipeline = data.pipelineProjects || [];
@@ -3966,7 +3984,11 @@ function renderBriefingMonat(data) {
         <div class="bv2-month-kpi is-amber">
           <div class="bv2-month-kpi-label">Auslastung</div>
           <div class="bv2-month-kpi-value">${auslastungPct} %</div>
-          <div class="bv2-month-kpi-sub">${belegt} / ${werk} Tage</div>
+          <div class="auslastung-stack" title="${belegt} erbracht · ${geplantTage} geplant von ${werk} Werktagen">
+            <div class="auslastung-stack-fill-done" style="width:${donePct}%"></div>
+            <div class="auslastung-stack-fill-plan" style="width:${planPct}%"></div>
+          </div>
+          <div class="bv2-month-kpi-sub">${belegt} erbracht · ${geplantTage} geplant / ${werk} Tage</div>
         </div>
         <div class="bv2-month-kpi is-purple">
           <div class="bv2-month-kpi-label">Pipeline</div>
@@ -16654,11 +16676,14 @@ function renderMonthDashTechnik(data) {
   const todayISO = toISODate(new Date());
   const depsDurchgef = data.deployments.filter(d => d.status === 'Durchgeführt');
 
-  // Auslastung
+  // Auslastung (v2.11.7: gesamt = Erbracht + Geplant, Stacked-Bar)
   const arbeitsTage = computeMonthAuslastung(data, todayISO);
+  const geplantTage = arbeitsTage.geplant || 0;
   const auslastungPct = arbeitsTage.werk > 0
-    ? Math.round((arbeitsTage.belegt / arbeitsTage.werk) * 100)
+    ? Math.round(((arbeitsTage.belegt + geplantTage) / arbeitsTage.werk) * 100)
     : 0;
+  const auslastungBar = renderAuslastungStackBar(arbeitsTage.belegt, geplantTage, arbeitsTage.werk);
+  const auslastungSub = `${arbeitsTage.belegt} erbracht · ${geplantTage} geplant / ${arbeitsTage.werk} Tage`;
 
   // Pflegerückstand: Geplant aber Datum < heute
   const overdue = data.overdueGeplant || [];
@@ -16672,8 +16697,8 @@ function renderMonthDashTechnik(data) {
 
   const kpiRow = `
     <div class="month-kpi-row">
-      ${monthKpiTile('Auslastung', `${auslastungPct}%`, `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
-        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+      ${monthKpiTile('Auslastung', `${auslastungPct}%`, auslastungSub, 'done',
+        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })", null, auslastungBar)}
       ${monthKpiTile('Durchgeführt', depsDurchgef.length, 'Einsätze im Monat', 'done',
         "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
       ${monthKpiTile('Pflegerückstand', overdue.length,
@@ -16915,10 +16940,14 @@ function renderMonthDashBeides(data) {
   const umsatzGeplant     = sumDays(depsGeplant) + sumDays(depsDurchgef);
   const umsatzAbgerechnet = sumDays(depsAbgerechnet);
 
+  // v2.11.7: gesamt = Erbracht + Geplant, Stacked-Bar
   const arbeitsTage = computeMonthAuslastung(data, todayISO);
+  const geplantTage = arbeitsTage.geplant || 0;
   const auslastungPct = arbeitsTage.werk > 0
-    ? Math.round((arbeitsTage.belegt / arbeitsTage.werk) * 100)
+    ? Math.round(((arbeitsTage.belegt + geplantTage) / arbeitsTage.werk) * 100)
     : 0;
+  const auslastungBar = renderAuslastungStackBar(arbeitsTage.belegt, geplantTage, arbeitsTage.werk);
+  const auslastungSub = `${arbeitsTage.belegt} erbracht · ${geplantTage} geplant / ${arbeitsTage.werk} Tage`;
 
   const pipelineProjects = data.pipelineProjects || [];
   const pipelineSum = pipelineProjects.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
@@ -16936,8 +16965,8 @@ function renderMonthDashBeides(data) {
       ${monthKpiTile('Forecast', formatPreis(forecast),
         `inkl. ${formatPreis(pipelineWeighted)} Pipeline (gew.)`, 'plan',
         "navigateTo('projects')", sparkData)}
-      ${monthKpiTile('Auslastung', `${auslastungPct}%`, `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
-        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+      ${monthKpiTile('Auslastung', `${auslastungPct}%`, auslastungSub, 'done',
+        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })", null, auslastungBar)}
       ${monthKpiTile('Pipeline', formatPreis(pipelineSum), `${pipelineProjects.length} Projekte`, 'info',
         "navigateTo('projects')")}
     </div>`;
@@ -16984,12 +17013,24 @@ function renderMonthDashBeides(data) {
 }
 
 /** Helper für KPI-Kachel mit optionaler Sparkline. */
-function monthKpiTile(kicker, value, sub, color, onclick, sparkData) {
+/** v2.11.7: Stacked-Bar Erbracht (dunkel) + Geplant (heller) für Auslastung-Kachel. */
+function renderAuslastungStackBar(belegt, geplant, werk) {
+  const donePct = werk > 0 ? (belegt / werk) * 100 : 0;
+  const planPct = werk > 0 ? (geplant / werk) * 100 : 0;
+  return `
+    <div class="auslastung-stack" title="${belegt} erbracht · ${geplant} geplant von ${werk} Werktagen">
+      <div class="auslastung-stack-fill-done" style="width:${donePct}%"></div>
+      <div class="auslastung-stack-fill-plan" style="width:${planPct}%"></div>
+    </div>`;
+}
+
+function monthKpiTile(kicker, value, sub, color, onclick, sparkData, extraHtml) {
   return `
     <button class="kpi-tile is-${color}" type="button" onclick="${onclick}">
       <div class="kpi-tile-body">
         <div class="kpi-tile-kicker">${esc(kicker)}</div>
         <div class="kpi-tile-value">${esc(String(value))}</div>
+        ${extraHtml || ''}
         ${sub ? `<div class="kpi-tile-sub">${esc(sub)}</div>` : ''}
       </div>
       ${sparkData && sparkData.length > 0 ? `<div class="kpi-tile-spark">${renderSparkline(sparkData)}</div>` : ''}
