@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.13.7 (Phase-Driven Brief — Felder erscheinen passend
+   zur Projekt-Phase). Der Brief-Tab zeigt nicht mehr alle 5–6
+   Felder von Anfang an, sondern blendet sie passend zur
+   aktuellen `projects.status`-Phase ein:
+     • ZIEL + THEMEN sind immer sichtbar
+     • HERAUSFORDERUNGEN + LÖSUNGSANSATZ ab „Angebot"
+     • ERFOLGSKRITERIEN + ENTWICKLUNGS-LOG ab „In Arbeit"
+   Hat ein Feld trotzdem Inhalt (z. B. weil das Projekt aus
+   „Angebot" auf „Lead" zurückgestuft wurde), bleibt es
+   sichtbar — Eingaben gehen nie verloren.
+   Oben im Brief sitzt jetzt eine Indigo-Phasen-Bar
+   („Phase X — N Sektionen sind für spätere Phasen versteckt")
+   mit Toggle „Alle Sektionen zeigen". Klick: alle Felder
+   sichtbar (auch für spätere Phasen). Zweiter Klick: zurück
+   auf Phasen-View.
+   HTML: data-min-status="Angebot"|"In Arbeit" pro Sektion.
+   JS: _PROJEKT_PHASE_RANG-Map, _projektPhaseHasContent-Helper,
+   applyProjectBriefPhaseVisibility, toggleProjectBriefAllSections.
    Version 2.13.6 (Smart Empty States — Themen-Vorschläge,
    kompakte Hinweise, aktive Onboarding-Karten). Die leeren
    Bereiche im Projekt-Brief und Einsatz-Bericht waren passive
@@ -21066,7 +21084,8 @@ async function postProjectQuickInput() {
 /** Brief-Tab — Ziel + Erfolgskriterien + Themen + Entwicklungs-Log. */
 async function renderProjectBriefTab(projectId) {
   if (!projectId) return;
-  const { data: p } = await db.from('projects').select('id, dokumentation').eq('id', projectId).single();
+  // v2.13.7: status mitlesen für die Phasen-Sichtbarkeit
+  const { data: p } = await db.from('projects').select('id, status, dokumentation').eq('id', projectId).single();
   const dok = p?.dokumentation || {};
 
   const setField = (id, val) => {
@@ -21080,6 +21099,80 @@ async function renderProjectBriefTab(projectId) {
   await renderProjectSuccessCriteria(projectId);
   await renderProjectThemes(projectId);
   await renderProjectDevelopmentLog(projectId);
+
+  // v2.13.7: Phasen-Sichtbarkeit anwenden (Felder, deren min-status > aktueller
+  // Status und die leer sind, werden ausgeblendet).
+  applyProjectBriefPhaseVisibility(p?.status || 'Lead');
+}
+
+// v2.13.7: Phasen-Rangfolge für die Sichtbarkeit der Brief-Sektionen.
+// Eine Sektion mit data-min-status="X" ist sichtbar, wenn entweder
+//   (1) der aktuelle Projekt-Status >= X ist, oder
+//   (2) das zugehörige Feld bereits Inhalt hat (damit niemand seine
+//       Eingaben verliert, wenn der Status zurückgesetzt wird).
+const _PROJEKT_PHASE_RANG = {
+  'Lead': 10, 'Angebot': 20, 'In Arbeit': 30,
+  'Abschlussphase': 40, 'Abgeschlossen': 50, 'Verloren': 50
+};
+
+let _projectBriefForceShowAll = false;
+
+function _projektPhaseHasContent(section) {
+  // Hat irgendein <textarea> / <input> / <li> Inhalt?
+  const inputs = section.querySelectorAll('textarea, input[type="text"], input[type="number"]');
+  for (const el of inputs) {
+    if ((el.value || '').trim()) return true;
+  }
+  // Themen-Liste, Erfolgskriterien — wenn keine Empty-State-Komponente, hat's Inhalt
+  const subLists = section.querySelectorAll('#project-themes-list .themes-list, #project-success-criteria > div:not(.info-card-empty):not(.empty-state-card)');
+  if (subLists.length > 0) return true;
+  return false;
+}
+
+function applyProjectBriefPhaseVisibility(currentStatus) {
+  const panel = document.getElementById('project-panel-brief');
+  if (!panel) return;
+  const currentRang = _PROJEKT_PHASE_RANG[currentStatus] || 10;
+  const sections = panel.querySelectorAll('[data-min-status]');
+  let hiddenCount = 0;
+  sections.forEach(sec => {
+    const minStatus = sec.getAttribute('data-min-status') || '';
+    if (!minStatus) { sec.style.display = ''; return; }   // immer sichtbar
+    const minRang = _PROJEKT_PHASE_RANG[minStatus] || 10;
+    const isReached = currentRang >= minRang;
+    const hasContent = _projektPhaseHasContent(sec);
+    const visible = _projectBriefForceShowAll || isReached || hasContent;
+    sec.style.display = visible ? '' : 'none';
+    if (!visible) hiddenCount++;
+  });
+
+  // Phasen-Bar oben: Hinweis + Toggle „Alle anzeigen"
+  const bar = document.getElementById('project-brief-phase-bar');
+  const lbl = document.getElementById('project-brief-phase-bar-label');
+  const tgl = document.getElementById('project-brief-phase-bar-toggle');
+  if (bar && lbl && tgl) {
+    if (hiddenCount > 0 && !_projectBriefForceShowAll) {
+      bar.style.display = '';
+      lbl.textContent = `Phase „${currentStatus}" — ${hiddenCount} Sektion${hiddenCount === 1 ? '' : 'en'} sind für spätere Phasen versteckt.`;
+      tgl.textContent = 'Alle Sektionen zeigen';
+    } else if (_projectBriefForceShowAll && hiddenCount === 0) {
+      // Show-All ist aktiv und es gibt was Verstecktes (sonst kein Toggle nötig)
+      bar.style.display = '';
+      lbl.textContent = `Phase „${currentStatus}" — alle Sektionen sichtbar (auch zukünftige).`;
+      tgl.textContent = 'Auf Phase reduzieren';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+}
+
+function toggleProjectBriefAllSections() {
+  _projectBriefForceShowAll = !_projectBriefForceShowAll;
+  // Re-Render-Trigger: status neu holen + apply
+  if (currentProjectDetailId) {
+    db.from('projects').select('status').eq('id', currentProjectDetailId).single()
+      .then(({ data }) => applyProjectBriefPhaseVisibility(data?.status || 'Lead'));
+  }
 }
 
 async function saveProjectBriefField(key, value) {

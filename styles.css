@@ -2560,6 +2560,30 @@ body {
   padding-left: 10px;
 }
 
+/* v2.13.7: Phasen-Bar im Projekt-Brief (Hinweis + Show-All-Toggle) */
+.proj-brief-phase-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font-size: 12px; color: #3730a3;
+}
+.proj-brief-phase-bar-toggle {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.proj-brief-phase-bar-toggle:hover { background: var(--bg); border-color: #3730a3; }
+
 .last-activity-item { display: flex; gap: 12px; align-items: flex-start; padding: 2px 0; }
 .last-activity-date {
   font-size: 12px;
