@@ -1,5 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.10.2 (Marge-Card refresht nach Produkt-CRUD ohne
+   Browser-Reload). Bug: nach dem Anlegen/Bearbeiten/Löschen
+   einer Produkt-Verkaufsposition aktualisierten sich nur die
+   Produkt-Tabelle und die Wirtschaftlichkeit-Summary im Tab —
+   die Marge-Stat-Card oben im Projekt-Hero blieb auf dem
+   Stand vor dem Speichern, weil sie von loadProjectDashboard
+   bedient wird und nur einmalig bei loadProjectDetail läuft.
+   Fix: neuer Helper refreshProjectAfterFinanceChange(projectId)
+   re-fetcht den Projekt-Datensatz light und ruft parallel
+   loadProjectProducts + loadProjectDashboard — kein Tab-
+   Wechsel, kein Scroll-Reset, alle Finance-Werte aktuell.
+   saveProjectProduct und deleteProjectProduct rufen ihn jetzt
+   statt dem reinen loadProjectProducts.
    Version 2.10.1 (Checkbox-Layout-Fix + Produkt-Schnellaktion
    im Projekt-Sidepanel). Zwei Nachzüge zu v2.10.0:
    1) Bei allen Modal-Checkboxen mit Label-Text daneben war die
@@ -11961,7 +11974,7 @@ async function saveProjectProduct() {
     }
     closeProjectProductModal();
     showToast(editingProjectProductId ? 'Position aktualisiert.' : 'Position angelegt.');
-    await loadProjectProducts(currentProjectDetailId);
+    await refreshProjectAfterFinanceChange(currentProjectDetailId);
   } catch (e) {
     showToast(e.message, true);
   }
@@ -11977,10 +11990,26 @@ async function deleteProjectProduct() {
     if (error) throw new Error(error.message);
     closeProjectProductModal();
     showToast('Position gelöscht.');
-    if (currentProjectDetailId) await loadProjectProducts(currentProjectDetailId);
+    if (currentProjectDetailId) await refreshProjectAfterFinanceChange(currentProjectDetailId);
   } catch (e) {
     showToast(e.message, true);
   }
+}
+
+/** Refresh nach Finanz-relevantem CRUD (Produkt-Position, Einsatz innerhalb des
+ *  Projekts): aktualisiert Produkt-Liste + Wirtschaftlichkeits-Summary + Hero-
+ *  Marge-Card, ohne das ganze Projekt neu zu rendern (kein Tab-Wechsel, kein
+ *  Scroll-Reset). Stat-Card-Loader wird mit frischem Projekt-Datensatz erneut
+ *  angestoßen — die Wirtschaftlichkeits-Summary darin holt sich Einsätze und
+ *  Produkte selbst nach. */
+async function refreshProjectAfterFinanceChange(projectId) {
+  const { data: p } = await db.from('projects')
+    .select('*, company:companies(id, name)')
+    .is('deleted_at', null).eq('id', projectId).single();
+  await Promise.all([
+    loadProjectProducts(projectId),
+    p ? loadProjectDashboard(p) : Promise.resolve()
+  ]);
 }
 
 /**
