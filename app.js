@@ -1,5 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.12.1 (Bug-Fix: Bericht-Felder aus der Einsatz-
+   Detail-Page wurden vom Edit-Modal überschrieben). Die
+   Einsatz-Detail-Page schreibt Doku-Felder mit einem
+   ERWEITERTEN Schema in `deployments.dokumentation` jsonb:
+   `was_wurde_gemacht`, `erkenntnisse`, `vorbereitung`,
+   `teilnehmer`, `anfahrt`, `rechnungsnummer`,
+   `abrechnungs_notiz`. Das Einsatz-Edit-Modal hat ein
+   REDUZIERTES Schema (`durchgefuehrte_themen`, `teilnehmer`,
+   `erkenntnisse`, `folge_massnahmen`, `anmerkungen`). Beim
+   Save überschrieb das Modal die komplette JSONB-Spalte mit
+   den (oft leeren) Schema-Keys — und alle erweiterten Felder
+   waren weg. Fix: `readDocumentationFromDom` akzeptiert jetzt
+   einen optionalen `existingDoc`-Parameter und merged die
+   Schema-Keys hinein, ohne Nicht-Schema-Keys zu entfernen.
+   `saveDeployment`, `saveAppointment` und
+   `saveDeploymentBundle` holen vor dem Save die bestehende
+   Doku aus der DB und übergeben sie als Merge-Basis.
+   `saveDeploymentBundle` propagiert beim Verteilen auf die
+   Mitglieds-Einsätze nur den Schema-Slice — Per-Tag-Nicht-
+   Schema-Keys (z. B. Anfahrt, Rechnungsnummer) bleiben am
+   einzelnen Tag erhalten.
    Version 2.12.0 (Einsatz-Bündel — Mehrtages-Klammer mit
    gemeinsamen Stammdaten + Tage-Liste). Use-Case: ein Trainer
    hat z. B. Mo + Mi + Fr beim selben Kunden im selben Projekt
@@ -6784,18 +6805,28 @@ function renderDocumentationBlock(entityType, dokData, options = {}) {
   }).join('')}</div>`;
 }
 
-/** Liest den aktuellen Stand des Doku-Blocks aus dem DOM. Leere Felder
- *  werden ausgelassen (kein Eintrag im JSON). */
-function readDocumentationFromDom(entityType, idPrefix) {
+/** Liest den aktuellen Stand des Doku-Blocks aus dem DOM und merged mit dem
+ *  bisherigen `dokumentation`-JSONB-Datensatz. Schema-Keys gewinnen aus dem
+ *  Formular; Nicht-Schema-Keys (z. B. `was_wurde_gemacht`, `vorbereitung`,
+ *  `anfahrt`, `rechnungsnummer`, `abrechnungs_notiz` aus der Detail-Page mit
+ *  erweitertem Schema) bleiben unangetastet.
+ *
+ *  v2.12.1: Vorher hat die Funktion ein neues Objekt gebaut und alle nicht im
+ *  Modal-Schema enthaltenen Keys verworfen. Beim Save überschrieb das den
+ *  gesamten JSONB-Wert in der DB → Bericht-Felder aus der Einsatz-Detail-Page
+ *  („Was wurde gemacht", „Vorbereitung", …) gingen verloren, sobald der User
+ *  den Einsatz-Modal öffnete und speicherte. */
+function readDocumentationFromDom(entityType, idPrefix, existingDoc = null) {
   const schema = DOCUMENTATION_SCHEMAS[entityType] || [];
-  const out = {};
+  const merged = (existingDoc && typeof existingDoc === 'object') ? { ...existingDoc } : {};
   for (const f of schema) {
     const el = document.getElementById(`${idPrefix}-${f.key}`);
     if (!el) continue;
     const v = (el.value || '').trim();
-    if (v) out[f.key] = v;
+    if (v) merged[f.key] = v;
+    else delete merged[f.key];   // User hat das Feld geleert → Key wirklich entfernen
   }
-  return out;
+  return merged;
 }
 
 /** Inline-Save eines einzelnen Feldes — nutzt JSONB-Update direkt im
@@ -9478,8 +9509,16 @@ async function saveAppointment() {
   const status       = document.getElementById('t-status').value;
   const project_id   = document.getElementById('t-project')?.value || null;
   const ort          = document.getElementById('t-ort').value.trim();
-  // v1.52.0: dokumentation aus dem Doku-Block lesen (statt freier notizen-Textarea)
-  const dokumentation = readDocumentationFromDom('termin', 't-doc');
+  // v1.52.0: dokumentation aus dem Doku-Block lesen (statt freier notizen-Textarea).
+  // v2.12.1: bestehende Doku reinmergen, damit Detail-Page-Felder (gespraechsinhalt,
+  // vereinbarungen, naechste_schritte mit erweitertem Schema) nicht überschrieben werden.
+  let _existingTerminDoc = null;
+  if (editingAppointmentId) {
+    const { data: _existing } = await db.from('appointments')
+      .select('dokumentation').eq('id', editingAppointmentId).single();
+    _existingTerminDoc = _existing?.dokumentation || null;
+  }
+  const dokumentation = readDocumentationFromDom('termin', 't-doc', _existingTerminDoc);
   const btn          = document.getElementById('t-save-btn');
 
   if (!titel)   { showToast('Bitte Titel eingeben.', true); return; }
@@ -11683,8 +11722,17 @@ async function saveDeployment() {
   const einzelRaw     = document.getElementById('d-einzelpreis').value;
   const ort           = document.getElementById('d-ort').value.trim();
   const beschreibungInput = document.getElementById('d-beschreibung').value.trim();
-  // v1.52.0: dokumentation aus dem Doku-Block (statt freier notizen-Textarea)
-  const dokumentation = readDocumentationFromDom('einsatz', 'd-doc');
+  // v1.52.0: dokumentation aus dem Doku-Block (statt freier notizen-Textarea).
+  // v2.12.1: Beim Bearbeiten bestehende dokumentation reinmergen, damit
+  // Nicht-Schema-Keys (z. B. „was_wurde_gemacht"/„vorbereitung"/„anfahrt"
+  // aus dem Bericht-Tab der Einsatz-Detail-Page) erhalten bleiben.
+  let _existingDeploymentDoc = null;
+  if (editingDeploymentId) {
+    const { data: _existing } = await db.from('deployments')
+      .select('dokumentation').eq('id', editingDeploymentId).single();
+    _existingDeploymentDoc = _existing?.dokumentation || null;
+  }
+  const dokumentation = readDocumentationFromDom('einsatz', 'd-doc', _existingDeploymentDoc);
   const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
   const createAppointment = document.getElementById('d-create-appointment').checked;
   const btn           = document.getElementById('d-save-btn');
@@ -12993,6 +13041,15 @@ async function saveDeploymentBundle() {
     .select('company_id').is('deleted_at', null).eq('id', currentProjectDetailId).single();
   const companyId = proj?.company_id || null;
 
+  // v2.12.1: bestehende Bündel-Doku mit den Modal-Werten mergen, damit
+  // Nicht-Schema-Keys nicht verloren gehen, falls jemand sie einmal direkt
+  // im JSONB hatte.
+  let _existingBundleDoc = null;
+  if (editingBundleId) {
+    const { data: _existing } = await db.from('deployment_bundles')
+      .select('dokumentation').eq('id', editingBundleId).single();
+    _existingBundleDoc = _existing?.dokumentation || null;
+  }
   const payload = {
     titel,
     beschreibung: document.getElementById('b-beschreibung').value.trim() || null,
@@ -13003,7 +13060,7 @@ async function saveDeploymentBundle() {
     externe_techniker: document.getElementById('b-externe-techniker').value.trim() || null,
     company_id: companyId,
     project_id: currentProjectDetailId,
-    dokumentation: readDocumentationFromDom('einsatz', 'b-doc') || {}
+    dokumentation: readDocumentationFromDom('einsatz', 'b-doc', _existingBundleDoc) || {}
   };
   if (!editingBundleId && currentProfile?.id) payload.erstellt_von = currentProfile.id;
 
@@ -13035,8 +13092,19 @@ async function saveDeploymentBundle() {
         .in('id', _bundleDeletedDayIds);
     }
 
-    // Einsätze pro Tag: UPDATE bestehende, INSERT neue
-    const sharedFields = {
+    // v2.12.1: Beim Propagieren der Bündel-Doku auf die Mitgliedstage NUR die
+    // Schema-Keys (durchgefuehrte_themen, teilnehmer, erkenntnisse,
+    // folge_massnahmen, anmerkungen) ersetzen. Per-Tag Nicht-Schema-Keys
+    // (was_wurde_gemacht, vorbereitung, anfahrt, rechnungsnummer,
+    // abrechnungs_notiz aus der Detail-Page) bleiben so erhalten.
+    const SCHEMA_KEYS = (DOCUMENTATION_SCHEMAS.einsatz || []).map(f => f.key);
+    const bundleSchemaSlice = {};
+    for (const k of SCHEMA_KEYS) {
+      if (payload.dokumentation && Object.prototype.hasOwnProperty.call(payload.dokumentation, k)) {
+        bundleSchemaSlice[k] = payload.dokumentation[k];
+      }
+    }
+    const sharedFieldsWithoutDoc = {
       bundle_id: bundle.id,
       titel: payload.titel,
       beschreibung: payload.beschreibung,
@@ -13045,8 +13113,7 @@ async function saveDeploymentBundle() {
       ort: payload.ort,
       externe_techniker: payload.externe_techniker,
       company_id: companyId,
-      project_id: currentProjectDetailId,
-      dokumentation: payload.dokumentation
+      project_id: currentProjectDetailId
     };
     for (const r of valid) {
       const perDayFields = {
@@ -13058,12 +13125,25 @@ async function saveDeploymentBundle() {
         status: r.status || 'Geplant'
       };
       if (r.id) {
-        // Bestehender Einsatz — shared-Felder überschreiben (bundle_overrides
-        // bleibt unangetastet; in v1 wird der Override-Schutz noch nicht angewandt).
-        await db.from('deployments').update({ ...sharedFields, ...perDayFields }).eq('id', r.id);
+        // Bestehender Einsatz — bestehende Doku einholen, Schema-Slice
+        // überschreiben, Rest behalten.
+        const { data: existing } = await db.from('deployments')
+          .select('dokumentation').eq('id', r.id).single();
+        const memberDoc = { ...(existing?.dokumentation || {}) };
+        for (const k of SCHEMA_KEYS) {
+          if (Object.prototype.hasOwnProperty.call(bundleSchemaSlice, k)) memberDoc[k] = bundleSchemaSlice[k];
+          else delete memberDoc[k];
+        }
+        await db.from('deployments').update({
+          ...sharedFieldsWithoutDoc,
+          ...perDayFields,
+          dokumentation: memberDoc
+        }).eq('id', r.id);
       } else {
         await db.from('deployments').insert({
-          ...sharedFields, ...perDayFields,
+          ...sharedFieldsWithoutDoc,
+          ...perDayFields,
+          dokumentation: bundleSchemaSlice,
           erstellt_von: currentProfile?.id || null,
           bundle_overrides: []
         });
