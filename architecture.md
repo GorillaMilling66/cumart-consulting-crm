@@ -1,7 +1,7 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 2.9.13
-**Stand:** 10. Mai 2026 (Pin-Stern im Suche-Overlay)
+**Version:** 2.10.0
+**Stand:** 13. Mai 2026 (Produkt-Verkaufspositionen am Projekt)
 **Betreiber:** Cumart Consulting (Selcuk Cumart)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
 **Live:** `https://cumart.cloud` (Primary) · `https://cumart-consulting-crm.vercel.app` (Fallback)
@@ -105,6 +105,8 @@ Project: loohjeiysjxzbmfwkyvv.supabase.co
 | `entitlements`            | Kontingent-Einträge (v1.13)                          |
 | `entitlement_redemptions` | Einlösungen pro Einsatz (v1.14)                      |
 | `tasks`                   | Aufgaben / interne To-Dos (v1.22)                    |
+| `products`                | Produkt-/Hardware-Katalog (v2.6)                     |
+| `project_products`        | Verkaufspositionen am Projekt (v2.10)                |
 | `notes`                   | (angelegt, bisher ungenutzt)                         |
 | `appointment_participants`| (angelegt, bisher ungenutzt)                         |
 
@@ -388,6 +390,36 @@ Interne Aufgaben, die Nutzer sich selbst oder anderen zuweisen. Bewusst entkoppe
 **Status-Werte** (Lookup `aufgabe_status`): offen · in_arbeit · erledigt. UI rendert Labels via `aufgabeStatusLabel()`. Der Wert `erledigt` wird von der Toggle-Logik und der „Meine offenen"-Query hart referenziert — nicht umbenennen, stattdessen `ist_aktiv=false` setzen.
 
 **Indizes:** partielle Indexe (`WHERE deleted_at IS NULL`) auf `faelligkeit`, `(assigned_to, status)`, `company_id`, `project_id`.
+
+### 4.17 `products` (v2.6.0)
+
+Stammdaten-Katalog für Hardware-Verkauf (Spannmittel, Halter, Werkzeuge etc.). Wird aus `project_products` (v2.10) als Verkaufsposition referenziert; VK/EK dort werden als Snapshot übernommen, spätere Preisänderungen am Katalog wirken nicht rückwirkend auf bestehende Positionen. Siehe Migration `v2.6.0_products_lieferanten.sql` für das vollständige Schema.
+
+### 4.18 `project_products` (v2.10.0)
+
+Verkaufspositionen am Projekt — die abrechenbare Brücke zwischen Hardware-Katalog und der Projekt-Wirtschaftlichkeit.
+
+| Spalte           | Typ              | Nullable | Default           | Notes                              |
+|------------------|------------------|----------|-------------------|------------------------------------|
+| id               | uuid             | NO       | gen_random_uuid() | PK                                 |
+| project_id       | uuid             | NO       |                   | FK → projects (ON DELETE CASCADE)  |
+| product_id       | uuid             | YES      |                   | FK → products (ON DELETE SET NULL); NULL erlaubt für freie Positionen oder gelöschte Produkte |
+| bezeichnung      | text             | NO       |                   | Snapshot des Produktnamens — überlebt Produkt-Löschung/Umbenennung |
+| menge            | numeric(12,3)    | NO       | 1                 |                                    |
+| einzelpreis_vk   | numeric(12,2)    | NO       | 0                 | Snapshot von `products.verkaufspreis` bei Anlage; editierbar |
+| einzelpreis_ek   | numeric(12,2)    | NO       | 0                 | Snapshot von `products.einkaufspreis` bei Anlage; editierbar |
+| im_paket         | boolean          | NO       | false             | **true** = Position ist im `projects.geschaetzter_umsatz` enthalten, kein zusätzl. Erlös, nur EK als Aufwand. **false** = VK ist zusätzlicher Erlös neben dem Paketpreis, EK ist Aufwand. |
+| notizen          | text             | YES      |                   |                                    |
+| erstellt_von     | uuid             | YES      |                   | FK → user_profiles (SET NULL)      |
+| created_at       | timestamptz      | NO       | now()             |                                    |
+| deleted_at       | timestamptz      | YES      |                   | Soft-Delete                        |
+
+**Indizes:** partielle Indexe (`WHERE deleted_at IS NULL`) auf `project_id` und `product_id`.
+
+**Wirtschaftlichkeits-Formel** (im UI im Wirtschaftlichkeit-Tab + Marge-Stat-Card umgesetzt):
+- Erlöse  = `projects.geschaetzter_umsatz` + Σ (`menge × einzelpreis_vk`) über Positionen mit `im_paket = false`
+- Aufwand = Σ (Einsatz `menge × einzelpreis`) + Σ (`menge × einzelpreis_ek`) über **alle** Positionen
+- Marge   = Erlöse − Aufwand
 
 ---
 
@@ -896,7 +928,8 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 
 | Version | Datum       | Highlights                                                         |
 |---------|-------------|--------------------------------------------------------------------|
-| **v2.9.13** | **10.05.2026** | **Pin-Stern im Suche-Overlay + sauberes SVG-Stern-Design.** Der ⭐-Emoji-Pin auf den Detail-Seiten wird durch einen schlanken Lucide-Style-SVG-Stern ersetzt — outlined wenn nicht gepinnt (muted), gefüllt + amber `#f59e0b` wenn gepinnt. Hover bekommt dezenten Background statt Skalierung. Buttons 32 px, SVG 18 px. Im Cmd+K-Suche-Overlay zeigt jeder Firma-/Projekt-/Kontakt-Treffer einen Stern-Button vor der Type-Pille; Klick togglert den Pin direkt aus der Suche (`event.stopPropagation`). Pin-State wird einmalig pro Overlay-Open in `_userPinsSet` (Set<entityType:id>) gecacht und bei jeder Pin-Änderung gepflegt — Detail-Page-Pin und Search-Star bleiben synchron. Helper: `STAR_ICON_SVG`, `refreshUserPinsSet`. Kein Schema-Change. |
+| **v2.10.0** | **13.05.2026** | **Produkt-Verkaufspositionen am Projekt (Phase 2 zu v2.6.0).** Bisher floss in die Wirtschaftlichkeit eines Projekts nur die Summe der Einsätze (`menge × einzelpreis` als interner Aufwand) gegen den Paketpreis. Hardware-Verkauf am Projekt war nicht erfassbar. Schema (Migration `v2.10.0_project_products.sql`): neue Tabelle `project_products` (id, project_id FK projects CASCADE, product_id FK products SET NULL, bezeichnung NOT NULL Snapshot, menge numeric(12,3), einzelpreis_vk numeric(12,2) Snapshot, einzelpreis_ek numeric(12,2) Snapshot, im_paket boolean DEFAULT false, notizen, erstellt_von, created_at, deleted_at). Partial-Indexe auf project_id/product_id WHERE deleted_at IS NULL. RLS-Pattern wie sonst (PERMISSIVE + RESTRICTIVE). Pro Position regelt `im_paket` die Buchungslogik: **true** = Position ist im `geschaetzter_umsatz` enthalten, nur EK fließt als Aufwand ein; **false** = VK liegt zusätzlich neben dem Paketpreis und ist eigener Erlös, EK ist Aufwand. UI: neue zweite Card „Produkte und Verkäufe" im Wirtschaftlichkeit-Tab unter den Einsätzen, dritte Card „Wirtschaftlichkeit" zeigt die kombinierte Marge mit Aufschlüsselung (Erlöse: Paket + zusätzliche Produkte / Aufwand: Einsätze + Produkt-EK). Marge-Stat-Card im Projekt-Hero rechnet ebenfalls Produkte mit ein: Marge = (Paket + Σ VK exkl.) − (Σ Einsatz-Aufwand + Σ Produkt-EK alle). Modal `modal-project-product` mit Präfix `pp-*` (Produkt-Dropdown übernimmt VK/EK/Einheit aus dem Produktstammdatensatz; Bezeichnung, Menge, VK, EK, im_paket-Checkbox, Notizen alle editierbar — VK/EK sind Snapshots, spätere Preisänderungen am Produkt wirken nicht auf die Position). Helper: `loadProjectProducts`, `loadProjectWirtschaftlichkeitSummary`, `openProjectProductModal`, `saveProjectProduct`, `deleteProjectProduct`, `onProjectProductSelect`, `formatMenge`. |
+| v2.9.13 | 10.05.2026 | **Pin-Stern im Suche-Overlay + sauberes SVG-Stern-Design.** Der ⭐-Emoji-Pin auf den Detail-Seiten wird durch einen schlanken Lucide-Style-SVG-Stern ersetzt — outlined wenn nicht gepinnt (muted), gefüllt + amber `#f59e0b` wenn gepinnt. Hover bekommt dezenten Background statt Skalierung. Buttons 32 px, SVG 18 px. Im Cmd+K-Suche-Overlay zeigt jeder Firma-/Projekt-/Kontakt-Treffer einen Stern-Button vor der Type-Pille; Klick togglert den Pin direkt aus der Suche (`event.stopPropagation`). Pin-State wird einmalig pro Overlay-Open in `_userPinsSet` (Set<entityType:id>) gecacht und bei jeder Pin-Änderung gepflegt — Detail-Page-Pin und Search-Star bleiben synchron. Helper: `STAR_ICON_SVG`, `refreshUserPinsSet`. Kein Schema-Change. |
 | v2.9.12 | 10.05.2026 | **ABC eigene Spalte in der Firmen-Liste.** Das ABC-Badge stand inline direkt vor dem Firmennamen, was bei nur einigen klassifizierten Firmen unruhig wirkte. Jetzt eigene 48-px-Spalte zwischen Bulk-Checkbox und Name, zentriert. Leere Klassifizierungen zeigen „—". Header um „ABC" erweitert, Empty-Colspan auf 9. |
 | v2.9.11 | 10.05.2026 | **Bulk-Toolbar Produkte: Lieferant-Gruppe entfernt.** Die separate „Lieferant"-Schnellaktion war redundant — `lieferant_id` steht ohnehin als Feld in der „Feld bearbeiten"-Gruppe. Toolbar reduziert auf zwei Gruppen plus „Auswahl aufheben". `bulkSetProductLieferant` bleibt im Code als Backwards-Helper, ist aber nicht mehr aus der UI erreichbar. |
 | v2.9.10 | 10.05.2026 | **Bulk-Toolbar cleaner mit Mini-Captions pro Gruppe.** Refactor: jede `.bulk-group` bekommt eine Mini-Caption oben (TAG / FELD BEARBEITEN / PREISE ANPASSEN / LIEFERANT) via `::before` mit `flex-basis:100%`, Controls liegen in einer Row darunter — alle einheitlich 32 px hoch. Vertikale Trennlinien zwischen Gruppen, „Auswahl aufheben" rechts via `margin-left:auto`. Buttons in den Gruppen auf kürzere Verben gekürzt („Setzen", „Anpassen") — die Caption liefert den Kontext. |
@@ -1205,7 +1238,22 @@ SELECT 'workflow_state auf appointments/deployments/projects (v2.0.3, Soll=3)',
        CASE WHEN (SELECT COUNT(*) FROM information_schema.columns
            WHERE table_schema='public' AND column_name='workflow_state'
              AND table_name IN ('appointments','deployments','projects')) = 3
-       THEN 'OK' ELSE 'TEILWEISE' END;
+       THEN 'OK' ELSE 'TEILWEISE' END
+UNION ALL
+SELECT 'project_products-Tabelle (v2.10)',
+       CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables
+           WHERE table_schema='public' AND table_name='project_products')
+       THEN 'OK' ELSE 'FEHLT' END
+UNION ALL
+SELECT 'project_products.im_paket (v2.10)',
+       CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns
+           WHERE table_schema='public' AND table_name='project_products' AND column_name='im_paket')
+       THEN 'OK' ELSE 'FEHLT' END
+UNION ALL
+SELECT 'project_products RLS 2 Policies (v2.10)',
+       CASE WHEN (SELECT COUNT(*) FROM pg_policies
+           WHERE schemaname='public' AND tablename='project_products') = 2
+       THEN 'OK' ELSE 'FEHLT' END;
 ```
 
 ---

@@ -1,5 +1,29 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.10.0 (Produkt-Verkaufspositionen am Projekt —
+   Phase 2 zu v2.6.0). Bisher floss in die Wirtschaftlichkeit
+   eines Projekts nur die Summe der Einsätze (menge × einzel-
+   preis als interner Aufwand) gegen den Paketpreis (geschaetz-
+   ter_umsatz). Hardware-Verkauf am Projekt war nicht erfass-
+   bar. Migration v2.10.0_project_products.sql legt die Tabel-
+   le project_products an (id, project_id FK CASCADE, product_
+   id FK SET NULL, bezeichnung Snapshot, menge, einzelpreis_vk
+   Snapshot, einzelpreis_ek Snapshot, im_paket bool default
+   false, notizen, audit-Spalten). Pro Position regelt im_paket
+   die Buchung: true = Position ist im Paketpreis enthalten,
+   nur EK fließt als Aufwand ein; false = VK liegt zusätzlich
+   neben dem Paketpreis und ist eigener Erlös, EK ist Aufwand.
+   UI: neue zweite Card „Produkte und Verkäufe" im Wirtschaft-
+   lichkeit-Tab unter den Einsätzen, dritte Card „Wirtschaft-
+   lichkeit" zeigt die kombinierte Marge mit Aufschlüsselung.
+   Marge-Stat-Card im Projekt-Hero rechnet ebenfalls Produkte
+   mit ein: Marge = (Paket + Σ VK exkl.) − (Σ Einsatz-Aufwand
+   + Σ Produkt-EK gesamt). Modal modal-project-product mit
+   Präfix pp-* (Produkt-Dropdown übernimmt VK/EK/Einheit aus
+   dem Produktstammdatensatz; alle Snapshot-Felder editierbar).
+   Helper: loadProjectProducts, loadProjectWirtschaftlichkeit-
+   Summary, openProjectProductModal, saveProjectProduct,
+   deleteProjectProduct, onProjectProductSelect, formatMenge.
    Version 2.9.13 (Pin-Stern im Suche-Overlay + sauberes
    SVG-Stern-Design). Zwei Änderungen:
    1) Der ⭐-Emoji-Pin-Button auf den Detail-Seiten wird durch
@@ -9610,11 +9634,12 @@ async function loadProjectDetail(projectId) {
   renderProjectDetail(data);
   trackVisit('project', data.id, data.name, data.company?.name || '');
   initDetailTabs('project');
-  // v2.0.4: Sub-Tabs parallel statt seriell.
+  // v2.0.4: Sub-Tabs parallel statt seriell. v2.10.0: Produkt-Positionen mit dabei.
   await Promise.all([
     loadProjectAppointments(projectId),
     loadProjectDeployments(projectId),
-    loadProjectTasks(projectId)
+    loadProjectTasks(projectId),
+    loadProjectProducts(projectId)
   ]);
 }
 
@@ -9653,6 +9678,7 @@ async function renderProjectDetail(p) {
     deploymentModalPrefillCompanyId = p.company?.id || null;
     openDeploymentModal('new');
   });
+  wire('project-detail-add-product-btn', () => openProjectProductModal('new'));
   wire('project-detail-add-task-btn', () => {
     taskModalPrefillProjectId = p.id;
     openTaskModal('new');
@@ -11638,6 +11664,300 @@ async function loadProjectDeployments(projectId) {
   autoExpandSingleRow(tbody, 'deployment', all);
 }
 
+// ═══════════════════════════════════════════════════════════
+//  PROJEKT-PRODUKTE (v2.10.0 — Verkaufspositionen + Marge)
+// ═══════════════════════════════════════════════════════════
+
+let editingProjectProductId = null;
+
+/** Lädt die Verkaufspositionen eines Projekts und rendert Tabelle + Summary.
+ *  Stößt anschließend die Wirtschaftlichkeits-Summary an, damit die Marge-Karte
+ *  mit Einsätzen + Produkten konsistent ist. */
+async function loadProjectProducts(projectId) {
+  const tbody = document.getElementById('project-products-body');
+  const countEl = document.getElementById('project-products-count');
+  const summaryEl = document.getElementById('project-products-summary');
+  if (!tbody) return;
+
+  const { data, error } = await db.from('project_products')
+    .select('*, product:products(id, name, einheit)').is('deleted_at', null)
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+  if (!isStillOnDetail('project', projectId)) return;
+
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    if (countEl) countEl.textContent = 'Produkte und Verkäufe';
+    if (summaryEl) summaryEl.style.display = 'none';
+    return;
+  }
+
+  const all = data || [];
+  const total = all.length;
+
+  if (total === 0) {
+    if (countEl) countEl.textContent = 'Keine Produkt-Positionen';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Noch keine Produkte erfasst. Klicke oben auf „+ Produkt hinzufügen", um Hardware oder andere Verkaufspositionen am Projekt zu führen.</div></td></tr>';
+    if (summaryEl) summaryEl.style.display = 'none';
+    loadProjectWirtschaftlichkeitSummary(projectId);
+    return;
+  }
+
+  const sumVkExkl = all.filter(r => !r.im_paket)
+    .reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis_vk) || 0), 0);
+  const sumEkAll = all.reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis_ek) || 0), 0);
+  const sumEkPaket = all.filter(r => r.im_paket)
+    .reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis_ek) || 0), 0);
+  const anzPaket = all.filter(r => r.im_paket).length;
+  const anzExkl  = total - anzPaket;
+
+  if (countEl) {
+    let countText = `${total} Position${total === 1 ? '' : 'en'}`;
+    if (anzPaket > 0) countText += ` · ${anzPaket} im Paket`;
+    if (anzExkl > 0)  countText += ` · ${anzExkl} zusätzlich`;
+    countEl.textContent = countText;
+  }
+
+  tbody.innerHTML = all.map(r => {
+    const menge = Number(r.menge) || 0;
+    const vk = Number(r.einzelpreis_vk) || 0;
+    const ek = Number(r.einzelpreis_ek) || 0;
+    const einheit = r.product?.einheit ? ` ${esc(r.product.einheit)}` : '';
+    const positionsWert = menge * vk;
+    const paketBadge = r.im_paket
+      ? '<span class="badge" style="background:#94a3b822;color:#475569">im Paket</span>'
+      : '<span class="badge" style="background:#22c55e22;color:#16a34a">zusätzlich</span>';
+    return `
+      <tr data-pp-id="${esc(r.id)}">
+        <td>
+          <div class="cell-link" onclick="openProjectProductModal('edit','${esc(r.id)}')">${esc(r.bezeichnung || '—')}</div>
+          ${r.notizen ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(r.notizen)}</div>` : ''}
+        </td>
+        <td class="col-tablet">${esc(formatMenge(menge))}${einheit}</td>
+        <td class="col-tablet">${esc(formatPreis(vk))}</td>
+        <td class="col-desktop">${esc(formatPreis(ek))}</td>
+        <td>${esc(formatPreis(positionsWert))}</td>
+        <td>${paketBadge}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openProjectProductModal('edit','${esc(r.id)}')">Bearbeiten</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  if (summaryEl) {
+    const parts = [];
+    if (anzExkl > 0)  parts.push(`Zusätzlicher Verkauf (außerhalb Paket): <strong>${esc(formatPreis(sumVkExkl))}</strong>`);
+    if (anzPaket > 0) parts.push(`EK im Paket: <strong>${esc(formatPreis(sumEkPaket))}</strong>`);
+    parts.push(`EK gesamt: <strong>${esc(formatPreis(sumEkAll))}</strong>`);
+    summaryEl.style.display = '';
+    summaryEl.innerHTML = parts.join(' · ');
+  }
+
+  loadProjectWirtschaftlichkeitSummary(projectId);
+}
+
+/** Hilfs-Format für Mengen: nur Nachkommastellen anzeigen, wenn nötig. */
+function formatMenge(menge) {
+  const n = Number(menge) || 0;
+  return Number.isInteger(n) ? String(n) : n.toLocaleString('de-DE', { maximumFractionDigits: 3 });
+}
+
+/** Aggregiert Paketpreis + Einsätze + Produkte zu einer Marge-Übersicht. */
+async function loadProjectWirtschaftlichkeitSummary(projectId) {
+  const el = document.getElementById('project-wirtschaftlichkeit-summary');
+  if (!el) return;
+
+  const [projRes, depRes, prodRes] = await Promise.all([
+    db.from('projects').select('geschaetzter_umsatz').is('deleted_at', null).eq('id', projectId).single(),
+    db.from('deployments').select('menge, einzelpreis').is('deleted_at', null).eq('project_id', projectId),
+    db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket').is('deleted_at', null).eq('project_id', projectId)
+  ]);
+  if (!isStillOnDetail('project', projectId)) return;
+
+  const paket = Number(projRes.data?.geschaetzter_umsatz) || 0;
+  const einsatzAufwand = (depRes.data || [])
+    .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  const prods = prodRes.data || [];
+  const produktUmsatzExkl = prods.filter(p => !p.im_paket)
+    .reduce((s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis_vk) || 0), 0);
+  const produktEkGesamt = prods.reduce((s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis_ek) || 0), 0);
+
+  const erloese = paket + produktUmsatzExkl;
+  const aufwand = einsatzAufwand + produktEkGesamt;
+  const marge = erloese - aufwand;
+  const margePct = erloese > 0 ? (marge / erloese * 100) : null;
+
+  const margeColor = marge >= 0 ? 'var(--success)' : 'var(--danger)';
+  const margeLabel = marge >= 0 ? 'Marge' : 'Überziehung';
+
+  const row = (label, value, opts = {}) => {
+    const color = opts.color || 'var(--text)';
+    const weight = opts.bold ? '600' : '400';
+    return `<div style="display:flex;justify-content:space-between;gap:16px;padding:2px 0">
+              <span style="color:var(--muted)">${esc(label)}</span>
+              <span style="color:${color};font-weight:${weight}">${esc(value)}</span>
+            </div>`;
+  };
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Erlöse</div>
+        ${row('Projekt-Paketpreis', formatPreis(paket))}
+        ${row('Zusätzliche Produkte (nicht im Paket)', formatPreis(produktUmsatzExkl))}
+        ${row('Erlöse gesamt', formatPreis(erloese), { bold: true })}
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Aufwand</div>
+        ${row('Interner Einsatz-Aufwand', formatPreis(einsatzAufwand))}
+        ${row('Produkt-Einkauf (alle Positionen)', formatPreis(produktEkGesamt))}
+        ${row('Aufwand gesamt', formatPreis(aufwand), { bold: true })}
+      </div>
+    </div>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-weight:600">${esc(margeLabel)}${margePct !== null ? ` (${margePct.toFixed(1)} %)` : ''}</span>
+      <span style="color:${margeColor};font-weight:600;font-size:16px">${esc(formatPreis(Math.abs(marge)))}</span>
+    </div>
+  `;
+}
+
+/** Modal-Open für eine neue oder bestehende Verkaufsposition. */
+async function openProjectProductModal(mode, id) {
+  if (!currentProjectDetailId) {
+    showToast('Kein Projekt aktiv.', true);
+    return;
+  }
+  editingProjectProductId = (mode === 'edit') ? id : null;
+
+  const titleEl = document.getElementById('modal-project-product-title');
+  const deleteBtn = document.getElementById('pp-delete-btn');
+  if (titleEl) titleEl.textContent = (mode === 'edit') ? 'Produkt bearbeiten' : 'Produkt hinzufügen';
+  if (deleteBtn) deleteBtn.style.display = (mode === 'edit') ? '' : 'none';
+
+  // Produkt-Dropdown füllen
+  const sel = document.getElementById('pp-product');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Produkt wählen —</option><option value="" disabled>Lade …</option>';
+    const { data: products } = await db.from('products')
+      .select('id, name, einheit, einkaufspreis, verkaufspreis, ist_aktiv').is('deleted_at', null)
+      .order('name', { ascending: true });
+    const opts = ['<option value="">— Produkt wählen —</option>'];
+    (products || []).filter(p => p.ist_aktiv !== false).forEach(p => {
+      opts.push(`<option value="${esc(p.id)}"
+        data-name="${esc(p.name)}"
+        data-einheit="${esc(p.einheit || 'Stk')}"
+        data-ek="${esc(p.einkaufspreis ?? 0)}"
+        data-vk="${esc(p.verkaufspreis ?? 0)}">${esc(p.name)}</option>`);
+    });
+    sel.innerHTML = opts.join('');
+  }
+
+  // Felder zurücksetzen
+  document.getElementById('pp-bezeichnung').value = '';
+  document.getElementById('pp-menge').value = 1;
+  document.getElementById('pp-einheit').value = 'Stk';
+  document.getElementById('pp-vk').value = 0;
+  document.getElementById('pp-ek').value = 0;
+  document.getElementById('pp-im-paket').checked = false;
+  document.getElementById('pp-notizen').value = '';
+
+  if (mode === 'edit') {
+    const { data: row, error } = await db.from('project_products').select('*').eq('id', id).single();
+    if (error || !row) {
+      showToast('Position konnte nicht geladen werden.', true);
+      return;
+    }
+    if (sel && row.product_id) sel.value = row.product_id;
+    document.getElementById('pp-bezeichnung').value = row.bezeichnung || '';
+    document.getElementById('pp-menge').value = row.menge ?? 1;
+    document.getElementById('pp-vk').value = row.einzelpreis_vk ?? 0;
+    document.getElementById('pp-ek').value = row.einzelpreis_ek ?? 0;
+    document.getElementById('pp-im-paket').checked = !!row.im_paket;
+    document.getElementById('pp-notizen').value = row.notizen || '';
+    // Einheit aus dem Produktoption übernehmen, falls vorhanden
+    const opt = sel?.selectedOptions?.[0];
+    if (opt?.dataset?.einheit) document.getElementById('pp-einheit').value = opt.dataset.einheit;
+  }
+
+  document.getElementById('modal-project-product').classList.add('open');
+  setTimeout(() => document.getElementById('pp-product')?.focus(), 100);
+}
+
+function closeProjectProductModal() {
+  document.getElementById('modal-project-product').classList.remove('open');
+  editingProjectProductId = null;
+}
+
+/** Übernimmt Bezeichnung/Einheit/VK/EK aus dem gewählten Produktstammdatensatz. */
+function onProjectProductSelect() {
+  const sel = document.getElementById('pp-product');
+  const opt = sel?.selectedOptions?.[0];
+  if (!opt || !opt.value) return;
+  document.getElementById('pp-bezeichnung').value = opt.dataset.name || '';
+  document.getElementById('pp-einheit').value    = opt.dataset.einheit || 'Stk';
+  document.getElementById('pp-vk').value         = opt.dataset.vk || 0;
+  document.getElementById('pp-ek').value         = opt.dataset.ek || 0;
+}
+
+async function saveProjectProduct() {
+  if (!currentProjectDetailId) return;
+
+  const productId   = document.getElementById('pp-product').value || null;
+  const bezeichnung = document.getElementById('pp-bezeichnung').value.trim();
+  const menge       = Number(document.getElementById('pp-menge').value);
+  const vk          = Number(document.getElementById('pp-vk').value);
+  const ek          = Number(document.getElementById('pp-ek').value);
+  const imPaket     = document.getElementById('pp-im-paket').checked;
+  const notizen     = document.getElementById('pp-notizen').value.trim() || null;
+
+  if (!bezeichnung) { showToast('Bezeichnung ist Pflicht.', true); return; }
+  if (!(menge > 0)) { showToast('Menge muss größer als 0 sein.', true); return; }
+  if (vk < 0 || ek < 0) { showToast('Preise dürfen nicht negativ sein.', true); return; }
+
+  const payload = {
+    project_id: currentProjectDetailId,
+    product_id: productId,
+    bezeichnung,
+    menge,
+    einzelpreis_vk: vk,
+    einzelpreis_ek: ek,
+    im_paket: imPaket,
+    notizen
+  };
+  if (currentProfile?.id && !editingProjectProductId) payload.erstellt_von = currentProfile.id;
+
+  try {
+    if (editingProjectProductId) {
+      const { error } = await db.from('project_products').update(payload).eq('id', editingProjectProductId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await db.from('project_products').insert(payload);
+      if (error) throw new Error(error.message);
+    }
+    closeProjectProductModal();
+    showToast(editingProjectProductId ? 'Position aktualisiert.' : 'Position angelegt.');
+    await loadProjectProducts(currentProjectDetailId);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function deleteProjectProduct() {
+  if (!editingProjectProductId) return;
+  if (!confirm('Position wirklich löschen?')) return;
+  try {
+    const { error } = await db.from('project_products')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', editingProjectProductId);
+    if (error) throw new Error(error.message);
+    closeProjectProductModal();
+    showToast('Position gelöscht.');
+    if (currentProjectDetailId) await loadProjectProducts(currentProjectDetailId);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
 /**
  * Quick-Toggle für Termin-Status via Checkbox in Projekt-Detail.
  * Togglet zwischen 'geplant' und 'durchgefuehrt' per direktes DOM-Update (kein Page-Reload).
@@ -12996,12 +13316,15 @@ async function loadProjectDashboard(p) {
   // ── PARALLEL: Finanz-Queries + Aktivität + Aufgaben ─────────
   const [
     depsResult,
+    prodsResult,
     openTasksResult,
     lastApptResult, lastDepResult,
     upcomingApptResult, upcomingDepResult
   ] = await Promise.all([
     // Projekt-Einsätze für Soll/Ist
     db.from('deployments').select('menge, einzelpreis').is('deleted_at', null).eq('project_id', p.id),
+    // Projekt-Produktpositionen (v2.10.0)
+    db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket').is('deleted_at', null).eq('project_id', p.id),
     // Offene Aufgaben
     db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
       .eq('project_id', p.id).neq('status', 'erledigt'),
@@ -13028,16 +13351,22 @@ async function loadProjectDashboard(p) {
   ]);
   if (!isStillOnDetail('project', p.id)) return;  // v2.0.6: race-guard
 
-  // ── FINANCE-CARD: Soll vs. Ist + Marge ─────────────────────
-  const aufwand = (depsResult.data || [])
+  // ── FINANCE-CARD: Soll vs. Ist + Marge (v2.10.0: inkl. Produkt-Positionen) ───
+  const einsatzAufwand = (depsResult.data || [])
     .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+  const prods = prodsResult.data || [];
+  const produktUmsatzExkl = prods.filter(pp => !pp.im_paket)
+    .reduce((s, pp) => s + (Number(pp.menge) || 0) * (Number(pp.einzelpreis_vk) || 0), 0);
+  const produktEkGesamt = prods.reduce((s, pp) => s + (Number(pp.menge) || 0) * (Number(pp.einzelpreis_ek) || 0), 0);
   const paket = Number(p.geschaetzter_umsatz) || 0;
-  const marge = paket - aufwand;
+  const erloese = paket + produktUmsatzExkl;
+  const aufwand = einsatzAufwand + produktEkGesamt;
+  const marge = erloese - aufwand;
 
   const financeMarginEl = document.getElementById('project-finance-margin');
   const financeSublineEl = document.getElementById('project-finance-subline');
   if (financeMarginEl) {
-    if (paket === 0 && aufwand === 0) {
+    if (erloese === 0 && aufwand === 0) {
       financeMarginEl.innerHTML = '<span class="stat-value-muted">—</span>';
     } else {
       const color = marge >= 0 ? 'var(--success)' : 'var(--danger)';
@@ -13046,7 +13375,10 @@ async function loadProjectDashboard(p) {
     }
   }
   if (financeSublineEl) {
-    financeSublineEl.textContent = `Paket ${formatPreis(paket)} · Aufwand ${formatPreis(aufwand)}`;
+    const parts = [`Paket ${formatPreis(paket)}`];
+    if (produktUmsatzExkl > 0) parts.push(`+ Produkte ${formatPreis(produktUmsatzExkl)}`);
+    parts.push(`Aufwand ${formatPreis(aufwand)}`);
+    financeSublineEl.textContent = parts.join(' · ');
   }
 
   // ── AUFGABEN-CARD ─────────────────────────────────────────
@@ -20830,6 +21162,7 @@ if (typeof MODAL_CLOSERS !== 'undefined') {
   MODAL_CLOSERS['modal-tag'] = () => closeTagModal();
   MODAL_CLOSERS['modal-product'] = () => closeProductModal();
   MODAL_CLOSERS['modal-merge']   = () => closeMergeModal();
+  MODAL_CLOSERS['modal-project-product'] = () => closeProjectProductModal();
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -1547,6 +1547,41 @@
               </div>
               <div id="project-deployments-summary" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
             </div>
+
+            <!-- v2.10.0: Produkt-Verkaufspositionen am Projekt -->
+            <div class="info-card" style="margin-top:16px">
+              <div class="info-card-title-row">
+                <div class="info-card-title"><span id="project-products-count">Produkte und Verkäufe</span></div>
+                <button class="btn btn-sm btn-primary" id="project-detail-add-product-btn">+ Produkt hinzufügen</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Bezeichnung</th>
+                      <th class="col-tablet" style="width:90px">Menge</th>
+                      <th class="col-tablet" style="width:110px">VK</th>
+                      <th class="col-desktop" style="width:110px">EK</th>
+                      <th style="width:110px">Position</th>
+                      <th style="width:100px">Im Paket</th>
+                      <th class="col-action"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="project-products-body">
+                    <tr><td colspan="7"><div class="empty">Lade Produkte ...</div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="project-products-summary" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
+            </div>
+
+            <!-- v2.10.0: Marge-Übersicht (kombiniert Einsätze + Produkte) -->
+            <div class="info-card" style="margin-top:16px" id="project-wirtschaftlichkeit-summary-card">
+              <div class="info-card-title">Wirtschaftlichkeit</div>
+              <div id="project-wirtschaftlichkeit-summary" style="font-size:13px;color:var(--text);line-height:1.7">
+                <div style="color:var(--muted)">Lade …</div>
+              </div>
+            </div>
           </div>
 
           <!-- Plan-&-Lieferobjekte-Tab -->
@@ -4224,6 +4259,62 @@
       </button>
       <button class="btn" onclick="closeMembershipModal()">Abbrechen</button>
       <button class="btn btn-primary" id="ms-save-btn" onclick="saveMembership()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- v2.10.0: Modal — Produkt-Verkaufsposition am Projekt -->
+<div class="modal-overlay" id="modal-project-product" onclick="if(event.target===this)closeProjectProductModal()">
+  <div class="modal" style="width:560px;max-height:88vh;overflow-y:auto">
+    <div class="modal-title" id="modal-project-product-title">Produkt hinzufügen</div>
+    <div class="form-group">
+      <label>Produkt *</label>
+      <select id="pp-product" onchange="onProjectProductSelect()">
+        <option value="">— Produkt wählen —</option>
+      </select>
+      <small class="field-hint" style="color:var(--muted)">Wählt VK/EK aus dem Produktkatalog vor — die Snapshots unten sind editierbar.</small>
+    </div>
+    <div class="form-group">
+      <label>Bezeichnung *</label>
+      <input type="text" id="pp-bezeichnung" placeholder="Wird aus dem Produkt übernommen, optional anpassen">
+    </div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Menge *</label>
+        <input type="number" id="pp-menge" min="0" step="0.001" value="1">
+      </div>
+      <div class="form-group">
+        <label>Einheit</label>
+        <input type="text" id="pp-einheit" placeholder="Stk" disabled>
+      </div>
+    </div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Verkaufspreis (VK) *</label>
+        <input type="number" id="pp-vk" min="0" step="0.01" value="0">
+      </div>
+      <div class="form-group">
+        <label>Einkaufspreis (EK) *</label>
+        <input type="number" id="pp-ek" min="0" step="0.01" value="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="pp-im-paket">
+        <span>Im Projektpreis enthalten (kein zusätzlicher Erlös, nur EK als Aufwand)</span>
+      </label>
+      <small class="field-hint" style="color:var(--muted)">Aktiv = die Position ist im geschätzten Umsatz des Projekts schon eingepreist. Inaktiv = der VK wird zusätzlich zum Paketpreis verrechnet.</small>
+    </div>
+    <div class="form-group">
+      <label>Notizen</label>
+      <textarea id="pp-notizen" rows="2" placeholder="Optional"></textarea>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between">
+      <button class="btn btn-danger" id="pp-delete-btn" onclick="deleteProjectProduct()" style="display:none">Löschen</button>
+      <div>
+        <button class="btn" onclick="closeProjectProductModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveProjectProduct()">Speichern</button>
+      </div>
     </div>
   </div>
 </div>
