@@ -431,102 +431,113 @@
     </div>
 
     <!-- v2.0.0 — ARBEITSPLATZ (Hauptbereich 2) -->
+    <!-- v2.18.0: Arbeitsplatz neu in 3 Spalten — Aktionen / Bühne / Widgets -->
     <div class="page" id="page-arbeitsplatz">
-      <div class="arbeitsplatz">
-        <div class="arbeitsplatz-head">
-          <div class="arbeitsplatz-eyebrow">ARBEITSPLATZ</div>
-          <div class="arbeitsplatz-date" id="arbeitsplatz-date"></div>
-        </div>
-        <h1 class="arbeitsplatz-title">Was möchtest du anlegen?</h1>
+      <div class="arbeitsplatz-3col">
 
-        <div class="arbeitsplatz-capture">
-          <input type="text" id="arbeitsplatz-capture-input"
-                 placeholder='z. B. „Telefonat mit Müller morgen 10 Uhr" · „Neue Firma Schmid GmbH" · „Aufgabe: Angebot Heidenhain bis Freitag" …'
-                 autocomplete="off">
-          <div class="arbeitsplatz-context-row">
-            <span class="arbeitsplatz-context-label">Bezogen auf</span>
-            <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
-              <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
-            </span>
+        <!-- LINKE SPALTE: Aktionen + Live-Vorschau -->
+        <aside class="arbeitsplatz-col-left">
+          <div class="arbeitsplatz-col-eyebrow">AKTIONEN</div>
+          <div class="arbeitsplatz-actions-list">
+            <button class="arbeitsplatz-action-row" data-action="firma"   onclick="stageOpenAction('firma')">+ Neue Firma</button>
+            <button class="arbeitsplatz-action-row" data-action="kontakt" onclick="stageOpenAction('kontakt')">+ Neuer Kontakt</button>
+            <button class="arbeitsplatz-action-row" data-action="projekt" onclick="stageOpenAction('projekt')">+ Neues Projekt</button>
+            <button class="arbeitsplatz-action-row" data-action="einsatz" onclick="stageOpenAction('einsatz')">+ Neuer Einsatz</button>
+            <button class="arbeitsplatz-action-row" data-action="termin"  onclick="stageOpenAction('termin')">+ Neuer Termin</button>
+            <button class="arbeitsplatz-action-row" data-action="aufgabe" onclick="stageOpenAction('aufgabe')">+ Neue Aufgabe</button>
+            <button class="arbeitsplatz-action-row" data-action="notiz"   onclick="stageOpenAction('notiz')">+ Neue Notiz</button>
           </div>
-        </div>
+          <!-- Live-Vorschau erscheint direkt unter der aktiven Aktion -->
+          <div id="arbeitsplatz-live-preview" class="arbeitsplatz-live-preview" style="display:none"></div>
+        </aside>
 
-        <div class="arbeitsplatz-tiles">
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('aufgabe')">+ Aufgabe</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('termin')">+ Termin</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('einsatz')">+ Einsatz</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('projekt')">+ Projekt</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('firma')">+ Firma</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('kontakt')">+ Kontakt</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('notiz')">+ Notiz</button>
-          <button class="arbeitsplatz-tile" onclick="arbeitsplatzCreate('anhang')">+ Anhang</button>
-        </div>
+        <!-- MITTLERE SPALTE: Bühne / Karteikarte / Eingabemaske -->
+        <main class="arbeitsplatz-col-center">
+          <div id="arbeitsplatz-stage" class="arbeitsplatz-stage">
+            <!-- Default-Inhalt: Smart-Capture-Begrüßung -->
+            <div class="stage-welcome">
+              <div class="arbeitsplatz-col-eyebrow">ARBEITSPLATZ · <span id="arbeitsplatz-date"></span></div>
+              <h1 class="stage-welcome-title">Was möchtest du anlegen?</h1>
+              <div class="stage-welcome-hint">Wähle eine Aktion links — die Maske öffnet hier in der Mitte. Oder klicke auf eine Entität in den Listen / im Briefing, dann erscheint die Karteikarte zum Bearbeiten.</div>
 
-        <!-- v2.2.0: Aktive Vorgänge fortführen -->
-        <div class="arbeitsplatz-section-eyebrow">FORTFÜHREN</div>
-        <div class="arbeitsplatz-tiles">
-          <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('termin')">📅 Termin vorbereiten</button>
-          <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('einsatz')">🔧 Einsatz vorbereiten</button>
-          <button class="arbeitsplatz-tile arbeitsplatz-tile-secondary" onclick="arbeitsplatzPrepare('projekt')">📦 Projekt-Briefing starten</button>
-        </div>
-
-        <!-- v2.8.0: Quick-Links / Shortcuts (User-konfigurierbar unter Einstellungen → Shortcuts) -->
-        <div class="arbeitsplatz-shortcuts-block" id="arbeitsplatz-shortcuts-block" style="display:none">
-          <div class="arbeitsplatz-section-eyebrow">QUICK-LINKS</div>
-          <div class="arbeitsplatz-shortcuts" id="arbeitsplatz-shortcuts"></div>
-        </div>
-
-        <!-- v2.3.0: Angeheftet (Pins) -->
-        <div class="arbeitsplatz-pins-block" id="arbeitsplatz-pins-block">
-          <div class="arbeitsplatz-section-eyebrow">ANGEHEFTET</div>
-          <div class="arbeitsplatz-pins" id="arbeitsplatz-pins">
-            <div class="info-card-empty">Lade …</div>
-          </div>
-        </div>
-
-        <!-- v2.3.0: Dranbleiben (Inbox) -->
-        <div class="arbeitsplatz-inbox-block">
-          <div class="arbeitsplatz-section-eyebrow">DRANBLEIBEN</div>
-          <div id="arbeitsplatz-inbox">
-            <div class="info-card-empty">Lade …</div>
-          </div>
-        </div>
-
-        <!-- v2.3.0: Datenpflege-Hinweise -->
-        <div class="arbeitsplatz-care-block" id="arbeitsplatz-care-block">
-          <div class="arbeitsplatz-section-eyebrow">DATENPFLEGE</div>
-          <div class="arbeitsplatz-care" id="arbeitsplatz-care">
-            <div class="info-card-empty">Lade …</div>
-          </div>
-        </div>
-
-        <div class="arbeitsplatz-grid">
-          <div class="arbeitsplatz-side">
-            <div class="arbeitsplatz-side-title">ZULETZT BEARBEITET</div>
-            <div id="arbeitsplatz-recent">
-              <div class="info-card-empty">Lade …</div>
+              <div class="arbeitsplatz-capture">
+                <input type="text" id="arbeitsplatz-capture-input"
+                       placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
+                       autocomplete="off">
+                <div class="arbeitsplatz-context-row">
+                  <span class="arbeitsplatz-context-label">Bezogen auf</span>
+                  <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
+                    <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="arbeitsplatz-side">
-            <div class="arbeitsplatz-side-title-row">
-              <div class="arbeitsplatz-side-title">HEUTE VON DIR</div>
-              <span class="arbeitsplatz-side-counter" id="arbeitsplatz-today-count">0 Aktionen</span>
-            </div>
-            <div id="arbeitsplatz-today">
-              <div class="info-card-empty">Lade …</div>
-            </div>
-          </div>
-        </div>
+        </main>
 
-        <div class="arbeitsplatz-templates">
-          <div class="arbeitsplatz-side-title-row">
-            <div class="arbeitsplatz-side-title">VORLAGEN · HÄUFIG GENUTZT</div>
-            <a class="arbeitsplatz-side-link" onclick="navigateTo('templates')">Alle Templates →</a>
-          </div>
-          <div class="arbeitsplatz-template-grid" id="arbeitsplatz-template-grid">
-            <div class="info-card-empty">Lade …</div>
-          </div>
-        </div>
+        <!-- RECHTE SPALTE: Widgets (Akkordeon, alle initial eingeklappt) -->
+        <aside class="arbeitsplatz-col-right">
+          <details class="arbeitsplatz-widget" id="arbeitsplatz-shortcuts-block" style="display:none">
+            <summary>QUICK-LINKS</summary>
+            <div class="arbeitsplatz-widget-body">
+              <div class="arbeitsplatz-shortcuts" id="arbeitsplatz-shortcuts"></div>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget" id="arbeitsplatz-pins-block">
+            <summary>ANGEHEFTET</summary>
+            <div class="arbeitsplatz-widget-body">
+              <div class="arbeitsplatz-pins" id="arbeitsplatz-pins">
+                <div class="info-card-empty">Lade …</div>
+              </div>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget">
+            <summary>FORTFÜHREN</summary>
+            <div class="arbeitsplatz-widget-body">
+              <button class="arbeitsplatz-action-row" onclick="arbeitsplatzPrepare('termin')">📅 Termin vorbereiten</button>
+              <button class="arbeitsplatz-action-row" onclick="arbeitsplatzPrepare('einsatz')">🔧 Einsatz vorbereiten</button>
+              <button class="arbeitsplatz-action-row" onclick="arbeitsplatzPrepare('projekt')">📦 Projekt-Briefing starten</button>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget">
+            <summary>DRANBLEIBEN</summary>
+            <div class="arbeitsplatz-widget-body">
+              <div id="arbeitsplatz-inbox"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget" id="arbeitsplatz-care-block">
+            <summary>DATENPFLEGE</summary>
+            <div class="arbeitsplatz-widget-body">
+              <div class="arbeitsplatz-care" id="arbeitsplatz-care"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget">
+            <summary>ZULETZT BEARBEITET</summary>
+            <div class="arbeitsplatz-widget-body">
+              <div id="arbeitsplatz-recent"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget">
+            <summary>HEUTE VON DIR <span class="arbeitsplatz-side-counter" id="arbeitsplatz-today-count">0</span></summary>
+            <div class="arbeitsplatz-widget-body">
+              <div id="arbeitsplatz-today"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </details>
+
+          <details class="arbeitsplatz-widget">
+            <summary>VORLAGEN <a class="arbeitsplatz-side-link" onclick="event.stopPropagation();navigateTo('templates')">alle →</a></summary>
+            <div class="arbeitsplatz-widget-body">
+              <div class="arbeitsplatz-template-grid" id="arbeitsplatz-template-grid"><div class="info-card-empty">Lade …</div></div>
+            </div>
+          </details>
+        </aside>
+
       </div>
     </div>
 

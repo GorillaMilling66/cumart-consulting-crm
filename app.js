@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.18.0 (Phase 2 des Redesigns — Arbeitsplatz neu in
+   3-Spalten-Layout. Linke Spalte: vertikale Aktionen-Liste
+   (+ Firma / + Kontakt / + Projekt / + Einsatz / + Termin /
+   + Aufgabe / + Notiz). Klick auf eine Aktion markiert sie als
+   aktiv und zeigt direkt darunter eine Live-Vorschau-Karte
+   („Vorschau: Neue Firma · Kunde, Lieferant oder Interessent
+   …"). Mittlere Spalte: die Bühne — Default-Welcome-Block mit
+   Smart-Capture-Eingabe; bei Aktions-Klick weiterhin Modal-
+   Anlage (Phase 3 ersetzt Modal durch Inline-Form in der
+   Bühne). Rechte Spalte: Akkordeon mit allen bisherigen Widgets
+   (Quick-Links · Angeheftet · Fortführen · Dranbleiben ·
+   Datenpflege · Zuletzt bearbeitet · Heute von Dir · Vorlagen)
+   — alle initial eingeklappt, einzeln aufklappbar via native
+   <details>-Element.
+   Mobile: 3-Spalten kollabieren auf 1 Spalte; sticky-Spalten
+   werden zu normalen Blöcken unter der Bühne.
+   JS: stageOpenAction, _STAGE_PREVIEW_META, _renderArbeitsplatzLivePreview,
+   resetArbeitsplatzStage. CSS-Klassen .arbeitsplatz-3col,
+   .arbeitsplatz-col-left/-center/-right, .arbeitsplatz-col-eyebrow,
+   .arbeitsplatz-actions-list, .arbeitsplatz-action-row (+ -active),
+   .arbeitsplatz-live-preview, .arbeitsplatz-stage, .stage-welcome-*,
+   .arbeitsplatz-widget (+ -body), .stage-preview-* (eyebrow/title/hint).
    Version 2.17.0 (Phase 1 des großen Redesigns — Detail-Pages
    radikal entschlackt. Vorbereitung für die neue Arbeitsplatz-
    Architektur (Karteikarten in 3-Spalten-Layout).
@@ -5229,6 +5251,58 @@ async function loadPrepareSuggestions(typ) {
     }));
   }
   return [];
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.18.0 — ARBEITSPLATZ 3-Spalten-Layout: Stage-Mechanik
+// ═══════════════════════════════════════════════════════════
+
+/** v2.18.0: Klick auf eine Aktion in der linken Spalte.
+ *  - Markiert die Aktion als aktiv (.is-active)
+ *  - Zeigt eine Live-Vorschau-Karte direkt unter der Aktions-Liste
+ *  - Öffnet (vorerst) das bestehende Modal über `arbeitsplatzCreate`.
+ *  In Phase 3 wird das Modal durch ein Inline-Formular in der Bühne
+ *  ersetzt — die Stage-Mechanik (Hash-State / Karteikarten) kommt dann
+ *  hier rein. */
+async function stageOpenAction(typ) {
+  // Aktive Aktion visuell markieren
+  document.querySelectorAll('.arbeitsplatz-action-row[data-action]').forEach(b => {
+    b.classList.toggle('is-active', b.dataset.action === typ);
+  });
+  // Live-Vorschau anzeigen
+  _renderArbeitsplatzLivePreview(typ);
+  // Bestehende Anlage-Mechanik nutzen (Modal)
+  await arbeitsplatzCreate(typ);
+}
+
+const _STAGE_PREVIEW_META = {
+  firma:   { titel: 'Neue Firma',    hint: 'Kunde, Lieferant oder Interessent. Im Formular: Name, Typ, Adresse, ABC-Klasse.' },
+  kontakt: { titel: 'Neuer Kontakt', hint: 'Person als Ansprechpartner einer Firma. Im Formular: Name, Rolle, E-Mail, Telefon.' },
+  projekt: { titel: 'Neues Projekt', hint: 'Bündelt Einsätze unter einem Festpreis. Im Formular: Name, Firma, Status, geschätzter Umsatz.' },
+  einsatz: { titel: 'Neuer Einsatz', hint: 'Termin vor Ort mit Honorar. Im Formular: Datum, Firma, Leistung, Menge × Einzelpreis.' },
+  termin:  { titel: 'Neuer Termin',  hint: 'Meeting / Akquise-Kontaktpunkt (nicht abrechenbar). Datum, Typ, Teilnehmer.' },
+  aufgabe: { titel: 'Neue Aufgabe',  hint: 'To-Do für dich oder andere. Fälligkeit, Zuweisung, Bezug zu Firma / Projekt / Termin.' },
+  notiz:   { titel: 'Neue Notiz',    hint: 'Kurze Notiz zu einer Entität. Tippe oben den Text + setze einen Bezug.' }
+};
+
+function _renderArbeitsplatzLivePreview(typ) {
+  const el = document.getElementById('arbeitsplatz-live-preview');
+  if (!el) return;
+  const meta = _STAGE_PREVIEW_META[typ];
+  if (!meta) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `
+    <div class="stage-preview-eyebrow">VORSCHAU</div>
+    <div class="stage-preview-title">${esc(meta.titel)}</div>
+    <div class="stage-preview-hint">${esc(meta.hint)}</div>`;
+}
+
+/** v2.18.0: Bühne in den Default-Welcome-Zustand zurücksetzen.
+ *  Wird beim Schließen der Anlage-Modale aufgerufen (siehe modal-close-Hooks). */
+function resetArbeitsplatzStage() {
+  document.querySelectorAll('.arbeitsplatz-action-row[data-action]').forEach(b => b.classList.remove('is-active'));
+  const el = document.getElementById('arbeitsplatz-live-preview');
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
 }
 
 async function arbeitsplatzCreate(typ) {

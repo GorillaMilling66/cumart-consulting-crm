@@ -1221,6 +1221,158 @@ body {
 @media (max-width: 900px) {
   .arbeitsplatz { padding-bottom: calc(var(--mobile-nav-height) + 32px); }
 }
+
+/* v2.18.0: 3-Spalten-Layout für den Arbeitsplatz */
+.arbeitsplatz-3col {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  gap: 20px;
+  align-items: start;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding-bottom: 64px;
+}
+.arbeitsplatz-col-left,
+.arbeitsplatz-col-right {
+  position: sticky;
+  top: 80px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.arbeitsplatz-col-left { padding-right: 0; }
+.arbeitsplatz-col-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .9px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+.arbeitsplatz-actions-list {
+  display: flex; flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.arbeitsplatz-action-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  transition: background .12s, border-color .12s, transform .12s;
+}
+.arbeitsplatz-action-row:hover {
+  background: var(--bg);
+  border-color: var(--primary);
+}
+.arbeitsplatz-action-row.is-active {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+  font-weight: 600;
+}
+
+.arbeitsplatz-live-preview {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--text);
+}
+.stage-preview-eyebrow {
+  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  color: var(--primary); margin-bottom: 6px;
+}
+.stage-preview-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  margin-bottom: 6px;
+}
+.stage-preview-hint {
+  font-size: 12px; color: var(--muted); line-height: 1.4;
+}
+
+.arbeitsplatz-col-center { min-width: 0; }
+.arbeitsplatz-stage {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 32px 36px;
+  min-height: 500px;
+}
+.stage-welcome-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 6px 0 8px;
+  letter-spacing: -0.4px;
+}
+.stage-welcome-hint {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 28px;
+  line-height: 1.5;
+  max-width: 560px;
+}
+
+.arbeitsplatz-widget {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.arbeitsplatz-widget summary {
+  cursor: pointer;
+  padding: 11px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  color: var(--muted);
+  list-style: none;
+  user-select: none;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.arbeitsplatz-widget summary::-webkit-details-marker { display: none; }
+.arbeitsplatz-widget summary::after {
+  content: '＋';
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.arbeitsplatz-widget[open] summary::after { content: '−'; }
+.arbeitsplatz-widget:hover summary { background: var(--bg); }
+.arbeitsplatz-widget-body {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+}
+.arbeitsplatz-widget .info-card-empty { padding: 4px 0; font-size: 12px; }
+
+/* Mobile: Eine Spalte. Linke + rechte Spalte unter die Bühne, nicht sticky. */
+@media (max-width: 1000px) {
+  .arbeitsplatz-3col {
+    grid-template-columns: 1fr;
+    padding-bottom: calc(var(--mobile-nav-height) + 32px);
+  }
+  .arbeitsplatz-col-left,
+  .arbeitsplatz-col-right {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .arbeitsplatz-stage { padding: 20px; min-height: auto; }
+  .stage-welcome-title { font-size: 22px; }
+}
 .arbeitsplatz-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 8px;
