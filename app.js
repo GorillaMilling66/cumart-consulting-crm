@@ -5382,7 +5382,7 @@ async function stageRenderEntityCard(type, id) {
   let data, error, hero;
   if (type === 'firma') {
     ({ data, error } = await db.from('companies')
-      .select('id, name, typ_id, abc_klassifizierung, strasse, plz, stadt, land, telefon, email, website, dokumentation, typ:lookup_values(wert)').eq('id', id).single());
+      .select('id, name, typ_id, abc_klassifizierung, strasse, plz, stadt, land, telefon, email, website, typ:lookup_values(wert)').eq('id', id).single());
     hero = data ? {
       title: data.name, status: data.typ?.wert || '—',
       metrics: [
