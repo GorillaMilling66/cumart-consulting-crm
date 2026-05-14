@@ -6345,6 +6345,17 @@ function _embedDetailPagesInArbeitsplatzStage() {
 }
 
 let _drawerObserverActive = false;
+let _activeDrawerPreviewObserver = null;
+const _DRAWER_TO_ACTION = {
+  'modal-company':      'firma',
+  'modal-contact':      'kontakt',
+  'modal-appointment':  'termin',
+  'modal-aufgabe':      'aufgabe',
+  'modal-project':      'projekt',
+  'modal-deployment':   'einsatz',
+  'modal-notiz':        'notiz'
+};
+
 function _watchDrawerOpens() {
   if (_drawerObserverActive) return;
   _drawerObserverActive = true;
@@ -6353,33 +6364,86 @@ function _watchDrawerOpens() {
       if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
       const el = m.target;
       if (!el.classList.contains('drawer-overlay')) continue;
-      if (!el.classList.contains('open')) continue;
-      // v2.24.1: nur EIN Drawer gleichzeitig — andere schließen
-      document.querySelectorAll('.drawer-overlay.open').forEach(other => {
-        if (other !== el) other.classList.remove('open');
-      });
-      // v2.24.1: nach oben scrollen, sonst sitzt der neue Drawer ggf. mit
-      // alter Scroll-Position in der Stage und steigt mittendrin ein
-      const stage = document.getElementById('arbeitsplatz-stage');
-      if (stage) stage.scrollTop = 0;
-      window.scrollTo({ top: 0, behavior: 'auto' });
-      const drawerBody = el.querySelector('.drawer__body');
-      if (drawerBody) drawerBody.scrollTop = 0;
-
-      // Drawer wurde geöffnet → Arbeitsplatz-Shell aktivieren
-      const arbeitsplatz = document.getElementById('page-arbeitsplatz');
-      if (arbeitsplatz && !arbeitsplatz.classList.contains('active')) {
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        arbeitsplatz.classList.add('active');
-        setActiveTopNavTab?.('arbeitsplatz');
-        updateListenTabBar?.('arbeitsplatz');
-        setMobileNav?.('arbeitsplatz');
+      if (el.classList.contains('open')) {
+        _onDrawerOpened(el);
+      } else {
+        _onDrawerClosed(el);
       }
     }
   });
   document.querySelectorAll('.drawer-overlay').forEach(d => {
     obs.observe(d, { attributes: true, attributeFilter: ['class'] });
   });
+}
+
+function _onDrawerOpened(el) {
+  // v2.24.1: nur EIN Drawer gleichzeitig — andere schließen
+  document.querySelectorAll('.drawer-overlay.open').forEach(other => {
+    if (other !== el) other.classList.remove('open');
+  });
+  // Scroll-Reset
+  const stage = document.getElementById('arbeitsplatz-stage');
+  if (stage) stage.scrollTop = 0;
+  window.scrollTo({ top: 0, behavior: 'auto' });
+  const drawerBody = el.querySelector('.drawer__body');
+  if (drawerBody) drawerBody.scrollTop = 0;
+
+  // Arbeitsplatz-Shell aktivieren
+  const arbeitsplatz = document.getElementById('page-arbeitsplatz');
+  if (arbeitsplatz && !arbeitsplatz.classList.contains('active')) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    arbeitsplatz.classList.add('active');
+    setActiveTopNavTab?.('arbeitsplatz');
+    updateListenTabBar?.('arbeitsplatz');
+    setMobileNav?.('arbeitsplatz');
+  }
+
+  // v2.24.2: Live-Vorschau in der linken Spalte mit dem Drawer-internen
+  // Preview synchronisieren. Aktive Aktions-Zeile farbig hervorheben.
+  const action = _DRAWER_TO_ACTION[el.id];
+  if (action) {
+    document.querySelectorAll('.arbeitsplatz-action-row[data-action]').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.action === action);
+    });
+  }
+  const drawerPreview = el.querySelector('.drawer__preview');
+  if (drawerPreview) {
+    _mirrorDrawerPreviewToLeft(drawerPreview, action);
+    // Live-Sync: jede Änderung im Drawer-Preview mirrort sich nach links
+    if (_activeDrawerPreviewObserver) _activeDrawerPreviewObserver.disconnect();
+    _activeDrawerPreviewObserver = new MutationObserver(() => {
+      _mirrorDrawerPreviewToLeft(drawerPreview, action);
+    });
+    _activeDrawerPreviewObserver.observe(drawerPreview, {
+      childList: true, subtree: true, characterData: true, attributes: true
+    });
+  }
+}
+
+function _onDrawerClosed(el) {
+  // Wenn der gerade geschlossene Drawer derjenige war, dessen Preview
+  // wir nach links mirroren — Observer trennen und linke Karte zurücksetzen.
+  if (_activeDrawerPreviewObserver) {
+    _activeDrawerPreviewObserver.disconnect();
+    _activeDrawerPreviewObserver = null;
+  }
+  // Wenn kein anderer Drawer mehr offen ist, linke Preview-Karte ausblenden
+  // und Aktions-Highlight entfernen.
+  const stillOpen = document.querySelector('.drawer-overlay.open');
+  if (!stillOpen) {
+    document.querySelectorAll('.arbeitsplatz-action-row[data-action]').forEach(b => b.classList.remove('is-active'));
+    const left = document.getElementById('arbeitsplatz-live-preview');
+    if (left) { left.style.display = 'none'; left.innerHTML = ''; left.removeAttribute('data-action'); }
+  }
+}
+
+/** v2.24.2: Drawer-Preview-Inhalt 1:1 in die linke Spalte spiegeln. */
+function _mirrorDrawerPreviewToLeft(drawerPreviewEl, action) {
+  const left = document.getElementById('arbeitsplatz-live-preview');
+  if (!left || !drawerPreviewEl) return;
+  if (action) left.dataset.action = action;
+  left.style.display = '';
+  left.innerHTML = `<div class="stage-preview-eyebrow">VORSCHAU</div>${drawerPreviewEl.innerHTML}`;
 }
 
 /** v2.23.0: Aktiviert das Arbeitsplatz-Layout + die jeweilige Detail-Page
