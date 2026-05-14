@@ -5431,8 +5431,19 @@ async function stageRenderEntityCard(type, id) {
     return;
   }
 
+  // v2.21.0: Karteikarte mit vollwertigem Aktivitäten-Bereich
+  const hasNotes = ['firma', 'kontakt', 'projekt'].includes(type);
+  const notesInputHTML = hasNotes ? `
+    <div class="stage-card-note-input">
+      <input type="text" id="stage-card-note-input"
+             placeholder="Notiz hinzufügen oder Update schreiben …"
+             onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();postStageCardNote();}">
+      <button type="button" class="stage-card-note-btn"
+              onclick="postStageCardNote()" title="Speichern (⌘↵)">⌘↵</button>
+    </div>` : '';
+
   stage.innerHTML = `
-    <div class="stage-card">
+    <div class="stage-card" data-entity-type="${esc(type)}" data-entity-id="${esc(id)}">
       <div class="stage-card-head">
         <div>
           <div class="stage-card-eyebrow">${esc(type.toUpperCase())} · KARTEIKARTE</div>
@@ -5451,67 +5462,193 @@ async function stageRenderEntityCard(type, id) {
             <div class="stage-card-metric-value">${esc(m.value)}</div>
           </div>`).join('')}
       </div>
+
       <div class="stage-card-section">
-        <div class="stage-card-section-title">LETZTE AKTIVITÄTEN</div>
+        <div class="stage-card-section-head">
+          <div class="stage-card-section-title">AKTIVITÄTEN</div>
+          <div class="stage-card-filter-pills" id="stage-card-filter-pills">
+            <button class="proj-filter-pill active" data-filter="alle"     onclick="filterStageCard('alle')">Alle</button>
+            <button class="proj-filter-pill"        data-filter="termine"  onclick="filterStageCard('termine')">Termine</button>
+            <button class="proj-filter-pill"        data-filter="einsaetze" onclick="filterStageCard('einsaetze')">Einsätze</button>
+            <button class="proj-filter-pill"        data-filter="aufgaben" onclick="filterStageCard('aufgaben')">Aufgaben</button>
+            <button class="proj-filter-pill"        data-filter="notizen"  onclick="filterStageCard('notizen')">Notizen</button>
+            <button class="proj-filter-pill"        data-filter="anhaenge" onclick="filterStageCard('anhaenge')">Anhänge</button>
+          </div>
+        </div>
+        ${notesInputHTML}
         <div id="stage-card-activities"><div class="info-card-empty">Lade …</div></div>
       </div>
     </div>`;
 
-  // Recent activities laden (vereinfacht — pro Typ andere Quellen)
-  await _stageRenderCardActivities(type, id);
+  await loadStageCardActivityStream(type, id);
 }
 
-async function _stageRenderCardActivities(type, id) {
+// State für Karteikarten-Aktivitäten
+let _stageCardActivityFilter = 'alle';
+let _stageCardItems = []; // Cache der zuletzt geladenen Items für Filter-Wechsel ohne Re-Fetch
+
+/** v2.21.0: Vollwertiger Aktivitäten-Stream für die Karteikarte. Filtert
+ *  Notes/Tasks/Termine/Einsätze/Anhänge nach der jeweiligen Entität,
+ *  bei Einsatz zusätzlich `deployment_log`-Einträge. Generisch für alle
+ *  Entity-Typen. */
+async function loadStageCardActivityStream(type, id) {
   const wrap = document.getElementById('stage-card-activities');
   if (!wrap) return;
 
-  const items = [];
-  // Filter-Spalte je Typ
-  const filterCol = type === 'firma'   ? 'company_id'
-                  : type === 'kontakt' ? 'contact_id'
-                  : type === 'projekt' ? 'project_id'
-                  : type === 'einsatz' ? 'deployment_id'
-                  : type === 'termin'  ? null  // Termine haben selbst keine Aktivitäten
-                  : null;
+  // FK-Spalten je Typ
+  const fkCol = ({
+    firma:   'company_id',
+    kontakt: 'contact_id',
+    projekt: 'project_id',
+    einsatz: 'deployment_id',
+    termin:  'appointment_id'
+  })[type];
+  // Entity-Type für attachments (englisch)
+  const attEntity = ({
+    firma: 'company', kontakt: 'contact', projekt: 'project',
+    einsatz: 'deployment', termin: 'appointment'
+  })[type];
 
-  if (filterCol) {
-    const [notes, tasks] = await Promise.all([
-      db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq(filterCol, id).order('created_at', { ascending: false }).limit(10),
-      db.from('tasks').select('id, titel, status, faelligkeit, created_at').is('deleted_at', null).eq(filterCol, id).order('created_at', { ascending: false }).limit(10)
+  const items = [];
+
+  // Termin selbst kann an firma/projekt/kontakt hängen, aber ein Termin als
+  // Entität hat in der Regel nur den eigenen Stream (Tasks + Anhänge).
+  // Für firma/kontakt/projekt: vollwertiger Stream wie auf der Detail-Page.
+  if (type === 'firma' || type === 'kontakt' || type === 'projekt') {
+    const [appts, deps, tasks, notes, atts] = await Promise.all([
+      db.from('appointments').select('id, titel, datum, uhrzeit_von, status, created_at').is('deleted_at', null).eq(fkCol, id).order('datum', { ascending: false }).limit(50),
+      db.from('deployments').select('id, titel, datum_von, status, ort, einzelpreis, menge, created_at').is('deleted_at', null).eq(fkCol, id).order('datum_von', { ascending: false }).limit(50),
+      db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq(fkCol, id).order('created_at', { ascending: false }).limit(50),
+      db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq(fkCol, id).order('created_at', { ascending: false }).limit(50),
+      db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', attEntity).eq('entity_id', id).order('created_at', { ascending: false }).limit(50)
     ]);
-    (notes.data || []).forEach(n => items.push({
-      ts: n.created_at, type: 'NOTIZ', text: n.inhalt, meta: n.user?.name || ''
+    (appts.data || []).forEach(a => items.push({
+      type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
+      title: a.titel || '—', meta: a.status, kind: 'termine',
+      click: `navigateTo('termin','${esc(a.id)}')`
+    }));
+    (deps.data || []).forEach(d => items.push({
+      type: 'EINSATZ', ts: (d.datum_von || d.created_at?.substring(0, 10)) + 'T00:00:00',
+      title: d.titel || '—',
+      meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1)), d.status].filter(Boolean).join(' · '),
+      kind: 'einsaetze',
+      click: `navigateTo('einsatz','${esc(d.id)}')`
     }));
     (tasks.data || []).forEach(t => items.push({
-      ts: t.created_at, type: 'AUFGABE', text: t.titel, meta: t.status
+      type: 'AUFGABE', ts: t.created_at,
+      title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+      kind: 'aufgaben',
+      click: `openTaskModal('edit','${esc(t.id)}')`
+    }));
+    (notes.data || []).forEach(n => items.push({
+      type: 'NOTIZ', ts: n.created_at, title: n.inhalt, meta: n.user?.name || '—', kind: 'notizen',
+      click: `openNotizModal('${esc(n.id)}','${esc(attEntity)}')`
+    }));
+    (atts.data || []).forEach(a => items.push({
+      type: 'ANHANG', ts: a.created_at,
+      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${a.filename}`,
+      meta: [_formatBytes ? _formatBytes(a.size_bytes) : '', a.user?.name].filter(Boolean).join(' · '),
+      kind: 'anhaenge',
+      click: `downloadAttachment('${esc(a.id)}')`
     }));
   }
-
-  // Einsatz: zusätzlich Capture-Stream
-  if (type === 'einsatz') {
-    const { data } = await db.from('deployment_log')
-      .select('id, kategorie, inhalt, created_at').is('deleted_at', null)
-      .eq('deployment_id', id).order('created_at', { ascending: false }).limit(20);
-    (data || []).forEach(l => {
+  // Einsatz: Capture-Stream + Action-Items + Anhänge
+  else if (type === 'einsatz') {
+    const [logs, tasks, atts] = await Promise.all([
+      db.from('deployment_log').select('id, kategorie, inhalt, created_at, user:user_profiles!deployment_log_erstellt_von_fkey(name)').is('deleted_at', null).eq('deployment_id', id).order('created_at', { ascending: false }).limit(50),
+      db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('deployment_id', id).order('created_at', { ascending: false }).limit(50),
+      db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', 'deployment').eq('entity_id', id).order('created_at', { ascending: false }).limit(50)
+    ]);
+    (logs.data || []).forEach(l => {
       const kat = _CAPTURE_KATEGORIEN[l.kategorie] || { emoji: '·', label: l.kategorie };
-      items.push({ ts: l.created_at, type: `${kat.emoji} ${kat.label}`.toUpperCase(), text: l.inhalt, meta: '' });
+      items.push({
+        type: `${kat.emoji} ${kat.label}`.toUpperCase(), ts: l.created_at,
+        title: l.inhalt, meta: l.user?.name || '', kind: 'notizen', click: ''
+      });
     });
+    (tasks.data || []).forEach(t => items.push({
+      type: 'AUFGABE', ts: t.created_at,
+      title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+      kind: 'aufgaben',
+      click: `openTaskModal('edit','${esc(t.id)}')`
+    }));
+    (atts.data || []).forEach(a => items.push({
+      type: 'ANHANG', ts: a.created_at,
+      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${a.filename}`,
+      meta: [_formatBytes ? _formatBytes(a.size_bytes) : '', a.user?.name].filter(Boolean).join(' · '),
+      kind: 'anhaenge',
+      click: `downloadAttachment('${esc(a.id)}')`
+    }));
+  }
+  // Termin: Tasks + Anhänge
+  else if (type === 'termin') {
+    const [tasks, atts] = await Promise.all([
+      db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('appointment_id', id).order('created_at', { ascending: false }).limit(50),
+      db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', 'appointment').eq('entity_id', id).order('created_at', { ascending: false }).limit(50)
+    ]);
+    (tasks.data || []).forEach(t => items.push({
+      type: 'AUFGABE', ts: t.created_at, title: t.titel || '—',
+      meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+      kind: 'aufgaben', click: `openTaskModal('edit','${esc(t.id)}')`
+    }));
+    (atts.data || []).forEach(a => items.push({
+      type: 'ANHANG', ts: a.created_at,
+      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${a.filename}`,
+      meta: [_formatBytes ? _formatBytes(a.size_bytes) : '', a.user?.name].filter(Boolean).join(' · '),
+      kind: 'anhaenge', click: `downloadAttachment('${esc(a.id)}')`
+    }));
   }
 
   items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  const visible = items.slice(0, 8);
+  _stageCardItems = items;
+  _stageCardActivityFilter = 'alle';
+  _renderStageCardItems();
+}
 
-  if (visible.length === 0) {
-    wrap.innerHTML = '<div class="info-card-empty">Noch keine Aktivitäten.</div>';
+function _renderStageCardItems() {
+  const wrap = document.getElementById('stage-card-activities');
+  if (!wrap) return;
+  const filtered = _stageCardActivityFilter === 'alle'
+    ? _stageCardItems
+    : _stageCardItems.filter(i => i.kind === _stageCardActivityFilter);
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Aktivitäten in dieser Kategorie.</div>';
     return;
   }
-
-  wrap.innerHTML = visible.map(it => `
-    <div class="stage-card-activity">
+  wrap.innerHTML = filtered.map(it => `
+    <div class="stage-card-activity${it.click ? ' is-clickable' : ''}" ${it.click ? `onclick="${it.click}"` : ''}>
       <span class="stage-card-activity-type">${esc(it.type)}</span>
-      <span class="stage-card-activity-text">${esc(it.text || '—')}</span>
-      <span class="stage-card-activity-meta">${esc(formatDateTimeCompact ? formatDateTimeCompact(it.ts) : it.ts)}${it.meta ? ' · ' + esc(it.meta) : ''}</span>
+      <span class="stage-card-activity-text">${esc(it.title || '—')}</span>
+      <span class="stage-card-activity-meta">${esc(formatDateTimeCompact ? formatDateTimeCompact(it.ts) : it.ts || '')}${it.meta ? ' · ' + esc(it.meta) : ''}</span>
     </div>`).join('');
+}
+
+function filterStageCard(filter) {
+  _stageCardActivityFilter = filter;
+  document.querySelectorAll('#stage-card-filter-pills .proj-filter-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.filter === filter);
+  });
+  _renderStageCardItems();
+}
+
+/** Notiz aus der Karteikarte heraus posten. */
+async function postStageCardNote() {
+  const card = document.querySelector('.stage-card');
+  const input = document.getElementById('stage-card-note-input');
+  if (!card || !input) return;
+  const text = (input.value || '').trim();
+  if (!text) return;
+  const type = card.dataset.entityType;
+  const id   = card.dataset.entityId;
+  const fkCol = ({ firma: 'company_id', kontakt: 'contact_id', projekt: 'project_id' })[type];
+  if (!fkCol) { showToast('Notizen sind nur für Firma / Kontakt / Projekt möglich.', true); return; }
+  const payload = { inhalt: text, erstellt_von: currentProfile?.id || null, [fkCol]: id };
+  const { error } = await db.from('notes').insert(payload);
+  if (error) { showToast(error.message, true); return; }
+  input.value = '';
+  showToast('Notiz hinzugefügt.');
+  await loadStageCardActivityStream(type, id);
 }
 
 async function arbeitsplatzCreate(typ) {

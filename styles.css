@@ -1372,18 +1372,59 @@ body {
   word-break: break-word;
 }
 .stage-card-section { margin-top: 8px; }
+.stage-card-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 12px; flex-wrap: wrap;
+}
 .stage-card-section-title {
   font-size: 10px; font-weight: 700; letter-spacing: .8px;
-  color: var(--muted); margin-bottom: 10px;
+  color: var(--muted);
   text-transform: uppercase;
 }
+.stage-card-filter-pills {
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.stage-card-note-input {
+  display: flex; gap: 8px;
+  margin-bottom: 16px;
+}
+.stage-card-note-input input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit; font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+}
+.stage-card-note-input input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0,0,0,.04);
+}
+.stage-card-note-btn {
+  padding: 0 14px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  letter-spacing: .3px;
+}
+.stage-card-note-btn:hover { background: #000; }
+.stage-card-activity.is-clickable { cursor: pointer; }
+.stage-card-activity.is-clickable:hover { background: var(--bg); }
 .stage-card-activity {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 12px;
-  padding: 8px 0;
+  padding: 8px 10px;
+  margin: 0 -10px;
   border-bottom: 0.5px solid var(--border);
   align-items: baseline;
+  border-radius: var(--radius-sm);
 }
 .stage-card-activity:last-child { border-bottom: none; }
 .stage-card-activity-type {
