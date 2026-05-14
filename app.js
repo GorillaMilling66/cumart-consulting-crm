@@ -6321,8 +6321,10 @@ function _activateDetailInArbeitsplatz(detailPageId) {
   document.getElementById('page-arbeitsplatz')?.classList.add('active');
   // Detail-Page innerhalb der Stage aktivieren
   document.getElementById(detailPageId)?.classList.add('active');
-  // Top-Nav-Tab auf Arbeitsplatz
+  // Top-Nav-Tab auf Arbeitsplatz + Listen-Sub-Nav verstecken (v2.23.2)
   setActiveTopNavTab?.('arbeitsplatz');
+  updateListenTabBar?.('arbeitsplatz');
+  setMobileNav?.('arbeitsplatz');
 }
 
 function applyAdminOnlyUI() {
