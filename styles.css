@@ -1259,39 +1259,59 @@ body {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 11px 14px;
+  padding: 11px 14px 11px 16px;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--entity-color, var(--border));
   border-radius: var(--radius-sm);
   background: var(--surface);
   cursor: pointer;
   font-family: inherit;
   font-size: 13px;
   color: var(--text);
-  transition: background .12s, border-color .12s, transform .12s;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease, box-shadow .15s ease;
 }
 .arbeitsplatz-action-row:hover {
-  background: var(--bg);
-  border-color: var(--primary);
+  background: var(--entity-tint, var(--bg));
+  border-color: var(--entity-color, var(--primary));
+  border-left-color: var(--entity-color, var(--primary));
+  transform: translateX(1px);
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
 }
 .arbeitsplatz-action-row.is-active {
-  background: var(--text);
-  color: var(--surface);
-  border-color: var(--text);
+  background: var(--entity-color, var(--text));
+  color: #fff;
+  border-color: var(--entity-color, var(--text));
   font-weight: 600;
+  transform: translateX(0);
 }
+.arbeitsplatz-action-row.is-active:hover {
+  background: var(--entity-color, var(--text));
+  transform: translateX(0);
+}
+
+/* v2.20.0: Entity-Farbcodierung — pro Aktion eigener Akzent.
+   Tokens kommen aus dem bestehenden --type-*-fg/bg-System (v2.0). */
+.arbeitsplatz-action-row[data-action="firma"],   .arbeitsplatz-live-preview[data-action="firma"]   { --entity-color: #047857; --entity-tint: #E1F5EE; }
+.arbeitsplatz-action-row[data-action="kontakt"], .arbeitsplatz-live-preview[data-action="kontakt"] { --entity-color: #6d28d9; --entity-tint: #EEEDFE; }
+.arbeitsplatz-action-row[data-action="projekt"], .arbeitsplatz-live-preview[data-action="projekt"] { --entity-color: #1d4ed8; --entity-tint: #E6F1FB; }
+.arbeitsplatz-action-row[data-action="einsatz"], .arbeitsplatz-live-preview[data-action="einsatz"] { --entity-color: #b45309; --entity-tint: #FAEEDA; }
+.arbeitsplatz-action-row[data-action="termin"],  .arbeitsplatz-live-preview[data-action="termin"]  { --entity-color: #0e7490; --entity-tint: #E0F2F1; }
+.arbeitsplatz-action-row[data-action="aufgabe"], .arbeitsplatz-live-preview[data-action="aufgabe"] { --entity-color: #be185d; --entity-tint: #FBEAF0; }
+.arbeitsplatz-action-row[data-action="notiz"],   .arbeitsplatz-live-preview[data-action="notiz"]   { --entity-color: #57534e; --entity-tint: #EFEDE8; }
 
 .arbeitsplatz-live-preview {
   margin-top: 12px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px dashed var(--primary);
+  padding: 14px 14px 14px 16px;
+  background: var(--entity-tint, var(--surface));
+  border: 1px dashed var(--entity-color, var(--primary));
+  border-left: 3px solid var(--entity-color, var(--primary));
   border-radius: var(--radius-md);
   font-size: 12px;
   color: var(--text);
 }
 .stage-preview-eyebrow {
   font-size: 9px; font-weight: 700; letter-spacing: 1px;
-  color: var(--primary); margin-bottom: 6px;
+  color: var(--entity-color, var(--primary)); margin-bottom: 6px;
 }
 .stage-preview-title {
   font-size: 14px; font-weight: 600; color: var(--text);
@@ -1390,6 +1410,7 @@ body {
   border-radius: var(--radius-md);
   padding: 32px 36px;
   min-height: 500px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
 }
 .stage-welcome-title {
   font-size: 28px;
@@ -1412,6 +1433,7 @@ body {
   border-radius: var(--radius-sm);
   background: var(--surface);
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,.03);
 }
 .arbeitsplatz-widget summary {
   cursor: pointer;

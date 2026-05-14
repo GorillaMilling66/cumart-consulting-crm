@@ -5310,8 +5310,9 @@ function _renderArbeitsplatzLivePreview(typ) {
   const el = document.getElementById('arbeitsplatz-live-preview');
   if (!el) return;
   const meta = _STAGE_PREVIEW_META[typ];
-  if (!meta) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  if (!meta) { el.style.display = 'none'; el.innerHTML = ''; el.removeAttribute('data-action'); return; }
   el.style.display = '';
+  el.dataset.action = typ;  // v2.20.0: triggert die Entity-Farbtokens via CSS
   el.innerHTML = `
     <div class="stage-preview-eyebrow">VORSCHAU</div>
     <div class="stage-preview-title">${esc(meta.titel)}</div>
