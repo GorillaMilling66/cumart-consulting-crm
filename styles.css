@@ -4072,6 +4072,14 @@ tr:hover td { background: var(--bg); }
 .theme-pick-name {
   white-space: nowrap;
 }
+/* v2.16.0: Stern als Hinweis „ist im Projekt-Curriculum" */
+.theme-pick-star {
+  display: inline-block;
+  margin-left: 4px;
+  color: #b45309;
+  font-size: 11px;
+}
+.theme-pick-item.is-curriculum { border-color: #fbbf24; }
 
 /* v1.52.0: Strukturierte Dokumentation (Projekt-Detail + Termin/Einsatz-Modal) */
 .doc-grid {

@@ -1,5 +1,33 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.16.0 (Themen wandern auf die Firma — Einsätze ohne
+   Projekt können trotzdem Themen taggen, weil Themen kunden-
+   spezifisch wiederverwendbar sind. Vorher hingen Themen an
+   `project_themes.project_id` (NOT NULL); Einsätze ohne Projekt
+   sahen „Kein Projekt verknüpft" und konnten gar nichts taggen.
+   Jetzt:
+   - `project_themes` bekommt `company_id` (NOT NULL nach Backfill);
+     `project_id` bleibt für Backwards-Compat erhalten (deprecated),
+     wird nicht mehr als kanonischer Projekt-Link genutzt.
+   - Neue Junction `project_theme_assignments(project_id, theme_id,
+     reihenfolge)` definiert das Projekt-Curriculum. Bestand wurde
+     aus `project_themes.project_id` migriert.
+   - `loadProjectThemesData(projectId)` liest jetzt über die Junction
+     (Curriculum-Sicht). Neu: `loadCompanyThemesData(companyId)`
+     liefert den vollen Firmen-Pool — wird vom Einsatz-Bericht
+     verwendet, auch ohne Projekt.
+   - Schreib-Pfade (addProjectThemeAdHoc, addProjectThemeFromLibrary,
+     openThemeModal-save, applyThemePickerSelection) setzen jetzt
+     company_id und legen die Curriculum-Junction an. Dupe-Check
+     erfolgt firmenweit; bestehendes Firmen-Thema wird wieder-
+     verwendet statt dupliziert.
+   - Einsatz-Bericht „Behandelte Themen" zeigt Firmen-Pool; bei
+     Projekt-Einsatz werden Curriculum-Themen mit Stern markiert
+     (.theme-pick-star). Empty-State spricht von Firma statt Projekt.
+   - _jumpToProjectBriefFromEinsatz / _jumpToProjectPlanFromEinsatz
+     landen jetzt im Planung-Tab (Themen-CRUD seit v2.15.0 dort).
+   Migration: migrations/v2.16.0_themes_per_company.sql (additiv,
+   non-destructive; via Management API in Produktion angewandt).
    Version 2.15.3 (Status-Pille im Hero wird prominenter Picker.
    Statt einer kleinen Text-Pille rechts oben sitzt jetzt ein
    klickbarer Button: größeres Padding (6 × 14 px), 14-px-Fett-
@@ -7302,14 +7330,30 @@ function invalidateThemesCache(projectId) {
 async function loadProjectThemesData(projectId) {
   if (themesCacheByProject[projectId]) return themesCacheByProject[projectId];
 
-  const { data: themes, error } = await db.from('project_themes')
-    .select('id, name, beschreibung, status, owner_id, farbe, reihenfolge, library_theme_id, owner:user_profiles!project_themes_owner_id_fkey(id, name)')
-    .is('deleted_at', null).eq('project_id', projectId)
-    .order('reihenfolge').order('name');
-  if (error) return [];
+  // v2.16.0: Themen leben jetzt firmenweit. Das Projekt-Curriculum kommt
+  // über die Junction `project_theme_assignments`. Wir laden alle Themen,
+  // die diesem Projekt zugeordnet sind, plus deren Einsatz-Zähler.
+  const { data: assignments, error: aErr } = await db.from('project_theme_assignments')
+    .select(`reihenfolge,
+             theme:project_themes (id, name, beschreibung, status, owner_id, farbe,
+                                   reihenfolge, library_theme_id, company_id, deleted_at,
+                                   owner:user_profiles!project_themes_owner_id_fkey(id, name))`)
+    .is('deleted_at', null).eq('project_id', projectId);
+  if (aErr) return [];
+
+  const themes = (assignments || [])
+    .map(a => a.theme ? { ...a.theme, _curriculumReihenfolge: a.reihenfolge } : null)
+    .filter(Boolean)
+    .filter(t => !t.deleted_at)
+    .sort((a, b) => {
+      const ra = a._curriculumReihenfolge ?? a.reihenfolge ?? 0;
+      const rb = b._curriculumReihenfolge ?? b.reihenfolge ?? 0;
+      if (ra !== rb) return ra - rb;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
   // Einsatz-Anzahl pro Thema (Junction-Aggregation)
-  const themeIds = (themes || []).map(t => t.id);
+  const themeIds = themes.map(t => t.id);
   let countMap = {};
   if (themeIds.length > 0) {
     const { data: junctions } = await db.from('deployment_themes')
@@ -7318,9 +7362,22 @@ async function loadProjectThemesData(projectId) {
       countMap[j.theme_id] = (countMap[j.theme_id] || 0) + 1;
     });
   }
-  const result = (themes || []).map(t => ({ ...t, einsatz_count: countMap[t.id] || 0 }));
+  const result = themes.map(t => ({ ...t, einsatz_count: countMap[t.id] || 0 }));
   themesCacheByProject[projectId] = result;
   return result;
+}
+
+/** v2.16.0: Alle Themen einer Firma — unabhängig davon, ob sie in einem
+ *  Projekt-Curriculum landen oder nicht. Wird vom Einsatz-Bericht
+ *  verwendet, um auch ohne Projekt taggen zu können. */
+async function loadCompanyThemesData(companyId) {
+  if (!companyId) return [];
+  const { data, error } = await db.from('project_themes')
+    .select('id, name, beschreibung, status, owner_id, farbe, reihenfolge, library_theme_id, company_id, owner:user_profiles!project_themes_owner_id_fkey(id, name)')
+    .is('deleted_at', null).eq('company_id', companyId)
+    .order('reihenfolge').order('name');
+  if (error) return [];
+  return data || [];
 }
 
 /** Rendert die Themen-Sektion im Projekt-Stammdaten-Tab. */
@@ -7361,30 +7418,6 @@ async function renderProjectThemes(projectId) {
 
 /** v2.13.6: Helper für Smart-Empty-State Themen — übernimmt die per Checkbox
  *  ausgewählten Bibliotheks-Themen direkt aus dem leeren Themen-Bereich. */
-async function applyThemeSuggestionsForEmptyState(projectId) {
-  const wrap = document.getElementById('project-themes-list');
-  if (!wrap) return;
-  const ids = Array.from(wrap.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value);
-  if (ids.length === 0) { showToast('Bitte mindestens ein Thema auswählen.', true); return; }
-  const { data: libRows } = await db.from('theme_library')
-    .select('id, name, beschreibung').in('id', ids);
-  if (!libRows || libRows.length === 0) return;
-  const userId = currentProfile?.id || null;
-  const rows = libRows.map((t, idx) => ({
-    project_id: projectId,
-    name: t.name,
-    beschreibung: t.beschreibung,
-    library_theme_id: t.id,
-    owner_id: userId,
-    reihenfolge: 100 + idx,
-    status: 'offen'
-  }));
-  const { error } = await db.from('project_themes').insert(rows);
-  if (error) { showToast(error.message, true); return; }
-  showToast(`${rows.length} Thema${rows.length === 1 ? '' : 'tha'} übernommen.`);
-  invalidateThemesCache?.(projectId);
-  renderProjectThemes(projectId);
-}
 
 function dismissThemesBanner(projectId) {
   try { localStorage.setItem(`themes_banner_seen_${projectId}`, '1'); } catch {}
@@ -7483,50 +7516,85 @@ async function _renderThemeQuickSuggestions(value) {
  *  einem Klick auf einen Vorschlag aus dem Quick-Add-Dropdown. */
 async function addProjectThemeFromLibrary(libraryId) {
   if (!currentProjectDetailId) return;
+  // v2.16.0: Themen leben firmenweit — wir brauchen company_id des Projekts
+  const { data: proj } = await db.from('projects')
+    .select('id, company_id').eq('id', currentProjectDetailId).single();
+  if (!proj?.company_id) {
+    showToast('Projekt hat keine Firma — bitte erst Firma zuweisen.', true);
+    return;
+  }
   const { data: lib, error: libErr } = await db.from('theme_library')
     .select('id, name, beschreibung, farbe').eq('id', libraryId).single();
   if (libErr || !lib) { showToast(libErr?.message || 'Bibliotheks-Thema nicht gefunden.', true); return; }
-  const { error } = await db.from('project_themes').insert({
-    project_id:       currentProjectDetailId,
-    name:             lib.name,
-    beschreibung:     lib.beschreibung,
-    farbe:            lib.farbe,
-    library_theme_id: lib.id,
-    owner_id:         currentProfile?.id || null,
-    reihenfolge:      100,
-    status:           'offen'
+
+  // Falls die Firma das Thema (aus der Bibliothek) schon hat → wiederverwenden
+  // statt zu duplizieren; nur Curriculum-Eintrag anlegen.
+  const { data: existing } = await db.from('project_themes')
+    .select('id').is('deleted_at', null)
+    .eq('company_id', proj.company_id)
+    .eq('library_theme_id', lib.id).limit(1);
+  let themeId = existing?.[0]?.id;
+  if (!themeId) {
+    const { data: ins, error } = await db.from('project_themes').insert({
+      company_id:       proj.company_id,
+      project_id:       currentProjectDetailId,
+      name:             lib.name,
+      beschreibung:     lib.beschreibung,
+      farbe:            lib.farbe,
+      library_theme_id: lib.id,
+      owner_id:         currentProfile?.id || null,
+      reihenfolge:      100,
+      status:           'offen'
+    }).select('id').single();
+    if (error) { showToast(error.message, true); return; }
+    themeId = ins.id;
+  }
+  // Curriculum-Eintrag (idempotent dank UNIQUE)
+  await db.from('project_theme_assignments').insert({
+    project_id: currentProjectDetailId, theme_id: themeId, reihenfolge: 100
   });
-  if (error) { showToast(error.message, true); return; }
   showToast(`„${lib.name}" übernommen.`);
   _clearThemeQuickInput();
   invalidateThemesCache?.(currentProjectDetailId);
   renderProjectThemes(currentProjectDetailId);
 }
 
-/** v2.15.1: Ad-hoc-Thema anlegen — nimmt einfach den Input-Text, legt ein
- *  projekt-spezifisches `project_themes` ohne `library_theme_id` an. Kann
- *  später per „+ Bibliothek" promoted werden. */
+/** v2.15.1: Ad-hoc-Thema anlegen — Input-Text wird firmenweites Thema und
+ *  landet sofort im Projekt-Curriculum. Kann später per „+ Bibliothek"
+ *  promoted werden. */
 async function addProjectThemeAdHoc(value) {
   if (!currentProjectDetailId) return;
   const name = (value || '').trim();
   if (!name) { showToast('Bitte Thema-Namen eingeben.', true); return; }
-  // Doppel-Eingabe: gibt's das Thema schon im Projekt (case-insensitive)? Dann nichts tun.
-  const { data: existing } = await db.from('project_themes')
-    .select('id, name').is('deleted_at', null)
-    .eq('project_id', currentProjectDetailId)
-    .ilike('name', name);
-  if ((existing || []).length > 0) {
-    showToast(`„${name}" gibt es schon im Projekt.`, true);
+  // v2.16.0: Themen sind firmenweit — brauche company_id
+  const { data: proj } = await db.from('projects')
+    .select('id, company_id').eq('id', currentProjectDetailId).single();
+  if (!proj?.company_id) {
+    showToast('Projekt hat keine Firma — bitte erst Firma zuweisen.', true);
     return;
   }
-  const { error } = await db.from('project_themes').insert({
-    project_id:  currentProjectDetailId,
-    name,
-    owner_id:    currentProfile?.id || null,
-    reihenfolge: 100,
-    status:      'offen'
+  // Gibt's das Thema bei dieser Firma schon (case-insensitive)?
+  const { data: existing } = await db.from('project_themes')
+    .select('id, name').is('deleted_at', null)
+    .eq('company_id', proj.company_id)
+    .ilike('name', name);
+  let themeId = existing?.[0]?.id;
+  if (!themeId) {
+    const { data: ins, error } = await db.from('project_themes').insert({
+      company_id:  proj.company_id,
+      project_id:  currentProjectDetailId,
+      name,
+      owner_id:    currentProfile?.id || null,
+      reihenfolge: 100,
+      status:      'offen'
+    }).select('id').single();
+    if (error) { showToast(error.message, true); return; }
+    themeId = ins.id;
+  }
+  // Im Projekt-Curriculum verlinken (UNIQUE-Schutz)
+  await db.from('project_theme_assignments').insert({
+    project_id: currentProjectDetailId, theme_id: themeId, reihenfolge: 100
   });
-  if (error) { showToast(error.message, true); return; }
   showToast(`„${name}" angelegt.`);
   _clearThemeQuickInput();
   invalidateThemesCache?.(currentProjectDetailId);
@@ -7642,14 +7710,28 @@ async function saveTheme() {
     reihenfolge: Number(document.getElementById('th-reihenfolge').value) || 0
   };
 
-  let error;
+  let error, newThemeId;
   if (editingThemeId) {
     ({ error } = await db.from('project_themes').update(payload).eq('id', editingThemeId));
   } else {
-    payload.project_id = editingThemeProjectId;
-    ({ error } = await db.from('project_themes').insert(payload));
+    // v2.16.0: Themen sind firmenweit — company_id aus dem Projekt ziehen
+    const { data: proj } = await db.from('projects')
+      .select('company_id').eq('id', editingThemeProjectId).single();
+    if (!proj?.company_id) { showToast('Projekt hat keine Firma — bitte zuerst Firma zuweisen.', true); return; }
+    payload.company_id = proj.company_id;
+    payload.project_id = editingThemeProjectId; // bleibt als „primary project" für Backwards-Compat
+    const ins = await db.from('project_themes').insert(payload).select('id').single();
+    error = ins.error;
+    newThemeId = ins.data?.id;
   }
   if (error) { showToast('Fehler: ' + error.message, true); return; }
+  // Bei neu angelegten Themen zusätzlich Curriculum-Eintrag
+  if (newThemeId && editingThemeProjectId) {
+    await db.from('project_theme_assignments').insert({
+      project_id: editingThemeProjectId, theme_id: newThemeId,
+      reihenfolge: payload.reihenfolge || 100
+    });
+  }
 
   showToast(editingThemeId ? 'Thema aktualisiert.' : 'Thema angelegt.');
   invalidateThemesCache(editingThemeProjectId);
@@ -22582,41 +22664,67 @@ async function renderDeploymentReportThemes(d) {
   const wrap = document.getElementById('dep-themes-area');
   const hint = document.getElementById('dep-themes-hint');
   if (!wrap) return;
-  if (!d.project_id) {
-    wrap.innerHTML = '<div class="info-card-empty">Kein Projekt verknüpft — Themen werden auf Projektebene definiert.</div>';
+  // v2.16.0: Themen leben firmenweit — Einsätze ohne Projekt taggen
+  // trotzdem aus dem Firmen-Pool. Wenn keine Firma gesetzt: Hinweis.
+  if (!d.company_id) {
+    wrap.innerHTML = '<div class="info-card-empty">Keine Firma am Einsatz — Themen brauchen einen Firmen-Bezug.</div>';
     if (hint) hint.style.display = 'none';
     return;
   }
-  const themes = await loadProjectThemesData(d.project_id);
+  const themes = await loadCompanyThemesData(d.company_id);
+  // Bei Projekt-Einsätzen heben wir die Curriculum-Themen visuell hervor
+  let curriculumIds = new Set();
+  if (d.project_id) {
+    const { data: ass } = await db.from('project_theme_assignments')
+      .select('theme_id').is('deleted_at', null).eq('project_id', d.project_id);
+    (ass || []).forEach(r => curriculumIds.add(r.theme_id));
+  }
+
   if (themes.length === 0) {
-    // v2.13.6: Aktionsorientierter Empty-State statt passivem Hinweis —
-    // direkter Link zum Projekt-Brief mit Pending-Tab, der dort den Brief-Tab
-    // aktiviert.
-    wrap.innerHTML = `
-      <div class="empty-state-card empty-state-card-compact">
-        <div class="empty-state-hint">Dieses Projekt hat noch keine Themen.</div>
-        <button class="btn btn-sm btn-primary" onclick="_jumpToProjectBriefFromEinsatz('${esc(d.project_id)}')">Themen am Projekt anlegen →</button>
-      </div>`;
+    // Aktionsorientierter Empty-State: bei Projekt-Einsätzen direkt zum
+    // Projekt-Planung-Tab springen; bei freien Einsätzen Hinweis auf Firma.
+    if (d.project_id) {
+      wrap.innerHTML = `
+        <div class="empty-state-card empty-state-card-compact">
+          <div class="empty-state-hint">Diese Firma hat noch keine Themen.</div>
+          <button class="btn btn-sm btn-primary" onclick="_jumpToProjectPlanFromEinsatz('${esc(d.project_id)}')">Themen am Projekt anlegen →</button>
+        </div>`;
+    } else {
+      wrap.innerHTML = '<div class="info-card-empty">Diese Firma hat noch keine Themen — am Projekt der Firma definieren oder per Themen-Modal anlegen.</div>';
+    }
     if (hint) hint.style.display = 'none';
     return;
   }
   const { data: assigned } = await db.from('deployment_themes').select('theme_id').eq('deployment_id', d.id);
   const assignedIds = new Set((assigned || []).map(r => r.theme_id));
 
+  if (hint) {
+    hint.style.display = '';
+    hint.textContent = d.project_id
+      ? 'Aus dem Firmen-Pool — Projekt-Curriculum mit ★ markiert.'
+      : 'Aus dem Firmen-Pool.';
+  }
+
   wrap.innerHTML = `<div class="theme-picker-list">${themes.map(t => `
-    <label class="theme-pick-item">
+    <label class="theme-pick-item ${curriculumIds.has(t.id) ? 'is-curriculum' : ''}">
       <input type="checkbox" data-theme-id="${esc(t.id)}" ${assignedIds.has(t.id) ? 'checked' : ''}
              onchange="toggleDeploymentReportTheme('${esc(d.id)}','${esc(t.id)}', this.checked)">
       <span class="theme-color-dot" style="background:${esc(t.farbe || '#E6F1FB')}"></span>
-      <span class="theme-pick-name">${esc(t.name)}</span>
+      <span class="theme-pick-name">${esc(t.name)}${curriculumIds.has(t.id) ? ' <span class="theme-pick-star" title="Im Projekt-Curriculum">★</span>' : ''}</span>
     </label>`).join('')}</div>`;
 }
 
-/** v2.13.6: vom Einsatz-Bericht aus zum Projekt-Brief springen — öffnet das
- *  Projekt mit Pending-Tab auf „brief", sodass der User direkt Themen
- *  anlegen kann. */
+/** v2.13.6 → v2.15.0: vom Einsatz aus zum Projekt-Brief springen. Die
+ *  Themen-CRUD lebt seit v2.15.0 im Planung-Tab; deshalb landet der
+ *  Sprung jetzt dort. Der alte Funktionsname bleibt für Backwards-Compat. */
 function _jumpToProjectBriefFromEinsatz(projectId) {
-  _pendingDetailTab = 'brief';
+  _pendingDetailTab = 'planung';
+  navigateTo('projekt', projectId);
+}
+/** v2.16.0: expliziter Aliasname — bei Themen-Anlage aus dem Einsatz
+ *  springt der User direkt in den Planung-Tab des Projekts. */
+function _jumpToProjectPlanFromEinsatz(projectId) {
+  _pendingDetailTab = 'planung';
   navigateTo('projekt', projectId);
 }
 
@@ -26049,29 +26157,54 @@ async function applyThemePickerSelection() {
     showToast('Bitte mindestens ein Thema auswählen.', true);
     return;
   }
+  // v2.16.0: Themen firmenweit — wir brauchen company_id des Projekts und
+  // nutzen vorhandene Firmen-Themen (gleiche library_theme_id) wieder.
+  const { data: proj } = await db.from('projects')
+    .select('company_id').eq('id', _themePickerProjectId).single();
+  if (!proj?.company_id) { showToast('Projekt hat keine Firma.', true); return; }
   const ids = [..._themePickerSelected];
-  // Themen aus Library laden, dann als project_themes mit library_theme_id einfügen.
   const { data: libRows } = await db.from('theme_library')
-    .select('id, name, beschreibung').in('id', ids);
+    .select('id, name, beschreibung, farbe').in('id', ids);
   if (!libRows || libRows.length === 0) {
     showToast('Themen konnten nicht geladen werden.', true);
     return;
   }
+  // Bestehende Firmen-Themen mit gleicher library_theme_id sammeln
+  const { data: existing } = await db.from('project_themes')
+    .select('id, library_theme_id').is('deleted_at', null)
+    .eq('company_id', proj.company_id)
+    .in('library_theme_id', ids);
+  const existingMap = new Map((existing || []).map(e => [e.library_theme_id, e.id]));
+
   const userId = currentProfile?.id || null;
-  const rows = libRows.map((t, idx) => ({
-    project_id: _themePickerProjectId,
-    name: t.name,
-    beschreibung: t.beschreibung,
+  const toInsert = libRows.filter(t => !existingMap.has(t.id)).map((t, idx) => ({
+    company_id:       proj.company_id,
+    project_id:       _themePickerProjectId,
+    name:             t.name,
+    beschreibung:     t.beschreibung,
+    farbe:            t.farbe,
     library_theme_id: t.id,
-    owner_id: userId,
-    reihenfolge: 100 + idx,
-    status: 'offen'
+    owner_id:         userId,
+    reihenfolge:      100 + idx,
+    status:           'offen'
   }));
-  const { error } = await db.from('project_themes').insert(rows);
-  if (error) { showToast(error.message, true); return; }
-  showToast(`${rows.length} Thema${rows.length === 1 ? '' : 'tha'} übernommen.`);
+  let newIds = [];
+  if (toInsert.length > 0) {
+    const { data: ins, error } = await db.from('project_themes').insert(toInsert).select('id');
+    if (error) { showToast(error.message, true); return; }
+    newIds = (ins || []).map(r => r.id);
+  }
+  // Curriculum-Junction für alle (bestehende + neue)
+  const allThemeIds = [...existingMap.values(), ...newIds];
+  if (allThemeIds.length > 0) {
+    await db.from('project_theme_assignments').insert(
+      allThemeIds.map((tid, idx) => ({
+        project_id: _themePickerProjectId, theme_id: tid, reihenfolge: 100 + idx
+      }))
+    );
+  }
+  showToast(`${libRows.length} Thema${libRows.length === 1 ? '' : 'tha'} übernommen.`);
   closeThemePickerModal();
-  // Wenn die Projekt-Detail-Seite aktiv ist, Themen-Liste neu rendern.
   if (typeof renderProjectThemes === 'function' && currentProjectDetailId) {
     invalidateThemesCache?.(currentProjectDetailId);
     renderProjectThemes(currentProjectDetailId);
