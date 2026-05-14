@@ -8068,14 +8068,9 @@ select.typ-select-secondary {
 /* Scrollbarer Body */
 .drawer__body { flex: 1; overflow-y: auto; }
 
-/* Live-Preview-Karte oben im Body */
-.drawer__preview {
-  margin: 20px 24px 0;
-  padding: 14px 16px;
-  background: var(--bg);
-  border-radius: var(--radius-md);
-  border-left: 2px solid var(--status-plan-accent, #185fa5);
-}
+/* v2.25.0: Live-Preview-Karte oben im Drawer ausgeblendet — wird seit
+   v2.24.2 in die linke Spalte des Arbeitsplatzes gespiegelt. */
+.drawer__preview { display: none; }
 .drawer__preview-label {
   font-size: 10px; font-weight: 500; letter-spacing: 0.5px;
   color: var(--muted);
@@ -8085,32 +8080,36 @@ select.typ-select-secondary {
 .drawer__preview-title { font-size: 13px; font-weight: 500; margin-bottom: 3px; color: var(--text); }
 .drawer__preview-sub { font-size: 11px; color: var(--muted); }
 
-/* Sektion = vertikale Gruppe von Feldern mit Label oben.
-   v2.2.0: deutlich stärkere visuelle Hierarchie — Section-Header
-   sollen sich klar von Field-Labels abheben. */
+/* v2.25.0: Sektionen kompakter — kein Background-Wechsel, kein Bullet-Dot,
+   schmalerer Label. Spart pro Sektion ~24 px Höhe und nimmt die unruhige
+   Streifenoptik weg. */
 .drawer__section {
-  padding: 22px 24px 24px;
+  padding: 16px 24px 18px;
   border-bottom: 0.5px solid var(--border);
   background: var(--surface);
-}
-.drawer__section:nth-of-type(even) {
-  background: color-mix(in srgb, var(--surface) 92%, var(--text));
 }
 .drawer__section:last-of-type { border-bottom: none; }
 
 .drawer__section-label {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--text);
-  margin: 0 0 16px;
+  color: var(--muted);
+  margin: 0 0 12px;
   text-transform: uppercase;
-  display: flex; align-items: center; gap: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 0;
+  border-bottom: none;
   position: relative;
 }
-.drawer__section-label::before {
+.drawer__section-label::after {
+  /* dünner Trennstrich nach dem Label — markiert die Sektion ohne BG-Block */
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.drawer__section-label-OLD-BULLET-disabled::before {
   content: '';
   display: inline-block;
   width: 6px; height: 6px;
