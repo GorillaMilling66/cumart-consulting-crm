@@ -879,17 +879,7 @@
             <div class="proj-side-card-title">HAUPTKONTAKT</div>
             <div id="company-side-hauptkontakt"><div class="info-card-empty">—</div></div>
           </div>
-          <div class="proj-side-card">
-            <div class="proj-side-card-title">AKTIONEN</div>
-            <button class="proj-action proj-action-primary" onclick="focusCompanyNoteInput()">Notiz hinzufügen</button>
-            <button class="proj-action" id="company-quick-appointment">+ Termin anlegen</button>
-            <button class="proj-action" id="company-quick-deployment">+ Einsatz anlegen</button>
-            <button class="proj-action" id="company-quick-project">+ Projekt anlegen</button>
-            <button class="proj-action" id="company-quick-task">+ Aufgabe anlegen</button>
-            <button class="proj-action" id="company-quick-contact">+ Kontakt anlegen</button>
-            <button class="proj-action" id="company-quick-membership">+ Mitgliedschaft anlegen</button>
-            <button class="proj-action" onclick="attachFileFromActions('company', currentCompanyDetailId, document.getElementById('company-note-input').value)">+ Anhang hochladen</button>
-          </div>
+          <!-- v2.17.0: Aktionen-Karte entfernt — Aktionen leben künftig im Arbeitsplatz-Layout (Phase 2). -->
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
             <div class="proj-side-meta" id="company-meta">—</div>
@@ -1129,14 +1119,7 @@
             <div class="proj-side-card-title">FIRMA</div>
             <div id="contact-side-firma"><div class="info-card-empty">Ohne Firma</div></div>
           </div>
-          <div class="proj-side-card">
-            <div class="proj-side-card-title">AKTIONEN</div>
-            <button class="proj-action proj-action-primary" onclick="focusContactNoteInput()">Notiz hinzufügen</button>
-            <button class="proj-action" id="contact-quick-appointment">+ Termin anlegen</button>
-            <button class="proj-action" id="contact-quick-task">+ Aufgabe anlegen</button>
-            <button class="proj-action" id="contact-quick-project">+ Projekt anlegen</button>
-            <button class="proj-action" onclick="attachFileFromActions('contact', currentContactDetailId, document.getElementById('contact-note-input').value)">+ Anhang hochladen</button>
-          </div>
+          <!-- v2.17.0: Aktionen-Karte entfernt -->
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
             <div class="proj-side-meta" id="contact-meta">—</div>
@@ -1443,7 +1426,7 @@
                       onclick="toggleStatusPicker('project', this)">…<span class="status-pill-caret">▾</span></button>
               <div class="status-pill-popup" id="project-status-popup" style="display:none"></div>
             </div>
-            <span class="workflow-status-pill" id="project-workflow-pill" style="display:none">✓ Vorbereitet</span>
+            <!-- v2.17.0: workflow-pill entfernt (Checklisten raus) -->
             <button class="btn-pin" id="project-detail-pin-btn" aria-label="Anheften" title="Anheften"></button>
             <button class="btn btn-sm" id="project-detail-edit-btn">Bearbeiten</button>
           </div>
@@ -1467,11 +1450,9 @@
         </div>
       </div>
 
-      <!-- Tabs -->
+      <!-- Tabs — v2.17.0: Planung + Brief entfernt -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten"     onclick="switchProjectV2Tab('aktivitaeten')">Aktivitäten</button>
-        <button class="proj-tab"        data-tab="planung"          onclick="switchProjectV2Tab('planung')">Planung</button>
-        <button class="proj-tab"        data-tab="brief"            onclick="switchProjectV2Tab('brief')">Brief</button>
         <button class="proj-tab"        data-tab="wirtschaftlichkeit" onclick="switchProjectV2Tab('wirtschaftlichkeit')">Wirtschaftlichkeit</button>
         <button class="proj-tab"        data-tab="plan"             onclick="switchProjectV2Tab('plan')">Termine &amp; Aufgaben</button>
       </div>
@@ -1514,92 +1495,11 @@
             </div>
           </div>
 
-          <!-- v2.15.0: Planung-Tab — die „Werkbank" zum Definieren des Projekts.
-               Workflow-Checkliste + alle Brief-Felder als Eingabe-Formular.
-               Inhalte fließen 1:1 in den Brief-Tab als Lese-Dokument. -->
-          <div class="proj-tab-panel" data-tab="planung" id="project-panel-planung" style="display:none">
-            <!-- Phasen-Hinweis + Expand-All-Toggle (gleiche Logik wie früher im Brief) -->
-            <div class="proj-brief-phase-bar" id="project-plan-phase-bar" style="display:none">
-              <span class="proj-brief-phase-bar-label" id="project-plan-phase-bar-label"></span>
-              <button type="button" class="proj-brief-phase-bar-toggle" id="project-plan-phase-bar-toggle"
-                      onclick="toggleProjectPlanAllSections()">Alle Sektionen zeigen</button>
-            </div>
-
-            <!-- Workflow-Checkliste „project_prepare" -->
-            <div id="project-workflow-checklist" style="margin-bottom:20px"><div class="info-card-empty">Lade Checkliste …</div></div>
-
-            <!-- Ziel -->
-            <div class="proj-brief-section" data-min-status="">
-              <div class="proj-brief-label">ZIEL</div>
-              <textarea class="proj-brief-ziel" id="project-brief-ziel"
-                        placeholder="Was soll dieses Projekt erreichen? (Ein bis zwei Sätze)"
-                        onblur="saveProjectBriefField('ziel', this.value)"></textarea>
-            </div>
-
-            <!-- Themen — von Anfang an sichtbar.
-                 v2.15.1: Quick-Add — Eingabefeld mit Live-Bibliotheks-
-                 Vorschlägen. Enter = projekt-spezifisches Thema; Klick
-                 auf einen Vorschlag = aus Bibliothek übernehmen. -->
-            <div class="proj-brief-section" data-min-status="">
-              <div class="proj-brief-label-row">
-                <div class="proj-brief-label">THEMEN · Schulungsthemen für das Projekt</div>
-                <button type="button" class="btn btn-sm" onclick="openThemePickerForProject(currentProjectDetailId)" title="Mehrere Themen aus der Bibliothek auswählen">Aus Bibliothek …</button>
-              </div>
-              <div class="theme-quickadd">
-                <div class="theme-quickadd-row">
-                  <input type="text" id="theme-quickadd-input"
-                         class="theme-quickadd-input"
-                         placeholder="Thema eingeben — Vorschläge aus der Bibliothek erscheinen darunter"
-                         autocomplete="off"
-                         oninput="onProjectThemeQuickInput(this.value)"
-                         onkeydown="if(event.key==='Enter'){event.preventDefault();addProjectThemeAdHoc(this.value);}"
-                         onfocus="onProjectThemeQuickInput(this.value)">
-                  <button type="button" class="theme-quickadd-btn"
-                          onclick="addProjectThemeAdHoc(document.getElementById('theme-quickadd-input').value)"
-                          title="Als Projekt-Thema anlegen (oder ⏎)">+</button>
-                </div>
-                <div id="theme-quickadd-suggestions" class="theme-quickadd-suggestions" style="display:none"></div>
-              </div>
-              <div id="project-themes-banner" style="display:none"></div>
-              <div id="project-themes-list">
-                <div class="info-card-empty">Lade …</div>
-              </div>
-            </div>
-
-            <!-- 2-Spalten: Herausforderungen + Lösungsansatz — ab „Angebot" -->
-            <div class="proj-brief-2col" data-min-status="Angebot">
-              <div class="proj-brief-section">
-                <div class="proj-brief-label">HERAUSFORDERUNGEN · des Kunden</div>
-                <textarea class="proj-brief-text" id="project-brief-herausforderungen"
-                          placeholder="Bekannte Hürden, Risiken, offene Punkte"
-                          onblur="saveProjectBriefField('herausforderungen', this.value)"></textarea>
-              </div>
-              <div class="proj-brief-section">
-                <div class="proj-brief-label">LÖSUNGSANSATZ</div>
-                <textarea class="proj-brief-text" id="project-brief-loesungsansatz"
-                          placeholder="Wie gehen wir's an? Welche Methodik?"
-                          onblur="saveProjectBriefField('loesungsansatz', this.value)"></textarea>
-              </div>
-            </div>
-
-            <!-- Erfolgskriterien (Checkboxen) — ab „In Arbeit" -->
-            <div class="proj-brief-section" data-min-status="In Arbeit">
-              <div class="proj-brief-label-row">
-                <div class="proj-brief-label">ERFOLGSKRITERIEN</div>
-                <button class="btn btn-sm" onclick="addProjectSuccessCriterion()">+ Kriterium</button>
-              </div>
-              <div id="project-success-criteria">
-                <div class="info-card-empty">Lade …</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- v2.15.0: Brief-Tab — Lese-Dokument. Wird dynamisch durch
-               renderProjectBriefView befüllt. Inline-Edit über Click auf
-               Sektion → öffnet einen Modal-Editor oder springt nach Planung. -->
-          <div class="proj-tab-panel" data-tab="brief" id="project-panel-brief" style="display:none">
-            <div id="project-brief-view"><div class="info-card-empty">Lade Brief …</div></div>
-          </div>
+          <!-- v2.17.0: Planung- und Brief-Tab entfernt. Themen werden zentral
+               im Firmen-Themen-Tab verwaltet (v2.16.3). Ziel, Herausforderungen,
+               Lösungsansatz, Erfolgskriterien werden temporär aus der UI
+               entfernt; Daten in `projects.dokumentation` bleiben unverändert
+               und kommen in einer späteren Karteikarten-Phase zurück. -->
 
           <!-- Wirtschaftlichkeit-Tab -->
           <div class="proj-tab-panel" data-tab="wirtschaftlichkeit" id="project-panel-wirtschaftlichkeit" style="display:none">
@@ -1727,17 +1627,8 @@
             <div class="proj-side-card-title">FIRMA</div>
             <div id="project-firma-card"><div class="info-card-empty">Lade …</div></div>
           </div>
-          <div class="proj-side-card">
-            <div class="proj-side-card-title">AKTIONEN</div>
-            <!-- v2.15.2: Status-weiterbringen als erste Aktion -->
-            <div id="project-status-action"></div>
-            <button class="proj-action" onclick="focusProjectNoteInput()">Notiz hinzufügen</button>
-            <button class="proj-action" id="project-quick-deployment">+ Einsatz anlegen</button>
-            <button class="proj-action" id="project-quick-product">+ Produkt anlegen</button>
-            <button class="proj-action" id="project-quick-appointment">+ Termin anlegen</button>
-            <button class="proj-action" id="project-quick-task">+ Aufgabe anlegen</button>
-            <button class="proj-action" onclick="attachFileFromActions('project', currentProjectDetailId, document.getElementById('project-note-input').value)">+ Anhang hochladen</button>
-          </div>
+          <!-- v2.17.0: Aktionen-Karte entfernt — Aktionen leben künftig im Arbeitsplatz-Layout.
+               Status-Picker ist als prominenter Hero-Picker erreichbar (v2.15.3). -->
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
             <div class="proj-side-meta" id="project-meta">—</div>
@@ -1881,7 +1772,7 @@
                       onclick="toggleStatusPicker('appointment', this)">…<span class="status-pill-caret">▾</span></button>
               <div class="status-pill-popup" id="appt-status-popup" style="display:none"></div>
             </div>
-            <span class="workflow-status-pill" id="appt-workflow-pill" style="display:none">✓ Vorbereitet</span>
+            <!-- v2.17.0: workflow-pill entfernt -->
             <button class="btn btn-sm" onclick="openAppointmentModal('edit', currentAppointmentDetailId)">Bearbeiten</button>
           </div>
         </div>
@@ -1904,44 +1795,18 @@
         </div>
       </div>
 
+      <!-- Tabs — v2.17.0: Inhalt / Vorbereitung / Anhänge entfernt.
+           Stattdessen ein einziger Aktivitäten-Tab. -->
       <div class="proj-tabs">
-        <button class="proj-tab active" data-tab="inhalt"       onclick="switchAppointmentV2Tab('inhalt')">Inhalt</button>
-        <button class="proj-tab"        data-tab="vorbereitung" onclick="switchAppointmentV2Tab('vorbereitung')">Vorbereitung</button>
-        <button class="proj-tab"        data-tab="anhaenge"     onclick="switchAppointmentV2Tab('anhaenge')">Anhänge</button>
+        <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchAppointmentV2Tab('aktivitaeten')">Aktivitäten</button>
       </div>
 
       <div class="proj-grid">
         <main class="proj-main">
 
-          <div class="proj-tab-panel active" data-tab="inhalt" id="appt-panel-inhalt">
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">VORBEREITUNG</div>
-              <textarea class="proj-brief-text" id="appt-vorbereitung"
-                        placeholder="Was muss vor dem Termin geschehen?"
-                        onblur="saveAppointmentDokuField('vorbereitung', this.value)"></textarea>
-            </div>
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">GESPRÄCHSNOTIZEN</div>
-              <textarea class="proj-brief-text" id="appt-gespraechsnotizen"
-                        placeholder="Was wurde besprochen, vereinbart, festgehalten?"
-                        onblur="saveAppointmentDokuField('gespraechsinhalt', this.value)"></textarea>
-            </div>
-            <div class="proj-brief-section">
-              <div class="proj-brief-label-row">
-                <div class="proj-brief-label">ACTION ITEMS · <span id="appt-action-count">0</span></div>
-                <button class="btn btn-sm btn-primary" onclick="addAppointmentActionItem()">+ Aufgabe</button>
-              </div>
-              <div id="appt-action-items"><div class="info-card-empty">Lade …</div></div>
-            </div>
-          </div>
-
-          <div class="proj-tab-panel" data-tab="vorbereitung" id="appt-panel-vorbereitung" style="display:none">
-            <div id="appt-workflow-checklist"><div class="info-card-empty">Lade Checkliste …</div></div>
-          </div>
-
-          <div class="proj-tab-panel" data-tab="anhaenge" id="appt-panel-anhaenge" style="display:none">
-            <!-- v2.9.0: Datei-Anhänge -->
-            <div id="appt-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
+          <!-- Aktivitäten-Tab (Default) — Stream-Platzhalter; Inhalt folgt in Phase 1g -->
+          <div class="proj-tab-panel active" data-tab="aktivitaeten" id="appt-panel-aktivitaeten">
+            <div class="info-card-empty">Aktivitäten-Stream für Termine — kommt in Phase 1g (Stream-Aggregator).</div>
           </div>
 
         </main>
@@ -1951,14 +1816,7 @@
             <div class="proj-side-card-title">VERKNÜPFUNGEN</div>
             <div id="appt-side-verknuepfungen"><div class="info-card-empty">—</div></div>
           </div>
-          <div class="proj-side-card">
-            <div class="proj-side-card-title">AKTIONEN</div>
-            <!-- v2.15.2: Status-weiterbringen als erste Aktion -->
-            <div id="appt-status-action"></div>
-            <button class="proj-action" onclick="createFollowupAppointment()">+ Folgetermin (+ 1 Woche)</button>
-            <button class="proj-action" onclick="createTaskFromAppointment()">+ Aufgabe aus Termin</button>
-            <button class="proj-action" onclick="createDeploymentFromAppointment()">+ Einsatz aus Termin</button>
-          </div>
+          <!-- v2.17.0: Aktionen-Karte entfernt -->
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
             <div class="proj-side-meta" id="appt-meta">—</div>
@@ -1990,7 +1848,7 @@
                       onclick="toggleStatusPicker('deployment', this)">…<span class="status-pill-caret">▾</span></button>
               <div class="status-pill-popup" id="dep-status-popup" style="display:none"></div>
             </div>
-            <span class="workflow-status-pill" id="dep-workflow-pill" style="display:none">✓ Dokumentiert</span>
+            <!-- v2.17.0: workflow-pill entfernt -->
             <button class="btn btn-sm" onclick="openDeploymentModal('edit', currentDeploymentDetailId)">Bearbeiten</button>
           </div>
         </div>
@@ -2013,24 +1871,18 @@
         </div>
       </div>
 
+      <!-- Tabs — v2.17.0: Bericht / Plan & Logistik / Abrechnung entfernt.
+           Stattdessen ein einziger Aktivitäten-Tab analog zum Projekt. -->
       <div class="proj-tabs">
-        <button class="proj-tab active" data-tab="bericht"     onclick="switchDeploymentV2Tab('bericht')">Bericht</button>
-        <button class="proj-tab"        data-tab="planlogistik" onclick="switchDeploymentV2Tab('planlogistik')">Plan &amp; Logistik</button>
-        <button class="proj-tab"        data-tab="abrechnung"  onclick="switchDeploymentV2Tab('abrechnung')">Abrechnung</button>
+        <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchDeploymentV2Tab('aktivitaeten')">Aktivitäten</button>
       </div>
 
       <div class="proj-grid">
         <main class="proj-main">
 
-          <!-- Bericht-Tab (Default) -->
-          <div class="proj-tab-panel active" data-tab="bericht" id="dep-panel-bericht">
-            <!-- v2.0.3: Dokumentations-Checkliste oben im Bericht -->
-            <div id="dep-workflow-checklist" style="margin-bottom:20px"></div>
-
-            <!-- v2.14.2: Status-Briefing — passt sich an Einsatz-Status an -->
-            <div id="dep-status-briefing"></div>
-
-            <!-- v2.14.1: Capture-Stream — Eintrag oben, Liste darunter -->
+          <!-- Aktivitäten-Tab (Default) — Capture-Stream-Eingabe + chronologischer Stream -->
+          <div class="proj-tab-panel active" data-tab="aktivitaeten" id="dep-panel-aktivitaeten">
+            <!-- Capture-Stream-Eingabe oben -->
             <div class="capture-stream-section">
               <div class="capture-stream-input-row">
                 <textarea id="dep-capture-input" class="capture-stream-input"
@@ -2045,89 +1897,13 @@
                 <button type="button" class="capture-stream-chip" data-kategorie="log"        onclick="setCaptureKategorie('log')"        title="Log-Eintrag für die Projekt-Zeitleiste">📋 Log</button>
                 <button type="button" class="capture-stream-post-btn" onclick="postDeploymentLogEntry()">Posten · ⌘↵</button>
               </div>
-              <div id="dep-capture-stream-list" class="capture-stream-list">
-                <div class="empty-state-mini">Noch nichts protokolliert — wähle eine Kategorie und tippe los.</div>
-              </div>
             </div>
 
-            <div class="proj-brief-section">
-              <div class="proj-brief-label-row">
-                <div class="proj-brief-label">BEHANDELTE THEMEN</div>
-                <span class="proj-brief-hint" id="dep-themes-hint">Aus dem Firmen-Pool.</span>
-              </div>
-              <!-- v2.16.1: Quick-Add direkt am Einsatz — gleiche Mechanik wie im
-                   Projekt-Planung-Tab, aber firmen-scoped. Tippen liefert Vor-
-                   schläge aus der Bibliothek + dem Firmen-Pool; Enter legt ein
-                   neues Firmen-Thema an, Klick übernimmt einen Vorschlag. -->
-              <div class="theme-quickadd">
-                <div class="theme-quickadd-row">
-                  <input type="text" id="dep-theme-quickadd-input"
-                         class="theme-quickadd-input"
-                         placeholder="Thema eingeben — Vorschläge aus Bibliothek + Firmen-Pool erscheinen darunter"
-                         autocomplete="off"
-                         oninput="onDeploymentThemeQuickInput(this.value)"
-                         onkeydown="if(event.key==='Enter'){event.preventDefault();addDeploymentThemeAdHoc(this.value);}"
-                         onfocus="onDeploymentThemeQuickInput(this.value)">
-                  <button type="button" class="theme-quickadd-btn"
-                          onclick="addDeploymentThemeAdHoc(document.getElementById('dep-theme-quickadd-input').value)"
-                          title="Als Firmen-Thema anlegen und für diesen Einsatz markieren (oder ⏎)">+</button>
-                </div>
-                <div id="dep-theme-quickadd-suggestions" class="theme-quickadd-suggestions" style="display:none"></div>
-              </div>
-              <div id="dep-themes-area"><div class="info-card-empty">Lade …</div></div>
+            <!-- Aktivitäten-Stream (Default: alle Stream-Einträge dieses Einsatzes;
+                 spätere Phasen: zusätzlich Notizen, Status-Wechsel, Themen-Tags, …). -->
+            <div id="dep-capture-stream-list" class="capture-stream-list">
+              <div class="empty-state-mini">Noch nichts protokolliert — wähle eine Kategorie und tippe los.</div>
             </div>
-
-            <div class="proj-brief-section">
-              <div class="proj-brief-label-row">
-                <div class="proj-brief-label">ACTION ITEMS · <span id="dep-action-count">0</span></div>
-                <button class="btn btn-sm btn-primary" onclick="addDeploymentActionItem()">+ Aufgabe</button>
-              </div>
-              <div id="dep-action-items"><div class="info-card-empty">Lade …</div></div>
-            </div>
-          </div>
-
-          <!-- Plan & Logistik-Tab -->
-          <div class="proj-tab-panel" data-tab="planlogistik" id="dep-panel-planlogistik" style="display:none">
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">VORBEREITUNG</div>
-              <textarea class="proj-brief-text" id="dep-plan-vorbereitung"
-                        placeholder="Was muss vor dem Einsatz geschehen?"
-                        onblur="saveDeploymentDokuField('vorbereitung', this.value)"></textarea>
-            </div>
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">TEILNEHMER</div>
-              <textarea class="proj-brief-text" id="dep-plan-teilnehmer"
-                        placeholder="Anzahl + Skill-Level + Ansprechpartner vor Ort"
-                        onblur="saveDeploymentDokuField('teilnehmer', this.value)"></textarea>
-            </div>
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">ANFAHRT &amp; STANDORT</div>
-              <textarea class="proj-brief-text" id="dep-plan-anfahrt"
-                        placeholder="Adresse, Reisezeit, Parkplatz, Empfang"
-                        onblur="saveDeploymentDokuField('anfahrt', this.value)"></textarea>
-            </div>
-            <!-- v2.9.0: Datei-Anhänge -->
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">DATEIEN</div>
-              <div id="dep-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
-            </div>
-          </div>
-
-          <!-- Abrechnung-Tab -->
-          <div class="proj-tab-panel" data-tab="abrechnung" id="dep-panel-abrechnung" style="display:none">
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">RECHNUNGSNUMMER</div>
-              <input type="text" class="proj-brief-text" id="dep-abr-rnummer"
-                     placeholder="z. B. 2026-0042"
-                     onblur="saveDeploymentDokuField('rechnungsnummer', this.value)" style="min-height: auto; padding: 12px 14px;">
-            </div>
-            <div class="proj-brief-section">
-              <div class="proj-brief-label">ABRECHNUNGS-NOTIZ</div>
-              <textarea class="proj-brief-text" id="dep-abr-notiz"
-                        placeholder="Sonderkonditionen, Skonto, Anmerkungen zur Rechnung"
-                        onblur="saveDeploymentDokuField('abrechnungs_notiz', this.value)"></textarea>
-            </div>
-            <div id="dep-abr-summary" class="info-card-empty">Lade Abrechnungs-Daten …</div>
           </div>
 
         </main>
@@ -2141,14 +1917,7 @@
             <div class="proj-side-card-title">FIRMA</div>
             <div id="dep-side-firma"><div class="info-card-empty">—</div></div>
           </div>
-          <div class="proj-side-card">
-            <div class="proj-side-card-title">AKTIONEN</div>
-            <!-- v2.15.2: Status-weiterbringen als erste Aktion -->
-            <div id="dep-status-action"></div>
-            <button class="proj-action" onclick="duplicateDeployment(currentDeploymentDetailId)">+ Folgeeinsatz</button>
-            <button class="proj-action" onclick="document.getElementById('dep-attach-input').click()">Datei anhängen</button>
-            <input type="file" id="dep-attach-input" style="display:none" onchange="uploadDeploymentAttachment(this.files)" multiple>
-          </div>
+          <!-- v2.17.0: Aktionen-Karte entfernt -->
           <div class="proj-side-card">
             <div class="proj-side-card-title">META</div>
             <div class="proj-side-meta" id="dep-meta">—</div>

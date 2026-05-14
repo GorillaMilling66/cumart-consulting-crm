@@ -1,5 +1,33 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.17.0 (Phase 1 des großen Redesigns — Detail-Pages
+   radikal entschlackt. Vorbereitung für die neue Arbeitsplatz-
+   Architektur (Karteikarten in 3-Spalten-Layout).
+   • Aktionen-Sidebars überall entfernt (Firma, Kontakt, Projekt,
+     Termin, Einsatz). Aktionen wandern in Phase 2 in die linke
+     Spalte des Arbeitsplatzes.
+   • Workflow-Checklisten überall entfernt. Workflow-Pills im
+     Hero („✓ Vorbereitet" / „✓ Dokumentiert") raus.
+     `WORKFLOW_STEPS` bleibt im Code (für späteren Re-Use).
+   • Projekt-Tabs reduziert auf: Aktivitäten · Wirtschaftlichkeit
+     · Termine & Aufgaben. Planung-Tab + Brief-Tab komplett raus,
+     samt ihrer Render-Funktionen (renderProjectPlanTab,
+     renderProjectBriefView, …). Daten in projects.dokumentation
+     bleiben unverändert.
+   • Einsatz-Tabs reduziert auf einen Aktivitäten-Tab. Bericht
+     (Workflow-Checkliste + Status-Briefing-Karte + Capture-Stream
+     + Themen + Action Items) und Plan & Logistik und Abrechnung
+     entfernt. Capture-Stream-Eingabe bleibt im neuen Aktivitäten-
+     Tab. Die strukturierten dokumentation-Felder (vorbereitung /
+     teilnehmer / anfahrt / rechnungsnummer / abrechnungs_notiz)
+     bleiben in der DB.
+   • Termin-Tabs reduziert auf einen Aktivitäten-Tab. Inhalt-Tab
+     + Vorbereitung-Tab + Anhänge-Tab raus. dokumentation-Felder
+     (vorbereitung / gespraechsinhalt) bleiben in der DB.
+   • Firma + Kontakt: Tabs unverändert, nur Aktionen-Sidebar weg.
+   Vollständiger Aktivitäten-Stream für Einsatz + Termin kommt
+   in Phase 1g (Stream-Aggregator). Anhänge-Tab pro Entität
+   kommt in Phase 1f. Beides nicht blocker für Phase 2.
    Version 2.16.3 (Firmen-Themen-Tab — zentrale Verwaltung des
    kunden-spezifischen Themen-Pools. Die Firma-Detail-Seite
    bekommt einen neuen Tab „Themen" zwischen Kontakte und dem
@@ -11187,18 +11215,16 @@ async function renderProjectDetail(p) {
   // Dashboard-Stats asynchron laden (v1.30 — schreibt in versteckte Backwards-Kompat-Felder)
   loadProjectDashboard(p);
 
-  // v1.53.0: Themen-Sektion rendern
+  // v1.53.0: Themen-Sektion rendern — Container nur noch in Firmen-Themen-Tab,
+  // hier ein no-op falls #project-themes-list nicht im DOM ist.
   invalidateThemesCache(p.id);
   renderProjectThemes(p.id);
 
   // v2.0.0 — neues Layout: Hero, Sidepanel, Activity-Stream, Default-Tab
   await renderProjectV2Layout(p);
 
-  // v2.0.3: Vorbereitungs-Pille im Hero pre-rendern. v2.0.4: workflow_state
-  // aus dem schon geladenen Projekt-Datensatz durchreichen (kein extra DB-Trip).
-  // v2.13.0: zusätzlich workflow_steps (jetzt projekt-spezifisch) durchreichen.
-  renderWorkflowChecklist('project_prepare', 'project', p.id,
-    'project-workflow-checklist', 'project-workflow-pill', p.workflow_state, p.workflow_steps);
+  // v2.17.0: Workflow-Checkliste am Projekt entfernt — kommt nicht zurück
+  // ohne Planung-Tab. Die Hero-Pille ist auch raus.
 
   // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang vor Default.
   // v2.12.4: Wenn die Page ein Refresh derselben Projekt-ID ist (nach
@@ -21248,12 +21274,8 @@ function switchProjectV2Tab(tab) {
   document.querySelectorAll('.proj-tab-panel').forEach(p => {
     p.style.display = p.dataset.tab === tab ? '' : 'none';
   });
-  // Lazy-Render
-  if (tab === 'brief')   renderProjectBriefView(currentProjectDetailId);
+  // v2.17.0: Lazy-Render — Planung/Brief-Tabs sind entfernt
   if (tab === 'aktivitaeten') loadProjectActivityStream(currentProjectDetailId);
-  if (tab === 'planung' && currentProjectDetailId) {
-    renderProjectPlanTab(currentProjectDetailId);
-  }
 }
 
 /** Hero-Zone mit Marge / Zeitplan / Health befüllen + Sidepanel. */
@@ -21495,11 +21517,13 @@ async function postProjectQuickInput() {
   }
 }
 
-/** Brief-Tab — Ziel + Erfolgskriterien + Themen + Entwicklungs-Log. */
-/** v2.15.0: Planung-Tab — die „Werkbank". Workflow-Checkliste + alle
- *  Brief-Felder als Eingabe-Formular. Vorher hieß die Funktion
- *  `renderProjectBriefTab`; die Felder leben jetzt im Planung-Tab,
- *  weil der Brief zur Lese-Sicht wird. */
+// ═══════════════════════════════════════════════════════════
+//  v2.17.0 — DEPRECATED: Brief/Planung-Tab-Code
+//  Bleibt im Repo, weil die Funktionen in der Karteikarten-Phase
+//  (Phase 2 des großen Redesigns) wieder gebraucht werden. Aktuell
+//  läuft nichts mehr in diesen Pfad — DOM-Container existieren nicht.
+// ═══════════════════════════════════════════════════════════
+
 async function renderProjectPlanTab(projectId) {
   if (!projectId) return;
   // status + dokumentation für Phasen-Sichtbarkeit und Feld-Werte
@@ -22605,13 +22629,9 @@ async function loadAppointmentDetail(appointmentId) {
   document.getElementById('appt-hero-typ').textContent = a.typ?.wert || '—';
   document.getElementById('appt-hero-typ-sub').textContent = a.contact ? [a.contact.vorname, a.contact.nachname].filter(Boolean).join(' ') : ' ';
 
-  // Inhalt-Tab
-  const dok = a.dokumentation || {};
-  document.getElementById('appt-vorbereitung').value = dok.vorbereitung || '';
-  document.getElementById('appt-gespraechsnotizen').value = dok.gespraechsinhalt || '';
-
-  // Action Items aus Aufgaben mit task_id auf Termin oder Aufgaben aus diesem Termin
-  await renderAppointmentActionItems(appointmentId);
+  // v2.17.0: Inhalt-Tab + Action-Items entfernt. Daten bleiben in der DB
+  // (a.dokumentation.vorbereitung / .gespraechsinhalt); kommen in der
+  // Karteikarten-Phase zurück.
 
   // Sidepanel: Verknüpfungen
   const verkn = document.getElementById('appt-side-verknuepfungen');
@@ -22630,19 +22650,11 @@ async function loadAppointmentDetail(appointmentId) {
 
   trackVisit('termin', appointmentId, a.titel || '—', a.company?.name || '');
 
-  // v2.0.3: Hero-Pill „✓ Vorbereitet" pre-rendern (auch wenn Tab nicht offen).
-  // v2.0.4: State aus geladenem Datensatz durchreichen.
-  renderWorkflowChecklist('appointment_prepare', 'appointment', appointmentId,
-    'appt-workflow-checklist', 'appt-workflow-pill', a.workflow_state);
+  // v2.17.0: Workflow-Checkliste + Attachments-Zone entfernt.
 
-  // v2.9.0: Datei-Anhänge laden
-  renderAttachmentZone('appointment', appointmentId, 'appt-attachments');
-
-  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang
-  const apptTab = _pendingDetailTab || 'inhalt';
-  _pendingDetailTab = null;
-  _currentAppointmentV2Tab = apptTab;
-  switchAppointmentV2Tab(apptTab);
+  // Default-Tab ist Aktivitäten
+  _currentAppointmentV2Tab = 'aktivitaeten';
+  switchAppointmentV2Tab('aktivitaeten');
 }
 
 function switchAppointmentV2Tab(tab) {
@@ -22651,11 +22663,6 @@ function switchAppointmentV2Tab(tab) {
     t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('#page-appointment-detail .proj-tab-panel').forEach(p =>
     p.style.display = p.dataset.tab === tab ? '' : 'none');
-  // v2.0.3: Workflow-Tab lazy laden
-  if (tab === 'vorbereitung' && currentAppointmentDetailId) {
-    renderWorkflowChecklist('appointment_prepare', 'appointment', currentAppointmentDetailId,
-      'appt-workflow-checklist', 'appt-workflow-pill');
-  }
 }
 
 async function saveAppointmentDokuField(key, value) {
@@ -22817,30 +22824,11 @@ async function loadDeploymentDetail(deploymentId) {
   document.getElementById('dep-hero-leistung').textContent = d.service?.name || '—';
   document.getElementById('dep-hero-leistung-sub').textContent = d.ganztag ? 'Ganztag' : ' ';
 
-  // Bericht-Tab Inhalte
-  // v2.14.3: WAS WURDE GEMACHT / ERKENNTNISSE / LOG-EINTRAG sind als
-  // statische Felder entfernt — gleicher Inhalt lebt jetzt im Capture-
-  // Stream (`deployment_log`) mit Kategorien was_gemacht / erkenntnis / log.
-  const dok = d.dokumentation || {};
-  // v2.1.2: leeres Anfahrt-Feld bekommt Firma-Adresse als Default
-  // (Bullet-Defaults aus v2.1.1 wieder entfernt — bringen nichts).
-  document.getElementById('dep-plan-vorbereitung').value = dok.vorbereitung || '';
-  document.getElementById('dep-plan-teilnehmer').value = dok.teilnehmer || '';
-  document.getElementById('dep-plan-anfahrt').value = dok.anfahrt || formatCompanyAddress(d.company);
-  document.getElementById('dep-abr-rnummer').value = dok.rechnungsnummer || '';
-  document.getElementById('dep-abr-notiz').value = dok.abrechnungs_notiz || '';
-
-  // Themen-Tags (existing project_themes via deployment_themes)
-  await renderDeploymentReportThemes(d);
-
-  // Action Items (Tasks mit deployment_id)
-  await renderDeploymentActionItems(deploymentId);
-
-  // v2.14.1: Capture-Stream-Liste laden
+  // v2.17.0: Bericht / Plan&Logistik / Abrechnung Tabs entfernt.
+  // Daten (dokumentation, rechnungsnummer, …) bleiben in der DB; nur die
+  // Felder werden temporär nicht mehr im DOM gerendert (Karteikarte folgt).
+  // Capture-Stream-Liste laden (jetzt unter Aktivitäten-Tab)
   await renderDeploymentCaptureStream(deploymentId);
-
-  // v2.14.2: Status-Briefing rendern (passt sich an Einsatz-Status an)
-  renderDeploymentStatusBriefing(d);
 
   // Sidepanel
   const projSide = document.getElementById('dep-side-projekt');
@@ -22864,30 +22852,15 @@ async function loadDeploymentDetail(deploymentId) {
     <div>ID · ${esc(deploymentId.substring(0, 8))}</div>
     <div>Erstellt · ${d.created_at ? esc(formatDateDE(d.created_at.substring(0, 10))) : '—'}</div>`;
 
-  // Abrechnung-Summary
-  document.getElementById('dep-abr-summary').innerHTML = `
-    <div style="background:var(--bg-soft);padding:12px;border-radius:var(--radius-md);">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Honorar-Berechnung</div>
-      <div style="font-size:13px">${d.menge || 1} × ${formatPreis(d.einzelpreis || 0)} = <strong>${formatPreis(honorar)}</strong></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Status: ${esc(d.status || '—')}</div>
-    </div>`;
+  // v2.17.0: Abrechnung-Summary + Workflow-Checkliste + Attachments-Zone
+  // entfernt — Tabs sind weg. Daten bleiben in der DB, kommen in der
+  // Karteikarten-Phase zurück.
 
   trackVisit('einsatz', deploymentId, d.titel || '—', d.company?.name || '');
 
-  // v2.0.3: Dokumentations-Checkliste + Hero-Pille rendern.
-  // v2.0.4: State aus geladenem Datensatz durchreichen.
-  // v2.13.0: workflow_steps durchreichen (einsatz-spezifisch konfigurierbar).
-  renderWorkflowChecklist('deployment_document', 'deployment', deploymentId,
-    'dep-workflow-checklist', 'dep-workflow-pill', d.workflow_state, d.workflow_steps);
-
-  // v2.9.0: Datei-Anhänge laden
-  renderAttachmentZone('deployment', deploymentId, 'dep-attachments');
-
-  // v2.2.0: Pending-Tab vom Prepare-Picker hat Vorrang
-  const depTab = _pendingDetailTab || 'bericht';
-  _pendingDetailTab = null;
-  _currentDeploymentV2Tab = depTab;
-  switchDeploymentV2Tab(depTab);
+  // Default-Tab ist Aktivitäten
+  _currentDeploymentV2Tab = 'aktivitaeten';
+  switchDeploymentV2Tab('aktivitaeten');
 }
 
 function switchDeploymentV2Tab(tab) {
