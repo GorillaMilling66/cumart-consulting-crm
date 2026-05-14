@@ -5937,19 +5937,19 @@ function navigateTo(page, param) {
   // v2.22.0 (Phase 4): Entity-Klicks aus Listen routen jetzt standardmäßig
   // auf die Karteikarte im Arbeitsplatz. Volle-Sicht-Variante via `*_voll`
   // (wird im Karteikarten-„Volle Sicht →"-Button verwendet).
-  else if ((page === 'firma' || page === 'projekt' || page === 'einsatz' ||
-            page === 'termin' || page === 'kontakt') && param) {
-    hash = `#/karteikarte/${page}/${param}`;
-  }
-  else if (page === 'firma_voll' && param) {
+  // v2.23.0: Detail-Pages werden physisch in den Arbeitsplatz-Stage
+  // eingebettet — kein Karteikarten-Layer mehr. Klick auf Entität führt
+  // zur regulären Detail-Page-Route, die aber visuell IM Arbeitsplatz
+  // rendert (DOM-Reparenting beim App-Boot).
+  else if ((page === 'firma' || page === 'firma_voll') && param) {
     hash = `#/firma/${param}`;
-  } else if (page === 'projekt_voll' && param) {
+  } else if ((page === 'projekt' || page === 'projekt_voll') && param) {
     hash = `#/projekt/${param}`;
-  } else if (page === 'kontakt_voll' && param) {
+  } else if ((page === 'kontakt' || page === 'kontakt_voll') && param) {
     hash = `#/kontakt/${param}`;
-  } else if (page === 'einsatz_voll' && param) {
+  } else if ((page === 'einsatz' || page === 'einsatz_voll') && param) {
     hash = `#/einsatz/${param}`;
-  } else if (page === 'termin_voll' && param) {
+  } else if ((page === 'termin' || page === 'termin_voll') && param) {
     hash = `#/termin/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
     hash = `#/termine?firma=${param.firma}`;
@@ -6048,16 +6048,14 @@ function handleHashChange() {
 
   // Detail-Seiten: Query-Params (z.B. ?tab=) strippen und Re-Load vermeiden,
   // wenn derselbe Datensatz angezeigt wird (v1.23.0).
-  // v2.19.0 (Phase 3): Karteikarten-Sicht im Arbeitsplatz-Stage
+  // v2.23.0: alte Karteikarten-Route wird auf die volle Detail-Page
+  // umgeschrieben (Detail rendert jetzt direkt im Arbeitsplatz-Stage).
   if (path.startsWith('#/karteikarte/')) {
     const rest = path.slice('#/karteikarte/'.length);
     const [type, id] = rest.split('/');
-    if (type && id) {
-      const key = 'karteikarte:' + type + ':' + id;
-      if (_currentDetailKey !== key) {
-        _currentDetailKey = key;
-        stageRenderEntityCard(type, id);
-      }
+    const aliasMap = { firma: 'firma', kontakt: 'kontakt', projekt: 'projekt', einsatz: 'einsatz', termin: 'termin' };
+    if (type && id && aliasMap[type]) {
+      window.location.replace(`#/${aliasMap[type]}/${id}`);
       return;
     }
   }
@@ -6285,6 +6283,10 @@ async function onLogin(user) {
   updateTaskBadge();
   initCalendarBar();  // v1.32: Kalender-Bar nach Login initialisieren
 
+  // v2.23.0: Detail-Pages werden physisch in den Arbeitsplatz-Stage
+  // eingehängt, sodass sie visuell IM Arbeitsplatz-3-Spalten-Layout rendern.
+  _embedDetailPagesInArbeitsplatzStage();
+
   // v2.2.1: Login-Landing auf Briefing-V2. Wenn der User vorher auf der
   // alten #/heute-Page war (Browser-History), umleiten — die alte Page
   // existiert noch im Code, ist aber nicht mehr das offizielle Dashboard.
@@ -6294,6 +6296,33 @@ async function onLogin(user) {
   } else {
     navigateTo('briefing');
   }
+}
+
+/** v2.23.0: Detail-Page-DOM-Elemente einmal beim App-Boot in den
+ *  Arbeitsplatz-Stage verschieben. Aktivierung beider Pages parallel
+ *  (page-arbeitsplatz + page-X-detail) zeigt dann das Detail-Layout
+ *  IN der mittleren Spalte des Arbeitsplatzes. */
+function _embedDetailPagesInArbeitsplatzStage() {
+  const stage = document.getElementById('arbeitsplatz-stage');
+  if (!stage) return;
+  ['page-company-detail', 'page-contact-detail', 'page-project-detail',
+   'page-deployment-detail', 'page-appointment-detail'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== stage) stage.appendChild(el);
+  });
+}
+
+/** v2.23.0: Aktiviert das Arbeitsplatz-Layout + die jeweilige Detail-Page
+ *  parallel. Wird von allen loadXDetail-Funktionen aufgerufen. */
+function _activateDetailInArbeitsplatz(detailPageId) {
+  // Erst alle Pages deaktivieren
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  // Arbeitsplatz aktivieren (Shell)
+  document.getElementById('page-arbeitsplatz')?.classList.add('active');
+  // Detail-Page innerhalb der Stage aktivieren
+  document.getElementById(detailPageId)?.classList.add('active');
+  // Top-Nav-Tab auf Arbeitsplatz
+  setActiveTopNavTab?.('arbeitsplatz');
 }
 
 function applyAdminOnlyUI() {
@@ -9510,8 +9539,8 @@ async function deleteCompany() {
 async function loadCompanyDetail(companyId) {
   currentCompanyDetailId = companyId;
 
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-company-detail').classList.add('active');
+  // v2.23.0: Detail-Page rendert IN der Arbeitsplatz-Stage
+  _activateDetailInArbeitsplatz('page-company-detail');
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-companies')?.classList.add('active');
   setMobileNav('company-detail');
@@ -11524,8 +11553,8 @@ async function deleteProject() {
 async function loadProjectDetail(projectId) {
   currentProjectDetailId = projectId;
 
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-project-detail').classList.add('active');
+  // v2.23.0: Detail-Page rendert IN der Arbeitsplatz-Stage
+  _activateDetailInArbeitsplatz('page-project-detail');
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-projects')?.classList.add('active');
   setMobileNav('project-detail');
@@ -11906,8 +11935,8 @@ async function rebuildProjectDropdownForAppointment(companyId) {
 async function loadContactDetail(contactId) {
   currentContactDetailId = contactId;
 
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-contact-detail').classList.add('active');
+  // v2.23.0: Detail-Page rendert IN der Arbeitsplatz-Stage
+  _activateDetailInArbeitsplatz('page-contact-detail');
   document.querySelectorAll('.nav-item:not(.nav-item-group)').forEach(b => b.classList.remove('active'));
   setMobileNav('contact-detail');
 
@@ -23044,9 +23073,8 @@ let _currentAppointmentV2Tab = 'inhalt';
 
 async function loadAppointmentDetail(appointmentId) {
   currentAppointmentDetailId = appointmentId;
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-appointment-detail').classList.add('active');
-  setActiveTopNavTab('appointments');
+  // v2.23.0: Detail-Page rendert IN der Arbeitsplatz-Stage
+  _activateDetailInArbeitsplatz('page-appointment-detail');
 
   const { data: a, error } = await db.from('appointments')
     .select('*, company:companies(id, name), project:projects(id, name), contact:contacts(id, vorname, nachname), typ:lookup_values!appointments_typ_id_fkey(wert, farbe)')
@@ -23243,9 +23271,8 @@ let _currentDeploymentV2Tab = 'bericht';
 
 async function loadDeploymentDetail(deploymentId) {
   currentDeploymentDetailId = deploymentId;
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-deployment-detail').classList.add('active');
-  setActiveTopNavTab('deployments');
+  // v2.23.0: Detail-Page rendert IN der Arbeitsplatz-Stage
+  _activateDetailInArbeitsplatz('page-deployment-detail');
 
   const { data: d, error } = await db.from('deployments')
     .select('*, company:companies(id, name, abc_klassifizierung, strasse, plz, stadt, land), project:projects(id, name, status), service:services(id, name)')

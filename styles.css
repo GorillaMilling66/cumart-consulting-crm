@@ -1454,6 +1454,18 @@ body {
   min-height: 500px;
   box-shadow: var(--shadow-card);
 }
+/* v2.23.0: Wenn eine Detail-Page in der Stage aktiv ist,
+   Welcome-Block ausblenden und Stage-Box transparent machen
+   (die Detail-Page bringt ihre eigene Hero-/Card-Optik mit). */
+#arbeitsplatz-stage:has(> .page.active) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+#arbeitsplatz-stage:has(> .page.active) > .stage-welcome { display: none; }
+#arbeitsplatz-stage > .page { display: none; }
+#arbeitsplatz-stage > .page.active { display: block; }
 .stage-welcome-title {
   font-size: 28px;
   font-weight: 600;
@@ -1467,6 +1479,13 @@ body {
   margin-bottom: 28px;
   line-height: 1.5;
   max-width: 560px;
+}
+
+/* v2.23.1: Welcome-Karte abgrenzen — Trennlinie unter der Schnell-Eingabe
+   sodass „An was möchtest du arbeiten?" als geschlossener Block wirkt. */
+.stage-welcome-card .arbeitsplatz-capture {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
 }
 
 .arbeitsplatz-widget {

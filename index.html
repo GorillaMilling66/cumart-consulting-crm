@@ -454,21 +454,26 @@
         <!-- MITTLERE SPALTE: Bühne / Karteikarte / Eingabemaske -->
         <main class="arbeitsplatz-col-center">
           <div id="arbeitsplatz-stage" class="arbeitsplatz-stage">
-            <!-- Default-Inhalt: Smart-Capture-Begrüßung -->
+            <!-- Default-Inhalt: Smart-Capture-Begrüßung. v2.23.1: in eine
+                 abgeschlossene Karten-Sektion verpackt, mit Trennlinie unter
+                 der Schnell-Eingabe und neuem Titel „An was möchtest du
+                 arbeiten?". -->
             <div class="stage-welcome">
-              <div class="arbeitsplatz-col-eyebrow">ARBEITSPLATZ · <span id="arbeitsplatz-date"></span></div>
-              <h1 class="stage-welcome-title">Was möchtest du anlegen?</h1>
-              <div class="stage-welcome-hint">Wähle eine Aktion links — die Maske öffnet hier in der Mitte. Oder klicke auf eine Entität in den Listen / im Briefing, dann erscheint die Karteikarte zum Bearbeiten.</div>
+              <div class="stage-welcome-card">
+                <div class="arbeitsplatz-col-eyebrow">ARBEITSPLATZ · <span id="arbeitsplatz-date"></span></div>
+                <h1 class="stage-welcome-title">An was möchtest du arbeiten?</h1>
+                <div class="stage-welcome-hint">Wähle eine Aktion links — die Maske öffnet hier in der Mitte. Oder klicke auf eine Entität in den Listen / im Briefing, dann erscheint die Karteikarte zum Bearbeiten.</div>
 
-              <div class="arbeitsplatz-capture">
-                <input type="text" id="arbeitsplatz-capture-input"
-                       placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
-                       autocomplete="off">
-                <div class="arbeitsplatz-context-row">
-                  <span class="arbeitsplatz-context-label">Bezogen auf</span>
-                  <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
-                    <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
-                  </span>
+                <div class="arbeitsplatz-capture">
+                  <input type="text" id="arbeitsplatz-capture-input"
+                         placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
+                         autocomplete="off">
+                  <div class="arbeitsplatz-context-row">
+                    <span class="arbeitsplatz-context-label">Bezogen auf</span>
+                    <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
+                      <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
