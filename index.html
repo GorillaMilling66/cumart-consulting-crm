@@ -716,6 +716,8 @@
         <button class="proj-tab"        data-tab="projekte"     onclick="switchCompanyV2Tab('projekte')">Projekte <span class="tab-count" id="tab-count-company-projekte" style="display:none"></span></button>
         <button class="proj-tab"        data-tab="einsaetze"    onclick="switchCompanyV2Tab('einsaetze')">Einsätze <span class="tab-count" id="tab-count-company-einsaetze" style="display:none"></span></button>
         <button class="proj-tab"        data-tab="kontakte"     onclick="switchCompanyV2Tab('kontakte')">Kontakte</button>
+        <!-- v2.16.3: Themen-Tab am Firma-Detail — Verwaltung des Firmen-Pools -->
+        <button class="proj-tab"        data-tab="themen"       onclick="switchCompanyV2Tab('themen')">Themen <span class="tab-count" id="tab-count-company-themen" style="display:none"></span></button>
       </div>
 
       <div class="proj-grid">
@@ -836,6 +838,33 @@
                 <button class="btn btn-sm btn-primary" id="company-detail-add-contact-btn">+ Kontakt hinzufügen</button>
               </div>
               <div id="company-contacts-list"><div class="info-card-empty">Lade Kontakte …</div></div>
+            </div>
+          </div>
+
+          <!-- v2.16.3: Firmen-Themen-Tab — der zentrale Pool kunden-spezifischer Themen.
+               Quick-Add oben (Bibliothek-Vorschläge), Liste mit Edit + Soft-Delete. -->
+          <div class="proj-tab-panel" data-tab="themen" id="company-panel-themen" style="display:none">
+            <div class="info-card">
+              <div class="info-card-title-row">
+                <div class="info-card-title"><span id="company-themes-count">Firmen-Themen</span></div>
+                <span class="proj-brief-hint">Themen können in Projekt-Curricula übernommen oder in die zentrale Bibliothek gehoben werden.</span>
+              </div>
+              <div class="theme-quickadd">
+                <div class="theme-quickadd-row">
+                  <input type="text" id="company-theme-quickadd-input"
+                         class="theme-quickadd-input"
+                         placeholder="Thema eingeben — Vorschläge aus der zentralen Bibliothek erscheinen darunter"
+                         autocomplete="off"
+                         oninput="onCompanyThemeQuickInput(this.value)"
+                         onkeydown="if(event.key==='Enter'){event.preventDefault();addCompanyThemeAdHoc(this.value);}"
+                         onfocus="onCompanyThemeQuickInput(this.value)">
+                  <button type="button" class="theme-quickadd-btn"
+                          onclick="addCompanyThemeAdHoc(document.getElementById('company-theme-quickadd-input').value)"
+                          title="Als Firmen-Thema anlegen (oder ⏎)">+</button>
+                </div>
+                <div id="company-theme-quickadd-suggestions" class="theme-quickadd-suggestions" style="display:none"></div>
+              </div>
+              <div id="company-themes-list"><div class="info-card-empty">Lade …</div></div>
             </div>
           </div>
 

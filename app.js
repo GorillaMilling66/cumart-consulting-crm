@@ -1,5 +1,32 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.16.3 (Firmen-Themen-Tab — zentrale Verwaltung des
+   kunden-spezifischen Themen-Pools. Die Firma-Detail-Seite
+   bekommt einen neuen Tab „Themen" zwischen Kontakte und dem
+   bisherigen Layout-Ende. Inhalt:
+   - Quick-Add-Eingabefeld oben mit Live-Vorschlägen aus der
+     zentralen `theme_library` (Substring-Match, bereits genutzte
+     ausgeblendet). Enter / „+"-Button legt ein Firmen-Thema
+     ohne Bibliotheks-Snapshot an; Klick auf Vorschlag übernimmt
+     mit `library_theme_id`.
+   - Liste aller Themen der Firma (loadCompanyThemesData) mit:
+     Name, Beschreibung, Bibliotheks-Badge bei library_theme_id-
+     Verknüpfung, Stats (in N Projekten · M Einsätzen),
+     Promote-Button („+ Bibliothek") bei Ad-hoc-Themen, Delete-
+     Button (×, Soft-Delete via deleted_at) ganz rechts. Klick
+     auf eine Zeile öffnet das bestehende Theme-Modal im Edit-
+     Modus — `openThemeModal` akzeptiert jetzt projectId=null
+     im Edit-Pfad. saveTheme und deleteTheme refreshen den
+     Firmen-Themen-Tab, wenn aktiv.
+   JS: renderCompanyThemesTab, openCompanyThemeModal,
+   deleteCompanyTheme, onCompanyThemeQuickInput,
+   _renderCompanyThemeQuickSuggestions, addCompanyThemeFromLibrary,
+   addCompanyThemeAdHoc, _clearCompanyThemeQuickInput. CSS:
+   .theme-row-stats, .theme-row-delete.
+   Tab-Counter `tab-count-company-themen` zeigt die Anzahl.
+   Version 2.16.2 (Migration: project_themes.project_id nullable,
+   company_id NOT NULL — Einsätze ohne Projekt können jetzt neue
+   Themen anlegen, ohne in den 400er-Bad-Request zu laufen.)
    Version 2.16.1 (Themen-Quick-Add am Einsatz-Bericht — direkt
    von dort Themen anlegen oder aus Bibliothek / Firmen-Pool
    übernehmen. Nachdem v2.16.0 Themen firmen-scoped gemacht hat,
@@ -7665,7 +7692,9 @@ function _clearThemeQuickInput() {
 
 /** Öffnet das Theme-Modal — Anlage oder Bearbeiten. */
 async function openThemeModal(mode, themeId, projectId) {
-  if (!projectId) { showToast('Kein Projekt-Kontext.', true); return; }
+  // v2.16.3: Edit-Modus darf auch ohne projectId aufgerufen werden (Firmen-
+  // Themen-Tab). Im New-Modus brauchen wir weiterhin einen Projekt-Kontext.
+  if (mode === 'new' && !projectId) { showToast('Kein Projekt-Kontext.', true); return; }
   editingThemeId = themeId;
   editingThemeProjectId = projectId;
   document.getElementById('modal-theme-title').textContent = mode === 'edit' ? 'Thema bearbeiten' : 'Neues Thema';
@@ -7756,6 +7785,10 @@ async function saveTheme() {
   const projectId = editingThemeProjectId;
   closeThemeModal();
   if (projectId === currentProjectDetailId) await renderProjectThemes(projectId);
+  // v2.16.3: Firmen-Themen-Tab refreshen, wenn aktiv
+  if (currentCompanyDetailId && _currentCompanyV2Tab === 'themen') {
+    await renderCompanyThemesTab(currentCompanyDetailId);
+  }
 }
 
 async function deleteTheme() {
@@ -7774,6 +7807,10 @@ async function deleteTheme() {
   const projectId = editingThemeProjectId;
   closeThemeModal();
   if (projectId === currentProjectDetailId) await renderProjectThemes(projectId);
+  // v2.16.3: Firmen-Themen-Tab refreshen
+  if (currentCompanyDetailId && _currentCompanyV2Tab === 'themen') {
+    await renderCompanyThemesTab(currentCompanyDetailId);
+  }
 }
 
 // ─── Theme-Picker fürs Einsatz-Modal ────────────────────────
@@ -21904,6 +21941,189 @@ function switchCompanyV2Tab(tab) {
   document.querySelectorAll('#page-company-detail .proj-tab-panel').forEach(p =>
     p.style.display = p.dataset.tab === tab ? '' : 'none');
   if (tab === 'aktivitaeten') loadCompanyActivityStream(currentCompanyDetailId);
+  if (tab === 'themen' && currentCompanyDetailId) renderCompanyThemesTab(currentCompanyDetailId);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.16.3 — FIRMA „THEMEN"-TAB (zentraler Pool kunden-spezifischer Themen)
+// ═══════════════════════════════════════════════════════════
+
+let _companyThemeQuickAddDebounce = null;
+
+async function renderCompanyThemesTab(companyId) {
+  const list = document.getElementById('company-themes-list');
+  const counter = document.getElementById('company-themes-count');
+  if (!list) return;
+  const themes = await loadCompanyThemesData(companyId);
+  if (counter) counter.textContent = `Firmen-Themen · ${themes.length}`;
+  const countTab = document.getElementById('tab-count-company-themen');
+  if (countTab) {
+    if (themes.length > 0) { countTab.textContent = themes.length; countTab.style.display = ''; }
+    else countTab.style.display = 'none';
+  }
+  if (themes.length === 0) {
+    list.innerHTML = '<div class="empty-state-mini">Noch keine Themen — tippe oben los, Bibliotheks-Vorschläge erscheinen darunter.</div>';
+    return;
+  }
+  // Curriculum-Anzahl pro Thema: in wie vielen Projekten der Firma steht das Thema?
+  const themeIds = themes.map(t => t.id);
+  const { data: assignRows } = await db.from('project_theme_assignments')
+    .select('theme_id, project_id').is('deleted_at', null).in('theme_id', themeIds);
+  const curriculumMap = {};
+  (assignRows || []).forEach(r => { curriculumMap[r.theme_id] = (curriculumMap[r.theme_id] || 0) + 1; });
+
+  // Einsatz-Tag-Anzahl pro Thema
+  const { data: depRows } = await db.from('deployment_themes')
+    .select('theme_id').in('theme_id', themeIds);
+  const einsatzMap = {};
+  (depRows || []).forEach(r => { einsatzMap[r.theme_id] = (einsatzMap[r.theme_id] || 0) + 1; });
+
+  list.innerHTML = `<div class="themes-list">${themes.map(t => {
+    const inLib = !!t.library_theme_id;
+    const curriculumN = curriculumMap[t.id] || 0;
+    const einsatzN = einsatzMap[t.id] || 0;
+    return `
+      <div class="theme-row" onclick="openCompanyThemeModal('${esc(t.id)}','${esc(companyId)}')">
+        <span class="theme-color-dot" style="background:${esc(t.farbe || '#1d4ed8')}"></span>
+        <div class="theme-row-body">
+          <div class="theme-row-name">${esc(t.name)}</div>
+          ${t.beschreibung ? `<div class="theme-row-desc">${esc(t.beschreibung)}</div>` : ''}
+          <div class="theme-row-stats">
+            ${inLib ? '<span class="theme-row-lib-badge">⇡ Bibliothek</span>' : ''}
+            <span class="theme-row-count">${curriculumN} Projekt${curriculumN === 1 ? '' : 'e'}</span>
+            <span class="theme-row-count">${einsatzN} Einsatz${einsatzN === 1 ? '' : 'ze'}</span>
+          </div>
+        </div>
+        ${!inLib ? `<button type="button" class="theme-row-promote"
+            title="In zentrale Bibliothek aufnehmen"
+            onclick="event.stopPropagation();promoteThemeToLibrary('${esc(t.id)}','${esc(companyId)}')">+ Bibliothek</button>` : ''}
+        <button type="button" class="theme-row-delete"
+                title="Thema löschen (soft-delete — Einsatz-Markierungen bleiben sichtbar)"
+                onclick="event.stopPropagation();deleteCompanyTheme('${esc(t.id)}','${esc(companyId)}')">×</button>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+/** Theme-Modal an der Firmen-Detail-Seite öffnen: gleiches Modal wie am
+ *  Projekt, aber Projekt-Kontext ist optional (nur Firma). */
+async function openCompanyThemeModal(themeId, companyId) {
+  // Wir verwenden das bestehende Theme-Modal; der projectId-Parameter wird
+  // im Edit-Modus nicht zum Speichern verwendet (nur als Kontext).
+  // Trick: Wir setzen editingThemeProjectId temporär auf null und führen
+  // den Edit über die Theme-Modal-API. Bei Update bleibt project_id
+  // unverändert.
+  await openThemeModal('edit', themeId, null);
+  // Speichern erfolgt über saveTheme — falls editingThemeProjectId leer ist,
+  // muss das vom Code toleriert werden. Wir lassen den existierenden Code
+  // unangetastet; der „projectId == null"-Fall im Refresh-Pfad führt nur
+  // dazu, dass die Projekt-Liste nicht neu gerendert wird — was OK ist.
+}
+
+/** Soft-Delete eines Firmen-Themas. Junction-Einträge bleiben bestehen
+ *  (deployment_themes / project_theme_assignments), werden aber durch den
+ *  `deleted_at`-Filter ausgeblendet. */
+async function deleteCompanyTheme(themeId, companyId) {
+  if (!confirm('Thema wirklich löschen?\n\nDas Thema wird soft-gelöscht. Bestehende Einsatz-Markierungen und Projekt-Curriculum-Einträge bleiben erhalten, das Thema erscheint aber nicht mehr in der Liste.')) return;
+  const { error } = await db.from('project_themes')
+    .update({ deleted_at: new Date().toISOString() }).eq('id', themeId);
+  if (error) { showToast(error.message, true); return; }
+  showToast('Thema gelöscht.');
+  invalidateThemesCache?.();
+  renderCompanyThemesTab(companyId);
+}
+
+// ─── Quick-Add im Firmen-Themen-Tab ────────────────────────────────────────
+
+function onCompanyThemeQuickInput(value) {
+  if (_companyThemeQuickAddDebounce) clearTimeout(_companyThemeQuickAddDebounce);
+  _companyThemeQuickAddDebounce = setTimeout(() => _renderCompanyThemeQuickSuggestions(value || ''), 120);
+}
+
+async function _renderCompanyThemeQuickSuggestions(value) {
+  const sugBox = document.getElementById('company-theme-quickadd-suggestions');
+  if (!sugBox || !currentCompanyDetailId) return;
+  const q = (value || '').trim();
+  if (q.length < 1) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
+  // Bibliotheks-Themen, die noch nicht in diesem Firmen-Pool sind
+  const { data: ownRows } = await db.from('project_themes')
+    .select('library_theme_id').is('deleted_at', null)
+    .eq('company_id', currentCompanyDetailId)
+    .not('library_theme_id', 'is', null);
+  const usedLibIds = new Set((ownRows || []).map(r => r.library_theme_id));
+  const { data, error } = await db.from('theme_library')
+    .select('id, name, beschreibung, kategorie, farbe')
+    .is('deleted_at', null).eq('ist_aktiv', true)
+    .ilike('name', `%${q}%`).order('name').limit(8);
+  if (error) { sugBox.innerHTML = `<div class="theme-suggestion-empty">Fehler: ${esc(error.message)}</div>`; sugBox.style.display = ''; return; }
+  const hits = (data || []).filter(r => !usedLibIds.has(r.id)).slice(0, 5);
+  if (hits.length === 0) {
+    sugBox.innerHTML = `<div class="theme-suggestion-empty">Kein Bibliotheks-Treffer für „${esc(q)}" — Enter legt es als neues Firmen-Thema an.</div>`;
+    sugBox.style.display = '';
+    return;
+  }
+  sugBox.innerHTML = hits.map(r => `
+    <button type="button" class="theme-suggestion-item"
+            onclick="addCompanyThemeFromLibrary('${esc(r.id)}')">
+      <span class="theme-color-dot" style="background:${esc(r.farbe || '#1d4ed8')}"></span>
+      <span class="theme-suggestion-body">
+        <span class="theme-suggestion-name">${esc(r.name)}</span>
+        ${r.kategorie ? `<span class="theme-suggestion-cat">${esc(r.kategorie)}</span>` : ''}
+        ${r.beschreibung ? `<span class="theme-suggestion-desc">${esc(r.beschreibung)}</span>` : ''}
+      </span>
+    </button>`).join('');
+  sugBox.style.display = '';
+}
+
+async function addCompanyThemeFromLibrary(libraryId) {
+  if (!currentCompanyDetailId) return;
+  const { data: lib } = await db.from('theme_library')
+    .select('id, name, beschreibung, farbe').eq('id', libraryId).single();
+  if (!lib) { showToast('Bibliotheks-Thema nicht gefunden.', true); return; }
+  const { error } = await db.from('project_themes').insert({
+    company_id:       currentCompanyDetailId,
+    name:             lib.name,
+    beschreibung:     lib.beschreibung,
+    farbe:            lib.farbe,
+    library_theme_id: lib.id,
+    owner_id:         currentProfile?.id || null,
+    reihenfolge:      100,
+    status:           'offen'
+  });
+  if (error) { showToast(error.message, true); return; }
+  showToast(`„${lib.name}" zum Firmen-Pool hinzugefügt.`);
+  _clearCompanyThemeQuickInput();
+  renderCompanyThemesTab(currentCompanyDetailId);
+}
+
+async function addCompanyThemeAdHoc(value) {
+  if (!currentCompanyDetailId) return;
+  const name = (value || '').trim();
+  if (!name) { showToast('Bitte Thema-Namen eingeben.', true); return; }
+  const { data: existing } = await db.from('project_themes')
+    .select('id').is('deleted_at', null)
+    .eq('company_id', currentCompanyDetailId).ilike('name', name);
+  if ((existing || []).length > 0) {
+    showToast(`„${name}" gibt es schon in dieser Firma.`, true);
+    return;
+  }
+  const { error } = await db.from('project_themes').insert({
+    company_id:  currentCompanyDetailId,
+    name,
+    owner_id:    currentProfile?.id || null,
+    reihenfolge: 100,
+    status:      'offen'
+  });
+  if (error) { showToast(error.message, true); return; }
+  showToast(`„${name}" angelegt.`);
+  _clearCompanyThemeQuickInput();
+  renderCompanyThemesTab(currentCompanyDetailId);
+}
+
+function _clearCompanyThemeQuickInput() {
+  const inp = document.getElementById('company-theme-quickadd-input');
+  if (inp) inp.value = '';
+  const sug = document.getElementById('company-theme-quickadd-suggestions');
+  if (sug) { sug.style.display = 'none'; sug.innerHTML = ''; }
 }
 
 /** Hero-Zone + Sidepanel der Firma-Detail-Page befüllen. */

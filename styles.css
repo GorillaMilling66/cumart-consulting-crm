@@ -4001,6 +4001,22 @@ tr:hover td { background: var(--bg); }
   white-space: nowrap;
   font-style: italic;
 }
+/* v2.16.3: Stats-Zeile + Löschen-Button im Firmen-Themen-Tab */
+.theme-row-stats {
+  display: flex; gap: 10px; margin-top: 4px; align-items: center;
+}
+.theme-row-stats .theme-row-count { font-size: 11px; }
+.theme-row-delete {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.theme-row-delete:hover { background: #fee2e2; color: #b91c1c; }
 .theme-row:hover { background: var(--surface); border-color: var(--primary); }
 .theme-color-dot {
   width: 12px; height: 12px;
