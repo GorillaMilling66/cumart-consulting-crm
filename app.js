@@ -22650,7 +22650,8 @@ async function loadAppointmentDetail(appointmentId) {
 
   trackVisit('termin', appointmentId, a.titel || '—', a.company?.name || '');
 
-  // v2.17.0: Workflow-Checkliste + Attachments-Zone entfernt.
+  // v2.17.1: Anhänge-Zone laden
+  renderAttachmentZone('appointment', appointmentId, 'appt-attachments');
 
   // Default-Tab ist Aktivitäten
   _currentAppointmentV2Tab = 'aktivitaeten';
@@ -22857,6 +22858,9 @@ async function loadDeploymentDetail(deploymentId) {
   // Karteikarten-Phase zurück.
 
   trackVisit('einsatz', deploymentId, d.titel || '—', d.company?.name || '');
+
+  // v2.17.1: Anhänge-Zone laden
+  renderAttachmentZone('deployment', deploymentId, 'dep-attachments');
 
   // Default-Tab ist Aktivitäten
   _currentDeploymentV2Tab = 'aktivitaeten';

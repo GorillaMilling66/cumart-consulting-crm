@@ -1450,11 +1450,12 @@
         </div>
       </div>
 
-      <!-- Tabs — v2.17.0: Planung + Brief entfernt -->
+      <!-- Tabs — v2.17.1: + Anhänge-Tab -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten"     onclick="switchProjectV2Tab('aktivitaeten')">Aktivitäten</button>
         <button class="proj-tab"        data-tab="wirtschaftlichkeit" onclick="switchProjectV2Tab('wirtschaftlichkeit')">Wirtschaftlichkeit</button>
         <button class="proj-tab"        data-tab="plan"             onclick="switchProjectV2Tab('plan')">Termine &amp; Aufgaben</button>
+        <button class="proj-tab"        data-tab="anhaenge"         onclick="switchProjectV2Tab('anhaenge')">Anhänge</button>
       </div>
 
       <div class="proj-grid">
@@ -1604,8 +1605,11 @@
                 </table>
               </div>
             </div>
-            <!-- v2.9.0: Datei-Anhänge -->
-            <div class="info-card" style="margin-top:16px">
+          </div>
+
+          <!-- Anhänge-Tab (v2.17.1) -->
+          <div class="proj-tab-panel" data-tab="anhaenge" id="project-panel-anhaenge" style="display:none">
+            <div class="info-card">
               <div class="info-card-title">Dateien</div>
               <div id="project-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
             </div>
@@ -1795,10 +1799,10 @@
         </div>
       </div>
 
-      <!-- Tabs — v2.17.0: Inhalt / Vorbereitung / Anhänge entfernt.
-           Stattdessen ein einziger Aktivitäten-Tab. -->
+      <!-- Tabs — v2.17.1: Aktivitäten + Anhänge -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchAppointmentV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="anhaenge"     onclick="switchAppointmentV2Tab('anhaenge')">Anhänge</button>
       </div>
 
       <div class="proj-grid">
@@ -1807,6 +1811,14 @@
           <!-- Aktivitäten-Tab (Default) — Stream-Platzhalter; Inhalt folgt in Phase 1g -->
           <div class="proj-tab-panel active" data-tab="aktivitaeten" id="appt-panel-aktivitaeten">
             <div class="info-card-empty">Aktivitäten-Stream für Termine — kommt in Phase 1g (Stream-Aggregator).</div>
+          </div>
+
+          <!-- Anhänge-Tab (v2.17.1) -->
+          <div class="proj-tab-panel" data-tab="anhaenge" id="appt-panel-anhaenge" style="display:none">
+            <div class="info-card">
+              <div class="info-card-title">Dateien</div>
+              <div id="appt-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
+            </div>
           </div>
 
         </main>
@@ -1871,10 +1883,10 @@
         </div>
       </div>
 
-      <!-- Tabs — v2.17.0: Bericht / Plan & Logistik / Abrechnung entfernt.
-           Stattdessen ein einziger Aktivitäten-Tab analog zum Projekt. -->
+      <!-- Tabs — v2.17.1: Aktivitäten + Anhänge -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchDeploymentV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="anhaenge"     onclick="switchDeploymentV2Tab('anhaenge')">Anhänge</button>
       </div>
 
       <div class="proj-grid">
@@ -1903,6 +1915,14 @@
                  spätere Phasen: zusätzlich Notizen, Status-Wechsel, Themen-Tags, …). -->
             <div id="dep-capture-stream-list" class="capture-stream-list">
               <div class="empty-state-mini">Noch nichts protokolliert — wähle eine Kategorie und tippe los.</div>
+            </div>
+          </div>
+
+          <!-- Anhänge-Tab (v2.17.1) -->
+          <div class="proj-tab-panel" data-tab="anhaenge" id="dep-panel-anhaenge" style="display:none">
+            <div class="info-card">
+              <div class="info-card-title">Dateien</div>
+              <div id="dep-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
             </div>
           </div>
 
