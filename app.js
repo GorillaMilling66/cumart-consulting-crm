@@ -1,5 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.22.0 (Phase 4 — Klick-Routing aus den Listen auf
+   die Karteikarte. Bisher führten `navigateTo('firma', id)`
+   etc. zur jeweiligen Detail-Page (alte `#/firma/:id`-Route);
+   jetzt routen die fünf Entity-Pages alle auf die Karteikarten-
+   Variante `#/karteikarte/:type/:id`. Damit öffnet sich beim
+   Klick auf eine Entität — egal ob aus den großen Listen, den
+   Aktivitäts-Streams, den Karteikarten-Sub-Items oder den
+   Detail-Page-Cross-Links — immer die Karteikarte im
+   Arbeitsplatz-Stage. Die Detail-Pages bleiben unangetastet
+   und sind über die neuen Routen `firma_voll` / `projekt_voll`
+   / `kontakt_voll` / `einsatz_voll` / `termin_voll` erreichbar
+   (Hash-Format wie früher: `#/firma/:id` usw.). Der „Volle Sicht
+   →"-Button in der Karteikarte nutzt diese `*_voll`-Varianten
+   und ist damit der einzige reguläre Pfad zur klassischen Detail-
+   Page. Damit ist die User-Vision umgesetzt: „wenn ich eine
+   entität anklicke, soll immer im arbeitsplatz die jeweilige
+   karteikarte in der mittleren ebene erscheinen". Es waren ~99
+   navigateTo-Call-Sites in app.js — keine einzelnen Anpassungen
+   nötig, weil der Switch zentral in `navigateTo` selbst sitzt.
+   Version 2.21.0 (Karteikarte mit vollwertigem Aktivitäten-
+   Stream + Notiz-Eingabe)
    Version 2.19.0 (Phase 3 des Redesigns — Karteikarten-Sicht
    im Arbeitsplatz. Wenn der User eine Entität aus dem Recent-
    Widget (oder via Hash `#/karteikarte/:type/:id`) anklickt,
@@ -5370,7 +5391,7 @@ async function stageRenderEntityCard(type, id) {
         { label: 'Telefon', value: data.telefon || '—' }
       ],
       editFn: `openCompanyModal('edit','${esc(id)}')`,
-      fullPage: `navigateTo('firma','${esc(id)}')`
+      fullPage: `navigateTo('firma_voll','${esc(id)}')`
     } : null;
   } else if (type === 'kontakt') {
     ({ data, error } = await db.from('contacts')
@@ -5383,7 +5404,7 @@ async function stageRenderEntityCard(type, id) {
         { label: 'Telefon', value: data.telefon || data.mobil || '—' }
       ],
       editFn: `openContactModal('edit','${esc(id)}')`,
-      fullPage: `navigateTo('kontakt','${esc(id)}')`
+      fullPage: `navigateTo('kontakt_voll','${esc(id)}')`
     } : null;
   } else if (type === 'projekt') {
     ({ data, error } = await db.from('projects')
@@ -5396,7 +5417,7 @@ async function stageRenderEntityCard(type, id) {
         { label: 'Zeitplan', value: [data.start_datum, data.end_datum_geplant].filter(Boolean).map(d => formatDateCompact(d)).join(' – ') || '—' }
       ],
       editFn: `openProjectModal('edit','${esc(id)}')`,
-      fullPage: `navigateTo('projekt','${esc(id)}')`
+      fullPage: `navigateTo('projekt_voll','${esc(id)}')`
     } : null;
   } else if (type === 'einsatz') {
     ({ data, error } = await db.from('deployments')
@@ -5409,7 +5430,7 @@ async function stageRenderEntityCard(type, id) {
         { label: 'Leistung', value: data.service?.name || '—' }
       ],
       editFn: `openDeploymentModal('edit','${esc(id)}')`,
-      fullPage: `navigateTo('einsatz','${esc(id)}')`
+      fullPage: `navigateTo('einsatz_voll','${esc(id)}')`
     } : null;
   } else if (type === 'termin') {
     ({ data, error } = await db.from('appointments')
@@ -5422,7 +5443,7 @@ async function stageRenderEntityCard(type, id) {
         { label: 'Firma', value: data.company?.name || '—' }
       ],
       editFn: `openAppointmentModal('edit','${esc(id)}')`,
-      fullPage: `navigateTo('termin','${esc(id)}')`
+      fullPage: `navigateTo('termin_voll','${esc(id)}')`
     } : null;
   }
 
@@ -5912,15 +5933,23 @@ function navigateTo(page, param) {
   // v2.19.0 (Phase 3): Karteikarte im Arbeitsplatz öffnen
   if (page === 'karteikarte' && param && typeof param === 'object' && param.type && param.id) {
     hash = `#/karteikarte/${param.type}/${param.id}`;
-  } else if (page === 'firma' && param) {
+  }
+  // v2.22.0 (Phase 4): Entity-Klicks aus Listen routen jetzt standardmäßig
+  // auf die Karteikarte im Arbeitsplatz. Volle-Sicht-Variante via `*_voll`
+  // (wird im Karteikarten-„Volle Sicht →"-Button verwendet).
+  else if ((page === 'firma' || page === 'projekt' || page === 'einsatz' ||
+            page === 'termin' || page === 'kontakt') && param) {
+    hash = `#/karteikarte/${page}/${param}`;
+  }
+  else if (page === 'firma_voll' && param) {
     hash = `#/firma/${param}`;
-  } else if (page === 'projekt' && param) {
+  } else if (page === 'projekt_voll' && param) {
     hash = `#/projekt/${param}`;
-  } else if (page === 'kontakt' && param) {
+  } else if (page === 'kontakt_voll' && param) {
     hash = `#/kontakt/${param}`;
-  } else if (page === 'einsatz' && param) {
+  } else if (page === 'einsatz_voll' && param) {
     hash = `#/einsatz/${param}`;
-  } else if (page === 'termin' && param) {
+  } else if (page === 'termin_voll' && param) {
     hash = `#/termin/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
     hash = `#/termine?firma=${param.firma}`;
