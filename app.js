@@ -5382,7 +5382,7 @@ async function stageRenderEntityCard(type, id) {
   let data, error, hero;
   if (type === 'firma') {
     ({ data, error } = await db.from('companies')
-      .select('id, name, typ_id, abc_klassifizierung, strasse, plz, stadt, land, telefon, email, website, typ:lookup_values(wert)').eq('id', id).single());
+      .select('id, name, typ_id, abc_klassifizierung, strasse, plz, stadt, land, telefon, email, website, typ:lookup_values!companies_typ_id_fkey(wert)').eq('id', id).single());
     hero = data ? {
       title: data.name, status: data.typ?.wert || '—',
       metrics: [
@@ -5395,26 +5395,26 @@ async function stageRenderEntityCard(type, id) {
     } : null;
   } else if (type === 'kontakt') {
     ({ data, error } = await db.from('contacts')
-      .select('id, vorname, nachname, position, email, telefon, mobil, company:companies(name)').eq('id', id).single());
+      .select('id, vorname, nachname, position, email, telefon, company:companies(name)').eq('id', id).single());
     hero = data ? {
       title: [data.vorname, data.nachname].filter(Boolean).join(' '), status: data.position || 'Kontakt',
       metrics: [
         { label: 'Firma', value: data.company?.name || '—' },
         { label: 'E-Mail', value: data.email || '—' },
-        { label: 'Telefon', value: data.telefon || data.mobil || '—' }
+        { label: 'Telefon', value: data.telefon || '—' }
       ],
       editFn: `openContactModal('edit','${esc(id)}')`,
       fullPage: `navigateTo('kontakt_voll','${esc(id)}')`
     } : null;
   } else if (type === 'projekt') {
     ({ data, error } = await db.from('projects')
-      .select('id, name, status, geschaetzter_umsatz, start_datum, end_datum_geplant, company:companies(name)').eq('id', id).single());
+      .select('id, name, status, geschaetzter_umsatz, startdatum, enddatum, company:companies(name)').eq('id', id).single());
     hero = data ? {
       title: data.name, status: data.status || 'Lead',
       metrics: [
         { label: 'Firma', value: data.company?.name || '—' },
         { label: 'Paketpreis', value: formatPreis(data.geschaetzter_umsatz || 0) },
-        { label: 'Zeitplan', value: [data.start_datum, data.end_datum_geplant].filter(Boolean).map(d => formatDateCompact(d)).join(' – ') || '—' }
+        { label: 'Zeitplan', value: [data.startdatum, data.enddatum].filter(Boolean).map(d => formatDateCompact(d)).join(' – ') || '—' }
       ],
       editFn: `openProjectModal('edit','${esc(id)}')`,
       fullPage: `navigateTo('projekt_voll','${esc(id)}')`
@@ -5434,7 +5434,7 @@ async function stageRenderEntityCard(type, id) {
     } : null;
   } else if (type === 'termin') {
     ({ data, error } = await db.from('appointments')
-      .select('id, titel, status, datum, uhrzeit_von, uhrzeit_bis, typ:lookup_values(wert), company:companies(name)').eq('id', id).single());
+      .select('id, titel, status, datum, uhrzeit_von, uhrzeit_bis, typ:lookup_values!appointments_typ_id_fkey(wert), company:companies(name)').eq('id', id).single());
     hero = data ? {
       title: data.titel || '—', status: data.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant',
       metrics: [
