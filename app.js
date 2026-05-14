@@ -1,5 +1,22 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.24.0 (Phase 6 — Anlage-/Edit-Drawer rendern in der
+   Arbeitsplatz-Bühne. Bisher öffneten sich Firma/Kontakt/Termin/
+   Projekt/Einsatz/Aufgabe/Notiz-Drawer als Slide-Out vom rechten
+   Bildschirmrand. Jetzt sind sie beim App-Boot DOM-reparentet in
+   den `#arbeitsplatz-stage` und übernehmen, wenn `.open`, die
+   ganze Bühne als Inline-Form (sauberer Card-Wrapper mit Shadow,
+   100 % Breite, kein Slide-Animations-Transform). Damit ist die
+   mittlere Spalte der konsequente „Arbeitstisch", an dem immer
+   das aktuelle Item liegt — Detail-Page bei Klick auf eine
+   Entität ODER Anlage-Form bei Klick auf eine Aktion links.
+   MutationObserver (_watchDrawerOpens) sorgt dafür, dass das
+   Arbeitsplatz-Layout aktiv wird, sobald ein Drawer .open
+   bekommt — egal aus welchem Kontext (Liste, Detail-Page,
+   Stage-Aktion). CSS via :has-Selektoren versteckt Welcome-
+   Block + ggf. aktive Detail-Page in der Bühne, wenn ein
+   Drawer offen ist (immer nur eine Sache auf der Workbench).
+   Version 2.23.x (Detail-Pages im Stage embedded)
    Version 2.22.0 (Phase 4 — Klick-Routing aus den Listen auf
    die Karteikarte. Bisher führten `navigateTo('firma', id)`
    etc. zur jeweiligen Detail-Page (alte `#/firma/:id`-Route);
@@ -6301,14 +6318,55 @@ async function onLogin(user) {
 /** v2.23.0: Detail-Page-DOM-Elemente einmal beim App-Boot in den
  *  Arbeitsplatz-Stage verschieben. Aktivierung beider Pages parallel
  *  (page-arbeitsplatz + page-X-detail) zeigt dann das Detail-Layout
- *  IN der mittleren Spalte des Arbeitsplatzes. */
+ *  IN der mittleren Spalte des Arbeitsplatzes.
+ *  v2.24.0: zusätzlich die Anlage-/Edit-Drawer (Firma, Kontakt, Termin,
+ *  Projekt, Einsatz, Aufgabe) in den Stage moven, damit sie als Inline-
+ *  Form erscheinen statt als Slide-Out vom rechten Rand. */
 function _embedDetailPagesInArbeitsplatzStage() {
   const stage = document.getElementById('arbeitsplatz-stage');
   if (!stage) return;
+  // 1) Detail-Pages
   ['page-company-detail', 'page-contact-detail', 'page-project-detail',
    'page-deployment-detail', 'page-appointment-detail'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.parentElement !== stage) stage.appendChild(el);
+  });
+  // 2) Anlage-/Edit-Drawer
+  ['modal-company', 'modal-contact', 'modal-appointment', 'modal-project',
+   'modal-deployment', 'modal-task', 'modal-notiz', 'modal-quick-firma',
+   'modal-quick-kontakt'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== stage) stage.appendChild(el);
+  });
+  // 3) MutationObserver: wenn irgendein Drawer .open bekommt, sicherstellen,
+  //    dass der Arbeitsplatz aktiv ist (sonst wäre der Drawer im versteckten
+  //    Stage-Container unsichtbar).
+  _watchDrawerOpens();
+}
+
+let _drawerObserverActive = false;
+function _watchDrawerOpens() {
+  if (_drawerObserverActive) return;
+  _drawerObserverActive = true;
+  const obs = new MutationObserver(list => {
+    for (const m of list) {
+      if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+      const el = m.target;
+      if (!el.classList.contains('drawer-overlay')) continue;
+      if (!el.classList.contains('open')) continue;
+      // Drawer wurde geöffnet → Arbeitsplatz-Shell aktivieren
+      const arbeitsplatz = document.getElementById('page-arbeitsplatz');
+      if (arbeitsplatz && !arbeitsplatz.classList.contains('active')) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        arbeitsplatz.classList.add('active');
+        setActiveTopNavTab?.('arbeitsplatz');
+        updateListenTabBar?.('arbeitsplatz');
+        setMobileNav?.('arbeitsplatz');
+      }
+    }
+  });
+  document.querySelectorAll('.drawer-overlay').forEach(d => {
+    obs.observe(d, { attributes: true, attributeFilter: ['class'] });
   });
 }
 

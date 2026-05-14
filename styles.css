@@ -7949,6 +7949,41 @@ select.typ-select-secondary {
 .drawer-overlay.open .drawer { transform: translateX(0); }
 .drawer--wide { width: 800px; }
 
+/* v2.24.0: Drawer im Arbeitsplatz-Stage = Inline-Form statt Slide-Out.
+   Anlage-/Edit-Drawer (Firma, Kontakt, Termin, Projekt, Einsatz, Aufgabe)
+   sind beim App-Boot in den Stage gemoved und rendern dort als Workbench-
+   Form. Wenn .open, übernehmen sie die ganze Stage-Fläche; Welcome-Block
+   wird ausgeblendet. */
+#arbeitsplatz-stage > .drawer-overlay {
+  position: static; inset: auto;
+  background: transparent;
+  z-index: auto;
+  display: none;
+}
+#arbeitsplatz-stage > .drawer-overlay.open { display: block; }
+#arbeitsplatz-stage > .drawer-overlay > .drawer {
+  position: static;
+  width: 100%; max-width: none;
+  border-left: none;
+  box-shadow: none;
+  transform: none;
+  transition: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+#arbeitsplatz-stage:has(> .drawer-overlay.open) > .stage-welcome { display: none; }
+/* Wenn ein Drawer offen ist, auch eine ggf. aktive Detail-Page verbergen —
+   die Workbench-Mitte zeigt nur eine Sache zur Zeit. */
+#arbeitsplatz-stage:has(> .drawer-overlay.open) > .page.active { display: none; }
+#arbeitsplatz-stage:has(> .drawer-overlay.open) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
 /* Sticky Header */
 .drawer__header {
   display: flex; justify-content: space-between; align-items: center;
