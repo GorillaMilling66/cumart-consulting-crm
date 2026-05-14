@@ -1300,6 +1300,88 @@ body {
   font-size: 12px; color: var(--muted); line-height: 1.4;
 }
 
+/* v2.19.0 (Phase 3): Karteikarten-Sicht in der Stage */
+.stage-card { padding: 0; }
+.stage-card-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.stage-card-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: .9px;
+  color: var(--muted); margin-bottom: 6px;
+}
+.stage-card-title {
+  font-size: 26px; font-weight: 600;
+  color: var(--text); margin: 0;
+  letter-spacing: -0.4px;
+}
+.stage-card-actions {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.stage-card-status {
+  font-size: 12px; font-weight: 600;
+  padding: 4px 12px;
+  background: var(--bg);
+  border-radius: 999px;
+  color: var(--text);
+}
+.stage-card-metrics {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.stage-card-metric {
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.stage-card-metric-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  color: var(--muted); margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.stage-card-metric-value {
+  font-size: 15px; font-weight: 500;
+  color: var(--text);
+  word-break: break-word;
+}
+.stage-card-section { margin-top: 8px; }
+.stage-card-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  color: var(--muted); margin-bottom: 10px;
+  text-transform: uppercase;
+}
+.stage-card-activity {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--border);
+  align-items: baseline;
+}
+.stage-card-activity:last-child { border-bottom: none; }
+.stage-card-activity-type {
+  font-size: 10px; font-weight: 700; letter-spacing: .6px;
+  color: var(--primary);
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.stage-card-activity-text {
+  font-size: 13px; color: var(--text);
+  word-break: break-word;
+}
+.stage-card-activity-meta {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .stage-card-metrics { grid-template-columns: 1fr; }
+}
+
 .arbeitsplatz-col-center { min-width: 0; }
 .arbeitsplatz-stage {
   background: var(--surface);

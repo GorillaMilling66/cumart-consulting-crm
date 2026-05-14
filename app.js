@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.19.0 (Phase 3 des Redesigns — Karteikarten-Sicht
+   im Arbeitsplatz. Wenn der User eine Entität aus dem Recent-
+   Widget (oder via Hash `#/karteikarte/:type/:id`) anklickt,
+   landet er nicht mehr auf der eigenen Detail-Page, sondern in
+   der Arbeitsplatz-Bühne mit einer schlanken Karteikarte:
+   Title + Status-Pille + 3 Hero-Metriken (typ-spezifisch) +
+   „Bearbeiten" (öffnet das existierende Edit-Modal) + „Volle
+   Sicht →" (führt zur klassischen Detail-Page) + Mini-
+   Aktivitäten-Stream (Notizen + Aufgaben + bei Einsatz auch
+   `deployment_log`-Capture-Einträge, chronologisch absteigend,
+   max. 8 Items). Detail-Pages bleiben unangetastet als Volle-
+   Sicht-Fallback. JS: stageRenderEntityCard, _stageRenderCardActivities,
+   _stageCaptureWelcomeHTML, _stageRenderWelcome,
+   resetArbeitsplatzStage (Welcome-Reset). navigateTo erweitert
+   um die karteikarte-Route (param-Object {type, id}); Hash-
+   Router fängt `#/karteikarte/:type/:id` ab. CSS-Klassen
+   .stage-card / -head / -eyebrow / -title / -actions / -status /
+   -metrics / -metric (+ -label/-value) / -section (+ -title) /
+   -activity (+ -type/-text/-meta).
+   Folgephasen (optional): Inline-Anlage-Forms in der Stage,
+   Klick-Routing aus den großen Listen, vollständigere Karteikarte
+   mit Tabs.
    Version 2.18.0 (Phase 2 des Redesigns — Arbeitsplatz neu in
    3-Spalten-Layout. Linke Spalte: vertikale Aktionen-Liste
    (+ Firma / + Kontakt / + Projekt / + Einsatz / + Termin /
@@ -5085,9 +5107,8 @@ const TYPE_LABELS_FOR_ARBEITSPLATZ = {
 };
 
 function arbeitsplatzOpenRecent(type, id) {
-  // v2.9.8: Recently-Visited speichert teils englische Types (company/contact/
-  // project/deployment/appointment), navigateTo erwartet aber deutsche
-  // Detail-Routen.
+  // v2.19.0 (Phase 3): Klick auf eine Recent-Karte öffnet jetzt die
+  // Karteikarte im Arbeitsplatz-Stage statt der eigenen Detail-Page.
   const TYPE_TO_DETAIL = {
     company: 'firma', firma: 'firma',
     contact: 'kontakt', kontakt: 'kontakt',
@@ -5096,7 +5117,7 @@ function arbeitsplatzOpenRecent(type, id) {
     appointment: 'termin', termin: 'termin'
   };
   const detail = TYPE_TO_DETAIL[type] || type;
-  navigateTo(detail, id);
+  navigateTo('karteikarte', { type: detail, id });
 }
 
 /** Heute-von-dir: Aktionen heute, aggregiert aus mehreren Tabellen. */
@@ -5303,6 +5324,193 @@ function resetArbeitsplatzStage() {
   document.querySelectorAll('.arbeitsplatz-action-row[data-action]').forEach(b => b.classList.remove('is-active'));
   const el = document.getElementById('arbeitsplatz-live-preview');
   if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  // Bühne zurück auf Welcome-Block
+  _stageRenderWelcome();
+}
+
+let _stageWelcomeHTML = null;
+function _stageCaptureWelcomeHTML() {
+  if (_stageWelcomeHTML !== null) return;
+  const stage = document.getElementById('arbeitsplatz-stage');
+  if (stage) _stageWelcomeHTML = stage.innerHTML;
+}
+function _stageRenderWelcome() {
+  const stage = document.getElementById('arbeitsplatz-stage');
+  if (stage && _stageWelcomeHTML !== null) stage.innerHTML = _stageWelcomeHTML;
+}
+
+/** v2.19.0 (Phase 3): Karteikarten-Sicht einer Entität in der Bühne.
+ *  Lädt die Entität, rendert: Title + Status-Pille + 2-3 Kennzahlen +
+ *  Bearbeiten-Button + chronologische Mini-Aktivitäten + Link zur vollen
+ *  Detail-Page. Wird via Hash `#/karteikarte/:type/:id` aktiviert. */
+async function stageRenderEntityCard(type, id) {
+  _stageCaptureWelcomeHTML();
+  const stage = document.getElementById('arbeitsplatz-stage');
+  if (!stage || !type || !id) return;
+
+  // Welcome-Block weg, Lade-State
+  stage.innerHTML = '<div class="info-card-empty" style="padding:40px;text-align:center">Lade Karteikarte …</div>';
+
+  // Sicherstellen, dass Arbeitsplatz aktiv ist
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-arbeitsplatz')?.classList.add('active');
+  setActiveTopNavTab?.('arbeitsplatz');
+
+  // Daten laden je nach Typ
+  let data, error, hero;
+  if (type === 'firma') {
+    ({ data, error } = await db.from('companies')
+      .select('id, name, typ_id, abc_klassifizierung, strasse, plz, stadt, land, telefon, email, website, dokumentation, typ:lookup_values(wert)').eq('id', id).single());
+    hero = data ? {
+      title: data.name, status: data.typ?.wert || '—',
+      metrics: [
+        { label: 'ABC', value: data.abc_klassifizierung || '—' },
+        { label: 'Ort', value: data.stadt || '—' },
+        { label: 'Telefon', value: data.telefon || '—' }
+      ],
+      editFn: `openCompanyModal('edit','${esc(id)}')`,
+      fullPage: `navigateTo('firma','${esc(id)}')`
+    } : null;
+  } else if (type === 'kontakt') {
+    ({ data, error } = await db.from('contacts')
+      .select('id, vorname, nachname, position, email, telefon, mobil, company:companies(name)').eq('id', id).single());
+    hero = data ? {
+      title: [data.vorname, data.nachname].filter(Boolean).join(' '), status: data.position || 'Kontakt',
+      metrics: [
+        { label: 'Firma', value: data.company?.name || '—' },
+        { label: 'E-Mail', value: data.email || '—' },
+        { label: 'Telefon', value: data.telefon || data.mobil || '—' }
+      ],
+      editFn: `openContactModal('edit','${esc(id)}')`,
+      fullPage: `navigateTo('kontakt','${esc(id)}')`
+    } : null;
+  } else if (type === 'projekt') {
+    ({ data, error } = await db.from('projects')
+      .select('id, name, status, geschaetzter_umsatz, start_datum, end_datum_geplant, company:companies(name)').eq('id', id).single());
+    hero = data ? {
+      title: data.name, status: data.status || 'Lead',
+      metrics: [
+        { label: 'Firma', value: data.company?.name || '—' },
+        { label: 'Paketpreis', value: formatPreis(data.geschaetzter_umsatz || 0) },
+        { label: 'Zeitplan', value: [data.start_datum, data.end_datum_geplant].filter(Boolean).map(d => formatDateCompact(d)).join(' – ') || '—' }
+      ],
+      editFn: `openProjectModal('edit','${esc(id)}')`,
+      fullPage: `navigateTo('projekt','${esc(id)}')`
+    } : null;
+  } else if (type === 'einsatz') {
+    ({ data, error } = await db.from('deployments')
+      .select('id, titel, status, datum_von, einzelpreis, menge, ort, service:services(name), company:companies(name)').eq('id', id).single());
+    hero = data ? {
+      title: data.titel || '—', status: data.status || 'Geplant',
+      metrics: [
+        { label: 'Datum', value: data.datum_von ? formatDateCompact(data.datum_von) : '—' },
+        { label: 'Honorar', value: formatPreis((Number(data.einzelpreis) || 0) * (Number(data.menge) || 1)) },
+        { label: 'Leistung', value: data.service?.name || '—' }
+      ],
+      editFn: `openDeploymentModal('edit','${esc(id)}')`,
+      fullPage: `navigateTo('einsatz','${esc(id)}')`
+    } : null;
+  } else if (type === 'termin') {
+    ({ data, error } = await db.from('appointments')
+      .select('id, titel, status, datum, uhrzeit_von, uhrzeit_bis, typ:lookup_values(wert), company:companies(name)').eq('id', id).single());
+    hero = data ? {
+      title: data.titel || '—', status: data.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant',
+      metrics: [
+        { label: 'Datum', value: data.datum ? formatDateCompact(data.datum) : '—' },
+        { label: 'Typ', value: data.typ?.wert || '—' },
+        { label: 'Firma', value: data.company?.name || '—' }
+      ],
+      editFn: `openAppointmentModal('edit','${esc(id)}')`,
+      fullPage: `navigateTo('termin','${esc(id)}')`
+    } : null;
+  }
+
+  if (error || !data || !hero) {
+    stage.innerHTML = `<div class="info-card-empty" style="padding:40px;text-align:center">Karteikarte konnte nicht geladen werden: ${esc(error?.message || 'unbekannt')}.</div>`;
+    return;
+  }
+
+  stage.innerHTML = `
+    <div class="stage-card">
+      <div class="stage-card-head">
+        <div>
+          <div class="stage-card-eyebrow">${esc(type.toUpperCase())} · KARTEIKARTE</div>
+          <h1 class="stage-card-title">${esc(hero.title)}</h1>
+        </div>
+        <div class="stage-card-actions">
+          <span class="stage-card-status">${esc(hero.status)}</span>
+          <button class="btn btn-sm" onclick="${hero.editFn}">Bearbeiten</button>
+          <button class="btn btn-sm" onclick="${hero.fullPage}">Volle Sicht →</button>
+        </div>
+      </div>
+      <div class="stage-card-metrics">
+        ${hero.metrics.map(m => `
+          <div class="stage-card-metric">
+            <div class="stage-card-metric-label">${esc(m.label)}</div>
+            <div class="stage-card-metric-value">${esc(m.value)}</div>
+          </div>`).join('')}
+      </div>
+      <div class="stage-card-section">
+        <div class="stage-card-section-title">LETZTE AKTIVITÄTEN</div>
+        <div id="stage-card-activities"><div class="info-card-empty">Lade …</div></div>
+      </div>
+    </div>`;
+
+  // Recent activities laden (vereinfacht — pro Typ andere Quellen)
+  await _stageRenderCardActivities(type, id);
+}
+
+async function _stageRenderCardActivities(type, id) {
+  const wrap = document.getElementById('stage-card-activities');
+  if (!wrap) return;
+
+  const items = [];
+  // Filter-Spalte je Typ
+  const filterCol = type === 'firma'   ? 'company_id'
+                  : type === 'kontakt' ? 'contact_id'
+                  : type === 'projekt' ? 'project_id'
+                  : type === 'einsatz' ? 'deployment_id'
+                  : type === 'termin'  ? null  // Termine haben selbst keine Aktivitäten
+                  : null;
+
+  if (filterCol) {
+    const [notes, tasks] = await Promise.all([
+      db.from('notes').select('id, inhalt, created_at, user:user_profiles!notes_erstellt_von_fkey(name)').eq(filterCol, id).order('created_at', { ascending: false }).limit(10),
+      db.from('tasks').select('id, titel, status, faelligkeit, created_at').is('deleted_at', null).eq(filterCol, id).order('created_at', { ascending: false }).limit(10)
+    ]);
+    (notes.data || []).forEach(n => items.push({
+      ts: n.created_at, type: 'NOTIZ', text: n.inhalt, meta: n.user?.name || ''
+    }));
+    (tasks.data || []).forEach(t => items.push({
+      ts: t.created_at, type: 'AUFGABE', text: t.titel, meta: t.status
+    }));
+  }
+
+  // Einsatz: zusätzlich Capture-Stream
+  if (type === 'einsatz') {
+    const { data } = await db.from('deployment_log')
+      .select('id, kategorie, inhalt, created_at').is('deleted_at', null)
+      .eq('deployment_id', id).order('created_at', { ascending: false }).limit(20);
+    (data || []).forEach(l => {
+      const kat = _CAPTURE_KATEGORIEN[l.kategorie] || { emoji: '·', label: l.kategorie };
+      items.push({ ts: l.created_at, type: `${kat.emoji} ${kat.label}`.toUpperCase(), text: l.inhalt, meta: '' });
+    });
+  }
+
+  items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  const visible = items.slice(0, 8);
+
+  if (visible.length === 0) {
+    wrap.innerHTML = '<div class="info-card-empty">Noch keine Aktivitäten.</div>';
+    return;
+  }
+
+  wrap.innerHTML = visible.map(it => `
+    <div class="stage-card-activity">
+      <span class="stage-card-activity-type">${esc(it.type)}</span>
+      <span class="stage-card-activity-text">${esc(it.text || '—')}</span>
+      <span class="stage-card-activity-meta">${esc(formatDateTimeCompact ? formatDateTimeCompact(it.ts) : it.ts)}${it.meta ? ' · ' + esc(it.meta) : ''}</span>
+    </div>`).join('');
 }
 
 async function arbeitsplatzCreate(typ) {
@@ -5563,7 +5771,10 @@ function closeMoreMenu(event) {
 
 function navigateTo(page, param) {
   let hash;
-  if (page === 'firma' && param) {
+  // v2.19.0 (Phase 3): Karteikarte im Arbeitsplatz öffnen
+  if (page === 'karteikarte' && param && typeof param === 'object' && param.type && param.id) {
+    hash = `#/karteikarte/${param.type}/${param.id}`;
+  } else if (page === 'firma' && param) {
     hash = `#/firma/${param}`;
   } else if (page === 'projekt' && param) {
     hash = `#/projekt/${param}`;
@@ -5670,6 +5881,20 @@ function handleHashChange() {
 
   // Detail-Seiten: Query-Params (z.B. ?tab=) strippen und Re-Load vermeiden,
   // wenn derselbe Datensatz angezeigt wird (v1.23.0).
+  // v2.19.0 (Phase 3): Karteikarten-Sicht im Arbeitsplatz-Stage
+  if (path.startsWith('#/karteikarte/')) {
+    const rest = path.slice('#/karteikarte/'.length);
+    const [type, id] = rest.split('/');
+    if (type && id) {
+      const key = 'karteikarte:' + type + ':' + id;
+      if (_currentDetailKey !== key) {
+        _currentDetailKey = key;
+        stageRenderEntityCard(type, id);
+      }
+      return;
+    }
+  }
+
   if (path.startsWith('#/firma/')) {
     const id = path.slice('#/firma/'.length);
     if (id) {
