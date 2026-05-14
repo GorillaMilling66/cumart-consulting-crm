@@ -2024,7 +2024,26 @@
             <div class="proj-brief-section">
               <div class="proj-brief-label-row">
                 <div class="proj-brief-label">BEHANDELTE THEMEN</div>
-                <span class="proj-brief-hint" id="dep-themes-hint">Themen werden im Projekt definiert.</span>
+                <span class="proj-brief-hint" id="dep-themes-hint">Aus dem Firmen-Pool.</span>
+              </div>
+              <!-- v2.16.1: Quick-Add direkt am Einsatz — gleiche Mechanik wie im
+                   Projekt-Planung-Tab, aber firmen-scoped. Tippen liefert Vor-
+                   schläge aus der Bibliothek + dem Firmen-Pool; Enter legt ein
+                   neues Firmen-Thema an, Klick übernimmt einen Vorschlag. -->
+              <div class="theme-quickadd">
+                <div class="theme-quickadd-row">
+                  <input type="text" id="dep-theme-quickadd-input"
+                         class="theme-quickadd-input"
+                         placeholder="Thema eingeben — Vorschläge aus Bibliothek + Firmen-Pool erscheinen darunter"
+                         autocomplete="off"
+                         oninput="onDeploymentThemeQuickInput(this.value)"
+                         onkeydown="if(event.key==='Enter'){event.preventDefault();addDeploymentThemeAdHoc(this.value);}"
+                         onfocus="onDeploymentThemeQuickInput(this.value)">
+                  <button type="button" class="theme-quickadd-btn"
+                          onclick="addDeploymentThemeAdHoc(document.getElementById('dep-theme-quickadd-input').value)"
+                          title="Als Firmen-Thema anlegen und für diesen Einsatz markieren (oder ⏎)">+</button>
+                </div>
+                <div id="dep-theme-quickadd-suggestions" class="theme-quickadd-suggestions" style="display:none"></div>
               </div>
               <div id="dep-themes-area"><div class="info-card-empty">Lade …</div></div>
             </div>

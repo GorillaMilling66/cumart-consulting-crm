@@ -1,5 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    Cumart CRM – Application Script
+   Version 2.16.1 (Themen-Quick-Add am Einsatz-Bericht — direkt
+   von dort Themen anlegen oder aus Bibliothek / Firmen-Pool
+   übernehmen. Nachdem v2.16.0 Themen firmen-scoped gemacht hat,
+   konnte der Einsatz zwar Pool sehen, aber nicht selbst neu
+   anlegen — Empty-State endete in einem statischen Hinweis.
+   Jetzt sitzt eine Quick-Add-Zeile direkt im Bericht-Tab unter
+   „BEHANDELTE THEMEN": Eingabefeld + „+"-Button. Tippen liefert
+   zwei Quellen als Vorschläge (Firmen-Pool mit gleichem Namens-
+   Match, dann Bibliothek mit Kategorie-Pille). Klick: Firmen-
+   Pool-Treffer wird sofort am Einsatz markiert; Bibliotheks-
+   Treffer wird zuerst zum Firmen-Thema (Snapshot mit
+   library_theme_id), falls noch nicht vorhanden, dann markiert.
+   Enter ohne Auswahl: neues Firmen-Thema, sofort markiert. Bei
+   Einsatz mit Projekt wird das neu angelegte Thema zusätzlich
+   ins Projekt-Curriculum aufgenommen. JS:
+   onDeploymentThemeQuickInput, _renderDepThemeQuickSuggestions,
+   addDeploymentThemeFromCompany, addDeploymentThemeFromLibrary,
+   addDeploymentThemeAdHoc, _clearDepThemeQuickInput.
    Version 2.16.0 (Themen wandern auf die Firma — Einsätze ohne
    Projekt können trotzdem Themen taggen, weil Themen kunden-
    spezifisch wiederverwendbar sind. Vorher hingen Themen an
@@ -22936,6 +22954,186 @@ async function toggleDeploymentReportTheme(deploymentId, themeId, checked) {
     await db.from('deployment_themes').delete()
       .eq('deployment_id', deploymentId).eq('theme_id', themeId);
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.16.1 — THEMEN-QUICK-ADD am Einsatz-Bericht
+// ═══════════════════════════════════════════════════════════
+//
+//  Spiegelt die Mechanik aus dem Projekt-Planung-Tab, ist aber
+//  firmen-scoped: Suggestion-Quellen sind die Bibliothek UND
+//  Firmen-Themen, die noch nicht im Einsatz getaggt sind.
+
+let _depThemeQuickAddDebounce = null;
+
+function onDeploymentThemeQuickInput(value) {
+  if (_depThemeQuickAddDebounce) clearTimeout(_depThemeQuickAddDebounce);
+  _depThemeQuickAddDebounce = setTimeout(() => _renderDepThemeQuickSuggestions(value || ''), 120);
+}
+
+async function _renderDepThemeQuickSuggestions(value) {
+  const sugBox = document.getElementById('dep-theme-quickadd-suggestions');
+  if (!sugBox) return;
+  const q = (value || '').trim();
+  if (q.length < 1) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
+
+  // Aktuellen Einsatz inkl. company_id holen + bereits getaggte Themen
+  const depId = currentDeploymentDetailId;
+  if (!depId) return;
+  const { data: dep } = await db.from('deployments')
+    .select('id, company_id').eq('id', depId).single();
+  if (!dep?.company_id) {
+    sugBox.innerHTML = '<div class="theme-suggestion-empty">Einsatz hat keine Firma — Quick-Add nicht möglich.</div>';
+    sugBox.style.display = '';
+    return;
+  }
+  const { data: tagged } = await db.from('deployment_themes')
+    .select('theme_id').eq('deployment_id', depId);
+  const taggedIds = new Set((tagged || []).map(r => r.theme_id));
+
+  // 1) Firmen-Pool (project_themes der Firma, die noch nicht getaggt sind und Name matcht)
+  const { data: companyRows } = await db.from('project_themes')
+    .select('id, name, beschreibung, farbe, library_theme_id')
+    .is('deleted_at', null).eq('company_id', dep.company_id)
+    .ilike('name', `%${q}%`).limit(8);
+  const companyHits = (companyRows || []).filter(t => !taggedIds.has(t.id)).slice(0, 4);
+
+  // 2) Library-Pool (theme_library, die NICHT bereits als Firmen-Thema existieren)
+  const companyLibIds = new Set((companyRows || []).map(r => r.library_theme_id).filter(Boolean));
+  const { data: libRows } = await db.from('theme_library')
+    .select('id, name, beschreibung, kategorie, farbe')
+    .is('deleted_at', null).eq('ist_aktiv', true)
+    .ilike('name', `%${q}%`).limit(8);
+  const libHits = (libRows || []).filter(r => !companyLibIds.has(r.id)).slice(0, 4);
+
+  if (companyHits.length === 0 && libHits.length === 0) {
+    sugBox.innerHTML = `<div class="theme-suggestion-empty">Kein Treffer für „${esc(q)}" — Enter legt es als neues Firmen-Thema an.</div>`;
+    sugBox.style.display = '';
+    return;
+  }
+  const companyHTML = companyHits.map(r => `
+    <button type="button" class="theme-suggestion-item"
+            onclick="addDeploymentThemeFromCompany('${esc(r.id)}','${esc(r.name)}')">
+      <span class="theme-color-dot" style="background:${esc(r.farbe || '#1d4ed8')}"></span>
+      <span class="theme-suggestion-body">
+        <span class="theme-suggestion-name">${esc(r.name)}</span>
+        <span class="theme-suggestion-cat">Firmen-Pool</span>
+        ${r.beschreibung ? `<span class="theme-suggestion-desc">${esc(r.beschreibung)}</span>` : ''}
+      </span>
+    </button>`).join('');
+  const libHTML = libHits.map(r => `
+    <button type="button" class="theme-suggestion-item"
+            onclick="addDeploymentThemeFromLibrary('${esc(r.id)}')">
+      <span class="theme-color-dot" style="background:${esc(r.farbe || '#1d4ed8')}"></span>
+      <span class="theme-suggestion-body">
+        <span class="theme-suggestion-name">${esc(r.name)}</span>
+        ${r.kategorie ? `<span class="theme-suggestion-cat">${esc(r.kategorie)} · Bibliothek</span>` : '<span class="theme-suggestion-cat">Bibliothek</span>'}
+        ${r.beschreibung ? `<span class="theme-suggestion-desc">${esc(r.beschreibung)}</span>` : ''}
+      </span>
+    </button>`).join('');
+  sugBox.innerHTML = companyHTML + libHTML;
+  sugBox.style.display = '';
+}
+
+/** Firmen-Thema markieren (bereits vorhanden — nur deployment_themes-Junction). */
+async function addDeploymentThemeFromCompany(themeId, name) {
+  if (!currentDeploymentDetailId) return;
+  const { error } = await db.from('deployment_themes')
+    .insert({ deployment_id: currentDeploymentDetailId, theme_id: themeId });
+  if (error && !/duplicate/i.test(error.message)) { showToast(error.message, true); return; }
+  showToast(`„${name}" markiert.`);
+  _clearDepThemeQuickInput();
+  // Aktuelle Einsatz-Themen-Liste neu rendern
+  const { data: d } = await db.from('deployments').select('id, company_id, project_id').eq('id', currentDeploymentDetailId).single();
+  await renderDeploymentReportThemes(d);
+}
+
+/** Bibliotheks-Thema übernehmen: erst als Firmen-Thema anlegen (oder vorhandenes
+ *  finden), dann am Einsatz markieren. */
+async function addDeploymentThemeFromLibrary(libraryId) {
+  if (!currentDeploymentDetailId) return;
+  const { data: dep } = await db.from('deployments')
+    .select('id, company_id, project_id').eq('id', currentDeploymentDetailId).single();
+  if (!dep?.company_id) { showToast('Einsatz hat keine Firma.', true); return; }
+  const { data: lib } = await db.from('theme_library')
+    .select('id, name, beschreibung, farbe').eq('id', libraryId).single();
+  if (!lib) { showToast('Bibliotheks-Thema nicht gefunden.', true); return; }
+
+  // Firmen-Thema mit dieser library_theme_id schon vorhanden?
+  const { data: exists } = await db.from('project_themes')
+    .select('id').is('deleted_at', null)
+    .eq('company_id', dep.company_id).eq('library_theme_id', lib.id).limit(1);
+  let themeId = exists?.[0]?.id;
+  if (!themeId) {
+    const { data: ins, error } = await db.from('project_themes').insert({
+      company_id:       dep.company_id,
+      project_id:       dep.project_id || null,
+      name:             lib.name,
+      beschreibung:     lib.beschreibung,
+      farbe:            lib.farbe,
+      library_theme_id: lib.id,
+      owner_id:         currentProfile?.id || null,
+      reihenfolge:      100,
+      status:           'offen'
+    }).select('id').single();
+    if (error) { showToast(error.message, true); return; }
+    themeId = ins.id;
+    // Falls Einsatz ein Projekt hat: auch ins Curriculum
+    if (dep.project_id) {
+      await db.from('project_theme_assignments').insert({
+        project_id: dep.project_id, theme_id: themeId, reihenfolge: 100
+      });
+    }
+  }
+  await db.from('deployment_themes').insert({ deployment_id: dep.id, theme_id: themeId });
+  showToast(`„${lib.name}" übernommen.`);
+  _clearDepThemeQuickInput();
+  invalidateThemesCache?.(dep.project_id);
+  await renderDeploymentReportThemes(dep);
+}
+
+/** Ad-hoc-Thema anlegen — wird Firmen-Thema und sofort am Einsatz markiert. */
+async function addDeploymentThemeAdHoc(value) {
+  if (!currentDeploymentDetailId) return;
+  const name = (value || '').trim();
+  if (!name) { showToast('Bitte Thema-Namen eingeben.', true); return; }
+  const { data: dep } = await db.from('deployments')
+    .select('id, company_id, project_id').eq('id', currentDeploymentDetailId).single();
+  if (!dep?.company_id) { showToast('Einsatz hat keine Firma — zuerst Firma zuweisen.', true); return; }
+  // Dupe-Check innerhalb der Firma
+  const { data: existing } = await db.from('project_themes')
+    .select('id').is('deleted_at', null)
+    .eq('company_id', dep.company_id).ilike('name', name);
+  let themeId = existing?.[0]?.id;
+  if (!themeId) {
+    const { data: ins, error } = await db.from('project_themes').insert({
+      company_id:  dep.company_id,
+      project_id:  dep.project_id || null,
+      name,
+      owner_id:    currentProfile?.id || null,
+      reihenfolge: 100,
+      status:      'offen'
+    }).select('id').single();
+    if (error) { showToast(error.message, true); return; }
+    themeId = ins.id;
+    if (dep.project_id) {
+      await db.from('project_theme_assignments').insert({
+        project_id: dep.project_id, theme_id: themeId, reihenfolge: 100
+      });
+    }
+  }
+  await db.from('deployment_themes').insert({ deployment_id: dep.id, theme_id: themeId });
+  showToast(`„${name}" angelegt und markiert.`);
+  _clearDepThemeQuickInput();
+  invalidateThemesCache?.(dep.project_id);
+  await renderDeploymentReportThemes(dep);
+}
+
+function _clearDepThemeQuickInput() {
+  const inp = document.getElementById('dep-theme-quickadd-input');
+  if (inp) inp.value = '';
+  const sug = document.getElementById('dep-theme-quickadd-suggestions');
+  if (sug) { sug.style.display = 'none'; sug.innerHTML = ''; }
 }
 
 async function saveDeploymentDokuField(key, value) {
