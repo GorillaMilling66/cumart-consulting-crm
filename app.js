@@ -6333,7 +6333,7 @@ function _embedDetailPagesInArbeitsplatzStage() {
   });
   // 2) Anlage-/Edit-Drawer
   ['modal-company', 'modal-contact', 'modal-appointment', 'modal-project',
-   'modal-deployment', 'modal-task', 'modal-notiz', 'modal-quick-firma',
+   'modal-deployment', 'modal-aufgabe', 'modal-notiz', 'modal-quick-firma',
    'modal-quick-kontakt'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.parentElement !== stage) stage.appendChild(el);
@@ -6354,6 +6354,18 @@ function _watchDrawerOpens() {
       const el = m.target;
       if (!el.classList.contains('drawer-overlay')) continue;
       if (!el.classList.contains('open')) continue;
+      // v2.24.1: nur EIN Drawer gleichzeitig — andere schließen
+      document.querySelectorAll('.drawer-overlay.open').forEach(other => {
+        if (other !== el) other.classList.remove('open');
+      });
+      // v2.24.1: nach oben scrollen, sonst sitzt der neue Drawer ggf. mit
+      // alter Scroll-Position in der Stage und steigt mittendrin ein
+      const stage = document.getElementById('arbeitsplatz-stage');
+      if (stage) stage.scrollTop = 0;
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      const drawerBody = el.querySelector('.drawer__body');
+      if (drawerBody) drawerBody.scrollTop = 0;
+
       // Drawer wurde geöffnet → Arbeitsplatz-Shell aktivieren
       const arbeitsplatz = document.getElementById('page-arbeitsplatz');
       if (arbeitsplatz && !arbeitsplatz.classList.contains('active')) {
