@@ -16,7 +16,7 @@
 
   /* Hauptpalette */
   --bg:       #F1EFE8;   /* warm-cremiger Page-Hintergrund (statt kalt-weiß) */
-  --surface:  #FFFFFF;   /* Card-Hintergrund */
+  --surface:  #FDFCFA;   /* v2.20.1: Card-Hintergrund minimal wärmer (statt reinem Weiß) — bringt Räumlichkeit gegen den Creme-Page-BG */
   --bg-soft:  #F8F7F2;   /* leicht warm-getöntes Surface (Hero-Cards, gefüllte Felder) */
   --border:   rgba(0,0,0,0.08);   /* 0.5–1 px Default-Border */
   --border-strong: rgba(0,0,0,0.15);  /* Hover/Aktiv */
@@ -35,7 +35,8 @@
   --radius:    8px;     /* alias --radius-md */
   --radius-md: 8px;
   --radius-lg: 12px;
-  --shadow:    none;    /* v2.0: keine Schatten */
+  --shadow:    none;    /* v2.0: keine Schatten (Default für volltreuen Flat-Look) */
+  --shadow-card: 0 1px 3px rgba(0,0,0,.04); /* v2.20.1: minimaler Tiefen-Schatten für Card-Surfaces */
 
   /* Status-Pillen — bleiben farbtreu zur v1.x-Praxis */
   --status-plan-bg:        #E6F1FB;
@@ -1410,7 +1411,7 @@ body {
   border-radius: var(--radius-md);
   padding: 32px 36px;
   min-height: 500px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  box-shadow: var(--shadow-card);
 }
 .stage-welcome-title {
   font-size: 28px;
@@ -1433,7 +1434,7 @@ body {
   border-radius: var(--radius-sm);
   background: var(--surface);
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0,0,0,.03);
+  box-shadow: var(--shadow-card);
 }
 .arbeitsplatz-widget summary {
   cursor: pointer;
@@ -1959,6 +1960,7 @@ body {
   border-radius: var(--radius-lg);
   padding: 20px 24px;
   margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
 }
 .proj-hero-head {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -2050,6 +2052,7 @@ body {
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
+  box-shadow: var(--shadow-card);
 }
 .proj-side-card-title {
   font-size: 11px; font-weight: 500;
@@ -2696,6 +2699,7 @@ body {
   border-radius: var(--radius);
   padding: 20px;
   margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
 }
 .card-title {
   font-size: 13px;
@@ -2979,6 +2983,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 20px;
+  box-shadow: var(--shadow-card);
 }
 /* v1.47.0: Info-Card-Titel hervorgehoben — bold, dunkel, mit farbigem Punkt */
 .info-card-title {
