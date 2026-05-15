@@ -2831,6 +2831,28 @@ body {
 }
 .date-shortcut-btn:hover { background: var(--surface); color: var(--text); }
 
+/* v2.25.1: Geteilter Chip-Streifen für mehrere Datums-Felder einer Sektion.
+   Spannt die volle Breite unter dem form-row-2 und zeigt links als
+   „→ Datum von / Datum bis"-Label, welches Feld die Chips treffen werden. */
+.date-shortcuts--shared {
+  align-items: center;
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  border: 0.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+.date-shortcuts-target-label {
+  display: none;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+.date-shortcuts--shared .date-shortcuts-target-label { display: inline; }
+
 /* ── ABC-KLASSIFIZIERUNG BADGE (v1.24.0) ── */
 .abc-badge {
   display: inline-flex;

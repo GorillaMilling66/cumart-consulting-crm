@@ -10787,25 +10787,105 @@ function countWorkdaysInclusive(fromISO, toISO) {
 
 const MONTH_NAMES_DE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 
-/** Befüllt alle `.date-shortcuts`-Container mit Buttons für ihren target-Input (v1.33). */
+/** v2.25.1 (Phase B): Befüllt `.date-shortcuts`-Container mit Buttons.
+ *  Sektionen mit mehreren Datums-Feldern bekommen jetzt EINEN gemeinsamen
+ *  Chip-Streifen unter dem form-row-2, der auf das zuletzt fokussierte
+ *  Datumsfeld wirkt — statt für jedes Datum eine eigene Reihe. */
+function _shortcutBtnsHtml(mNames) {
+  return `
+    <span class="date-shortcuts-target-label" data-label-default="">→ <span class="date-shortcuts-target-label-text"></span></span>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'today')">Heute</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'nextWorkday')">Nächster WT</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'plus3wt')">+3 WT</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'plus7wt')">+7 WT</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'nextMonday')">Nächster Mo</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'m1')">${esc(mNames[0])}</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'m2')">${esc(mNames[1])}</button>
+    <button type="button" class="date-shortcut-btn" onclick="setDateShortcutFromBtn(this,'m3')">${esc(mNames[2])}</button>`;
+}
+
+/** Liest data-shortcut-target vom Container des Buttons (dynamisch
+ *  aktualisiert beim Focus-Wechsel) und ruft setDateShortcut auf. */
+function setDateShortcutFromBtn(btn, key) {
+  const container = btn.closest('.date-shortcuts');
+  if (!container) return;
+  const targetId = container.dataset.shortcutTarget;
+  if (targetId) setDateShortcut(targetId, key);
+}
+
 function renderDateShortcuts() {
   const now = new Date();
-  const m1Name = MONTH_NAMES_DE[(now.getMonth() + 1) % 12];
-  const m2Name = MONTH_NAMES_DE[(now.getMonth() + 2) % 12];
-  const m3Name = MONTH_NAMES_DE[(now.getMonth() + 3) % 12];
-  document.querySelectorAll('.date-shortcuts[data-shortcut-target]').forEach(container => {
-    const targetId = container.dataset.shortcutTarget;
-    container.innerHTML = `
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','today')">Heute</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','nextWorkday')">Nächster WT</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','plus3wt')">+3 WT</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','plus7wt')">+7 WT</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','nextMonday')">Nächster Mo</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','m1')">${esc(m1Name)}</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','m2')">${esc(m2Name)}</button>
-      <button type="button" class="date-shortcut-btn" onclick="setDateShortcut('${targetId}','m3')">${esc(m3Name)}</button>
-    `;
+  const mNames = [
+    MONTH_NAMES_DE[(now.getMonth() + 1) % 12],
+    MONTH_NAMES_DE[(now.getMonth() + 2) % 12],
+    MONTH_NAMES_DE[(now.getMonth() + 3) % 12]
+  ];
+
+  // Gruppiere Container nach umschließender Sektion (drawer__section / modal)
+  const containers = Array.from(document.querySelectorAll('.date-shortcuts[data-shortcut-target]'));
+  const bySection = new Map();
+  containers.forEach(c => {
+    const sec = c.closest('.drawer__section') || c.closest('.modal') || c.parentElement;
+    if (!bySection.has(sec)) bySection.set(sec, []);
+    bySection.get(sec).push(c);
   });
+
+  bySection.forEach((list, sec) => {
+    if (list.length === 1) {
+      // Einzelner Date-Field → wie gehabt
+      list[0].innerHTML = _shortcutBtnsHtml(mNames);
+      list[0].classList.remove('date-shortcuts--shared');
+      _updateShortcutTargetLabel(list[0]);
+      return;
+    }
+    // Mehrere Date-Fields → einen geteilten Chip-Streifen unterhalb der
+    // form-row-2 anlegen, übrige Container ausblenden.
+    list.slice(1).forEach(c => { c.style.display = 'none'; c.innerHTML = ''; });
+
+    const shared = list[0];
+    shared.classList.add('date-shortcuts--shared');
+    shared.innerHTML = _shortcutBtnsHtml(mNames);
+
+    // Default-Target: erstes Datum
+    const firstTarget = list[0].dataset.shortcutTarget;
+    shared.dataset.shortcutTarget = firstTarget;
+    _updateShortcutTargetLabel(shared);
+
+    // Den geteilten Streifen visuell aus der form-row-2 heraus moven,
+    // damit er die volle Breite spannt — nur einmal pro Sektion.
+    const formRow = shared.closest('.form-row-2');
+    if (formRow && !sec.querySelector(':scope > .date-shortcuts--shared')) {
+      formRow.insertAdjacentElement('afterend', shared);
+    }
+
+    // Focus-Tracker auf alle zugehörigen Date-Inputs
+    list.forEach(c => {
+      const id = c.dataset.shortcutTarget;
+      const inp = document.getElementById(id);
+      if (!inp || inp.dataset.shortcutFocusWired) return;
+      inp.dataset.shortcutFocusWired = '1';
+      inp.addEventListener('focus', () => {
+        shared.dataset.shortcutTarget = id;
+        _updateShortcutTargetLabel(shared);
+      });
+    });
+  });
+}
+
+function _updateShortcutTargetLabel(container) {
+  const labelText = container.querySelector('.date-shortcuts-target-label-text');
+  if (!labelText) return;
+  const targetId = container.dataset.shortcutTarget;
+  if (!targetId) { labelText.textContent = ''; return; }
+  // Versuche das zugehörige <label> oberhalb zu finden
+  const input = document.getElementById(targetId);
+  let labelStr = '';
+  if (input) {
+    const formGroup = input.closest('.form-group');
+    const lab = formGroup?.querySelector('label');
+    if (lab) labelStr = (lab.textContent || '').trim();
+  }
+  labelText.textContent = labelStr || targetId;
 }
 
 /** Setzt das Datum eines Inputs auf den Shortcut-Wert und feuert ein change-Event,
