@@ -2428,6 +2428,7 @@ body {
   min-height: 140px;
   max-height: 640px;
   field-sizing: content;
+  overflow-y: auto;
   line-height: 1.55;
 }
 .proj-brief-ziel { font-size: 16px; min-height: 72px; }
@@ -3754,7 +3755,17 @@ body {
   color: var(--text);
   width: 100%;
 }
-.form-group textarea { resize: vertical; min-height: 70px; line-height: 1.45; }
+/* v2.25.3: Auto-Grow für alle Textareas — startet bei min-height,
+   wächst mit dem Inhalt (field-sizing:content in Chrome 123+/Safari 18+),
+   stoppt bei max-height und wird dann scrollbar. */
+.form-group textarea {
+  resize: vertical;
+  min-height: 64px;
+  max-height: 280px;
+  line-height: 1.45;
+  field-sizing: content;
+  overflow-y: auto;
+}
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus { outline: none; border-color: var(--text); }
@@ -4508,9 +4519,12 @@ tr:hover td { background: var(--bg); }
   color: var(--text);
   resize: vertical;
   min-height: 52px;
+  max-height: 280px;
   font-family: inherit;
   line-height: 1.4;
   transition: border-color .12s, box-shadow .12s;
+  field-sizing: content;
+  overflow-y: auto;
 }
 .doc-field-textarea:focus {
   outline: none;
@@ -6074,7 +6088,10 @@ body.has-calendar .main { padding-bottom: 160px; }
   font-size: 13px;
   font-family: inherit;
 }
-.modal-3col textarea { width: 100%; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+.modal-3col textarea {
+  width: 100%; padding: 8px 10px; font-size: 13px; font-family: inherit;
+  min-height: 64px; max-height: 280px; field-sizing: content; overflow-y: auto;
+}
 .modal-3col .ganztag-wrap { font-size: 12px; color: var(--muted); }
 .modal-3col .date-shortcut-btn,
 .modal-3col .termin-typ-icon-btn { height: 26px; padding: 0 10px; font-size: 11px; }
@@ -8175,8 +8192,13 @@ select.typ-select-secondary {
   line-height: 1.4;
 }
 .drawer .form-group textarea {
-  height: auto; min-height: 64px;
-  resize: vertical; padding-top: 9px;
+  height: auto;
+  min-height: 64px;
+  max-height: 280px;
+  resize: vertical;
+  padding-top: 9px;
+  field-sizing: content;
+  overflow-y: auto;
 }
 .drawer .form-group input:focus,
 .drawer .form-group select:focus,
