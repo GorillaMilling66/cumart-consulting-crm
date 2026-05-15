@@ -10488,9 +10488,8 @@ async function openAppointmentModal(mode, appointmentId = null) {
   const tGanz = document.getElementById('t-ganztag'); if (tGanz) tGanz.checked = false;
   document.getElementById('t-status').value = 'geplant';
   document.getElementById('t-ort').value = '';
-  // v1.52.0: Doku-Block initial leer rendern (wird bei Edit überschrieben)
-  document.getElementById('t-documentation-block').innerHTML =
-    renderDocumentationBlock('termin', null, { idPrefix: 't-doc' });
+  // v2.25.2: Doku-Block aus dem Termin-Modal entfernt — Render-Call hier
+  // bewusst weg. Daten in appointments.dokumentation bleiben unverändert.
   document.getElementById('t-ort-hint').style.display = 'none';
   setCompanyComboboxValue('t-company', 't-company-list', '');
 
@@ -10562,9 +10561,7 @@ async function openAppointmentModal(mode, appointmentId = null) {
     document.getElementById('t-uhrzeit-bis').value = data.uhrzeit_bis ? data.uhrzeit_bis.substring(0, 5) : '';
     document.getElementById('t-status').value = data.status || 'geplant';
     document.getElementById('t-ort').value = data.ort || '';
-    // v1.52.0: Doku-Block aus dokumentation-jsonb befüllen
-    document.getElementById('t-documentation-block').innerHTML =
-      renderDocumentationBlock('termin', data.dokumentation, { idPrefix: 't-doc' });
+    // v2.25.2: Doku-Block aus dem Termin-Modal entfernt — Render-Call weg.
     if (data.typ_id) typSelect.value = data.typ_id;
     if (data.company_id) {
       setCompanyComboboxValue('t-company', 't-company-list', data.company_id);
@@ -12822,10 +12819,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-ort-hint').style.display = 'none';
   document.getElementById('d-menge').value = '1';
   document.getElementById('d-einzelpreis').value = '';
-  document.getElementById('d-beschreibung').value = '';
-  // v1.52.0: Doku-Block leer rendern (wird bei Edit überschrieben)
-  document.getElementById('d-documentation-block').innerHTML =
-    renderDocumentationBlock('einsatz', null, { idPrefix: 'd-doc' });
+  // v2.25.2: Kurz-Beschreibung + Doku-Block aus dem Einsatz-Modal entfernt
+  // (User-Wunsch). Daten in deployments.beschreibung / .dokumentation bleiben
+  // in der DB — werden beim Speichern nur nicht mehr überschrieben.
   document.getElementById('d-externe-techniker').value = '';
   document.getElementById('d-create-appointment').checked = false;
   // Redeem-State zurücksetzen (v1.14.0)
@@ -12904,10 +12900,8 @@ async function openDeploymentModal(mode, deploymentId = null) {
     _deploymentMengeManuallyEdited = true;  // v1.33: existierende Menge nicht durch Auto-Berechnung ersetzen
     document.getElementById('d-einzelpreis').value = data.einzelpreis ?? '';
     _deploymentEinzelpreisManuallyEdited = true;  // v2.11.2: gespeicherter Preis ist heilig — Service-Wechsel überschreibt ihn nicht
-    document.getElementById('d-beschreibung').value = data.beschreibung || '';
-    // v1.52.0: Doku-Block aus dokumentation befüllen
-    document.getElementById('d-documentation-block').innerHTML =
-      renderDocumentationBlock('einsatz', data.dokumentation, { idPrefix: 'd-doc' });
+    // v2.25.2: Kurz-Beschreibung + Doku-Block aus dem Einsatz-Modal entfernt
+    // (User-Wunsch). Werte werden hier nicht mehr in die UI gespiegelt.
     document.getElementById('d-externe-techniker').value = data.externe_techniker || '';
 
     // v2.11.3: Wenn der Einsatz ein Projekt hat, aber keine Firma (z.B. weil er
@@ -13301,24 +13295,21 @@ async function saveDeployment() {
   const mengeRaw      = document.getElementById('d-menge').value;
   const einzelRaw     = document.getElementById('d-einzelpreis').value;
   const ort           = document.getElementById('d-ort').value.trim();
-  const beschreibungInput = document.getElementById('d-beschreibung').value.trim();
-  // v1.52.0: dokumentation aus dem Doku-Block (statt freier notizen-Textarea).
-  // v2.12.1: Beim Bearbeiten bestehende dokumentation reinmergen, damit
-  // Nicht-Schema-Keys (z. B. „was_wurde_gemacht"/„vorbereitung"/„anfahrt"
-  // aus dem Bericht-Tab der Einsatz-Detail-Page) erhalten bleiben.
-  // v2.12.2: Zusätzlich bundle_id + bundle_overrides reinladen, damit beim
-  // Save der Override-Schutz für Bündel-Mitglieder gepflegt werden kann.
+  // v2.25.2: Kurz-Beschreibung + Doku-Block aus dem Einsatz-Modal entfernt.
+  // Bestehender Wert wird beim Bearbeiten erhalten (read-from-DB, write-back).
+  let beschreibungInput = '';
   let _existingDeploymentDoc = null;
   let _existingDeploymentBundleId = null;
   let _existingDeploymentOverrides = [];
   if (editingDeploymentId) {
     const { data: _existing } = await db.from('deployments')
-      .select('dokumentation, bundle_id, bundle_overrides').eq('id', editingDeploymentId).single();
+      .select('beschreibung, dokumentation, bundle_id, bundle_overrides').eq('id', editingDeploymentId).single();
+    beschreibungInput = _existing?.beschreibung || '';
     _existingDeploymentDoc = _existing?.dokumentation || null;
     _existingDeploymentBundleId = _existing?.bundle_id || null;
     _existingDeploymentOverrides = Array.isArray(_existing?.bundle_overrides) ? _existing.bundle_overrides : [];
   }
-  const dokumentation = readDocumentationFromDom('einsatz', 'd-doc', _existingDeploymentDoc);
+  const dokumentation = _existingDeploymentDoc || {};
   const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
   const createAppointment = document.getElementById('d-create-appointment').checked;
   const btn           = document.getElementById('d-save-btn');
@@ -14431,8 +14422,7 @@ async function openDeploymentBundleModal(mode, bundleId = null, opts = {}) {
   document.getElementById('b-beschreibung').value = '';
   document.getElementById('b-notizen').value = '';
   document.getElementById('b-externe-techniker').value = '';
-  document.getElementById('b-documentation-block').innerHTML =
-    renderDocumentationBlock('einsatz', null, { idPrefix: 'b-doc' });
+  // v2.25.2: Doku-Block im Bündel-Modal entfernt — Render-Call weg.
   selectedBundleTeamIds = new Set();
   _bundleDayRows = [];
   _bundleDeletedDayIds = [];
@@ -14465,8 +14455,7 @@ async function openDeploymentBundleModal(mode, bundleId = null, opts = {}) {
     document.getElementById('b-notizen').value       = bundle.notizen || '';
     document.getElementById('b-externe-techniker').value = bundle.externe_techniker || '';
     if (bundle.service_id) serviceSelect.value = bundle.service_id;
-    document.getElementById('b-documentation-block').innerHTML =
-      renderDocumentationBlock('einsatz', bundle.dokumentation, { idPrefix: 'b-doc' });
+    // v2.25.2: Doku-Block im Bündel-Modal entfernt — Render-Call weg.
 
     const [teamRows, deps] = await Promise.all([
       db.from('deployment_bundle_technicians').select('user_id').eq('bundle_id', bundleId),
@@ -14498,10 +14487,7 @@ async function openDeploymentBundleModal(mode, bundleId = null, opts = {}) {
       document.getElementById('b-beschreibung').value  = first.beschreibung || '';
       document.getElementById('b-externe-techniker').value = first.externe_techniker || '';
       if (first.service_id) serviceSelect.value = first.service_id;
-      if (first.dokumentation) {
-        document.getElementById('b-documentation-block').innerHTML =
-          renderDocumentationBlock('einsatz', first.dokumentation, { idPrefix: 'b-doc' });
-      }
+      // v2.25.2: Doku-Block im Bündel-Modal entfernt.
       // Techniker-Vereinigung aus allen Einsätzen
       const { data: techRows } = await db.from('deployment_technicians')
         .select('user_id').in('deployment_id', list.map(d => d.id));
@@ -14671,7 +14657,8 @@ async function saveDeploymentBundle() {
     externe_techniker: document.getElementById('b-externe-techniker').value.trim() || null,
     company_id: companyId,
     project_id: currentProjectDetailId,
-    dokumentation: readDocumentationFromDom('einsatz', 'b-doc', _existingBundleDoc) || {}
+    // v2.25.2: Doku-Block aus UI entfernt — bestehende dokumentation 1:1 erhalten
+    dokumentation: _existingBundleDoc || {}
   };
   if (!editingBundleId && currentProfile?.id) payload.erstellt_von = currentProfile.id;
 
