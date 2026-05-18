@@ -566,25 +566,26 @@
                   <h1 class="ab-welcome-title" id="ab-welcome-greeting">Guten Tag</h1>
                 </div>
 
-                <!-- v2.26.4: 4 KPI-Tiles im Briefing-Stil: heutige Einsätze, Termine,
-                     offene Aufgaben, überfällige Aufgaben. Klick springt in die jew. Liste. -->
-                <div class="ab-welcome-kpis" id="ab-welcome-kpis">
-                  <div class="ab-welcome-kpi-skel"></div>
-                  <div class="ab-welcome-kpi-skel"></div>
-                  <div class="ab-welcome-kpi-skel"></div>
-                  <div class="ab-welcome-kpi-skel"></div>
-                </div>
-
-                <!-- Schnell-Eingabe (kompakter) -->
-                <div class="arbeitsplatz-capture">
-                  <input type="text" id="arbeitsplatz-capture-input"
-                         placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
-                         autocomplete="off">
-                  <div class="arbeitsplatz-context-row">
-                    <span class="arbeitsplatz-context-label">Bezogen auf</span>
-                    <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
-                      <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
-                    </span>
+                <!-- v2.28.3: Schnelleingabe links + 2×2 KPI-Grid rechts.
+                     KPIs sind die heutigen Einsätze/Termine sowie offene und
+                     überfällige Aufgaben. Klick springt in die jew. Liste. -->
+                <div class="ab-welcome-main-row">
+                  <div class="arbeitsplatz-capture">
+                    <input type="text" id="arbeitsplatz-capture-input"
+                           placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
+                           autocomplete="off">
+                    <div class="arbeitsplatz-context-row">
+                      <span class="arbeitsplatz-context-label">Bezogen auf</span>
+                      <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
+                        <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="ab-welcome-kpis" id="ab-welcome-kpis">
+                    <div class="ab-welcome-kpi-skel"></div>
+                    <div class="ab-welcome-kpi-skel"></div>
+                    <div class="ab-welcome-kpi-skel"></div>
+                    <div class="ab-welcome-kpi-skel"></div>
                   </div>
                 </div>
 

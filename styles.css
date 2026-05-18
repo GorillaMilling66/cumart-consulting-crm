@@ -1589,11 +1589,32 @@ body {
   letter-spacing: -0.3px;
 }
 
+/* v2.28.3: KPIs sitzen jetzt rechts neben der Schnell-Eingabe als 2×2-Grid. */
+.ab-welcome-main-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 18px;
+}
+.ab-welcome-main-row .arbeitsplatz-capture {
+  margin-top: 0;
+  display: flex; flex-direction: column;
+}
+.ab-welcome-main-row .arbeitsplatz-capture input { flex: 1; }
 .ab-welcome-kpis {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-bottom: 18px;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+@media (max-width: 1100px) {
+  .ab-welcome-main-row { grid-template-columns: 1fr; }
+  .ab-welcome-kpis { grid-template-rows: auto; }
+}
+@media (max-width: 600px) {
+  .ab-welcome-kpis { grid-template-columns: 1fr; }
 }
 .ab-welcome-kpi {
   text-align: left;
@@ -1647,9 +1668,8 @@ body {
   height: 84px;
 }
 
-@media (max-width: 900px) {
-  .ab-welcome-kpis { grid-template-columns: repeat(2, 1fr); }
-}
+/* v2.28.3: alte 4-Spalten-Variante entfernt — Layout wird oben (.ab-welcome-main-row)
+   gesteuert. Dieser Block bleibt leer für künftige KPI-spezifische Mobile-Regeln. */
 
 /* Section „Schnell weitermachen" / „Fortführen"
    v2.26.7 → v2.27.6: Sektions-Header läuft als breiter grauer Streifen
@@ -1681,11 +1701,8 @@ body {
   border-radius: 2px;
 }
 
-/* Auch zwischen den unbeschrifteten Blöcken (KPIs, Schnell-Eingabe) etwas
-   mehr Abstand und je eine zarte Trennlinie, damit die Welcome-Karte
-   sauber in Sektionen gegliedert wirkt. */
-.ab-welcome-kpis { margin-top: 18px; }
-.stage-welcome-card .arbeitsplatz-capture { margin-top: 18px; }
+/* v2.28.3: KPI + Capture leben jetzt in einer eigenen Row (.ab-welcome-main-row).
+   Margin-top wird dort gesetzt, nicht mehr separat pro Element. */
 
 /* Welcome-Card schneidet die Sektions-Streifen sauber an den Rundungen ab */
 .stage-welcome-card { overflow: hidden; }
