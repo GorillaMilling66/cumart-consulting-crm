@@ -23919,9 +23919,15 @@ async function loadAppointmentDetail(appointmentId) {
   // v2.17.1: Anhänge-Zone laden
   renderAttachmentZone('appointment', appointmentId, 'appt-attachments');
 
-  // Default-Tab ist Aktivitäten
-  _currentAppointmentV2Tab = 'aktivitaeten';
-  switchAppointmentV2Tab('aktivitaeten');
+  // Default-Tab ist Aktivitäten — v2.27.8: respektiert jetzt _pendingDetailTab,
+  // sodass „Fortführen → Termin vorbereiten" direkt im Doku-Tab landet.
+  let apptTab = 'aktivitaeten';
+  if (_pendingDetailTab) {
+    apptTab = _pendingDetailTab;
+    _pendingDetailTab = null;
+  }
+  _currentAppointmentV2Tab = apptTab;
+  switchAppointmentV2Tab(apptTab);
 }
 
 function switchAppointmentV2Tab(tab) {
@@ -24128,9 +24134,15 @@ async function loadDeploymentDetail(deploymentId) {
   // v2.17.1: Anhänge-Zone laden
   renderAttachmentZone('deployment', deploymentId, 'dep-attachments');
 
-  // Default-Tab ist Aktivitäten
-  _currentDeploymentV2Tab = 'aktivitaeten';
-  switchDeploymentV2Tab('aktivitaeten');
+  // Default-Tab ist Aktivitäten — v2.27.8: respektiert jetzt _pendingDetailTab,
+  // sodass „Fortführen → Einsatz vorbereiten" direkt im Doku-Tab landet.
+  let depTab = 'aktivitaeten';
+  if (_pendingDetailTab) {
+    depTab = _pendingDetailTab;
+    _pendingDetailTab = null;
+  }
+  _currentDeploymentV2Tab = depTab;
+  switchDeploymentV2Tab(depTab);
 }
 
 function switchDeploymentV2Tab(tab) {
