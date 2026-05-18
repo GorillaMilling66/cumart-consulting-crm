@@ -634,15 +634,24 @@ body {
 .bv2-greeting-line strong { font-weight: 500; color: var(--text); }
 .bv2-greeting-line .danger { color: var(--danger); font-weight: 500; }
 
-/* HEUTE-Layout */
+/* HEUTE-Layout
+   v2.28.8: Sidebar-Spalte streckt sich auf die Höhe der Main-Spalte, der
+   letzte Block (Hot-Items / Datenpflege) füllt verbleibenden Platz. */
 .bv2-today-layout {
   display: grid;
   grid-template-columns: 1fr 320px;
   gap: 16px;
+  align-items: stretch;
 }
 .bv2-today-main { display: flex; flex-direction: column; gap: 12px; }
 .bv2-today-sidebar { display: flex; flex-direction: column; gap: 12px; }
-@media (max-width: 1000px) { .bv2-today-layout { grid-template-columns: 1fr; } }
+.bv2-today-sidebar > div:last-child { flex: 1; }
+.bv2-today-sidebar > div:last-child .bv2-side-block { height: 100%; display: flex; flex-direction: column; }
+@media (max-width: 1000px) {
+  .bv2-today-layout { grid-template-columns: 1fr; align-items: start; }
+  .bv2-today-sidebar > div:last-child { flex: 0; }
+  .bv2-today-sidebar > div:last-child .bv2-side-block { height: auto; }
+}
 
 .bv2-hero-einsatz {
   background: var(--surface);
