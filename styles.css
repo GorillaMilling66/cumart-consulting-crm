@@ -2603,6 +2603,37 @@ body {
   font-size: 12px; color: var(--muted);
 }
 
+/* v2.25.9 — Status-Pill + Row-Akzent in der Aktivitäten-Timeline.
+   Statt den Status nur als Text im Meta zu führen, sieht der User die
+   Phase eines Einsatzes / einer Aufgabe sofort: Geplant blau, Durch-
+   geführt hellgrün, Abgerechnet dunkelgrün, Storniert rot. Storniert
+   + erledigt durchgestrichen. */
+.proj-activity-status-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.proj-activity-status-pill.is-blue   { background: var(--status-plan-bg);    color: var(--status-plan-fg); }
+.proj-activity-status-pill.is-lgreen { background: var(--status-done-bg);    color: var(--status-done-fg); }
+.proj-activity-status-pill.is-dgreen { background: var(--status-billed-bg);  color: var(--status-billed-fg); }
+.proj-activity-status-pill.is-red    { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
+.proj-activity-status-pill.is-grey   { background: var(--bg-soft);            color: var(--muted); }
+
+.proj-activity-title-struck {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.65;
+}
+
+.proj-activity-item-accent-is-blue   { box-shadow: inset 3px 0 0 var(--status-plan-accent); padding-left: 10px; }
+.proj-activity-item-accent-is-lgreen { box-shadow: inset 3px 0 0 var(--status-done-accent); padding-left: 10px; }
+.proj-activity-item-accent-is-dgreen { box-shadow: inset 3px 0 0 var(--status-billed-accent); padding-left: 10px; }
+.proj-activity-item-accent-is-red    { box-shadow: inset 3px 0 0 var(--status-overdue-accent); padding-left: 10px; }
+.proj-activity-item-accent-is-grey   { box-shadow: inset 3px 0 0 var(--border-strong); padding-left: 10px; }
+
 /* Brief-Tab */
 .proj-brief-section { margin-bottom: 24px; }
 .proj-brief-section:last-child { margin-bottom: 0; }

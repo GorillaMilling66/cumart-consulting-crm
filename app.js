@@ -2303,19 +2303,43 @@ function _splitActivities(items) {
   return { heute, future, past };
 }
 
+/** v2.25.9: Mappt Einsatz-/Aufgaben-Status auf eine semantische Farbklasse
+ *  für den Status-Pill und den Row-Akzent in der Aktivitäten-Timeline. */
+function _activityStatusStyle(status) {
+  switch (status) {
+    case 'Geplant':       return { cls: 'is-blue',   label: 'Geplant' };
+    case 'Durchgeführt':  return { cls: 'is-lgreen', label: 'Durchgeführt' };
+    case 'Abgerechnet':   return { cls: 'is-dgreen', label: 'Abgerechnet' };
+    case 'Storniert':     return { cls: 'is-red',    label: 'Storniert' };
+    case 'erledigt':      return { cls: 'is-lgreen', label: 'Erledigt' };
+    case 'offen':         return { cls: 'is-grey',   label: 'Offen' };
+    default:              return status ? { cls: 'is-grey', label: status } : null;
+  }
+}
+
 function _activityItemHTML(it) {
   const cls = it.type.toLowerCase();
   // v2.1.0: nur der Titel ist klickbar (nicht das ganze Item — sonst
   // greift der Klick auch auf Datum/Type-Pille). Click-Quelle: it.click.
+  // v2.25.9: Bei Einsatz/Aufgabe-Items zusätzlich einen farbigen Status-Pill
+  // und einen Row-Akzent (linke Kante) anzeigen — Storniert + Erledigt werden
+  // durchgestrichen, damit sie auf einen Blick als „abgehakt"/„entfallen"
+  // erkennbar sind, ohne die ganze Zeile lesen zu müssen.
+  const statusStyle = _activityStatusStyle(it.status);
+  const statusPill = statusStyle ? `<span class="proj-activity-status-pill ${statusStyle.cls}">${esc(statusStyle.label)}</span>` : '';
+  const isStruck = it.status === 'Storniert' || it.status === 'erledigt';
+  const rowAccentCls = statusStyle ? ` proj-activity-item-accent-${statusStyle.cls}` : '';
+  const titleCls = `proj-activity-title${isStruck ? ' proj-activity-title-struck' : ''}`;
   const titleHtml = it.click
-    ? `<a class="proj-activity-title proj-link" onclick="${it.click}">${esc(it.title)}</a>`
-    : `<span class="proj-activity-title">${esc(it.title)}</span>`;
+    ? `<a class="${titleCls} proj-link" onclick="${it.click}">${esc(it.title)}</a>`
+    : `<span class="${titleCls}">${esc(it.title)}</span>`;
   return `
-    <div class="proj-activity-item">
+    <div class="proj-activity-item${rowAccentCls}">
       <div class="proj-activity-date">${esc(formatDateCompact((it.ts || '').substring(0, 10)))}</div>
       <div class="proj-activity-body">
         <div class="proj-activity-head">
           <span class="type-pill type-pill-${cls}">${esc(it.type)}</span>
+          ${statusPill}
           ${titleHtml}
         </div>
         <div class="proj-activity-meta">${esc(it.meta || '')}</div>
@@ -22304,20 +22328,25 @@ async function loadProjectActivityStream(projectId) {
   const items = [];
   (appts.data || []).forEach(a => items.push({
     type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
-    title: a.titel || '—', meta: a.status, kind: 'termine',
+    title: a.titel || '—', meta: '', status: a.status, kind: 'termine',
     click: `navigateTo('termin','${esc(a.id)}')`
   }));
   (deps.data || []).forEach(d => items.push({
     type: 'EINSATZ', ts: (d.datum_von || d.created_at?.substring(0, 10)) + 'T00:00:00',
     title: d.titel || '—',
-    meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1)), d.status].filter(Boolean).join(' · '),
+    // v2.25.9: Status fließt nicht mehr in den Meta-Text — er wird als
+    // farbiges Pill direkt neben dem Typ angezeigt.
+    meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
+    status: d.status,
     kind: 'einsaetze',
     click: `navigateTo('einsatz','${esc(d.id)}')`
   }));
   (tasks.data || []).forEach(t => {
     items.push({
       type: 'AUFGABE', ts: t.created_at,
-      title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+      title: t.titel || '—',
+      meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+      status: t.status,
       kind: 'aufgaben',
       click: `openTaskModal('edit','${esc(t.id)}')`
     });
@@ -23179,19 +23208,23 @@ async function loadCompanyActivityStream(companyId) {
   const items = [];
   (appts.data || []).forEach(a => items.push({
     id: a.id, type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
-    title: a.titel || '—', meta: a.status, kind: 'termine',
+    title: a.titel || '—', meta: '', status: a.status, kind: 'termine',
     click: `navigateTo('termin','${esc(a.id)}')`
   }));
   (deps.data || []).forEach(d => items.push({
     id: d.id, type: 'EINSATZ', ts: (d.datum_von || '') + 'T00:00:00',
     title: d.titel || '—',
-    meta: [d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1)), d.status].filter(Boolean).join(' · '),
+    // v2.25.9: Status als farbiges Pill neben dem Typ — nicht mehr im Meta-Text.
+    meta: [d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1))].filter(Boolean).join(' · '),
+    status: d.status,
     kind: 'einsaetze',
     click: `navigateTo('einsatz','${esc(d.id)}')`
   }));
   (tasks.data || []).forEach(t => items.push({
     id: t.id, type: 'AUFGABE', ts: t.created_at,
-    title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+    title: t.titel || '—',
+    meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+    status: t.status,
     kind: 'aufgaben',
     click: `openTaskModal('edit','${esc(t.id)}')`
   }));
@@ -23387,12 +23420,14 @@ async function loadContactActivityStream(contactId) {
   const items = [];
   (appts.data || []).forEach(a => items.push({
     type: 'TERMIN', ts: a.datum + 'T' + (a.uhrzeit_von || '00:00:00'),
-    title: a.titel || '—', meta: a.status, kind: 'termine',
+    title: a.titel || '—', meta: '', status: a.status, kind: 'termine',
     click: `navigateTo('termin','${esc(a.id)}')`
   }));
   (tasks.data || []).forEach(t => items.push({
     type: 'AUFGABE', ts: t.created_at,
-    title: t.titel || '—', meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+    title: t.titel || '—',
+    meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
+    status: t.status,
     kind: 'aufgaben',
     click: `openTaskModal('edit','${esc(t.id)}')`
   }));
