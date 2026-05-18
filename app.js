@@ -7736,10 +7736,14 @@ async function loadTemplates() {
       const statusBadge = t.ist_aktiv
         ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>'
         : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>';
-      // v2.27.1: Doku-Vorlagen haben eigene Spalten — Ziel-Entity + Section-Count.
+      // v2.27.1: Doku-Vorlagen haben eigene Spalten — Ziel-Entitäten + Section-Count.
+      // v2.27.5: target_entity kann jetzt Array sein → komma-getrennte Labels.
       if (typ === 'doc') {
-        const target = t.daten?.target_entity || '—';
-        const targetLabel = ENTITY_LABEL[target] || target;
+        const rawTarget = t.daten?.target_entity;
+        const targetList = Array.isArray(rawTarget) ? rawTarget : (rawTarget ? [rawTarget] : []);
+        const targetLabel = targetList.length === 0
+          ? '—'
+          : targetList.map(v => ENTITY_LABEL[v] || v).join(', ');
         const count = Array.isArray(t.daten?.sections) ? t.daten.sections.length : 0;
         return `
           <tr>
@@ -28350,19 +28354,30 @@ const DOC_TEMPLATE_ENTITIES = [
   { value: 'appointment', label: 'Termin'    }
 ];
 
+function _docTemplateTargetSet(prefilled) {
+  // v2.27.5: target_entity kann jetzt Array sein. Alter String-Wert (z. B.
+  // 'project') wird transparent zu einem 1-Element-Set umgewandelt.
+  const t = prefilled?.target_entity;
+  if (Array.isArray(t)) return new Set(t.filter(Boolean));
+  if (typeof t === 'string' && t) return new Set([t]);
+  return new Set(['project']);
+}
+
 function renderDocTemplateEditor(wrap, prefilled) {
-  const target = prefilled.target_entity || 'project';
+  const targets = _docTemplateTargetSet(prefilled);
   const sections = Array.isArray(prefilled.sections) ? prefilled.sections : [];
 
-  const targetOpts = DOC_TEMPLATE_ENTITIES.map(e =>
-    `<option value="${esc(e.value)}" ${target === e.value ? 'selected' : ''}>${esc(e.label)}</option>`).join('');
+  const chips = DOC_TEMPLATE_ENTITIES.map(e => {
+    const active = targets.has(e.value) ? ' is-active' : '';
+    return `<button type="button" class="tpl-doc-target-chip${active}" data-value="${esc(e.value)}" onclick="toggleDocTemplateTarget(this)">${esc(e.label)}</button>`;
+  }).join('');
 
   wrap.innerHTML = `
     <div class="form-grid">
       <div class="form-group full">
-        <label>Für welche Entität?</label>
-        <select id="tpl-doc-target">${targetOpts}</select>
-        <small class="field-hint">Auf welcher Detail-Seite (z. B. Projekt) erscheint diese Vorlage in der Vorlage-Auswahl.</small>
+        <label>Für welche Entitäten?</label>
+        <div class="tpl-doc-target-chips" id="tpl-doc-target-chips">${chips}</div>
+        <small class="field-hint">Mehrfachauswahl möglich — die Vorlage erscheint auf allen ausgewählten Detail-Seiten.</small>
       </div>
     </div>
     <div class="tpl-subitems-block">
@@ -28376,6 +28391,10 @@ function renderDocTemplateEditor(wrap, prefilled) {
         ${sections.length === 0 ? '<div class="info-card-empty">Noch keine Bereiche. Klicke oben auf „+ Bereich".</div>' : ''}
       </div>
     </div>`;
+}
+
+function toggleDocTemplateTarget(chip) {
+  chip.classList.toggle('is-active');
 }
 
 function renderDocTemplateSectionRow(item, idx) {
@@ -28419,7 +28438,14 @@ function removeDocTemplateSection(idx) {
 }
 
 function readDocTemplateFields() {
-  const target = document.getElementById('tpl-doc-target')?.value || 'project';
+  // v2.27.5: target_entity ist jetzt immer ein Array (auch wenn nur eine
+  // Entität ausgewählt wurde) — vereinheitlicht den Filter beim Picker.
+  const activeChips = document.querySelectorAll('#tpl-doc-target-chips .tpl-doc-target-chip.is-active');
+  const targets = Array.from(activeChips).map(c => c.dataset.value).filter(Boolean);
+  // Fallback: wenn der Admin alle abgewählt hat, fallen wir auf 'project' zurück,
+  // damit die Vorlage nicht ins Nichts gespeichert wird.
+  if (targets.length === 0) targets.push('project');
+
   const rows = document.querySelectorAll('#tpl-doc-sections-list .tpl-doc-section-row');
   const sections = [];
   rows.forEach((row, i) => {
@@ -28427,7 +28453,16 @@ function readDocTemplateFields() {
     const inhalt = (row.querySelector('.tpl-doc-inhalt')?.value || '').trim();
     if (titel) sections.push({ titel, inhalt: inhalt || '', reihenfolge: i });
   });
-  return { target_entity: target, sections };
+  return { target_entity: targets, sections };
+}
+
+/** v2.27.5: kompakter Helper — gibt zurück, ob eine doc-Vorlage für eine
+ *  Entity-Typ gilt. Akzeptiert sowohl alte String- als auch neue Array-Form. */
+function _docTemplateMatchesEntity(daten, entityType) {
+  const t = daten?.target_entity;
+  if (Array.isArray(t)) return t.includes(entityType);
+  if (typeof t === 'string') return t === entityType;
+  return false;
 }
 
 // ───────────────────────────────────────────────────────────
@@ -28467,7 +28502,7 @@ async function openDocTemplatePicker(entityType, entityId, containerId) {
     .eq('typ', 'doc').eq('ist_aktiv', true)
     .order('reihenfolge').order('name');
   if (error) { showToast('Vorlagen laden fehlgeschlagen: ' + error.message, true); return; }
-  const filtered = (data || []).filter(t => (t.daten?.target_entity || '') === entityType);
+  const filtered = (data || []).filter(t => _docTemplateMatchesEntity(t.daten, entityType));
 
   // Vorhandenen Picker entfernen + frisch rendern.
   closeDocTemplatePicker();

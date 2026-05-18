@@ -9601,3 +9601,32 @@ select.typ-select-secondary {
 .doc-tpl-picker-empty {
   padding: 12px;
 }
+
+/* v2.27.5 — Multi-Select-Chips für Doku-Vorlagen-Ziele */
+.tpl-doc-target-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 4px;
+}
+.tpl-doc-target-chip {
+  font: inherit; font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.tpl-doc-target-chip:hover {
+  background: var(--bg-soft);
+  border-color: var(--border-strong);
+}
+.tpl-doc-target-chip.is-active {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+}
+.tpl-doc-target-chip.is-active:hover {
+  background: var(--text);
+  color: var(--surface);
+}
