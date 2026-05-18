@@ -16613,7 +16613,12 @@ async function loadProjectDashboard(p) {
     } else {
       const color = marge >= 0 ? 'var(--success)' : 'var(--danger)';
       const label = marge >= 0 ? 'Marge' : 'Überziehung';
-      financeMarginEl.innerHTML = `<span style="color:${color};font-weight:600">${esc(formatPreis(Math.abs(marge)))}</span> <span style="color:var(--muted);font-size:11px">${esc(label)}</span>`;
+      // v2.25.13: Prozentuale Marge mit anzeigen — bezogen auf die Erlöse.
+      const pct = erloese > 0 ? (marge / erloese * 100) : null;
+      const pctHtml = pct !== null
+        ? ` <span style="color:${color};font-weight:600;font-size:13px">· ${pct.toFixed(1).replace('.', ',')} %</span>`
+        : '';
+      financeMarginEl.innerHTML = `<span style="color:${color};font-weight:600">${esc(formatPreis(Math.abs(marge)))}</span>${pctHtml} <span style="color:var(--muted);font-size:11px">${esc(label)}</span>`;
     }
   }
   if (financeSublineEl) {
