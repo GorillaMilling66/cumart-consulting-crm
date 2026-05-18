@@ -1356,46 +1356,58 @@ body {
   margin: 0;
   min-height: calc(100vh - 80px);
 }
+/* v2.26.1: Breitere, durchgängige Sidebar — Icon + Label sichtbar,
+   Icons groß genug zum Lesen, Hintergrund füllt die volle Höhe. */
 .ab-rail {
-  flex: 0 0 48px;
-  width: 48px;
+  flex: 0 0 220px;
+  width: 220px;
   position: sticky;
   top: 80px;
-  align-self: flex-start;
-  max-height: calc(100vh - 80px);
+  align-self: stretch;
+  height: calc(100vh - 80px);
   overflow-y: auto;
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 12px 0 24px;
-  gap: 4px;
+  align-items: stretch;
+  padding: 14px 10px 24px;
+  gap: 2px;
   z-index: 5;
 }
 .ab-rail-group {
   display: flex; flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  gap: 2px;
+}
+.ab-rail-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 6px 10px 4px;
+  margin-top: 4px;
 }
 .ab-rail-sep {
-  width: 24px;
   height: 1px;
   background: var(--border);
-  margin: 8px 0;
+  margin: 10px 6px;
 }
 .ab-rail-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px;
-  padding: 0;
+  display: flex; align-items: center;
+  width: 100%;
+  padding: 9px 12px;
+  gap: 12px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
   color: var(--text);
   transition: background .12s, border-color .12s, color .12s;
 }
@@ -1408,17 +1420,37 @@ body {
   color: #fff;
   border-color: var(--text);
 }
-.ab-rail-action {
-  border-left: 3px solid var(--entity-color, var(--border));
+.ab-rail-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 22px;
+  width: 22px; height: 22px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
 }
+.ab-rail-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ab-rail-action {
+  border-left: 3px solid var(--entity-color, transparent);
+  padding-left: 9px;
+}
+.ab-rail-action .ab-rail-icon { color: var(--entity-color, var(--text)); }
 .ab-rail-action:hover {
   background: var(--entity-tint, var(--bg));
   border-color: var(--entity-color, var(--border));
   border-left-color: var(--entity-color, var(--border));
 }
-.ab-rail-panel { color: var(--muted); font-size: 15px; }
+.ab-rail-panel { color: var(--text); }
+.ab-rail-panel .ab-rail-icon { color: var(--muted); font-size: 17px; }
 .ab-rail-panel:hover { color: var(--text); }
+.ab-rail-panel:hover .ab-rail-icon { color: var(--text); }
 .ab-rail-panel.is-active { color: #fff; }
+.ab-rail-panel.is-active .ab-rail-icon { color: #fff; }
 
 /* Entity-Farbtokens für die Rail-Action-Buttons (gleiches Schema wie früher) */
 .ab-rail-action[data-entity="firma"]   { --entity-color: #047857; --entity-tint: #E1F5EE; }
@@ -1813,19 +1845,33 @@ body {
 }
 .arbeitsplatz-widget .info-card-empty { padding: 4px 0; font-size: 12px; }
 
-/* Mobile: Rail bleibt links sichtbar (kompakt), Flyout schiebt sich als
-   Overlay über die Bühne statt sie zu verschieben — sonst hätte die
-   Bühne auf Mobile nichts mehr von ihrem Platz. */
+/* Mobile / schmale Viewports: Rail schrumpft auf reine Icon-Spalte (60 px),
+   damit die Bühne weiterhin Platz hat. Labels sind ausgeblendet, aber per
+   Tooltip (data-attribute) noch erreichbar. */
 @media (max-width: 1000px) {
   .arbeitsplatz-shell {
     min-height: calc(100vh - var(--mobile-nav-height) - 80px);
     padding-bottom: var(--mobile-nav-height);
   }
-  .ab-rail { padding: 8px 0 16px; }
+  .ab-rail {
+    flex: 0 0 60px;
+    width: 60px;
+    padding: 12px 6px 24px;
+  }
+  .ab-rail-btn {
+    justify-content: center;
+    padding: 9px 0;
+    gap: 0;
+  }
+  .ab-rail-action { padding-left: 0; border-left-width: 0; }
+  .ab-rail-action .ab-rail-icon { border-left: 3px solid var(--entity-color, transparent); padding-left: 6px; }
+  .ab-rail-label { display: none; }
+  .ab-rail-section-label { display: none; }
+  .ab-rail-icon { font-size: 20px; flex-basis: 24px; width: 24px; height: 24px; }
   .ab-flyout {
     position: fixed;
     top: 56px;
-    left: 48px;
+    left: 60px;
     bottom: 0;
     right: 0;
     width: auto;

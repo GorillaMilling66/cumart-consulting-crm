@@ -449,27 +449,29 @@
     <div class="page" id="page-arbeitsplatz">
       <div class="arbeitsplatz-shell" id="arbeitsplatz-shell">
 
-        <!-- ACTIVITY RAIL (48 px, immer sichtbar) -->
+        <!-- ACTIVITY RAIL (breit, durchgängig — Icon + Label sichtbar) -->
         <aside class="ab-rail" id="ab-rail">
           <div class="ab-rail-group">
-            <button class="ab-rail-btn ab-rail-action" data-action="firma"   data-entity="firma"   title="Neue Firma anlegen"    onclick="stageOpenAction('firma')">+</button>
-            <button class="ab-rail-btn ab-rail-action" data-action="kontakt" data-entity="kontakt" title="Neuen Kontakt anlegen" onclick="stageOpenAction('kontakt')">+</button>
-            <button class="ab-rail-btn ab-rail-action" data-action="projekt" data-entity="projekt" title="Neues Projekt anlegen" onclick="stageOpenAction('projekt')">+</button>
-            <button class="ab-rail-btn ab-rail-action" data-action="einsatz" data-entity="einsatz" title="Neuen Einsatz anlegen" onclick="stageOpenAction('einsatz')">+</button>
-            <button class="ab-rail-btn ab-rail-action" data-action="termin"  data-entity="termin"  title="Neuen Termin anlegen"  onclick="stageOpenAction('termin')">+</button>
-            <button class="ab-rail-btn ab-rail-action" data-action="aufgabe" data-entity="aufgabe" title="Neue Aufgabe anlegen"  onclick="stageOpenAction('aufgabe')">+</button>
-            <button class="ab-rail-btn ab-rail-action" data-action="notiz"   data-entity="notiz"   title="Neue Notiz anlegen"    onclick="stageOpenAction('notiz')">+</button>
+            <div class="ab-rail-section-label">Neu anlegen</div>
+            <button class="ab-rail-btn ab-rail-action" data-action="firma"   data-entity="firma"   onclick="stageOpenAction('firma')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neue Firma</span></button>
+            <button class="ab-rail-btn ab-rail-action" data-action="kontakt" data-entity="kontakt" onclick="stageOpenAction('kontakt')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neuer Kontakt</span></button>
+            <button class="ab-rail-btn ab-rail-action" data-action="projekt" data-entity="projekt" onclick="stageOpenAction('projekt')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neues Projekt</span></button>
+            <button class="ab-rail-btn ab-rail-action" data-action="einsatz" data-entity="einsatz" onclick="stageOpenAction('einsatz')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neuer Einsatz</span></button>
+            <button class="ab-rail-btn ab-rail-action" data-action="termin"  data-entity="termin"  onclick="stageOpenAction('termin')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neuer Termin</span></button>
+            <button class="ab-rail-btn ab-rail-action" data-action="aufgabe" data-entity="aufgabe" onclick="stageOpenAction('aufgabe')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neue Aufgabe</span></button>
+            <button class="ab-rail-btn ab-rail-action" data-action="notiz"   data-entity="notiz"   onclick="stageOpenAction('notiz')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Neue Notiz</span></button>
           </div>
           <div class="ab-rail-sep"></div>
           <div class="ab-rail-group">
-            <button class="ab-rail-btn ab-rail-panel" data-panel="pins"      title="Angeheftet"        onclick="toggleArbeitsplatzPanel('pins')">★</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="recent"    title="Zuletzt bearbeitet" onclick="toggleArbeitsplatzPanel('recent')">⟲</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="inbox"     title="Dranbleiben"        onclick="toggleArbeitsplatzPanel('inbox')">!</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="today"     title="Heute von dir"      onclick="toggleArbeitsplatzPanel('today')">✓</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="templates" title="Vorlagen"           onclick="toggleArbeitsplatzPanel('templates')">☰</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="continue"  title="Fortführen"         onclick="toggleArbeitsplatzPanel('continue')">→</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="care"      title="Datenpflege"        onclick="toggleArbeitsplatzPanel('care')">⚠</button>
-            <button class="ab-rail-btn ab-rail-panel" data-panel="shortcuts" title="Quick-Links"        onclick="toggleArbeitsplatzPanel('shortcuts')">⛓</button>
+            <div class="ab-rail-section-label">Ansichten</div>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="pins"      onclick="toggleArbeitsplatzPanel('pins')"><span class="ab-rail-icon">★</span><span class="ab-rail-label">Angeheftet</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="recent"    onclick="toggleArbeitsplatzPanel('recent')"><span class="ab-rail-icon">⟲</span><span class="ab-rail-label">Zuletzt</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="inbox"     onclick="toggleArbeitsplatzPanel('inbox')"><span class="ab-rail-icon">!</span><span class="ab-rail-label">Dranbleiben</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="today"     onclick="toggleArbeitsplatzPanel('today')"><span class="ab-rail-icon">✓</span><span class="ab-rail-label">Heute von dir</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="templates" onclick="toggleArbeitsplatzPanel('templates')"><span class="ab-rail-icon">☰</span><span class="ab-rail-label">Vorlagen</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="continue"  onclick="toggleArbeitsplatzPanel('continue')"><span class="ab-rail-icon">→</span><span class="ab-rail-label">Fortführen</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="care"      onclick="toggleArbeitsplatzPanel('care')"><span class="ab-rail-icon">⚠</span><span class="ab-rail-label">Datenpflege</span></button>
+            <button class="ab-rail-btn ab-rail-panel" data-panel="shortcuts" onclick="toggleArbeitsplatzPanel('shortcuts')"><span class="ab-rail-icon">⛓</span><span class="ab-rail-label">Quick-Links</span></button>
           </div>
         </aside>
 
