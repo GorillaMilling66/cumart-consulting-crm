@@ -4795,6 +4795,10 @@ let _arbeitsplatzContexts = [];  // Array<{ type, id, label }>
 let _arbeitsplatzCaptureText = '';
 
 async function loadArbeitsplatz() {
+  // v2.25.8: Spalten-Kollaps-Zustand wiederherstellen (User-Pref oder bei
+  // schmalem Viewport per Default eingeklappt).
+  applyArbeitsplatzColumnState();
+
   // Datum oben rechts
   const dateEl = document.getElementById('arbeitsplatz-date');
   if (dateEl) {
@@ -4822,6 +4826,35 @@ async function loadArbeitsplatz() {
     renderArbeitsplatzToday(),
     renderArbeitsplatzTemplates()
   ]);
+}
+
+/** v2.25.8: Spalten-Kollaps für den Arbeitsplatz. Persistierte User-Pref
+ *  pro Seite (links / rechts). Ohne gespeicherte Pref wird bei einem
+ *  schmalen Viewport (< 1280 px) initial eingeklappt, damit die mittlere
+ *  Bühne genug Platz hat. */
+const ARBEITSPLATZ_COLLAPSE_BREAKPOINT = 1280;
+function applyArbeitsplatzColumnState() {
+  const root = document.getElementById('arbeitsplatz-3col');
+  if (!root) return;
+  const narrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
+  const readPref = (key) => {
+    const v = localStorage.getItem(key);
+    if (v === '1') return true;
+    if (v === '0') return false;
+    return narrow; // ohne gespeicherte Pref: am schmalen Viewport eingeklappt
+  };
+  const leftCollapsed  = readPref('arbeitsplatz-left-collapsed');
+  const rightCollapsed = readPref('arbeitsplatz-right-collapsed');
+  root.classList.toggle('left-collapsed',  leftCollapsed);
+  root.classList.toggle('right-collapsed', rightCollapsed);
+}
+function toggleArbeitsplatzColumn(side) {
+  const root = document.getElementById('arbeitsplatz-3col');
+  if (!root) return;
+  const cls = side === 'left' ? 'left-collapsed' : 'right-collapsed';
+  const nowCollapsed = !root.classList.contains(cls);
+  root.classList.toggle(cls, nowCollapsed);
+  localStorage.setItem(`arbeitsplatz-${side}-collapsed`, nowCollapsed ? '1' : '0');
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -1354,7 +1354,14 @@ body {
   width: 100%;
   margin: 0;
   padding-bottom: 64px;
+  transition: grid-template-columns .2s ease;
 }
+/* v2.25.8: Einklappbare Seitenspalten — auf einen 36 px schmalen Streifen
+   zusammenschieben, sodass die Bühne in der Mitte mehr Platz bekommt. */
+.arbeitsplatz-3col.left-collapsed  { grid-template-columns: 36px minmax(0, 1fr) 340px; }
+.arbeitsplatz-3col.right-collapsed { grid-template-columns: 280px minmax(0, 1fr) 36px; }
+.arbeitsplatz-3col.left-collapsed.right-collapsed { grid-template-columns: 36px minmax(0, 1fr) 36px; }
+
 .arbeitsplatz-col-left,
 .arbeitsplatz-col-right {
   position: sticky;
@@ -1364,6 +1371,74 @@ body {
   padding-right: 4px;
 }
 .arbeitsplatz-col-left { padding-right: 0; }
+
+/* v2.25.8: Toggle-Knopf am oberen Rand jeder Spalte */
+.arbeitsplatz-col-toggle {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 8px auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--muted);
+  transition: color .12s, border-color .12s, background .12s;
+}
+.arbeitsplatz-col-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+.arbeitsplatz-col-toggle.is-right { margin: 0 auto 8px 0; }
+.arbeitsplatz-col-toggle-icon {
+  display: inline-block;
+  width: 0; height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-right: 5px solid currentColor;
+}
+.arbeitsplatz-col-toggle.is-right .arbeitsplatz-col-toggle-icon {
+  border-right: 0;
+  border-left: 5px solid currentColor;
+}
+.arbeitsplatz-col-toggle-collapsed-label {
+  display: none;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+/* Eingeklappt: nur Toggle bleibt sichtbar, Icon dreht sich, Spalte schrumpft */
+.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left > *:not(.arbeitsplatz-col-toggle),
+.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right > *:not(.arbeitsplatz-col-toggle) {
+  display: none;
+}
+.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left,
+.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right {
+  padding: 0;
+  overflow: hidden;
+}
+.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-toggle,
+.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-col-toggle {
+  margin: 0 auto 0 auto;
+  display: flex; flex-direction: column;
+  height: auto;
+  padding: 8px 0;
+  gap: 6px;
+}
+.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-toggle .arbeitsplatz-col-toggle-icon { border-right: 0; border-left: 5px solid currentColor; }
+.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-col-toggle .arbeitsplatz-col-toggle-icon { border-left: 0; border-right: 5px solid currentColor; }
+.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-toggle-collapsed-label,
+.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-col-toggle-collapsed-label {
+  display: block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
 .arbeitsplatz-col-eyebrow {
   font-size: 10px;
   font-weight: 700;
@@ -1685,9 +1760,14 @@ body {
 }
 .arbeitsplatz-widget .info-card-empty { padding: 4px 0; font-size: 12px; }
 
-/* Mobile: Eine Spalte. Linke + rechte Spalte unter die Bühne, nicht sticky. */
+/* Mobile: Eine Spalte. Linke + rechte Spalte unter die Bühne, nicht sticky.
+   v2.25.8: Auf Mobile greift der Spalten-Kollaps nicht — alle drei Bereiche
+   stapeln sich vertikal, der Toggle-Knopf wird ausgeblendet. */
 @media (max-width: 1000px) {
-  .arbeitsplatz-3col {
+  .arbeitsplatz-3col,
+  .arbeitsplatz-3col.left-collapsed,
+  .arbeitsplatz-3col.right-collapsed,
+  .arbeitsplatz-3col.left-collapsed.right-collapsed {
     grid-template-columns: 1fr;
     padding-bottom: calc(var(--mobile-nav-height) + 32px);
   }
@@ -1696,6 +1776,12 @@ body {
     position: static;
     max-height: none;
     overflow: visible;
+  }
+  .arbeitsplatz-col-toggle { display: none; }
+  /* Kollaps-Effekt zurücknehmen, falls Klasse gesetzt war */
+  .arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left > *:not(.arbeitsplatz-col-toggle),
+  .arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right > *:not(.arbeitsplatz-col-toggle) {
+    display: revert;
   }
   .arbeitsplatz-stage { padding: 20px; min-height: auto; }
   .stage-welcome-title { font-size: 22px; }

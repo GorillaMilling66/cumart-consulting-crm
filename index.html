@@ -441,12 +441,19 @@
     </div>
 
     <!-- v2.0.0 — ARBEITSPLATZ (Hauptbereich 2) -->
-    <!-- v2.18.0: Arbeitsplatz neu in 3 Spalten — Aktionen / Bühne / Widgets -->
+    <!-- v2.18.0: Arbeitsplatz neu in 3 Spalten — Aktionen / Bühne / Widgets
+         v2.25.8: Linke + rechte Spalte sind ein-/ausklappbar — bei schmalem
+         Viewport werden sie initial automatisch eingeklappt, damit die Bühne
+         in der Mitte breit genug bleibt. -->
     <div class="page" id="page-arbeitsplatz">
-      <div class="arbeitsplatz-3col">
+      <div class="arbeitsplatz-3col" id="arbeitsplatz-3col">
 
         <!-- LINKE SPALTE: Aktionen + Live-Vorschau -->
         <aside class="arbeitsplatz-col-left">
+          <button type="button" class="arbeitsplatz-col-toggle" onclick="toggleArbeitsplatzColumn('left')" title="Aktionen-Spalte ein-/ausklappen" aria-label="Aktionen-Spalte ein-/ausklappen">
+            <span class="arbeitsplatz-col-toggle-collapsed-label">AKT.</span>
+            <span class="arbeitsplatz-col-toggle-icon" aria-hidden="true"></span>
+          </button>
           <div class="arbeitsplatz-col-eyebrow">AKTIONEN</div>
           <div class="arbeitsplatz-actions-list">
             <button class="arbeitsplatz-action-row" data-action="firma"   onclick="stageOpenAction('firma')">+ Neue Firma</button>
@@ -492,6 +499,10 @@
 
         <!-- RECHTE SPALTE: Widgets (Akkordeon, alle initial eingeklappt) -->
         <aside class="arbeitsplatz-col-right">
+          <button type="button" class="arbeitsplatz-col-toggle is-right" onclick="toggleArbeitsplatzColumn('right')" title="Widgets-Spalte ein-/ausklappen" aria-label="Widgets-Spalte ein-/ausklappen">
+            <span class="arbeitsplatz-col-toggle-collapsed-label">WIDG.</span>
+            <span class="arbeitsplatz-col-toggle-icon" aria-hidden="true"></span>
+          </button>
           <details class="arbeitsplatz-widget" id="arbeitsplatz-shortcuts-block" style="display:none">
             <summary>QUICK-LINKS</summary>
             <div class="arbeitsplatz-widget-body">
