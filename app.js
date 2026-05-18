@@ -28772,6 +28772,11 @@ function _buildCustomerReportHtml(data) {
     <p class="ust-hint">Alle Beträge zuzüglich gesetzlicher Umsatzsteuer.</p>`;
 
   const css = `
+    /* v2.28.1: @page mit margin:0 verdrängt die Browser-Kopf-/Fußzeile
+       (URL „about:blank", Datum, Seitenzahl) — der Inhalt bringt seine
+       eigenen DIN-A4-tauglichen Ränder mit. */
+    @page { size: A4; margin: 0; }
+
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #f4f3ee; color: #1d1d1f; font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 12px; line-height: 1.5; }
     body { padding: 28px 40px 80px; }
@@ -28779,6 +28784,7 @@ function _buildCustomerReportHtml(data) {
     .toolbar button { font: inherit; padding: 8px 14px; border: 1px solid #1d1d1f; background: #1d1d1f; color: #fff; border-radius: 6px; cursor: pointer; font-weight: 500; }
     .toolbar button.secondary { background: #fff; color: #1d1d1f; }
     .page { max-width: 800px; margin: 0 auto; background: #fff; padding: 48px 56px 56px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+    .print-hint { font-size: 11px; color: #6b6b6b; text-align: right; max-width: 800px; margin: 0 auto 8px; }
 
     .hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 18px; border-bottom: 2px solid #1d1d1f; margin-bottom: 28px; }
     .hdr-left .hdr-firma { font-size: 18px; font-weight: 700; letter-spacing: -.2px; }
@@ -28833,12 +28839,29 @@ function _buildCustomerReportHtml(data) {
 
     .muted { color: #6b6b6b; font-style: italic; }
 
+    /* Disclaimer am Ende des Berichts */
+    .disclaimer {
+      margin-top: 36px;
+      padding: 14px 16px;
+      background: #f6f3ec;
+      border: 1px solid #d6d3cc;
+      border-left: 3px solid #6b6b6b;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #444;
+      line-height: 1.55;
+    }
+    .disclaimer strong { color: #1d1d1f; }
+
     @media print {
       body { background: #fff; padding: 0; }
-      .toolbar { display: none; }
-      .page { box-shadow: none; max-width: none; padding: 24px 30px; border-radius: 0; }
+      .toolbar, .print-hint { display: none; }
+      /* DIN-A4-Seitenränder durch padding auf .page — @page margin:0 oben
+         entfernt die Browser-eigenen Header/Footer (URL, Datum, Seitenzahl). */
+      .page { box-shadow: none; max-width: none; padding: 18mm 16mm 20mm; border-radius: 0; }
       .einsatz { break-inside: avoid; }
       .doc-block { break-inside: avoid; }
+      .disclaimer { break-inside: avoid; }
       h2 { break-after: avoid; }
     }
   `;
@@ -28886,6 +28909,13 @@ function _buildCustomerReportHtml(data) {
       ${produkteHtml}
 
       ${rechnungHtml}
+
+      <div class="disclaimer">
+        <strong>Hinweis:</strong> Dieser Bericht dient lediglich der Abnahme, der Kostentransparenz und
+        der Berichterstattung seitens Cumart Consulting. Er ist ausschließlich Vorlage zur
+        Rechnungsstellung und stellt <strong>keine Rechnung</strong> dar. Rechnungen werden separat
+        als offizielles Rechnungsdokument versendet.
+      </div>
 
       <footer class="footer">
         <strong>${_e(CUMART_KOPF.firma)}</strong> · ${_e(CUMART_KOPF.inhaber)}<br>
