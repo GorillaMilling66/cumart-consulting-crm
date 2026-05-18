@@ -1460,11 +1460,11 @@ body {
 
 /* On-Demand-Flyout — schiebt sich rechts neben die Rail rein wenn ein
    Panel aktiv ist. Klick außerhalb oder Esc schließt es wieder.
-   v2.26.2: Breiter (380 px) für saubere Lesbarkeit der Listen-Inhalte;
+   v2.26.3: 420 px breit für saubere Lesbarkeit der Listen-Inhalte;
    gleiche Card-Optik wie die Rail, damit alles aus einem Guss wirkt. */
 .ab-flyout {
-  flex: 0 0 380px;
-  width: 380px;
+  flex: 0 0 420px;
+  width: 420px;
   position: sticky;
   top: 80px;
   align-self: stretch;
@@ -2116,17 +2116,20 @@ body {
 }
 .arbeitsplatz-pin-title { font-size: 13px; font-weight: 500; color: var(--text); }
 
-/* v2.3.0: Dranbleiben (Inbox) */
+/* v2.3.0 → v2.26.3: Dranbleiben (Inbox) — gestapeltes Layout statt 3-Spalten-
+   Grid, damit Titel komplett lesbar bleiben und Badges nicht den ganzen
+   Platz wegnehmen. Reihenfolge je Zeile: Badge · Titel · Meta (Datum/Firma). */
 .arbeitsplatz-inbox-block { margin-bottom: 24px; }
 .arbeitsplatz-inbox-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 12px; align-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
   width: 100%;
   background: transparent;
   border: 0;
   border-bottom: 0.5px solid var(--border);
-  padding: 10px 0;
+  padding: 12px 4px;
   text-align: left;
   font-family: inherit; font-size: 13px;
   color: var(--text);
@@ -2138,14 +2141,25 @@ body {
   font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
   padding: 3px 8px; border-radius: 4px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 .arbeitsplatz-inbox-badge.is-overdue { background: #fee2e2; color: #991b1b; }
 .arbeitsplatz-inbox-badge.is-today   { background: #fef3c7; color: #92400e; }
 .arbeitsplatz-inbox-badge.is-soon    { background: #e0e7ff; color: #3730a3; }
 .arbeitsplatz-inbox-badge.is-warn    { background: #fef3c7; color: #92400e; }
 .arbeitsplatz-inbox-badge.is-neutral { background: #f3f4f6; color: #6b7280; }
-.arbeitsplatz-inbox-title { font-weight: 500; }
-.arbeitsplatz-inbox-meta { font-size: 11px; color: var(--muted); }
+.arbeitsplatz-inbox-title {
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text);
+  width: 100%;
+}
+.arbeitsplatz-inbox-meta {
+  font-size: 11px;
+  color: var(--muted);
+  width: 100%;
+}
 
 /* v2.3.0: Datenpflege */
 .arbeitsplatz-care-block { margin-bottom: 24px; }
