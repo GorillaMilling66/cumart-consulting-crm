@@ -1356,8 +1356,9 @@ body {
   margin: 0;
   min-height: calc(100vh - 80px);
 }
-/* v2.26.1: Breitere, durchgängige Sidebar — Icon + Label sichtbar,
-   Icons groß genug zum Lesen, Hintergrund füllt die volle Höhe. */
+/* v2.26.2: Durchgängige Sidebar — kein Card-Look mehr, sondern saubere
+   Navigations-Chrome. Inhalte sind kompakt genug, dass alle 15 Buttons
+   in den Standard-Viewport passen ohne zu scrollen. */
 .ab-rail {
   flex: 0 0 220px;
   width: 220px;
@@ -1367,18 +1368,20 @@ body {
   height: calc(100vh - 80px);
   overflow-y: auto;
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 14px 10px 24px;
-  gap: 2px;
+  padding: 12px 8px;
+  gap: 0;
   z-index: 5;
 }
 .ab-rail-group {
   display: flex; flex-direction: column;
   align-items: stretch;
-  gap: 2px;
+  gap: 1px;
 }
 .ab-rail-section-label {
   font-size: 10px;
@@ -1386,19 +1389,18 @@ body {
   letter-spacing: .8px;
   color: var(--muted);
   text-transform: uppercase;
-  padding: 6px 10px 4px;
-  margin-top: 4px;
+  padding: 4px 10px 2px;
 }
 .ab-rail-sep {
   height: 1px;
   background: var(--border);
-  margin: 10px 6px;
+  margin: 8px 4px;
 }
 .ab-rail-btn {
   display: flex; align-items: center;
   width: 100%;
-  padding: 9px 12px;
-  gap: 12px;
+  padding: 6px 10px;
+  gap: 10px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1413,18 +1415,17 @@ body {
 }
 .ab-rail-btn:hover {
   background: var(--bg);
-  border-color: var(--border);
 }
 .ab-rail-btn.is-active {
   background: var(--text);
-  color: #fff;
+  color: var(--surface);
   border-color: var(--text);
 }
 .ab-rail-icon {
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 22px;
   width: 22px; height: 22px;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   line-height: 1;
 }
@@ -1437,20 +1438,16 @@ body {
 }
 .ab-rail-action {
   border-left: 3px solid var(--entity-color, transparent);
-  padding-left: 9px;
+  padding-left: 7px;
 }
 .ab-rail-action .ab-rail-icon { color: var(--entity-color, var(--text)); }
 .ab-rail-action:hover {
   background: var(--entity-tint, var(--bg));
-  border-color: var(--entity-color, var(--border));
-  border-left-color: var(--entity-color, var(--border));
 }
 .ab-rail-panel { color: var(--text); }
-.ab-rail-panel .ab-rail-icon { color: var(--muted); font-size: 17px; }
-.ab-rail-panel:hover { color: var(--text); }
+.ab-rail-panel .ab-rail-icon { color: var(--muted); font-size: 16px; }
 .ab-rail-panel:hover .ab-rail-icon { color: var(--text); }
-.ab-rail-panel.is-active { color: #fff; }
-.ab-rail-panel.is-active .ab-rail-icon { color: #fff; }
+.ab-rail-panel.is-active .ab-rail-icon { color: var(--surface); }
 
 /* Entity-Farbtokens für die Rail-Action-Buttons (gleiches Schema wie früher) */
 .ab-rail-action[data-entity="firma"]   { --entity-color: #047857; --entity-tint: #E1F5EE; }
@@ -1462,18 +1459,22 @@ body {
 .ab-rail-action[data-entity="notiz"]   { --entity-color: #57534e; --entity-tint: #EFEDE8; }
 
 /* On-Demand-Flyout — schiebt sich rechts neben die Rail rein wenn ein
-   Panel aktiv ist. Klick außerhalb oder Esc schließt es wieder. */
+   Panel aktiv ist. Klick außerhalb oder Esc schließt es wieder.
+   v2.26.2: Breiter (380 px) für saubere Lesbarkeit der Listen-Inhalte;
+   gleiche Card-Optik wie die Rail, damit alles aus einem Guss wirkt. */
 .ab-flyout {
-  flex: 0 0 300px;
-  width: 300px;
+  flex: 0 0 380px;
+  width: 380px;
   position: sticky;
   top: 80px;
-  align-self: flex-start;
-  max-height: calc(100vh - 80px);
+  align-self: stretch;
+  height: calc(100vh - 80px);
+  margin-left: 12px;
   overflow-y: auto;
   background: var(--surface);
-  border-right: 1px solid var(--border);
-  box-shadow: 4px 0 12px rgba(0,0,0,.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   z-index: 4;
   animation: ab-flyout-in .15s ease-out;
 }
@@ -1518,11 +1519,14 @@ body {
 }
 .ab-flyout-panel[hidden] { display: none; }
 
-/* Bühne in der Mitte — volle restliche Breite */
+/* Bühne in der Mitte — volle restliche Breite. Top-Padding entfernt,
+   damit die Welcome-Card oben auf gleicher Höhe wie die Rail-Spalte
+   beginnt (Design-Konsistenz). */
 .ab-stage {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 16px 24px 64px;
+  margin-left: 12px;
+  padding: 0 0 64px;
 }
 .arbeitsplatz-col-eyebrow {
   font-size: 10px;
@@ -1856,11 +1860,11 @@ body {
   .ab-rail {
     flex: 0 0 60px;
     width: 60px;
-    padding: 12px 6px 24px;
+    padding: 10px 4px;
   }
   .ab-rail-btn {
     justify-content: center;
-    padding: 9px 0;
+    padding: 8px 0;
     gap: 0;
   }
   .ab-rail-action { padding-left: 0; border-left-width: 0; }
@@ -1871,17 +1875,15 @@ body {
   .ab-flyout {
     position: fixed;
     top: 56px;
-    left: 60px;
+    left: 64px;
     bottom: 0;
     right: 0;
     width: auto;
-    max-height: none;
-    border-right: none;
-    border-left: 1px solid var(--border);
-    box-shadow: 0 0 24px rgba(0,0,0,.12);
+    height: auto;
+    margin-left: 0;
     z-index: 50;
   }
-  .ab-stage { padding: 16px; }
+  .ab-stage { padding: 0 12px; margin-left: 8px; }
   .stage-welcome-title { font-size: 22px; }
 }
 .arbeitsplatz-head {
