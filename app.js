@@ -2182,10 +2182,159 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Branding (Logo / Firmenname / Mobile-Header / …) anwenden,
 // sobald der DOM bereit ist. app.js wird zwar am Body-Ende
 // geladen, aber wir schützen uns gegen beide Lade-Reihenfolgen.
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => window.applyBranding());
-} else {
+function _bootInit() {
   window.applyBranding();
+  // Status-Label-Cache laden. Wenn RLS pre-auth blockt, schlägt es
+  // still fehl; getStatusLabel() liefert dann den system_key als
+  // Fallback bis nach Login erneut gerufen wird.
+  if (typeof _loadStatusLabels === 'function') _loadStatusLabels();
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _bootInit);
+} else {
+  _bootInit();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STATUS-KONSTANTEN + DUAL-MODE-HELPER (v2.30.0)
+// ───────────────────────────────────────────────────────────
+//  Alle Status-Vergleiche im Code referenzieren ab v2.30 nur
+//  noch die system_keys (lowercase snake_case ASCII), niemals
+//  mehr die deutschen Labels. Die Labels werden über
+//  getStatusLabel() aus dem Lookup-Cache geholt und können
+//  vom Mandanten frei umbenannt werden, ohne dass Code bricht.
+//
+//  Während der Migration (Live-Code wird vor dem Apply der
+//  Migration deployed) läuft alles im DUAL-MODE: Vergleiche
+//  akzeptieren sowohl alte Labels als auch neue system_keys,
+//  Supabase-Filter werden beide Formate mit-übergeben.
+//  → Kein Downtime-Risiko zwischen Code-Deploy und Migration.
+//
+//  Cleanup-Schritt (v2.31, separater Refactor): _LEGACY_*
+//  Tabellen + dualStatus()-Wrapper entfernen.
+// ═══════════════════════════════════════════════════════════
+
+const PROJECT_STATUS = Object.freeze({
+  LEAD:             'lead',
+  ANGEBOT:          'angebot',
+  IN_ARBEIT:        'in_arbeit',
+  ABSCHLUSSPHASE:   'abschlussphase',
+  ABGESCHLOSSEN:    'abgeschlossen',
+  VERLOREN:         'verloren',
+  STORNIERT:        'storniert'
+});
+
+const DEPLOYMENT_STATUS = Object.freeze({
+  UNGEPLANT:        'ungeplant',
+  GEPLANT:          'geplant',
+  DURCHGEFUEHRT:    'durchgefuehrt',
+  ABGERECHNET:      'abgerechnet',
+  STORNIERT:        'storniert'
+});
+
+const APPOINTMENT_STATUS = Object.freeze({
+  GEPLANT:          'geplant',
+  DURCHGEFUEHRT:    'durchgefuehrt'
+});
+
+const TASK_STATUS = Object.freeze({
+  OFFEN:            'offen',
+  ERLEDIGT:         'erledigt',
+  STORNIERT:        'storniert'
+});
+
+// Mapping alte Labels → system_keys. Wird in v2.31 entfernt.
+const _LEGACY_STATUS_MAP = {
+  projekt_status: {
+    'Lead':            'lead',
+    'Angebot':         'angebot',
+    'In Arbeit':       'in_arbeit',
+    'Abschlussphase':  'abschlussphase',
+    'Abgeschlossen':   'abgeschlossen',
+    'Verloren':        'verloren',
+    'Storniert':       'storniert'
+  },
+  einsatz_status: {
+    'Ungeplant':       'ungeplant',
+    'Geplant':         'geplant',
+    'Durchgeführt':    'durchgefuehrt',
+    'Abgerechnet':     'abgerechnet',
+    'Storniert':       'storniert'
+  },
+  termin_status: {
+    'geplant':         'geplant',
+    'durchgefuehrt':   'durchgefuehrt'
+  },
+  aufgabe_status: {
+    'offen':           'offen',
+    'erledigt':        'erledigt',
+    'Storniert':       'storniert'
+  }
+};
+
+/**
+ * Normalisiert einen Status-Wert auf den system_key. Akzeptiert
+ * sowohl alte Labels ('Abgeschlossen') als auch neue Keys ('abgeschlossen').
+ * Für lokale === Vergleiche in JS verwenden.
+ */
+function normalizeStatus(kategorie, value) {
+  if (value == null) return value;
+  const map = _LEGACY_STATUS_MAP[kategorie];
+  if (!map) return value;
+  return map[value] || value;
+}
+
+/**
+ * Erweitert eine Liste von system_keys um die zugehörigen alten Labels,
+ * damit Supabase-Filter (.in/.eq/.neq auf 'status') während des Dual-
+ * Mode-Übergangs sowohl alte als auch neue DB-Zustände matchen.
+ *   dualStatus('projekt_status', 'lead', 'angebot')
+ *   → ['lead', 'angebot', 'Lead', 'Angebot']
+ */
+function dualStatus(kategorie, ...systemKeys) {
+  const result = [...systemKeys];
+  const map = _LEGACY_STATUS_MAP[kategorie];
+  if (!map) return result;
+  for (const [legacy, sys] of Object.entries(map)) {
+    if (systemKeys.includes(sys) && !result.includes(legacy)) {
+      result.push(legacy);
+    }
+  }
+  return result;
+}
+
+// Status-Label-Cache (gefüllt beim App-Boot über _loadStatusLabels).
+// Struktur: { 'projekt_status': { 'abgeschlossen': { label: 'Abgeschlossen', farbe: '#…' } } }
+let _statusLabelCache = null;
+
+async function _loadStatusLabels() {
+  try {
+    const { data, error } = await db
+      .from('lookup_values')
+      .select('kategorie, wert, system_key, farbe')
+      .in('kategorie', ['projekt_status', 'einsatz_status', 'termin_status', 'aufgabe_status'])
+      .eq('ist_aktiv', true);
+    if (error) { console.error('_loadStatusLabels:', error); return; }
+    const cache = {};
+    for (const row of data || []) {
+      if (!row.system_key) continue;
+      cache[row.kategorie] = cache[row.kategorie] || {};
+      cache[row.kategorie][row.system_key] = { label: row.wert, farbe: row.farbe };
+    }
+    _statusLabelCache = cache;
+  } catch (e) { console.error('_loadStatusLabels exception:', e); }
+}
+
+/**
+ * Liefert das UI-Label für einen system_key. Während der Cache noch
+ * nicht geladen ist (App-Boot) oder bei unbekanntem Key: Fallback
+ * auf den system_key selbst (oder den übergebenen Fallback).
+ */
+function getStatusLabel(kategorie, system_key, fallback) {
+  if (!system_key) return fallback || '';
+  if (!_statusLabelCache) return fallback || system_key;
+  const entry = _statusLabelCache[kategorie]?.[system_key];
+  return entry ? entry.label : (fallback || system_key);
 }
 
 // SVG-Copy-Icon als String-Konstante
@@ -2331,14 +2480,21 @@ function _splitActivities(items) {
 /** v2.25.9: Mappt Einsatz-/Aufgaben-Status auf eine semantische Farbklasse
  *  für den Status-Pill und den Row-Akzent in der Aktivitäten-Timeline. */
 function _activityStatusStyle(status) {
+  // Dual-Mode: akzeptiert sowohl alte Labels als auch system_keys.
+  // Funktion ist shared für Einsatz (einsatz_status) + Aufgabe (aufgabe_status),
+  // deshalb beide Kategorien hier abgedeckt.
   switch (status) {
-    case 'Geplant':       return { cls: 'is-blue',   label: 'Geplant' };
-    case 'Durchgeführt':  return { cls: 'is-lgreen', label: 'Durchgeführt' };
-    case 'Abgerechnet':   return { cls: 'is-dgreen', label: 'Abgerechnet' };
-    case 'Storniert':     return { cls: 'is-red',    label: 'Storniert' };
-    case 'erledigt':      return { cls: 'is-lgreen', label: 'Erledigt' };
-    case 'offen':         return { cls: 'is-grey',   label: 'Offen' };
-    default:              return status ? { cls: 'is-grey', label: status } : null;
+    case 'Geplant':
+    case 'geplant':            return { cls: 'is-blue',   label: 'Geplant' };
+    case 'Durchgeführt':
+    case 'durchgefuehrt':      return { cls: 'is-lgreen', label: 'Durchgeführt' };
+    case 'Abgerechnet':
+    case 'abgerechnet':        return { cls: 'is-dgreen', label: 'Abgerechnet' };
+    case 'Storniert':
+    case 'storniert':          return { cls: 'is-red',    label: 'Storniert' };
+    case 'erledigt':           return { cls: 'is-lgreen', label: 'Erledigt' };
+    case 'offen':              return { cls: 'is-grey',   label: 'Offen' };
+    default:                   return status ? { cls: 'is-grey', label: status } : null;
   }
 }
 
@@ -15778,8 +15934,9 @@ async function checkAndUpdateProjectStatusSmart(projectId) {
     .select('id, status').is('deleted_at', null).eq('id', projectId).single();
   if (pErr || !project) return;
 
-  const aktiveStatus = ['In Arbeit', 'Abschlussphase', 'Abgeschlossen'];
-  if (!aktiveStatus.includes(project.status)) return;
+  const projektStatusKey = normalizeStatus('projekt_status', project.status);
+  const aktiveStatus = [PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE, PROJECT_STATUS.ABGESCHLOSSEN];
+  if (!aktiveStatus.includes(projektStatusKey)) return;
 
   const { data: deployments } = await db.from('deployments')
     .select('status').is('deleted_at', null).eq('project_id', projectId);
@@ -15789,33 +15946,34 @@ async function checkAndUpdateProjectStatusSmart(projectId) {
     .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allAppts = appointments || [];
 
-  const countsDone = (arr, doneValues) => {
+  const countsDone = (arr, doneSystemKeys, kategorie) => {
     if (arr.length === 0) return { hasAny: false, allDone: true };
-    const done = arr.filter(x => doneValues.includes(x.status)).length;
+    const done = arr.filter(x => doneSystemKeys.includes(normalizeStatus(kategorie, x.status))).length;
     return { hasAny: true, allDone: done === arr.length };
   };
 
-  const depStats = countsDone(allDeps, ['Durchgeführt', 'Abgerechnet']);
-  const apptStats = countsDone(allAppts, ['durchgefuehrt']);
+  const depStats  = countsDone(allDeps,  [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET], 'einsatz_status');
+  const apptStats = countsDone(allAppts, [APPOINTMENT_STATUS.DURCHGEFUEHRT],                                'termin_status');
 
   if (!depStats.hasAny) return;
 
-  let neuerStatus = project.status;
+  let neuerStatusKey = projektStatusKey;
   if (depStats.allDone && apptStats.allDone) {
-    neuerStatus = 'Abgeschlossen';
+    neuerStatusKey = PROJECT_STATUS.ABGESCHLOSSEN;
   } else if (depStats.allDone) {
-    neuerStatus = 'Abschlussphase';
+    neuerStatusKey = PROJECT_STATUS.ABSCHLUSSPHASE;
   } else {
-    neuerStatus = 'In Arbeit';
+    neuerStatusKey = PROJECT_STATUS.IN_ARBEIT;
   }
 
-  if (neuerStatus !== project.status) {
+  if (neuerStatusKey !== projektStatusKey) {
     const { error: updErr } = await db.from('projects')
-      .update({ status: neuerStatus }).eq('id', projectId);
+      .update({ status: neuerStatusKey }).eq('id', projectId);
     if (!updErr) {
-      showToast(`Projekt-Status automatisch auf „${neuerStatus}" aktualisiert.`);
+      const neuerLabel = getStatusLabel('projekt_status', neuerStatusKey, neuerStatusKey);
+      showToast(`Projekt-Status automatisch auf „${neuerLabel}" aktualisiert.`);
       // Header-Badge direkt im DOM updaten (kein Page-Reload)
-      updateProjectHeaderStatusBadge(neuerStatus);
+      updateProjectHeaderStatusBadge(neuerStatusKey);
     }
   }
 }
@@ -15921,8 +16079,9 @@ async function checkAndUpdateProjectStatus(projectId) {
     .select('id, status, name').is('deleted_at', null).eq('id', projectId).single();
   if (pErr || !project) return;
 
-  const aktiveStatus = ['In Arbeit', 'Abschlussphase', 'Abgeschlossen'];
-  if (!aktiveStatus.includes(project.status)) return; // Lead/Angebot/Verloren: keine Automatik
+  const projektStatusKey = normalizeStatus('projekt_status', project.status);
+  const aktiveStatus = [PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE, PROJECT_STATUS.ABGESCHLOSSEN];
+  if (!aktiveStatus.includes(projektStatusKey)) return; // Lead/Angebot/Verloren: keine Automatik
 
   // Einsätze laden
   const { data: deployments } = await db.from('deployments')
@@ -15934,34 +16093,35 @@ async function checkAndUpdateProjectStatus(projectId) {
     .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allAppts = appointments || [];
 
-  const countsDone = (arr, doneValues) => {
+  const countsDone = (arr, doneSystemKeys, kategorie) => {
     if (arr.length === 0) return { hasAny: false, allDone: true }; // leer = neutral
-    const done = arr.filter(x => doneValues.includes(x.status)).length;
+    const done = arr.filter(x => doneSystemKeys.includes(normalizeStatus(kategorie, x.status))).length;
     return { hasAny: true, allDone: done === arr.length };
   };
 
-  const depStats = countsDone(allDeps, ['Durchgeführt', 'Abgerechnet']);
-  const apptStats = countsDone(allAppts, ['durchgefuehrt']);
+  const depStats  = countsDone(allDeps,  [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET], 'einsatz_status');
+  const apptStats = countsDone(allAppts, [APPOINTMENT_STATUS.DURCHGEFUEHRT],                                'termin_status');
 
   // Logik für neuen Status
-  let neuerStatus = project.status;
+  let neuerStatusKey = projektStatusKey;
   if (!depStats.hasAny) {
     // Keine Einsätze → kein Auto-Status-Change
     return;
   }
   if (depStats.allDone && apptStats.allDone) {
-    neuerStatus = 'Abgeschlossen';
+    neuerStatusKey = PROJECT_STATUS.ABGESCHLOSSEN;
   } else if (depStats.allDone) {
-    neuerStatus = 'Abschlussphase';
+    neuerStatusKey = PROJECT_STATUS.ABSCHLUSSPHASE;
   } else {
-    neuerStatus = 'In Arbeit';
+    neuerStatusKey = PROJECT_STATUS.IN_ARBEIT;
   }
 
-  if (neuerStatus !== project.status) {
+  if (neuerStatusKey !== projektStatusKey) {
     const { error: updErr } = await db.from('projects')
-      .update({ status: neuerStatus }).eq('id', projectId);
+      .update({ status: neuerStatusKey }).eq('id', projectId);
     if (!updErr) {
-      showToast(`Projekt-Status automatisch auf „${neuerStatus}" aktualisiert.`);
+      const neuerLabel = getStatusLabel('projekt_status', neuerStatusKey, neuerStatusKey);
+      showToast(`Projekt-Status automatisch auf „${neuerLabel}" aktualisiert.`);
     }
   }
 }

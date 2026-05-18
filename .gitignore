@@ -5,3 +5,4 @@ node_modules/
 # bleiben lokal, gehören nicht ins Repo
 migrations/seed_*.sql
 migrations/cleanup_testdata.sql
+.vercel

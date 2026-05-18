@@ -2,6 +2,25 @@
 
 Diese Datei enthält Hinweise für Claude Code (claude.ai/code), wenn mit Code in diesem Repository gearbeitet wird.
 
+## ⚠️ Aktiver Refactor: Block 2 — System-Keys für Status-Lookups (WIP)
+
+**Stand 19.05.2026:** In Arbeit auf Branch `refactor/block-2-system-keys` (NICHT main). Ziel: alle Status-Magic-Strings (`'Abgeschlossen'`, `'Durchgeführt'`, …) durch system_keys (`'abgeschlossen'`, `'durchgefuehrt'`, …) ersetzen, damit Mandanten Status-Labels umbenennen können, ohne dass Auto-Logik/Filter brechen.
+
+**Fertig (Foundation):**
+- `migrations/v2.30.0_lookup_system_keys.sql` (geschrieben, **NICHT** appliziert — Datei trägt einen ⚠️-Warn-Header)
+- Status-Konstanten + Helper in `app.js` (`PROJECT_STATUS`, `DEPLOYMENT_STATUS`, `APPOINTMENT_STATUS`, `TASK_STATUS`, `normalizeStatus()`, `dualStatus()`, `getStatusLabel()`, `_loadStatusLabels()`)
+- Umgestellt: `checkAndUpdateProjectStatus()`, `checkAndUpdateProjectStatusSmart()`, `_activityStatusStyle()`
+
+**Offen (kommende Sessions, jeweils ein Sprint pro Welle):**
+- ~57 Supabase-Filter (`.eq/.in/.neq` auf `status`) → `dualStatus()`-Wrap
+- ~170 JS-Vergleichsstellen (`status === 'Label'`) → `normalizeStatus()` + Konstanten
+- ~14 Update-Operationen (`.update({ status: 'Label' })`) → system_keys
+- Display-Stellen → `getStatusLabel()` aus Lookup-Cache
+- Migration applizieren (erst wenn 100% des Codes umgestellt; sonst bricht alles)
+- Branch nach `main` mergen
+
+**Regel für aktive Sessions:** Wer am Code arbeitet, MUSS neue Status-Vergleiche im Dual-Mode-Pattern schreiben (`normalizeStatus(kat, status) === KEY` statt `status === 'Label'`). Sonst wächst die Schuld weiter.
+
 ## Projekt-Überblick
 
 Internes CRM für Cumart Consulting. **Vanilla HTML/CSS/JS SPA** (kein Framework, kein Build-Schritt) auf Basis von **Supabase** (Postgres + Auth + eine Edge Function). Deployment via Vercel Auto-Deploy von `main` nach `https://cumart.cloud`.
