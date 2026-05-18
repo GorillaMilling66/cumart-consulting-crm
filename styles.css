@@ -555,24 +555,60 @@ body {
   font-size: 13px; color: var(--muted);
 }
 
+/* v2.27.6: Briefing-Sektions-Header prominenter — eigene Zeile, stärkere
+   Schrift, farbiger Akzentbalken davor. Damit man auf einen Blick erkennt,
+   wo eine neue Sektion beginnt. */
 .bv2-divider {
-  display: flex; align-items: center; gap: 12px;
-  margin: 32px 0 14px;
+  display: flex; align-items: center; gap: 14px;
+  margin: 36px 0 18px;
+  padding: 16px 0 12px;
+  border-top: 1.5px solid var(--border);
 }
-.bv2-divider:first-of-type { margin-top: 8px; }
+.bv2-divider:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
 .bv2-divider-label {
-  font-size: 12px; font-weight: 500; letter-spacing: 0.8px;
-  color: var(--text); flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  text-transform: uppercase;
+  flex-shrink: 0;
+  position: relative;
+  padding-left: 14px;
+}
+.bv2-divider-label::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 3px; bottom: 3px;
+  width: 4px;
+  background: var(--text);
+  border-radius: 2px;
 }
 .bv2-divider-hint {
-  font-size: 11px; color: var(--muted); flex-shrink: 0;
+  font-size: 12px; color: var(--muted); flex-shrink: 0;
 }
 .bv2-divider::after {
-  content: ""; flex: 1; height: 0.5px; background: var(--border);
+  content: ""; flex: 1; height: 1px; background: var(--border);
 }
 /* v2.11.7: Kleinerer Sub-Divider (Wochenplan zwischen Tagesplan und Folgen). */
-.bv2-divider-sub { margin: 18px 0 8px; }
-.bv2-divider-sub .bv2-divider-label { font-size: 11px; color: var(--muted); }
+.bv2-divider-sub {
+  margin: 18px 0 8px;
+  padding: 8px 0 6px;
+  border-top: 1px solid var(--border);
+}
+.bv2-divider-sub .bv2-divider-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  padding-left: 10px;
+}
+.bv2-divider-sub .bv2-divider-label::before {
+  width: 3px;
+  background: var(--border-strong);
+}
 /* v2.11.7: Admin-only Filter-Select rechts im Divider (DIESER MONAT). */
 .bv2-divider-filter {
   display: flex; align-items: center; gap: 6px;
@@ -1616,23 +1652,33 @@ body {
 }
 
 /* Section „Schnell weitermachen" / „Fortführen"
-   v2.26.7: Sektions-Header sitzt in einem grauen Streifen, der über die
-   ganze Breite der Welcome-Karte läuft — klare visuelle Trennung
-   zwischen den Bereichen. */
-.ab-welcome-section { margin-top: 24px; }
+   v2.26.7 → v2.27.6: Sektions-Header läuft als breiter grauer Streifen
+   über die Karte, Titel ist größer + dunkler, mit Akzentbalken vorn.
+   So sieht man auf einen Blick, wo eine neue Sektion beginnt. */
+.ab-welcome-section { margin-top: 28px; }
 .ab-welcome-section-head {
   margin: 0 -22px 16px;
-  padding: 10px 22px;
+  padding: 14px 22px;
   background: var(--bg-soft);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border-top: 1.5px solid var(--border);
+  border-bottom: 1.5px solid var(--border);
 }
 .ab-welcome-section-title {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: .6px;
-  color: var(--muted);
+  letter-spacing: .5px;
+  color: var(--text);
   text-transform: uppercase;
+  position: relative;
+  padding-left: 14px;
+}
+.ab-welcome-section-title::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 2px; bottom: 2px;
+  width: 4px;
+  background: var(--text);
+  border-radius: 2px;
 }
 
 /* Auch zwischen den unbeschrifteten Blöcken (KPIs, Schnell-Eingabe) etwas
