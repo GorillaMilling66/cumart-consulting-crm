@@ -7351,46 +7351,66 @@ function invalidateTemplatesCache() {
   templatesCache = { termin: null, aufgabe: null, einsatz: null, projekt: null };
 }
 
-/** Liste auf der Admin-Seite — gefiltert nach gewähltem Typ, inkl. archivierter. */
+/** v2.25.5: Liste auf der Admin-Seite — pro Typ ein eigener Tabellenkörper
+ *  (Termin / Aufgabe / Einsatz / Projekt), inkl. archivierter Vorlagen. */
 async function loadTemplates() {
   if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Seite.', true); return; }
-  const tbody = document.getElementById('templates-table-body');
-  const filter = document.getElementById('tpl-filter-typ');
-  const typ = filter?.value || 'termin';
-  tbody.innerHTML = '<tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>';
+  const TYPEN = ['termin','aufgabe','einsatz','projekt'];
+  for (const typ of TYPEN) {
+    const tb = document.getElementById(`templates-table-body-${typ}`);
+    if (tb) tb.innerHTML = '<tr><td colspan="4"><div class="empty">Lade ...</div></td></tr>';
+  }
 
   const { data, error } = await db.from('templates')
-    .select('*').eq('typ', typ)
+    .select('*')
     .order('ist_aktiv', { ascending: false }).order('reihenfolge').order('name');
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="4"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    for (const typ of TYPEN) {
+      const tb = document.getElementById(`templates-table-body-${typ}`);
+      if (tb) tb.innerHTML = `<tr><td colspan="4"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+    }
     return;
   }
-  if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4"><div class="empty">Noch keine Templates für diesen Typ. Klicke oben auf „+ Neues Template".</div></td></tr>';
-    return;
+
+  const grouped = { termin: [], aufgabe: [], einsatz: [], projekt: [] };
+  for (const t of (data || [])) {
+    if (grouped[t.typ]) grouped[t.typ].push(t);
   }
-  tbody.innerHTML = data.map(t => `
-    <tr>
-      <td><div class="cell-link" onclick="openTemplateModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
-      <td>${t.reihenfolge}</td>
-      <td>${t.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>' : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>'}</td>
-      <td class="col-action" style="text-align:right">
-        <button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
-      </td>
-    </tr>
-  `).join('');
+
+  for (const typ of TYPEN) {
+    const tb = document.getElementById(`templates-table-body-${typ}`);
+    if (!tb) continue;
+    const rows = grouped[typ];
+    if (rows.length === 0) {
+      tb.innerHTML = '<tr><td colspan="4"><div class="empty">Noch keine Vorlagen. Klicke oben auf „+ Neue Vorlage".</div></td></tr>';
+      continue;
+    }
+    tb.innerHTML = rows.map(t => `
+      <tr>
+        <td><div class="cell-link" onclick="openTemplateModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
+        <td>${t.reihenfolge}</td>
+        <td>${t.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>' : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>'}</td>
+        <td class="col-action" style="text-align:right">
+          <button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
+        </td>
+      </tr>
+    `).join('');
+  }
 }
 
-async function openTemplateModal(mode, templateId = null) {
+/** v2.25.5: zweiter Parameter wirkt kontextabhängig — bei `mode='edit'`
+ *  ist es die Template-ID, bei `mode='new'` der vorausgewählte Typ (eine der
+ *  Sektionen „Termin/Aufgabe/Einsatz/Projekt" oben). */
+async function openTemplateModal(mode, idOrTyp = null) {
   if (!isAdmin()) { showToast('Nur Admins.', true); return; }
+  const templateId = mode === 'edit' ? idOrTyp : null;
   editingTemplateId = templateId;
   document.getElementById('modal-template-title').textContent = mode === 'edit' ? 'Template bearbeiten' : 'Neues Template';
   document.getElementById('tpl-save-btn').textContent = mode === 'edit' ? 'Speichern' : 'Anlegen';
   document.getElementById('tpl-delete-btn').style.display = mode === 'edit' ? 'inline-block' : 'none';
 
   let prefilled = {};
-  let typ = document.getElementById('tpl-filter-typ')?.value || 'termin';
+  let typ = (mode === 'new' && idOrTyp) ? idOrTyp : 'termin';
   let name = '';
   let reihenfolge = 0;
   let ist_aktiv = true;
@@ -7539,12 +7559,18 @@ function renderTemplateSubItemRow(item, idx, serviceOpts) {
   const menge = item.menge ?? '';
   const einzelpreis = item.einzelpreis ?? '';
   const isEinsatz = t === 'einsatz';
+  // v2.25.5: Das Feld zeigt jetzt den GESAMT-Betrag (Menge × Einzelpreis).
+  // Der Einzelpreis bleibt im JSON gespeichert (deployment-kompatibel),
+  // wird aber im UI durch data-einzelpreis auf der Row mitgeführt.
+  const mengeNum = Number(menge) > 0 ? Number(menge) : 1;
+  const einzelNum = Number(einzelpreis) || 0;
+  const gesamtDisplay = einzelNum ? Number((einzelNum * mengeNum).toFixed(2)) : '';
   // v2.25.4: data-preis am Option-Element, damit onSubItemServiceChange()
-  // den Standardpreis ohne extra DB-Query in das Preis-Feld kopieren kann.
+  // den Standardpreis ohne extra DB-Query verwenden kann.
   const serviceOpt = (serviceOpts || []).map(o =>
     `<option value="${esc(o.id)}" data-preis="${o.standardpreis ?? ''}" ${service === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
   return `
-    <div class="tpl-subitem-row${isEinsatz ? ' is-einsatz' : ''}" data-idx="${idx}">
+    <div class="tpl-subitem-row${isEinsatz ? ' is-einsatz' : ''}" data-idx="${idx}" data-einzelpreis="${einzelpreis}">
       <div class="tpl-si-main">
         <select class="tpl-si-typ" onchange="onSubItemTypChange(${idx})">
           <option value="termin"  ${t === 'termin'  ? 'selected' : ''}>Termin</option>
@@ -7567,11 +7593,11 @@ function renderTemplateSubItemRow(item, idx, serviceOpts) {
         </div>
         <div class="tpl-si-field tpl-si-field-menge">
           <span class="tpl-si-extra-label">Menge</span>
-          <input type="number" class="tpl-si-menge" placeholder="1" step="0.01" value="${menge}">
+          <input type="number" class="tpl-si-menge" placeholder="1" step="0.01" value="${menge}" oninput="onSubItemMengeInput(${idx})">
         </div>
         <div class="tpl-si-field tpl-si-field-preis">
-          <span class="tpl-si-extra-label">Preis €</span>
-          <input type="number" class="tpl-si-preis" placeholder="0,00" step="0.01" value="${einzelpreis}">
+          <span class="tpl-si-extra-label" title="Menge × Einzelpreis">Gesamt €</span>
+          <input type="number" class="tpl-si-preis" placeholder="0,00" step="0.01" value="${gesamtDisplay}" oninput="onSubItemPreisInput(${idx})">
         </div>
       </div>
     </div>`;
@@ -7605,10 +7631,9 @@ function onSubItemTypChange(idx) {
   row.classList.toggle('is-einsatz', isEinsatz);
 }
 
-/** v2.25.4: Beim Anwählen einer Leistung im Sub-Items-Editor automatisch
- *  Titel (falls leer), Menge (falls leer → 1) und Preis (immer auf Standard-
- *  preis der Leistung) befüllen. Eigene Eingaben des Users werden nicht
- *  überschrieben, außer beim Preis — der spiegelt bewusst die Leistung wider. */
+/** v2.25.4/5: Beim Anwählen einer Leistung wird Titel (falls leer), Menge
+ *  (falls leer → 1) und der Einzelpreis aus der Leistung übernommen. Das
+ *  „Gesamt €"-Feld zeigt direkt Menge × Einzelpreis. */
 function onSubItemServiceChange(idx) {
   const list = document.getElementById('tpl-subitems-list');
   const row = list?.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
@@ -7625,7 +7650,40 @@ function onSubItemServiceChange(idx) {
 
   if (titelInp && !titelInp.value.trim()) titelInp.value = serviceName;
   if (mengeInp && !mengeInp.value.trim()) mengeInp.value = '1';
-  if (preisInp && standardpreis !== '') preisInp.value = standardpreis;
+  if (standardpreis !== '') {
+    row.dataset.einzelpreis = standardpreis;
+    const m = Number(mengeInp.value) > 0 ? Number(mengeInp.value) : 1;
+    preisInp.value = Number((Number(standardpreis) * m).toFixed(2));
+  }
+}
+
+/** v2.25.5: Mengen-Änderung → Gesamt = Einzelpreis × Menge neu berechnen.
+ *  Einzelpreis lebt in row.dataset.einzelpreis (vom Service-Pick oder vom
+ *  letzten User-Edit des Gesamt-Feldes). */
+function onSubItemMengeInput(idx) {
+  const list = document.getElementById('tpl-subitems-list');
+  const row = list?.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
+  if (!row) return;
+  const einzel = Number(row.dataset.einzelpreis) || 0;
+  const menge = Number(row.querySelector('.tpl-si-menge').value) || 0;
+  if (einzel && menge) {
+    row.querySelector('.tpl-si-preis').value = Number((einzel * menge).toFixed(2));
+  }
+}
+
+/** v2.25.5: Manuelle Änderung am Gesamt-Feld → Einzelpreis = Gesamt / Menge
+ *  zurückrechnen, damit der gespeicherte Einzelpreis konsistent bleibt. */
+function onSubItemPreisInput(idx) {
+  const list = document.getElementById('tpl-subitems-list');
+  const row = list?.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
+  if (!row) return;
+  const preis = Number(row.querySelector('.tpl-si-preis').value);
+  const menge = Number(row.querySelector('.tpl-si-menge').value) || 1;
+  if (!isNaN(preis) && preis !== 0) {
+    row.dataset.einzelpreis = String(Number((preis / menge).toFixed(4)));
+  } else {
+    row.dataset.einzelpreis = '';
+  }
 }
 
 /** Liest die aktuellen Sub-Items aus dem DOM. */
@@ -7641,12 +7699,20 @@ function readTemplateSubItems() {
       const sel = row.querySelector('.tpl-si-service');
       const sid = sel.value;
       const menge = row.querySelector('.tpl-si-menge').value;
+      // v2.25.5: Im UI zeigen wir „Gesamt €" (Menge × Einzelpreis). Der
+      // Einzelpreis wird in row.dataset.einzelpreis mitgeführt — von dort
+      // lesen wir den deployment-kompatiblen Wert.
       const preis = row.querySelector('.tpl-si-preis').value;
+      let einzelpreis = row.dataset.einzelpreis;
+      if ((!einzelpreis || einzelpreis === '') && preis !== '') {
+        const m = Number(menge) > 0 ? Number(menge) : 1;
+        einzelpreis = String(Number((Number(preis) / m).toFixed(4)));
+      }
       // v2.25.4: Fallback — leerer Titel + gewählte Leistung übernimmt den Namen der Leistung.
       if (!titel && sid) titel = (sel.options[sel.selectedIndex]?.textContent || '').trim();
       if (sid) item.service_id = sid;
       if (menge !== '') item.menge = Number(menge);
-      if (preis !== '') item.einzelpreis = Number(preis);
+      if (einzelpreis !== '' && einzelpreis != null) item.einzelpreis = Number(einzelpreis);
     }
     item.titel = titel;
     return item;

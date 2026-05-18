@@ -2838,6 +2838,16 @@ body {
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
+  /* v2.25.5: flex erlaubt einen Action-Button rechts neben dem Titel
+     (z. B. „+ Neue Vorlage" pro Sektion auf der Templates-Seite). */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card-title .btn {
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* ── DATE-SHORTCUTS (v1.25.0) ── */

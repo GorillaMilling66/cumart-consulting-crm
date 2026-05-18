@@ -2147,25 +2147,69 @@
         kann ein Template gewählt werden — die hinterlegten Felder werden
         automatisch befüllt. Datumsfelder bleiben leer (Kontext-spezifisch).
       </p>
+      <!-- v2.25.5: Pro Typ ein eigener Abschnitt — kein Filter-Dropdown mehr. -->
       <div class="card">
-        <div class="card-title">Vorlagen nach Typ</div>
-        <div class="form-group" style="max-width:320px;margin-bottom:20px">
-          <label>Typ anzeigen</label>
-          <select id="tpl-filter-typ" onchange="loadTemplates()">
-            <option value="termin">Termin</option>
-            <option value="aufgabe">Aufgabe</option>
-            <option value="einsatz">Einsatz</option>
-            <option value="projekt">Projekt</option>
-          </select>
+        <div class="card-title">
+          <span>Termin-Vorlagen</span>
+          <button class="btn btn-sm" onclick="openTemplateModal('new','termin')">+ Neue Termin-Vorlage</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Name</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th>
-              </tr>
+              <tr><th>Name</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th></tr>
             </thead>
-            <tbody id="templates-table-body">
+            <tbody id="templates-table-body-termin">
+              <tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>Aufgaben-Vorlagen</span>
+          <button class="btn btn-sm" onclick="openTemplateModal('new','aufgabe')">+ Neue Aufgaben-Vorlage</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th></tr>
+            </thead>
+            <tbody id="templates-table-body-aufgabe">
+              <tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>Einsatz-Vorlagen</span>
+          <button class="btn btn-sm" onclick="openTemplateModal('new','einsatz')">+ Neue Einsatz-Vorlage</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th></tr>
+            </thead>
+            <tbody id="templates-table-body-einsatz">
+              <tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>Projekt-Vorlagen</span>
+          <button class="btn btn-sm" onclick="openTemplateModal('new','projekt')">+ Neue Projekt-Vorlage</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Reihenfolge</th><th>Status</th><th class="col-action"></th></tr>
+            </thead>
+            <tbody id="templates-table-body-projekt">
               <tr><td colspan="4"><div class="empty">Lade Templates ...</div></td></tr>
             </tbody>
           </table>
