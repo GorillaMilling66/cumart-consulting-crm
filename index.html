@@ -571,15 +571,19 @@
                      überfällige Aufgaben. Klick springt in die jew. Liste. -->
                 <div class="ab-welcome-main-row">
                   <div class="arbeitsplatz-capture">
-                    <input type="text" id="arbeitsplatz-capture-input"
-                           placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
-                           autocomplete="off">
+                    <!-- v2.28.6: Bezugs-Zeile sitzt jetzt OBEN, die Eingabe ist
+                         ein Textarea (oben links beginnender Cursor, mehrzeilig)
+                         und füllt den Rest der Höhe für Symmetrie zu den KPIs. -->
                     <div class="arbeitsplatz-context-row">
                       <span class="arbeitsplatz-context-label">Bezogen auf</span>
                       <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
                         <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
                       </span>
                     </div>
+                    <textarea id="arbeitsplatz-capture-input"
+                              placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr". Mehrzeilige Notizen sind möglich.'
+                              rows="4"
+                              autocomplete="off"></textarea>
                   </div>
                   <div class="ab-welcome-kpis" id="ab-welcome-kpis">
                     <div class="ab-welcome-kpi-skel"></div>
