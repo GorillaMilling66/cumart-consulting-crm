@@ -22680,19 +22680,12 @@ async function renderProjectV2Layout(p) {
     if (healthSub) healthSub.textContent = ageDays === 999 ? '—' : `Aktivität vor ${ageDays === 0 ? '<1' : ageDays} ${ageDays === 1 ? 'Tag' : 'Tagen'}`;
   }
 
-  // Sidepanel: Beteiligte
-  const beteiligteEl = document.getElementById('project-beteiligte');
-  if (beteiligteEl) {
-    const rows = [];
-    if (p.verantwortlicher) {
-      rows.push(`<div class="proj-side-person"><span class="proj-side-avatar">${esc(ini(p.verantwortlicher.name))}</span><div><div class="proj-side-name">${esc(p.verantwortlicher.name)}</div><div class="proj-side-role">Verantwortlich</div></div></div>`);
-    }
-    if (p.hauptkontakt) {
-      const kname = [p.hauptkontakt.vorname, p.hauptkontakt.nachname].filter(Boolean).join(' ');
-      rows.push(`<div class="proj-side-person" onclick="navigateTo('kontakt','${esc(p.hauptkontakt.id)}')"><span class="proj-side-avatar">${esc(ini(kname))}</span><div><div class="proj-side-name">${esc(kname)}</div><div class="proj-side-role">Hauptkontakt</div></div></div>`);
-    }
-    beteiligteEl.innerHTML = rows.length === 0 ? '<div class="info-card-empty">—</div>' : rows.join('');
-  }
+  // Sidepanel: Beteiligte — v2.28.5: zusätzlich Mitarbeiter aus den
+  // Einsätzen dieses Projekts (über deployment_technicians) automatisch
+  // mit aufnehmen. Der Verantwortliche bleibt wie beim Projekt-Start
+  // definiert; Doppelte werden dedupliziert und nicht erneut als „Team"
+  // gelistet.
+  renderProjectBeteiligte(p).catch(err => console.error('Beteiligte-Render:', err));
 
   // Sidepanel: Firma
   const firmaCard = document.getElementById('project-firma-card');
@@ -22715,6 +22708,83 @@ async function renderProjectV2Layout(p) {
   // Avatar in Notiz-Eingabe
   const noteAvatar = document.getElementById('project-note-avatar');
   if (noteAvatar) noteAvatar.textContent = ini(currentProfile?.name || '?');
+}
+
+/** v2.28.5 — Beteiligte-Liste im Projekt-Sidebar.
+ *  Reihenfolge:
+ *  1) Verantwortlicher (immer der, der am Projekt-Start gesetzt wurde)
+ *  2) Hauptkontakt (Kunden-Kontakt)
+ *  3) Alle internen User, die in irgendeinem Einsatz dieses Projekts als
+ *     Techniker zugeordnet waren — alphabetisch sortiert. Verantwortlicher
+ *     wird in diesem Block übersprungen, damit er nicht doppelt auftaucht.
+ *  Klick auf einen Mitarbeiter ist (noch) ohne Navigation, weil Mitarbeiter
+ *  selbst keine eigene Detail-Seite haben. */
+async function renderProjectBeteiligte(p) {
+  const beteiligteEl = document.getElementById('project-beteiligte');
+  if (!beteiligteEl) return;
+
+  const rows = [];
+  const seen = new Set();
+
+  if (p.verantwortlicher?.id) {
+    seen.add(p.verantwortlicher.id);
+    rows.push(`<div class="proj-side-person">
+      <span class="proj-side-avatar">${esc(ini(p.verantwortlicher.name))}</span>
+      <div>
+        <div class="proj-side-name">${esc(p.verantwortlicher.name)}</div>
+        <div class="proj-side-role">Verantwortlich</div>
+      </div>
+    </div>`);
+  }
+
+  if (p.hauptkontakt) {
+    const kname = [p.hauptkontakt.vorname, p.hauptkontakt.nachname].filter(Boolean).join(' ');
+    rows.push(`<div class="proj-side-person" onclick="navigateTo('kontakt','${esc(p.hauptkontakt.id)}')">
+      <span class="proj-side-avatar">${esc(ini(kname))}</span>
+      <div>
+        <div class="proj-side-name">${esc(kname)}</div>
+        <div class="proj-side-role">Hauptkontakt</div>
+      </div>
+    </div>`);
+  }
+
+  // Mitarbeiter aus den Einsätzen dieses Projekts. Wir gehen über
+  // deployment_technicians + deployments(project_id=…).
+  try {
+    const { data: techRows } = await db.from('deployment_technicians')
+      .select('user_id, user:user_profiles(id, name), deployment:deployments!inner(id, project_id, status, deleted_at)')
+      .eq('deployment.project_id', p.id);
+    if (!isStillOnDetail('project', p.id)) return;
+
+    const teamMap = new Map(); // user_id → { id, name }
+    for (const r of (techRows || [])) {
+      if (!r?.user) continue;
+      // Soft-deleted oder stornierte Einsätze zählen nicht als „hat
+      // stattgefunden" — der User wäre dann fälschlich beteiligt.
+      if (r.deployment?.deleted_at) continue;
+      if (r.deployment?.status === 'Storniert') continue;
+      if (seen.has(r.user.id)) continue;
+      teamMap.set(r.user.id, r.user);
+    }
+
+    const teamList = Array.from(teamMap.values()).sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', 'de'));
+
+    for (const u of teamList) {
+      seen.add(u.id);
+      rows.push(`<div class="proj-side-person">
+        <span class="proj-side-avatar">${esc(ini(u.name || '?'))}</span>
+        <div>
+          <div class="proj-side-name">${esc(u.name || '—')}</div>
+          <div class="proj-side-role">Team · aus Einsätzen</div>
+        </div>
+      </div>`);
+    }
+  } catch (e) {
+    console.error('Beteiligte-Lookup:', e);
+  }
+
+  beteiligteEl.innerHTML = rows.length === 0 ? '<div class="info-card-empty">—</div>' : rows.join('');
 }
 
 /** Aggregiert Termine, Einsätze, Aufgaben, Notizen zu einem Stream und rendert. */
