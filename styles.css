@@ -9731,3 +9731,54 @@ select.typ-select-secondary {
   background: var(--text);
   color: var(--surface);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   v2.28.7 — „Heute besonders heiß"-Block im Briefing-Sidebar
+   ═══════════════════════════════════════════════════════════ */
+.bv2-hot-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.bv2-hot-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background .12s, border-color .12s, transform .12s;
+}
+.bv2-hot-row:hover {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.bv2-hot-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+.bv2-hot-badge-danger { background: var(--status-overdue-bg); color: var(--status-overdue-accent); }
+.bv2-hot-badge-warn   { background: #fef3c7; color: #92400e; }
+.bv2-hot-badge-muted  { background: var(--bg); color: var(--muted); }
+.bv2-hot-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.bv2-hot-title {
+  font-size: 12px; font-weight: 500;
+  color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bv2-hot-kontext {
+  font-size: 10px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bv2-hot-sub {
+  font-size: 10px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}

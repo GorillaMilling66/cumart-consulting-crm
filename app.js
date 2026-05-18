@@ -4306,24 +4306,129 @@ function renderBriefingHeute(data) {
     }
   }
 
-  // Sidebar — Datenpflege (aus existing incompleteStats)
-  const dataEl = document.getElementById('bv2-today-data');
-  if (dataEl) {
-    const inc = data.incompleteStats || { companies: 0, contacts: 0 };
-    const sum = (inc.companies || 0) + (inc.contacts || 0);
-    if (sum > 0) {
-      const parts = [];
-      if (inc.companies > 0) parts.push(`${inc.companies} Firmen ohne Adresse`);
-      if (inc.contacts > 0) parts.push(`${inc.contacts} Kontakte ohne Telefon`);
-      dataEl.innerHTML = `
-        <div class="bv2-side-block is-info">
-          <div class="bv2-side-block-label">DATENPFLEGE</div>
-          <div style="font-size:12px;color:var(--status-plan-fg);line-height:1.5">${sum} Datensätze halb gefüllt — ${esc(parts.join(', '))}.</div>
-        </div>`;
-    } else {
-      dataEl.innerHTML = '';
+  // v2.28.7: Sidebar-Slot „Heute besonders heiß" — statt generischer Datenpflege-
+  // Pauschale konkrete Risiko-Signale, jede Zeile klickbar.
+  renderBriefingHotItems().catch(err => console.error('Hot-Items:', err));
+}
+
+/** v2.28.7 — „Heute besonders heiß"-Box im Briefing-Sidebar.
+ *  Konkrete Risiko-Signale statt generischer Aggregatzahlen.
+ *  Aktuelle Detektoren:
+ *   1) Projekte mit Deadline in den nächsten 14 Tagen, sortiert nach Datum.
+ *   2) Durchgeführte Einsätze älter als 5 Tage ohne Bericht (kein
+ *      deployment_log und keine doc_section).
+ *  Spätere Iteration kann „Cold Customer" (60 T ohne Kontakt) ergänzen. */
+async function renderBriefingHotItems() {
+  const el = document.getElementById('bv2-today-data');
+  if (!el) return;
+  el.innerHTML = '';
+
+  const todayISO = toISODate(new Date());
+  const today = new Date(todayISO + 'T00:00:00');
+  const DAY_MS = 86400000;
+  const in14ISO = toISODate(new Date(today.getTime() + 14 * DAY_MS));
+  const before5ISO = toISODate(new Date(today.getTime() - 5 * DAY_MS));
+
+  const items = [];
+
+  // 1) Projekte mit naher Deadline
+  try {
+    const { data: hotProjects } = await db.from('projects')
+      .select('id, name, enddatum, status, updated_at, company:companies(name)')
+      .is('deleted_at', null)
+      .not('status', 'in', '(Abgeschlossen,Storniert,Verloren,"Lead-zurück")')
+      .not('enddatum', 'is', null)
+      .lte('enddatum', in14ISO)
+      .order('enddatum', { ascending: true })
+      .limit(8);
+    for (const p of (hotProjects || [])) {
+      const enddate = new Date(p.enddatum + 'T00:00:00');
+      const days = Math.round((enddate - today) / DAY_MS);
+      const updated = p.updated_at ? new Date(p.updated_at) : null;
+      const staleDays = updated ? Math.round((today - updated) / DAY_MS) : 999;
+      let badge, sub;
+      if (days < 0)  { badge = 'ÜBERZOGEN'; sub = `${-days} T über Deadline${staleDays > 5 ? ` · letzte Akt. vor ${staleDays} T` : ''}`; }
+      else if (days === 0) { badge = 'DEADLINE'; sub = 'Deadline heute' + (staleDays > 5 ? ` · letzte Akt. vor ${staleDays} T` : ''); }
+      else if (days <= 3)  { badge = 'DEADLINE'; sub = `noch ${days} T${staleDays > 5 ? ` · letzte Akt. vor ${staleDays} T` : ''}`; }
+      else if (staleDays > 7) { badge = 'STAGNIERT'; sub = `Deadline in ${days} T · letzte Akt. vor ${staleDays} T`; }
+      else continue; // nicht „heiß" genug
+      items.push({
+        urgency: days < 0 ? 200 - days : 100 - days,
+        badge,
+        title: p.name,
+        kontext: p.company?.name || '',
+        sub,
+        click: `navigateTo('karteikarte', { type: 'projekt', id: '${esc(p.id)}' })`
+      });
     }
+  } catch (e) { console.error('Hot-Items projekte:', e); }
+
+  // 2) Durchgeführte Einsätze ohne Bericht
+  try {
+    const { data: doneDeps } = await db.from('deployments')
+      .select('id, titel, datum_von, company:companies(name), deployment_log(id)')
+      .is('deleted_at', null).eq('status', 'Durchgeführt')
+      .not('datum_von', 'is', null).lt('datum_von', before5ISO)
+      .order('datum_von', { ascending: true })
+      .limit(15);
+    const depIds = (doneDeps || []).map(d => d.id);
+    let docByDep = new Set();
+    if (depIds.length) {
+      const { data: depDocs } = await db.from('doc_sections')
+        .select('entity_id').eq('entity_type', 'deployment').in('entity_id', depIds);
+      docByDep = new Set((depDocs || []).map(x => x.entity_id));
+    }
+    for (const d of (doneDeps || [])) {
+      const hasLog = Array.isArray(d.deployment_log) && d.deployment_log.length > 0;
+      const hasDoc = docByDep.has(d.id);
+      if (hasLog || hasDoc) continue;
+      const age = Math.round((today - new Date(d.datum_von + 'T00:00:00')) / DAY_MS);
+      items.push({
+        urgency: 50 + Math.min(age, 80),
+        badge: 'BERICHT FEHLT',
+        title: d.titel || '—',
+        kontext: d.company?.name || '',
+        sub: `durchgeführt vor ${age} T · kein Bericht`,
+        click: `navigateTo('einsatz', '${esc(d.id)}')`
+      });
+    }
+  } catch (e) { console.error('Hot-Items einsaetze:', e); }
+
+  if (items.length === 0) {
+    // Nichts heiß? Optional eine kleine Beruhigungs-Box.
+    el.innerHTML = `
+      <div class="bv2-side-block">
+        <div class="bv2-side-block-label">HEUTE BESONDERS HEISS</div>
+        <div style="font-size:11px;color:var(--muted);padding:6px 0">Alles im grünen Bereich — keine kritischen Signale.</div>
+      </div>`;
+    return;
   }
+
+  items.sort((a, b) => b.urgency - a.urgency);
+  const top = items.slice(0, 5);
+
+  el.innerHTML = `
+    <div class="bv2-side-block">
+      <div class="bv2-side-block-label">HEUTE BESONDERS HEISS <span class="bv2-side-block-count">${top.length}</span></div>
+      <div class="bv2-hot-list">
+        ${top.map(it => `
+          <button class="bv2-hot-row" onclick="${it.click}">
+            <span class="bv2-hot-badge bv2-hot-badge-${_hotBadgeClass(it.badge)}">${esc(it.badge)}</span>
+            <span class="bv2-hot-body">
+              <span class="bv2-hot-title">${esc(it.title)}</span>
+              ${it.kontext ? `<span class="bv2-hot-kontext">${esc(it.kontext)}</span>` : ''}
+              <span class="bv2-hot-sub">${esc(it.sub)}</span>
+            </span>
+          </button>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function _hotBadgeClass(badge) {
+  if (badge === 'ÜBERZOGEN' || badge === 'BERICHT FEHLT') return 'danger';
+  if (badge === 'DEADLINE') return 'warn';
+  return 'muted';
 }
 
 /** Tag-Klick im Wochen-Strip — speichert Auswahl und re-rendert Strip + Tafel. */
