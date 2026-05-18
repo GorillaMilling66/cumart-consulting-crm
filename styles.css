@@ -635,8 +635,10 @@ body {
 .bv2-greeting-line .danger { color: var(--danger); font-weight: 500; }
 
 /* HEUTE-Layout
-   v2.28.8: Sidebar-Spalte streckt sich auf die Höhe der Main-Spalte, der
-   letzte Block (Hot-Items / Datenpflege) füllt verbleibenden Platz. */
+   v2.28.8/10: Sidebar-Spalte streckt sich explizit auf die volle Grid-Row-Höhe,
+   der letzte sichtbare Block füllt den verbleibenden Platz. Wenn die ersten
+   zwei Slots leer sind (kein Overdue, kein „Heute fällig"), bekommt der
+   Hot-Items-Slot die ganze Sidebar-Höhe. */
 .bv2-today-layout {
   display: grid;
   grid-template-columns: 1fr 320px;
@@ -644,13 +646,22 @@ body {
   align-items: stretch;
 }
 .bv2-today-main { display: flex; flex-direction: column; gap: 12px; }
-.bv2-today-sidebar { display: flex; flex-direction: column; gap: 12px; }
-.bv2-today-sidebar > div:last-child { flex: 1; }
-.bv2-today-sidebar > div:last-child .bv2-side-block { height: 100%; display: flex; flex-direction: column; }
+.bv2-today-sidebar {
+  display: flex; flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 100%;
+}
+.bv2-today-sidebar > #bv2-today-data { flex: 1 1 auto; min-height: 0; }
+.bv2-today-sidebar > #bv2-today-data .bv2-side-block {
+  height: 100%;
+  display: flex; flex-direction: column;
+}
 @media (max-width: 1000px) {
   .bv2-today-layout { grid-template-columns: 1fr; align-items: start; }
-  .bv2-today-sidebar > div:last-child { flex: 0; }
-  .bv2-today-sidebar > div:last-child .bv2-side-block { height: auto; }
+  .bv2-today-sidebar { height: auto; min-height: 0; }
+  .bv2-today-sidebar > #bv2-today-data { flex: 0; }
+  .bv2-today-sidebar > #bv2-today-data .bv2-side-block { height: auto; }
 }
 
 .bv2-hero-einsatz {

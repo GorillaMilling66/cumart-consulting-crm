@@ -4431,6 +4431,20 @@ function _hotBadgeClass(badge) {
   return 'muted';
 }
 
+// v2.28.9 (Stub) — Toggle für „Preis nach Aufwand" im Projekt-Modal.
+// Wird vom Checkbox-Change aufgerufen. Aktuell deaktiviert/aktiviert nur
+// das Paketpreis-Feld visuell. Volle Berechnungs-Logik folgt im nächsten
+// Schritt (Marge-Card, Wirtschaftlichkeit, Kundenbericht).
+function onProjectPreisModusChange() {
+  const cb = document.getElementById('p-nach-aufwand');
+  const group = document.getElementById('p-umsatz-group');
+  if (!cb || !group) return;
+  const nachAufwand = cb.checked;
+  group.style.opacity = nachAufwand ? '0.5' : '';
+  const inp = document.getElementById('p-umsatz');
+  if (inp) inp.disabled = nachAufwand;
+}
+
 /** Tag-Klick im Wochen-Strip — speichert Auswahl und re-rendert Strip + Tafel. */
 function selectBriefingDay(iso) {
   if (!iso || !_briefingWeekData) return;
@@ -11992,6 +12006,10 @@ async function openProjectModal(mode, projectId = null) {
   document.getElementById('p-enddatum').value = '';
   document.getElementById('p-umsatz').value = '';
   document.getElementById('p-notizen').value = '';
+  // v2.28.9: Preis-Modus zurücksetzen (vollständige Logik folgt im
+  // nächsten Schritt — vorerst nur sichtbares Default-Reset).
+  const pNachAufwand = document.getElementById('p-nach-aufwand');
+  if (pNachAufwand) pNachAufwand.checked = false;
   // v2.13.2: Default für neue Projekte ist „Lead" (Pipeline-Start), nicht
   // mehr „Angebot" — Projekte starten faktisch immer als Lead.
   statusSelect.value = (mode === 'new')
