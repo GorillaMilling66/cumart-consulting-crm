@@ -29035,6 +29035,10 @@ function _buildCustomerReportHtml(data) {
   const company = p.company || {};
   const ek = p.hauptkontakt;
   const verant = p.verantwortlicher?.name || '—';
+  // v2.28.14: Preis-Modus früh ermitteln — wirkt im Einsatz-Honorar-Block
+  // und im Rechnungs-Block. Bei Festpreis bleibt der Einzelpreis-Wert pro
+  // Einsatz verborgen („im Paket inkl."), weil der Kunde den Paketpreis zahlt.
+  const reportNachAufwand = !!p.preis_nach_aufwand;
 
   const todayDE = formatDateDE(toISODate(new Date()));
   const projZeitraum = (p.startdatum && p.enddatum)
@@ -29091,14 +29095,29 @@ function _buildCustomerReportHtml(data) {
             <ul>${logs.map(l => `<li><span class="log-kat">${l.kategorie === 'erkenntnis' ? 'Erkenntnis' : 'Log'}</span> ${_e(l.inhalt || '')}</li>`).join('')}</ul>
           </div>`;
 
+        // v2.28.14: Honorar je Einsatz wird nur bei „Preis nach Aufwand"
+        // ausgewiesen. Bei Festpreis sieht der Kunde nur „im Paket inkl.".
+        const honorarBlock = reportNachAufwand
+          ? `<div class="einsatz-honorar">
+               <span class="einsatz-honorar-label">Honorar</span>
+               <span class="einsatz-honorar-value">${_e(_fmtPreis(netto))}</span>
+             </div>`
+          : `<div class="einsatz-honorar">
+               <span class="einsatz-honorar-label">Abrechnung</span>
+               <span class="einsatz-honorar-value einsatz-honorar-paket">im Paket inkl.</span>
+             </div>`;
+
+        // Berechnungs-Zeile (Menge × Einzelpreis) zeigen wir nur bei „Aufwand",
+        // weil sie sonst den Kunden mit internen Tagessätzen verwirren würde.
+        const berechnungRow = reportNachAufwand
+          ? `<tr><td>Berechnung</td><td>${_e(basisText)}</td></tr>`
+          : '';
+
         return `
           <section class="einsatz">
             <div class="einsatz-head">
               <div class="einsatz-datum">${_e(datum)}${_e(datumBis)}</div>
-              <div class="einsatz-honorar">
-                <span class="einsatz-honorar-label">Honorar</span>
-                <span class="einsatz-honorar-value">${_e(_fmtPreis(netto))}</span>
-              </div>
+              ${honorarBlock}
             </div>
             <h3 class="einsatz-titel">${_e(d.titel || '—')}</h3>
             ${leistung ? `<div class="einsatz-leistung">${_e(leistung)}</div>` : ''}
@@ -29106,7 +29125,7 @@ function _buildCustomerReportHtml(data) {
               <tbody>
                 <tr><td>Zeit</td><td>${_e(zeitText)}</td></tr>
                 ${d.ort ? `<tr><td>Ort</td><td>${_e(d.ort)}</td></tr>` : ''}
-                <tr><td>Berechnung</td><td>${_e(basisText)}</td></tr>
+                ${berechnungRow}
               </tbody>
             </table>
             ${docsHtml}
@@ -29115,18 +29134,30 @@ function _buildCustomerReportHtml(data) {
       }).join('');
 
   // Produkte (alle anzeigen, mit Hinweis im-Paket/zusätzlich; Preise nur VK)
+  // v2.28.14: Rabatt erscheint als eigene Zeile unter der Bezeichnung +
+  // Position-Spalte zeigt den Netto-Wert nach Rabatt. Für „im Paket"-Positionen
+  // ist der Rabatt nicht erlöswirksam → wir lassen ihn dort weg.
   const produkteRows = data.products.map(pp => {
     const menge = Number(pp.menge) || 0;
     const vk = Number(pp.einzelpreis_vk) || 0;
     const einheit = pp.product?.einheit ? ` ${_e(pp.product.einheit)}` : '';
-    const pos = menge * vk;
+    const brutto = menge * vk;
+    const { rabatt, netto } = applyRabatt(brutto, pp.rabatt_typ, pp.rabatt_wert);
+    const pos = pp.im_paket ? brutto : netto;
     const tag = pp.im_paket
       ? `<span class="tag tag-muted">im Paket</span>`
       : `<span class="tag">zusätzlich</span>`;
     const note = pp.notizen ? `<div class="prod-note">${_e(pp.notizen)}</div>` : '';
+    let rabattLine = '';
+    if (!pp.im_paket && rabatt > 0) {
+      const rabattLabel = pp.rabatt_typ === 'prozent'
+        ? `Rabatt ${_fmtMenge(pp.rabatt_wert)} % (−${_fmtPreis(rabatt)})`
+        : `Rabatt −${_fmtPreis(rabatt)}`;
+      rabattLine = `<div class="prod-rabatt">${_e(rabattLabel)}</div>`;
+    }
     return `
       <tr>
-        <td>${_e(pp.bezeichnung || '—')}${note}</td>
+        <td>${_e(pp.bezeichnung || '—')}${note}${rabattLine}</td>
         <td class="num">${_fmtMenge(menge)}${einheit}</td>
         <td class="num">${pp.im_paket ? '—' : _fmtPreis(vk)}</td>
         <td class="num">${pp.im_paket ? '—' : _fmtPreis(pos)}</td>
@@ -29216,6 +29247,7 @@ function _buildCustomerReportHtml(data) {
     .einsatz-honorar { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
     .einsatz-honorar-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #6b6b6b; }
     .einsatz-honorar-value { font-size: 14px; font-weight: 700; color: #1d1d1f; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .einsatz-honorar-value.einsatz-honorar-paket { font-size: 12px; font-weight: 600; color: #047857; font-style: italic; }
     .einsatz-titel { font-size: 14px; font-weight: 600; margin: 2px 0 2px; }
     .einsatz-leistung { font-size: 11px; color: #6b6b6b; margin-bottom: 10px; }
     .einsatz-meta-grid { font-size: 11px; border-collapse: collapse; margin: 0 0 14px; width: 100%; max-width: 480px; }
@@ -29233,6 +29265,7 @@ function _buildCustomerReportHtml(data) {
     .prod-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #6b6b6b; border-bottom: 1px solid #1d1d1f; }
     .prod-table .num, .bill-table .num { text-align: right; font-variant-numeric: tabular-nums; }
     .prod-note { font-size: 11px; color: #6b6b6b; margin-top: 3px; }
+    .prod-rabatt { font-size: 11px; color: #991b1b; margin-top: 3px; font-weight: 500; }
     .tag { display: inline-block; font-size: 10px; padding: 2px 8px; background: #e3f2eb; color: #1f6f48; border-radius: 999px; }
     .tag.tag-muted { background: #ececec; color: #6b6b6b; }
 
