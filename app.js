@@ -18295,12 +18295,17 @@ async function renderCalendarBar() {
     const dow = dt.getDay();
     const ev = eventsByDay.get(iso);
     const hasTermin  = !!ev?.termine?.length;
-    const hasEinsatz = !!ev?.einsatze?.length;
+    // v2.27.3: Storniert-Einsätze bekommen eine eigene Farbe (rot-gestrichelt).
+    // Sobald an demselben Tag ein aktiver Einsatz dazukommt, gewinnt der und
+    // der Tag wird wieder grün — Storno-Einsätze allein erzeugen keine
+    // „Geld verdient"-Optik mehr.
+    const hasActiveEinsatz = !!ev?.einsatze?.some(d => d.status !== 'Storniert');
+    const hasStornoEinsatz = !hasActiveEinsatz && !!ev?.einsatze?.some(d => d.status === 'Storniert');
     const isHoliday  = _calendarState.holidays.has(iso);
     const isWeekend  = dow === 0 || dow === 6;
     // v2.11.5: Konflikt-Warnung jetzt auch bei Wochenend-Einsatz, nicht nur
-    // bei Feiertag-Einsatz.
-    const conflict   = hasEinsatz && (isHoliday || isWeekend);
+    // bei Feiertag-Einsatz. v2.27.3: storno-only-Tage triggern keine Warnung.
+    const conflict   = hasActiveEinsatz && (isHoliday || isWeekend);
     const conflictTitle = isHoliday ? 'Einsatz an Feiertag' : 'Einsatz am Wochenende';
 
     // v2.11.7: KW-Label vor jedem Montag (sowie ganz am Monatsanfang) — gibt
@@ -18313,8 +18318,9 @@ async function renderCalendarBar() {
     if (isWeekend)              classes.push('cal-day-weekend');
     if (iso === todayISO)       classes.push('cal-day-today');
     if (isHoliday)              classes.push('cal-day-feiertag');
-    else if (hasEinsatz)        classes.push('cal-day-einsatz');
+    else if (hasActiveEinsatz)  classes.push('cal-day-einsatz');
     else if (hasTermin)         classes.push('cal-day-termin');
+    else if (hasStornoEinsatz)  classes.push('cal-day-storniert');
 
     parts.push(`
       <div class="${classes.join(' ')}" data-day="${iso}" onclick="openCalendarDayPopover('${iso}', event)">

@@ -6366,6 +6366,24 @@ tr.expanded-row > td {
 .calendar-day.cal-day-termin    { background: #fef3c7; border-color: #fcd34d; }
 .calendar-day.cal-day-einsatz   { background: #bbf7d0; border-color: #4ade80; }
 .calendar-day.cal-day-feiertag  { background: #fecaca; border-color: #f87171; }
+/* v2.27.3: Tag mit ausschließlich stornierten Einsätzen — kein „grünes Geld
+   verdient", sondern rot-gestricheltes Muster wie auf der Hero-Card. Sobald
+   ein aktiver Einsatz dazukommt, wird der Tag wieder grün (Priorität in
+   renderCalendarBar). */
+.calendar-day.cal-day-storniert {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--surface) 0 8px,
+      #fee2e2 8px 10px
+    );
+  border-color: #fca5a5;
+}
+.calendar-day.cal-day-storniert .calendar-day-num,
+.calendar-day.cal-day-storniert .calendar-day-dow {
+  color: #991b1b;
+  opacity: 0.85;
+}
 
 /* Wochenend-Tag ohne Events bekommt dezenten Grauschleier */
 .calendar-day.cal-day-weekend:not(.cal-day-termin):not(.cal-day-einsatz):not(.cal-day-feiertag) {
