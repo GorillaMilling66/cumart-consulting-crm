@@ -7449,7 +7449,9 @@ async function renderTemplateFields(typ, prefilled) {
   let serviceOpts = [];
   let userOpts = [];
   if (schema.some(f => f.type === 'service') || typ === 'projekt') {
-    const { data } = await db.from('services').select('id, name').eq('ist_aktiv', true).order('name');
+    // v2.25.4: standardpreis mitziehen, damit beim Anwählen einer Leistung im
+    // Sub-Items-Editor der Preis automatisch ins Feld fließt.
+    const { data } = await db.from('services').select('id, name, standardpreis').eq('ist_aktiv', true).order('name');
     serviceOpts = data || [];
   }
   if (schema.some(f => f.type === 'user')) {
@@ -7537,8 +7539,10 @@ function renderTemplateSubItemRow(item, idx, serviceOpts) {
   const menge = item.menge ?? '';
   const einzelpreis = item.einzelpreis ?? '';
   const isEinsatz = t === 'einsatz';
+  // v2.25.4: data-preis am Option-Element, damit onSubItemServiceChange()
+  // den Standardpreis ohne extra DB-Query in das Preis-Feld kopieren kann.
   const serviceOpt = (serviceOpts || []).map(o =>
-    `<option value="${esc(o.id)}" ${service === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+    `<option value="${esc(o.id)}" data-preis="${o.standardpreis ?? ''}" ${service === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
   return `
     <div class="tpl-subitem-row${isEinsatz ? ' is-einsatz' : ''}" data-idx="${idx}">
       <div class="tpl-si-main">
@@ -7547,7 +7551,7 @@ function renderTemplateSubItemRow(item, idx, serviceOpts) {
           <option value="aufgabe" ${t === 'aufgabe' ? 'selected' : ''}>Aufgabe</option>
           <option value="einsatz" ${t === 'einsatz' ? 'selected' : ''}>Einsatz</option>
         </select>
-        <input type="text" class="tpl-si-titel" placeholder="Titel" value="${esc(titel)}">
+        <input type="text" class="tpl-si-titel" placeholder="Titel (leer = Name der Leistung)" value="${esc(titel)}">
         <div class="tpl-si-offset-wrap" title="Werktage ab Projektstart">
           <input type="number" class="tpl-si-offset" min="0" step="1" value="${offset}">
           <span class="tpl-si-offset-suffix">WT</span>
@@ -7555,14 +7559,20 @@ function renderTemplateSubItemRow(item, idx, serviceOpts) {
         <button type="button" class="tpl-si-del" onclick="removeTemplateSubItem(${idx})" title="Entfernen" aria-label="Entfernen">×</button>
       </div>
       <div class="tpl-si-einsatz">
-        <label class="tpl-si-extra-label">Leistung</label>
-        <select class="tpl-si-service">
-          <option value="">— wählen —</option>${serviceOpt}
-        </select>
-        <label class="tpl-si-extra-label">Menge</label>
-        <input type="number" class="tpl-si-menge" placeholder="1" step="0.01" value="${menge}">
-        <label class="tpl-si-extra-label">Preis €</label>
-        <input type="number" class="tpl-si-preis" placeholder="0,00" step="0.01" value="${einzelpreis}">
+        <div class="tpl-si-field tpl-si-field-leistung">
+          <span class="tpl-si-extra-label">Leistung</span>
+          <select class="tpl-si-service" onchange="onSubItemServiceChange(${idx})">
+            <option value="">— wählen —</option>${serviceOpt}
+          </select>
+        </div>
+        <div class="tpl-si-field tpl-si-field-menge">
+          <span class="tpl-si-extra-label">Menge</span>
+          <input type="number" class="tpl-si-menge" placeholder="1" step="0.01" value="${menge}">
+        </div>
+        <div class="tpl-si-field tpl-si-field-preis">
+          <span class="tpl-si-extra-label">Preis €</span>
+          <input type="number" class="tpl-si-preis" placeholder="0,00" step="0.01" value="${einzelpreis}">
+        </div>
       </div>
     </div>`;
 }
@@ -7595,23 +7605,50 @@ function onSubItemTypChange(idx) {
   row.classList.toggle('is-einsatz', isEinsatz);
 }
 
+/** v2.25.4: Beim Anwählen einer Leistung im Sub-Items-Editor automatisch
+ *  Titel (falls leer), Menge (falls leer → 1) und Preis (immer auf Standard-
+ *  preis der Leistung) befüllen. Eigene Eingaben des Users werden nicht
+ *  überschrieben, außer beim Preis — der spiegelt bewusst die Leistung wider. */
+function onSubItemServiceChange(idx) {
+  const list = document.getElementById('tpl-subitems-list');
+  const row = list?.querySelector(`.tpl-subitem-row[data-idx="${idx}"]`);
+  if (!row) return;
+  const sel = row.querySelector('.tpl-si-service');
+  if (!sel.value) return;
+  const opt = sel.options[sel.selectedIndex];
+  const standardpreis = opt?.getAttribute('data-preis') || '';
+  const serviceName = (opt?.textContent || '').trim();
+
+  const titelInp = row.querySelector('.tpl-si-titel');
+  const mengeInp = row.querySelector('.tpl-si-menge');
+  const preisInp = row.querySelector('.tpl-si-preis');
+
+  if (titelInp && !titelInp.value.trim()) titelInp.value = serviceName;
+  if (mengeInp && !mengeInp.value.trim()) mengeInp.value = '1';
+  if (preisInp && standardpreis !== '') preisInp.value = standardpreis;
+}
+
 /** Liest die aktuellen Sub-Items aus dem DOM. */
 function readTemplateSubItems() {
   const list = document.getElementById('tpl-subitems-list');
   if (!list) return [];
   return [...list.querySelectorAll('.tpl-subitem-row')].map(row => {
     const typ = row.querySelector('.tpl-si-typ').value;
-    const titel = row.querySelector('.tpl-si-titel').value.trim();
+    let titel = row.querySelector('.tpl-si-titel').value.trim();
     const offset = Number(row.querySelector('.tpl-si-offset').value) || 0;
-    const item = { typ, titel, offset_werktage: offset };
+    const item = { typ, offset_werktage: offset };
     if (typ === 'einsatz') {
-      const sid = row.querySelector('.tpl-si-service').value;
+      const sel = row.querySelector('.tpl-si-service');
+      const sid = sel.value;
       const menge = row.querySelector('.tpl-si-menge').value;
       const preis = row.querySelector('.tpl-si-preis').value;
+      // v2.25.4: Fallback — leerer Titel + gewählte Leistung übernimmt den Namen der Leistung.
+      if (!titel && sid) titel = (sel.options[sel.selectedIndex]?.textContent || '').trim();
       if (sid) item.service_id = sid;
       if (menge !== '') item.menge = Number(menge);
       if (preis !== '') item.einzelpreis = Number(preis);
     }
+    item.titel = titel;
     return item;
   }).filter(it => it.titel); // ohne Titel keine Auto-Anlage möglich
 }

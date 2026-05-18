@@ -510,6 +510,33 @@ body {
 }
 .listen-tab.active .listen-tab-count { color: var(--text); }
 
+/* v2.25.4 — Gruppierte Reiterleiste (Einstellungen): pro Kategorie eine Zeile mit kleinem Label */
+.listen-tab-bar.tab-bar-grouped {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding-top: 8px;
+  padding-bottom: 12px;
+}
+.tab-bar-grouped .tab-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tab-bar-grouped .tab-group-label {
+  flex: 0 0 96px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-right: 8px;
+}
+@media (max-width: 720px) {
+  .tab-bar-grouped .tab-group-label { flex-basis: 100%; padding: 4px 4px 2px; }
+}
+
 /* v2.0.0 — Briefing-V2 (Section-Layout — Heute/Woche/Monat als scrollbare Sections) */
 .bv2-header {
   display: flex; justify-content: space-between; align-items: baseline;
@@ -4176,17 +4203,25 @@ tr:hover td { background: var(--bg); }
   border-color: var(--status-overdue-accent);
 }
 
-/* Einsatz-Detail-Block: nur sichtbar wenn .is-einsatz auf der Zeile */
+/* Einsatz-Detail-Block: nur sichtbar wenn .is-einsatz auf der Zeile
+ * v2.25.4: Stacked Label-über-Feld-Felder, links eingerückt damit die
+ * Leistung-Spalte unter dem Titel-Input der oberen Zeile beginnt. */
 .tpl-si-einsatz {
   display: none;
-  grid-template-columns: auto 1fr auto 90px auto 100px;
-  gap: 8px 10px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 90px 110px;
+  gap: 10px 12px;
+  align-items: end;
   margin-top: 10px;
-  padding-top: 10px;
+  padding: 10px 0 0 130px;
   border-top: 1px dashed var(--border);
 }
 .tpl-subitem-row.is-einsatz .tpl-si-einsatz { display: grid; }
+.tpl-si-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 .tpl-si-extra-label {
   font-size: 10px; font-weight: 700;
   color: var(--muted);
@@ -4195,13 +4230,17 @@ tr:hover td { background: var(--bg); }
 }
 .tpl-si-einsatz select,
 .tpl-si-einsatz input {
-  height: 32px;
+  width: 100%;
+  height: 34px;
   font-size: 13px;
-  padding: 4px 8px;
+  padding: 4px 10px;
+  box-sizing: border-box;
 }
 @media (max-width: 700px) {
-  .tpl-si-einsatz { grid-template-columns: 1fr; }
-  .tpl-si-extra-label { margin-top: 4px; }
+  .tpl-si-einsatz {
+    grid-template-columns: 1fr;
+    padding-left: 0;
+  }
 }
 
 /* v1.51.0: Aktivitäten-Bereich im Projekt-Modal nach Save */

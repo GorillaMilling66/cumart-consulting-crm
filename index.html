@@ -355,19 +355,29 @@
       <button class="listen-tab" data-page="notes"       onclick="navigateTo('notes')">Notizen <span class="listen-tab-count" id="listen-tab-count-notes"></span></button>
     </div>
 
-    <!-- v2.0.0 — EINSTELLUNGEN-SUBNAV (sichtbar nur auf Einstellungs-Pages) -->
-    <div class="listen-tab-bar" id="einstellungen-tab-bar" style="display:none">
-      <button class="listen-tab" data-page="lookups"   onclick="navigateTo('lookups')">Stammdaten</button>
-      <button class="listen-tab" data-page="services"  onclick="navigateTo('services')">Leistungen</button>
-      <button class="listen-tab" data-page="programs"  onclick="navigateTo('programs')">Programme</button>
-      <button class="listen-tab" data-page="templates" onclick="navigateTo('templates')">Templates</button>
-      <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
-      <button class="listen-tab" data-page="tags"      onclick="navigateTo('tags')">Tags</button>
-      <button class="listen-tab" data-page="products"  onclick="navigateTo('products')">Produkte</button>
-      <button class="listen-tab" data-page="themes"    onclick="navigateTo('themes')">Themen-Bibliothek</button>
-      <button class="listen-tab" data-page="dubletten" onclick="navigateTo('dubletten')">Dubletten</button>
-      <button class="listen-tab" data-page="shortcuts" onclick="navigateTo('shortcuts')">Shortcuts</button>
-      <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
+    <!-- v2.0.0 — EINSTELLUNGEN-SUBNAV (sichtbar nur auf Einstellungs-Pages)
+         v2.25.4: in drei Kategorien gruppiert, damit nichts mehr in eine zweite Zeile bricht -->
+    <div class="listen-tab-bar tab-bar-grouped" id="einstellungen-tab-bar" style="display:none">
+      <div class="tab-group">
+        <span class="tab-group-label">Katalog</span>
+        <button class="listen-tab" data-page="services"  onclick="navigateTo('services')">Leistungen</button>
+        <button class="listen-tab" data-page="programs"  onclick="navigateTo('programs')">Programme</button>
+        <button class="listen-tab" data-page="products"  onclick="navigateTo('products')">Produkte</button>
+        <button class="listen-tab" data-page="themes"    onclick="navigateTo('themes')">Themen-Bibliothek</button>
+        <button class="listen-tab" data-page="tags"      onclick="navigateTo('tags')">Tags</button>
+      </div>
+      <div class="tab-group">
+        <span class="tab-group-label">Verwaltung</span>
+        <button class="listen-tab" data-page="users"     onclick="navigateTo('users')">Benutzer</button>
+        <button class="listen-tab" data-page="lookups"   onclick="navigateTo('lookups')">Stammdaten</button>
+        <button class="listen-tab" data-page="templates" onclick="navigateTo('templates')">Templates</button>
+      </div>
+      <div class="tab-group">
+        <span class="tab-group-label">Werkzeuge</span>
+        <button class="listen-tab" data-page="dubletten" onclick="navigateTo('dubletten')">Dubletten</button>
+        <button class="listen-tab" data-page="shortcuts" onclick="navigateTo('shortcuts')">Shortcuts</button>
+        <button class="listen-tab" data-page="import"    onclick="navigateTo('import')">Import</button>
+      </div>
     </div>
 
     <!-- v2.0.0 — BRIEFING (Hauptbereich 1) — Section-Layout statt Tabs -->
