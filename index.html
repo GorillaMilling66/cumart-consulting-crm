@@ -799,6 +799,7 @@
       <!-- v2.0.0 Tabs: Aktivitäten (Default) / Stammdaten / Projekte / Kontakte -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchCompanyV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="doku"         onclick="switchCompanyV2Tab('doku')">Doku</button>
         <button class="proj-tab"        data-tab="stammdaten"   onclick="switchCompanyV2Tab('stammdaten')">Stammdaten</button>
         <button class="proj-tab"        data-tab="projekte"     onclick="switchCompanyV2Tab('projekte')">Projekte <span class="tab-count" id="tab-count-company-projekte" style="display:none"></span></button>
         <button class="proj-tab"        data-tab="einsaetze"    onclick="switchCompanyV2Tab('einsaetze')">Einsätze <span class="tab-count" id="tab-count-company-einsaetze" style="display:none"></span></button>
@@ -953,6 +954,11 @@
               </div>
               <div id="company-themes-list"><div class="info-card-empty">Lade …</div></div>
             </div>
+          </div>
+
+          <!-- Doku-Tab (v2.27.0) -->
+          <div class="proj-tab-panel" data-tab="doku" id="company-panel-doku" style="display:none">
+            <div id="company-doku-sections" class="doc-sections-wrap"><div class="info-card-empty">Lade Doku …</div></div>
           </div>
 
         </main>
@@ -1113,6 +1119,7 @@
 
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchContactV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="doku"         onclick="switchContactV2Tab('doku')">Doku</button>
         <button class="proj-tab"        data-tab="stammdaten"   onclick="switchContactV2Tab('stammdaten')">Stammdaten</button>
         <button class="proj-tab"        data-tab="projekte"     onclick="switchContactV2Tab('projekte')">Projekte <span class="tab-count" id="tab-count-contact-projekte" style="display:none"></span></button>
       </div>
@@ -1193,6 +1200,11 @@
                 </table>
               </div>
             </div>
+          </div>
+
+          <!-- Doku-Tab (v2.27.0) -->
+          <div class="proj-tab-panel" data-tab="doku" id="contact-panel-doku" style="display:none">
+            <div id="contact-doku-sections" class="doc-sections-wrap"><div class="info-card-empty">Lade Doku …</div></div>
           </div>
 
         </main>
@@ -1537,9 +1549,10 @@
         </div>
       </div>
 
-      <!-- Tabs — v2.17.1: + Anhänge-Tab -->
+      <!-- Tabs — v2.17.1: + Anhänge-Tab · v2.27.0: + Doku-Tab -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten"     onclick="switchProjectV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="doku"             onclick="switchProjectV2Tab('doku')">Doku</button>
         <button class="proj-tab"        data-tab="wirtschaftlichkeit" onclick="switchProjectV2Tab('wirtschaftlichkeit')">Wirtschaftlichkeit</button>
         <button class="proj-tab"        data-tab="plan"             onclick="switchProjectV2Tab('plan')">Termine &amp; Aufgaben</button>
         <button class="proj-tab"        data-tab="anhaenge"         onclick="switchProjectV2Tab('anhaenge')">Anhänge</button>
@@ -1700,6 +1713,11 @@
               <div class="info-card-title">Dateien</div>
               <div id="project-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
             </div>
+          </div>
+
+          <!-- Doku-Tab (v2.27.0) — User-definierte Doku-Bereiche -->
+          <div class="proj-tab-panel" data-tab="doku" id="project-panel-doku" style="display:none">
+            <div id="project-doku-sections" class="doc-sections-wrap"><div class="info-card-empty">Lade Doku …</div></div>
           </div>
 
         </main>
@@ -1889,6 +1907,7 @@
       <!-- Tabs — v2.17.1: Aktivitäten + Anhänge -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchAppointmentV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="doku"         onclick="switchAppointmentV2Tab('doku')">Doku</button>
         <button class="proj-tab"        data-tab="anhaenge"     onclick="switchAppointmentV2Tab('anhaenge')">Anhänge</button>
       </div>
 
@@ -1906,6 +1925,11 @@
               <div class="info-card-title">Dateien</div>
               <div id="appt-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
             </div>
+          </div>
+
+          <!-- Doku-Tab (v2.27.0) -->
+          <div class="proj-tab-panel" data-tab="doku" id="appt-panel-doku" style="display:none">
+            <div id="appt-doku-sections" class="doc-sections-wrap"><div class="info-card-empty">Lade Doku …</div></div>
           </div>
 
         </main>
@@ -1970,9 +1994,10 @@
         </div>
       </div>
 
-      <!-- Tabs — v2.17.1: Aktivitäten + Anhänge -->
+      <!-- Tabs — v2.17.1: Aktivitäten + Anhänge · v2.27.0: + Doku-Tab -->
       <div class="proj-tabs">
         <button class="proj-tab active" data-tab="aktivitaeten" onclick="switchDeploymentV2Tab('aktivitaeten')">Aktivitäten</button>
+        <button class="proj-tab"        data-tab="doku"         onclick="switchDeploymentV2Tab('doku')">Doku</button>
         <button class="proj-tab"        data-tab="anhaenge"     onclick="switchDeploymentV2Tab('anhaenge')">Anhänge</button>
       </div>
 
@@ -2011,6 +2036,11 @@
               <div class="info-card-title">Dateien</div>
               <div id="dep-attachments" class="attachment-zone"><div class="info-card-empty">Lade …</div></div>
             </div>
+          </div>
+
+          <!-- Doku-Tab (v2.27.0) -->
+          <div class="proj-tab-panel" data-tab="doku" id="dep-panel-doku" style="display:none">
+            <div id="dep-doku-sections" class="doc-sections-wrap"><div class="info-card-empty">Lade Doku …</div></div>
           </div>
 
         </main>

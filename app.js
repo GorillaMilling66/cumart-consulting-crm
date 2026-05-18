@@ -22484,6 +22484,7 @@ function switchProjectV2Tab(tab) {
   });
   // v2.17.0: Lazy-Render — Planung/Brief-Tabs sind entfernt
   if (tab === 'aktivitaeten') loadProjectActivityStream(currentProjectDetailId);
+  if (tab === 'doku' && currentProjectDetailId) renderDocSections('project', currentProjectDetailId, 'project-doku-sections');
 }
 
 /** Hero-Zone mit Marge / Zeitplan / Health befüllen + Sidepanel. */
@@ -23179,6 +23180,7 @@ function switchCompanyV2Tab(tab) {
     p.style.display = p.dataset.tab === tab ? '' : 'none');
   if (tab === 'aktivitaeten') loadCompanyActivityStream(currentCompanyDetailId);
   if (tab === 'themen' && currentCompanyDetailId) renderCompanyThemesTab(currentCompanyDetailId);
+  if (tab === 'doku' && currentCompanyDetailId) renderDocSections('company', currentCompanyDetailId, 'company-doku-sections');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -23602,6 +23604,7 @@ function switchContactV2Tab(tab) {
   document.querySelectorAll('#page-contact-detail .proj-tab-panel').forEach(p =>
     p.style.display = p.dataset.tab === tab ? '' : 'none');
   if (tab === 'aktivitaeten') loadContactActivityStream(currentContactDetailId);
+  if (tab === 'doku' && currentContactDetailId) renderDocSections('contact', currentContactDetailId, 'contact-doku-sections');
 }
 
 async function renderContactV2Layout(k) {
@@ -23882,6 +23885,7 @@ function switchAppointmentV2Tab(tab) {
     t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('#page-appointment-detail .proj-tab-panel').forEach(p =>
     p.style.display = p.dataset.tab === tab ? '' : 'none');
+  if (tab === 'doku' && currentAppointmentDetailId) renderDocSections('appointment', currentAppointmentDetailId, 'appt-doku-sections');
 }
 
 async function saveAppointmentDokuField(key, value) {
@@ -24090,6 +24094,7 @@ function switchDeploymentV2Tab(tab) {
     t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('#page-deployment-detail .proj-tab-panel').forEach(p =>
     p.style.display = p.dataset.tab === tab ? '' : 'none');
+  if (tab === 'doku' && currentDeploymentDetailId) renderDocSections('deployment', currentDeploymentDetailId, 'dep-doku-sections');
 }
 
 async function renderDeploymentReportThemes(d) {
@@ -28105,6 +28110,180 @@ async function applyTagFilter(entityType, items) {
       .map(([id]) => id));
   }
   return items.filter(it => allowed.has(it.id));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v2.27.0 — DOKU-BEREICHE PRO ENTITÄT
+//  Polymorpher Bezug über (entity_type, entity_id). Pro Detail-
+//  Seite (Firma · Kontakt · Projekt · Einsatz · Termin) ein
+//  Doku-Tab, in dem der User frei Bereiche mit Titel + Inhalt
+//  anlegt. Click-to-Edit auf Titel/Inhalt, onBlur speichert.
+// ═══════════════════════════════════════════════════════════
+
+const DOC_SECTION_TEMPLATES = {
+  project:     ['Briefing', 'Status', 'Risiken', 'Lessons Learned', 'Stakeholder'],
+  deployment:  ['Werkzeugauslegung', 'Anreise', 'Ergebnis', 'Folge-Aktionen'],
+  appointment: ['Agenda', 'Gesprächsziele', 'Ergebnis', 'Nachverfolgung'],
+  company:     ['Profil', 'Entscheider', 'Historie', 'Konditionen'],
+  contact:     ['Hintergrund', 'Interessen', 'Beziehungspflege']
+};
+
+const _docSectionsState = new WeakMap(); // ele → { entityType, entityId, sections, addingNew }
+
+async function loadDocSections(entityType, entityId) {
+  const { data, error } = await db.from('doc_sections')
+    .select('id, titel, inhalt, reihenfolge, created_at, updated_at, erstellt_von, user:user_profiles!doc_sections_erstellt_von_fkey(name)')
+    .eq('entity_type', entityType).eq('entity_id', entityId)
+    .order('reihenfolge', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) { console.error('doc_sections laden:', error); return []; }
+  return data || [];
+}
+
+async function renderDocSections(entityType, entityId, containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="info-card-empty">Lade Doku …</div>';
+
+  const sections = await loadDocSections(entityType, entityId);
+
+  const sectionsHtml = sections.map(s => _renderDocSection(s)).join('');
+  const emptyHtml = sections.length === 0
+    ? '<div class="doc-empty"><div class="info-card-empty">Noch keine Doku angelegt. Klicke unten auf „+ Neuer Bereich", um anzufangen.</div></div>'
+    : '';
+  const addHtml = `
+    <div class="doc-add-area">
+      <button class="doc-add-btn" onclick="docSectionStartAdd('${esc(entityType)}','${esc(entityId)}','${esc(containerId)}')">+ Neuer Bereich</button>
+    </div>`;
+
+  wrap.innerHTML = `<div class="doc-sections-list">${sectionsHtml}${emptyHtml}</div>${addHtml}`;
+}
+
+function _renderDocSection(s) {
+  const u = s.user?.name || '—';
+  const t = s.updated_at || s.created_at;
+  const when = t ? formatDateCompact(t.substring(0, 10)) : '—';
+  return `
+    <div class="doc-section" data-section-id="${esc(s.id)}">
+      <div class="doc-section-head">
+        <input class="doc-section-titel" value="${esc(s.titel || '')}"
+               placeholder="Titel des Bereichs"
+               onchange="docSectionPersist('${esc(s.id)}','titel', this.value)">
+        <button class="doc-section-del" title="Bereich löschen"
+                onclick="docSectionDelete('${esc(s.id)}', this)">×</button>
+      </div>
+      <textarea class="doc-section-inhalt" rows="4"
+                placeholder="Inhalt — was möchtest du dokumentieren?"
+                onchange="docSectionPersist('${esc(s.id)}','inhalt', this.value)">${esc(s.inhalt || '')}</textarea>
+      <div class="doc-section-meta">${esc(u)} · zuletzt geändert ${esc(when)}</div>
+    </div>`;
+}
+
+async function docSectionPersist(id, field, value) {
+  const patch = {};
+  patch[field] = (value || '').trim() || null;
+  // Bei leerem Titel zurück auf „Unbenannter Bereich" — sonst geht der Header verloren.
+  if (field === 'titel' && !patch.titel) patch.titel = 'Unbenannter Bereich';
+  const { error } = await db.from('doc_sections').update(patch).eq('id', id);
+  if (error) { showToast('Speichern fehlgeschlagen: ' + error.message, true); return; }
+  // Meta-Anzeige in der UI aktualisieren — wir nehmen heute als zuletzt-geändert.
+  const row = document.querySelector(`.doc-section[data-section-id="${id}"] .doc-section-meta`);
+  if (row && currentProfile?.name) {
+    row.textContent = `${currentProfile.name} · zuletzt geändert ${formatDateCompact(toISODate(new Date()))}`;
+  }
+}
+
+async function docSectionDelete(id, btn) {
+  const row = btn.closest('.doc-section');
+  const titel = row?.querySelector('.doc-section-titel')?.value || 'diesen Bereich';
+  const ok = await confirmDialog({
+    title: 'Doku-Bereich löschen?',
+    message: `„${titel}" wird endgültig entfernt — die hinterlegten Inhalte sind dann weg.`,
+    confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
+  });
+  if (!ok) return;
+  const { error } = await db.from('doc_sections').delete().eq('id', id);
+  if (error) { showToast('Löschen fehlgeschlagen: ' + error.message, true); return; }
+  if (row) row.remove();
+  showToast('Doku-Bereich gelöscht.');
+}
+
+function docSectionStartAdd(entityType, entityId, containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  // Wenn schon ein Add-Form offen ist, fokussieren statt doppelt anlegen.
+  const existing = wrap.querySelector('.doc-section.is-new input.doc-section-titel');
+  if (existing) { existing.focus(); return; }
+
+  const templates = DOC_SECTION_TEMPLATES[entityType] || [];
+  const chips = templates.length === 0 ? '' : `
+    <div class="doc-template-chips">
+      <span class="doc-template-hint">Vorschläge:</span>
+      ${templates.map(t => `<button type="button" class="doc-template-chip" onclick="docSectionFillTitleFromChip(this)">${esc(t)}</button>`).join('')}
+    </div>`;
+
+  const formHtml = `
+    <div class="doc-section is-new">
+      <div class="doc-section-head">
+        <input class="doc-section-titel" placeholder="Titel des Bereichs" data-new-titel>
+        <button class="doc-section-del" title="Abbrechen" onclick="docSectionCancelAdd(this)">×</button>
+      </div>
+      ${chips}
+      <textarea class="doc-section-inhalt" rows="4" placeholder="Inhalt (optional, kannst du auch später ergänzen)" data-new-inhalt></textarea>
+      <div class="doc-section-bottom">
+        <button class="btn btn-sm" onclick="docSectionCancelAdd(this)">Abbrechen</button>
+        <button class="btn btn-sm btn-primary" onclick="docSectionSaveNew('${esc(entityType)}','${esc(entityId)}','${esc(containerId)}', this)">Bereich anlegen</button>
+      </div>
+    </div>`;
+
+  // Add-Bereich an der gleichen Stelle (unten) einsetzen.
+  const list = wrap.querySelector('.doc-sections-list');
+  const empty = wrap.querySelector('.doc-empty');
+  if (empty) empty.remove();
+  if (list) list.insertAdjacentHTML('beforeend', formHtml);
+  else wrap.insertAdjacentHTML('afterbegin', `<div class="doc-sections-list">${formHtml}</div>`);
+  setTimeout(() => wrap.querySelector('.doc-section.is-new input.doc-section-titel')?.focus(), 30);
+}
+
+function docSectionFillTitleFromChip(chip) {
+  const row = chip.closest('.doc-section');
+  const input = row?.querySelector('input.doc-section-titel');
+  if (input) { input.value = chip.textContent; input.focus(); }
+}
+
+function docSectionCancelAdd(btn) {
+  const row = btn.closest('.doc-section.is-new');
+  if (row) row.remove();
+}
+
+async function docSectionSaveNew(entityType, entityId, containerId, btn) {
+  const row = btn.closest('.doc-section.is-new');
+  if (!row) return;
+  const titelInp = row.querySelector('input.doc-section-titel');
+  const inhaltInp = row.querySelector('textarea.doc-section-inhalt');
+  const titel = (titelInp?.value || '').trim();
+  const inhalt = (inhaltInp?.value || '').trim();
+  if (!titel) { showToast('Bitte einen Titel eingeben.', true); titelInp?.focus(); return; }
+
+  btn.disabled = true; btn.textContent = 'Wird angelegt …';
+
+  // Reihenfolge: max + 1 der vorhandenen Sektionen.
+  const list = document.getElementById(containerId)?.querySelectorAll('.doc-section:not(.is-new)') || [];
+  const reihenfolge = list.length;
+
+  const { data, error } = await db.from('doc_sections').insert({
+    entity_type: entityType, entity_id: entityId,
+    titel, inhalt: inhalt || null,
+    reihenfolge,
+    erstellt_von: currentProfile?.id || null
+  }).select('id, titel, inhalt, reihenfolge, created_at, updated_at, erstellt_von, user:user_profiles!doc_sections_erstellt_von_fkey(name)').single();
+  if (error) {
+    showToast('Anlegen fehlgeschlagen: ' + error.message, true);
+    btn.disabled = false; btn.textContent = 'Bereich anlegen';
+    return;
+  }
+  row.outerHTML = _renderDocSection(data);
+  showToast('Bereich angelegt.');
 }
 
 // ═══════════════════════════════════════════════════════════
