@@ -613,6 +613,40 @@ body {
   border-radius: var(--radius-lg);
   padding: 18px 20px;
   border-left: 3px solid var(--status-plan-accent);
+  position: relative;
+}
+/* v2.25.7: Stornierter Hero-Einsatz — prominenter Banner-Strip oben, roter
+   Akzent links, Titel/Tagessatz gedimmt + durchgestrichen. */
+.bv2-hero-einsatz.is-cancelled {
+  border-left-color: var(--status-overdue-accent);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--surface) 0 14px,
+      var(--status-overdue-bg) 14px 16px
+    );
+}
+.bv2-hero-cancel-banner {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--status-overdue-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.bv2-hero-einsatz.is-cancelled .bv2-hero-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--status-overdue-accent);
+  opacity: 0.75;
+}
+.bv2-hero-einsatz.is-cancelled .bv2-hero-meta-value {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 .bv2-hero-pills {
   display: inline-flex; gap: 8px; align-items: center;
@@ -685,6 +719,14 @@ body {
 .bv2-pill.is-red    { background: var(--status-overdue-bg); color: var(--status-overdue-fg); }
 .bv2-pill.is-grey   { background: var(--bg);                color: var(--text); }
 .bv2-pill.is-purple { background: var(--theme-purple-bg);  color: var(--theme-purple-fg); }
+
+/* v2.25.7 — Storniert in Chrono-Liste und Karten */
+.bv2-today-list-row.is-cancelled .bv2-today-list-title {
+  text-decoration: line-through;
+  text-decoration-color: var(--status-overdue-accent);
+  opacity: 0.7;
+}
+.bv2-today-list-row.is-cancelled .bv2-today-list-sub { opacity: 0.5; }
 
 .bv2-kpi-mini {
   display: grid; grid-template-columns: repeat(4, 1fr);
@@ -864,6 +906,7 @@ body {
 .bv2-week-day-bar.is-einsatz  { background: var(--status-done-accent); }
 .bv2-week-day-bar.is-termin   { background: var(--status-plan-accent); }
 .bv2-week-day-bar.is-feiertag { background: var(--status-holiday-accent); }
+.bv2-week-day-bar.is-cancelled { background: var(--status-overdue-accent); }
 .bv2-week-day-count { font-size: 11px; margin-top: 6px; color: var(--text); font-variant-numeric: tabular-nums; }
 .bv2-week-day-sum { font-size: 10px; color: var(--muted); margin-top: 2px; }
 
@@ -912,6 +955,57 @@ body {
 .bv2-month-kpi.is-lgreen { border-left-color: var(--status-done-accent); }
 .bv2-month-kpi.is-amber  { border-left-color: var(--status-holiday-accent); }
 .bv2-month-kpi.is-purple { border-left-color: var(--theme-purple-fg); }
+.bv2-month-kpi.is-red    { border-left-color: var(--status-overdue-accent); }
+.bv2-month-kpi.is-red .bv2-month-kpi-value { color: var(--status-overdue-accent); }
+/* v2.25.7: 5. Kachel „Storniert" einblenden → Grid auf 5 Spalten. */
+.bv2-month-kpis.has-storno { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1000px) { .bv2-month-kpis.has-storno { grid-template-columns: repeat(2, 1fr); } }
+
+/* v2.25.7 — Liste der stornierten Einsätze im Monatsbereich */
+.bv2-cancelled-block {
+  margin-top: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  border-left: 2px solid var(--status-overdue-accent);
+  padding: 14px 16px;
+}
+.bv2-cancelled-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--status-overdue-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 10px;
+}
+.bv2-cancelled-list {
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.bv2-cancelled-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 1fr 120px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 4px;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+}
+.bv2-cancelled-row:last-child { border-bottom: none; }
+.bv2-cancelled-row:hover { background: var(--bg); }
+.bv2-cancelled-date  { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bv2-cancelled-firma { font-weight: 500; color: var(--text); }
+.bv2-cancelled-titel { color: var(--muted); }
+.bv2-cancelled-value {
+  text-align: right;
+  text-decoration: line-through;
+  color: var(--status-overdue-accent);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 700px) {
+  .bv2-cancelled-row { grid-template-columns: 1fr 1fr; row-gap: 2px; }
+  .bv2-cancelled-titel, .bv2-cancelled-value { grid-column: span 2; text-align: left; }
+}
 .bv2-month-kpi-label { font-size: 10px; color: var(--muted); }
 .bv2-month-kpi-value { font-size: 22px; font-weight: 500; margin-top: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
 .bv2-month-kpi-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }

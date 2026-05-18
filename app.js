@@ -4163,12 +4163,16 @@ function renderBriefingHeute(data) {
       const dep = todayDeps[0];
       const status = dep.status || 'Geplant';
       const statusCls = status === 'Durchgeführt' ? 'is-lgreen' : status === 'Abgerechnet' ? 'is-dgreen' : status === 'Storniert' ? 'is-red' : 'is-lgreen';
+      // v2.25.7: Storniert wird prominent dargestellt — eigener Banner-Strip
+      // oben, roter Akzent links, Titel/Tagessatz durchgestrichen.
+      const isCancelled = status === 'Storniert';
       const tageVon = formatDateCompact(dep.datum_von);
       const tageBis = dep.datum_bis && dep.datum_bis !== dep.datum_von ? formatDateCompact(dep.datum_bis) : '';
       const zeitraum = tageBis ? `${tageVon} – ${tageBis}` : tageVon;
       const tagessatz = `${formatPreis(dep.einzelpreis || 0)} × ${dep.menge || 1}`;
       heroEl.innerHTML = `
-        <div class="bv2-hero-einsatz" onclick="navigateTo('einsatz','${esc(dep.id)}')" style="cursor:pointer">
+        <div class="bv2-hero-einsatz ${isCancelled ? 'is-cancelled' : ''}" onclick="navigateTo('einsatz','${esc(dep.id)}')" style="cursor:pointer">
+          ${isCancelled ? '<div class="bv2-hero-cancel-banner">STORNIERT · zählt nicht in den Umsatz</div>' : ''}
           <div class="bv2-hero-pills">
             <span class="bv2-pill is-blue is-lg">JETZT · VOR-ORT</span>
             <span class="bv2-pill ${statusCls}">${esc(status)}</span>
@@ -4359,6 +4363,8 @@ function renderTodayChronoList(deps, appts) {
       time, type: 'EINSATZ', typeCls: 'type-pill-einsatz',
       title: d.titel || d.company?.name || '—',
       sub: [d.company?.name, d.ort].filter(Boolean).join(' · '),
+      // v2.25.7: Storniert wird in der Chrono-Liste durchgestrichen + rotes Pill markiert.
+      cancelled: d.status === 'Storniert',
       click: `navigateTo('einsatz','${esc(d.id)}')`
     });
   });
@@ -4369,6 +4375,7 @@ function renderTodayChronoList(deps, appts) {
       time, type: 'TERMIN', typeCls: 'type-pill-termin',
       title: a.titel || '—',
       sub: [a.company?.name, a.ort].filter(Boolean).join(' · '),
+      cancelled: false,
       click: `navigateTo('termin','${esc(a.id)}')`
     });
   });
@@ -4393,11 +4400,11 @@ function renderTodayChronoList(deps, appts) {
     <div class="bv2-today-list">
       <div class="bv2-today-list-summary">${esc(summary)}</div>
       ${items.map(it => `
-        <div class="bv2-today-list-row" onclick="${it.click}">
+        <div class="bv2-today-list-row ${it.cancelled ? 'is-cancelled' : ''}" onclick="${it.click}">
           <span class="bv2-today-list-time">${esc(it.time)}</span>
           <span class="type-pill ${it.typeCls}">${esc(it.type)}</span>
           <div class="bv2-today-list-body">
-            <div class="bv2-today-list-title">${esc(it.title)}</div>
+            <div class="bv2-today-list-title">${esc(it.title)}${it.cancelled ? ' <span class="bv2-pill is-red" style="margin-left:6px">Storniert</span>' : ''}</div>
             ${it.sub ? `<div class="bv2-today-list-sub">${esc(it.sub)}</div>` : ''}
           </div>
         </div>`).join('')}
@@ -4437,10 +4444,15 @@ function renderBriefingWoche(data) {
       const isHoliday = yearHolidays.get(year).has(iso);
       const isWeekend = dow === 0 || dow === 6;
 
-      const dayDeps = (data.deployments || []).filter(dep => {
+      const dayDepsAll = (data.deployments || []).filter(dep => {
         const von = dep.datum_von, bis = dep.datum_bis || dep.datum_von;
         return von <= iso && bis >= iso;
       });
+      // v2.25.7: Stornierte Einsätze zählen NICHT in die Tagesumsatz-Summe.
+      // Sie werden auf dem Strip durch einen roten Balken markiert, wenn der
+      // Tag sonst leer wäre — sonst überlagert sie der aktive Einsatz/Termin.
+      const dayDeps = dayDepsAll.filter(d => d.status !== 'Storniert');
+      const dayDepsCancelled = dayDepsAll.filter(d => d.status === 'Storniert');
       const dayAppts = (data.appointments || []).filter(a => a.datum === iso);
       const sumE = dayDeps.reduce((s, dep) => s + (Number(dep.einzelpreis) || 0), 0);
 
@@ -4448,12 +4460,14 @@ function renderBriefingWoche(data) {
       if (isHoliday) barCls = 'is-feiertag';
       else if (dayDeps.length > 0) barCls = 'is-einsatz';
       else if (dayAppts.length > 0) barCls = 'is-termin';
+      else if (dayDepsCancelled.length > 0) barCls = 'is-cancelled';
 
-      const noActivity = dayDeps.length === 0 && dayAppts.length === 0 && !isHoliday;
-      // v2.11.5: Warnsignal, wenn ein Einsatz auf einen Feiertag oder ein
-      // Wochenende fällt — die UI markiert das mit einem ⚠ in der Strip-Kachel.
+      const noActivity = dayDepsAll.length === 0 && dayAppts.length === 0 && !isHoliday;
+      const onlyCancelled = dayDeps.length === 0 && dayDepsCancelled.length > 0;
+      // v2.11.5: Warnsignal, wenn ein aktiver Einsatz auf Feiertag/Wochenende fällt.
       const hasConflict = dayDeps.length > 0 && (isHoliday || isWeekend);
       const conflictReason = isHoliday ? 'Einsatz an Feiertag' : 'Einsatz am Wochenende';
+      const cancelledSuffix = dayDepsCancelled.length > 0 ? ` (${dayDepsCancelled.length} storn.)` : '';
       days.push({
         iso, dow, name: WEEKDAYS_DE[dow].substring(0, 2),
         num: dow === 0 || dow === 6 || iso.endsWith('-01') ? d.getDate() + (iso.endsWith('-01') ? '.' + (d.getMonth() + 1) : '') : d.getDate(),
@@ -4462,8 +4476,14 @@ function renderBriefingWoche(data) {
         hasConflict,
         conflictReason,
         barCls,
-        countText: isHoliday ? `${dayDeps.length} · 1` : noActivity ? (isWeekend ? 'frei' : 'frei') : `${dayDeps.length} · ${dayAppts.length}`,
-        sumText: isHoliday ? (dayDeps.length > 0 ? formatPreis(sumE) + ' · Feiertag' : 'Feiertag') : noActivity ? '—' : sumE > 0 ? formatPreis(sumE) : '—'
+        countText: isHoliday ? `${dayDeps.length} · 1${cancelledSuffix}`
+          : noActivity ? 'frei'
+          : onlyCancelled ? `storniert`
+          : `${dayDeps.length} · ${dayAppts.length}${cancelledSuffix}`,
+        sumText: isHoliday ? (dayDeps.length > 0 ? formatPreis(sumE) + ' · Feiertag' : 'Feiertag')
+          : noActivity ? '—'
+          : onlyCancelled ? '—'
+          : sumE > 0 ? formatPreis(sumE) : '—'
       });
     }
     stripEl.innerHTML = `
@@ -4601,8 +4621,12 @@ function renderBriefingMonat(data) {
   }, 0);
   const depsAbgerechnet = deps.filter(d => d.status === 'Abgerechnet');
   const depsGeplant = deps.filter(d => d.status === 'Geplant' || d.status === 'Durchgeführt');
+  // v2.25.7: Storniert fließt NICHT in Abgerechnet/Geplant — eigene Kennzahl,
+  // damit der User auf einen Blick sieht, was im Monat ausgefallen ist.
+  const depsStorniert = deps.filter(d => d.status === 'Storniert');
   const umsatzAbg = sumDays(depsAbgerechnet);
   const umsatzGep = sumDays(depsGeplant);
+  const umsatzStorno = sumDays(depsStorniert);
 
   // Auslastung aus existing computeMonthAuslastung (v2.11.7: + geplant + Personentage)
   let auslastungPct = 0, werk = 0, belegt = 0, geplantTage = 0;
@@ -4621,8 +4645,16 @@ function renderBriefingMonat(data) {
 
   const kpisEl = document.getElementById('bv2-month-kpis');
   if (kpisEl) {
+    // v2.25.7: 5. Kachel „Storniert" nur einblenden, wenn auch wirklich
+    // etwas storniert wurde — sonst bleibt das Layout bei 4 Kacheln.
+    const stornoTile = depsStorniert.length > 0 ? `
+        <div class="bv2-month-kpi is-red">
+          <div class="bv2-month-kpi-label">Storniert</div>
+          <div class="bv2-month-kpi-value">${esc(formatPreis(umsatzStorno))}</div>
+          <div class="bv2-month-kpi-sub">${depsStorniert.length} Einsätze · entfallener Umsatz</div>
+        </div>` : '';
     kpisEl.innerHTML = `
-      <div class="bv2-month-kpis">
+      <div class="bv2-month-kpis ${depsStorniert.length > 0 ? 'has-storno' : ''}">
         <div class="bv2-month-kpi is-lgreen">
           <div class="bv2-month-kpi-label">Abgerechnet</div>
           <div class="bv2-month-kpi-value">${esc(formatPreis(umsatzAbg))}</div>
@@ -4632,7 +4664,7 @@ function renderBriefingMonat(data) {
           <div class="bv2-month-kpi-label">Geplant</div>
           <div class="bv2-month-kpi-value">${esc(formatPreis(umsatzGep))}</div>
           <div class="bv2-month-kpi-sub">${depsGeplant.length} Einsätze</div>
-        </div>
+        </div>${stornoTile}
         <div class="bv2-month-kpi is-amber">
           <div class="bv2-month-kpi-label">Auslastung</div>
           <div class="bv2-month-kpi-value">${auslastungPct} %</div>
@@ -4698,6 +4730,36 @@ function renderBriefingMonat(data) {
         </div>`;
     }).join('');
 
+    // v2.25.7: Stornierte Einsätze des Monats — eigene Sektion unter den
+    // Bottom-Cards. Zeigt was alles ausgefallen ist, samt Kunde und Datum.
+    const cancelledHtml = depsStorniert.length === 0 ? '' : `
+      <div class="bv2-cancelled-block">
+        <div class="bv2-cancelled-title">Stornierte Einsätze · ${depsStorniert.length} · ${esc(formatPreis(umsatzStorno))} entfallen</div>
+        <div class="bv2-cancelled-list">
+          ${depsStorniert
+            .slice()
+            .sort((a, b) => (a.datum_von || '').localeCompare(b.datum_von || ''))
+            .map(d => {
+              const von = d.datum_von ? formatDateCompact(d.datum_von) : '—';
+              const bis = d.datum_bis && d.datum_bis !== d.datum_von ? ` – ${formatDateCompact(d.datum_bis)}` : '';
+              const einzel = Number(d.einzelpreis) || 0;
+              const tage = (() => {
+                if (!d.datum_von) return 1;
+                const a = new Date(d.datum_von), b = new Date(d.datum_bis || d.datum_von);
+                return Math.max(1, Math.round((b - a) / 86400000) + 1);
+              })();
+              const wert = einzel * tage;
+              return `
+                <div class="bv2-cancelled-row" onclick="navigateTo('einsatz','${esc(d.id)}')">
+                  <span class="bv2-cancelled-date">${esc(von)}${esc(bis)}</span>
+                  <span class="bv2-cancelled-firma">${esc(d.company?.name || d.titel || '—')}</span>
+                  <span class="bv2-cancelled-titel">${esc(d.titel || d.service?.name || '')}</span>
+                  <span class="bv2-cancelled-value">${esc(formatPreis(wert))}</span>
+                </div>`;
+            }).join('')}
+        </div>
+      </div>`;
+
     bottomEl.innerHTML = `
       <div class="bv2-month-bottom">
         <div class="bv2-top-customers">
@@ -4708,7 +4770,8 @@ function renderBriefingMonat(data) {
           <div class="bv2-pipeline-stages-title">Pipeline-Stages</div>
           ${stagesHtml}
         </div>
-      </div>`;
+      </div>
+      ${cancelledHtml}`;
   }
 }
 
