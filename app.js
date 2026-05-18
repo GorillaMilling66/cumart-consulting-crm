@@ -4819,9 +4819,10 @@ let _arbeitsplatzContexts = [];  // Array<{ type, id, label }>
 let _arbeitsplatzCaptureText = '';
 
 async function loadArbeitsplatz() {
-  // v2.25.8: Spalten-Kollaps-Zustand wiederherstellen (User-Pref oder bei
-  // schmalem Viewport per Default eingeklappt).
-  applyArbeitsplatzColumnState();
+  // v2.26.0: Layout ist jetzt Rail + on-demand-Flyout — kein Collapse-State
+  // mehr nötig. Beim Wiederbetreten der Seite ggf. ein zuvor offenes Panel
+  // wiederherstellen (siehe _arbeitsplatzActivePanel).
+  _restoreArbeitsplatzPanelOnEnter();
 
   // Datum oben rechts
   const dateEl = document.getElementById('arbeitsplatz-date');
@@ -4871,65 +4872,87 @@ async function loadArbeitsplatz() {
   ));
 }
 
-/** v2.25.8/10: Spalten-Kollaps für den Arbeitsplatz. Persistierte User-Pref
- *  pro Seite (links/rechts). Ohne gespeicherte Pref klappt der Kollaps unter
- *  1280 px Viewport automatisch ein. Resize-Listener (v2.25.10) faltet beim
- *  Verkleinern unter die Schwelle automatisch zusammen und beim Weiten
- *  wieder zurück auf die gespeicherte Pref. */
-const ARBEITSPLATZ_COLLAPSE_BREAKPOINT = 1280;
-function _readArbeitsplatzPref(key, narrowFallback) {
-  const v = localStorage.getItem(key);
-  if (v === '1') return true;
-  if (v === '0') return false;
-  return narrowFallback;
-}
-function applyArbeitsplatzColumnState() {
-  const root = document.getElementById('arbeitsplatz-3col');
-  if (!root) return;
-  const narrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
-  root.classList.toggle('left-collapsed',  _readArbeitsplatzPref('arbeitsplatz-left-collapsed',  narrow));
-  root.classList.toggle('right-collapsed', _readArbeitsplatzPref('arbeitsplatz-right-collapsed', narrow));
-}
-function toggleArbeitsplatzColumn(side) {
-  const root = document.getElementById('arbeitsplatz-3col');
-  if (!root) return;
-  const cls = side === 'left' ? 'left-collapsed' : 'right-collapsed';
-  const nowCollapsed = !root.classList.contains(cls);
-  root.classList.toggle(cls, nowCollapsed);
-  localStorage.setItem(`arbeitsplatz-${side}-collapsed`, nowCollapsed ? '1' : '0');
-}
+/** v2.26.0: Activity-Bar + On-Demand-Flyout für den Arbeitsplatz.
+ *  Statt zweier permanenter Akkordeon-Spalten gibt es eine 48-px-Rail
+ *  links und ein Panel, das nur erscheint, wenn der User explizit ein
+ *  Icon klickt. Eine Esc-Taste oder ein Klick außerhalb der Rail/des
+ *  Flyouts schließt das Panel wieder. */
+let _arbeitsplatzActivePanel = null;
 
-// v2.25.10: Auto-Kollaps beim Resize über die 1280-px-Schwelle hinaus.
-// Wir reagieren nur auf TRANSITIONS (wide→narrow / narrow→wide), nicht
-// jeder Pixel — sonst würde ein User-Toggle innerhalb desselben Regimes
-// sofort wieder zurückgesetzt.
-let _arbeitsplatzPrevNarrow = null;
-let _arbeitsplatzResizeT = null;
-function _arbeitsplatzOnResize() {
-  const root = document.getElementById('arbeitsplatz-3col');
-  if (!root) return;
-  const page = document.getElementById('page-arbeitsplatz');
-  if (!page || !page.classList.contains('active')) {
-    // Trotzdem den narrow-State aktualisieren, damit nach Page-Wechsel
-    // die Transition korrekt erkannt wird.
-    _arbeitsplatzPrevNarrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
+function toggleArbeitsplatzPanel(panelType) {
+  if (_arbeitsplatzActivePanel === panelType) {
+    closeArbeitsplatzPanel();
     return;
   }
-  const narrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
-  if (_arbeitsplatzPrevNarrow === null) { _arbeitsplatzPrevNarrow = narrow; return; }
-  if (narrow && !_arbeitsplatzPrevNarrow) {
-    // wide → narrow: einklappen
-    root.classList.add('left-collapsed');
-    root.classList.add('right-collapsed');
-  } else if (!narrow && _arbeitsplatzPrevNarrow) {
-    // narrow → wide: gespeicherte User-Pref wiederherstellen (oder default)
-    applyArbeitsplatzColumnState();
-  }
-  _arbeitsplatzPrevNarrow = narrow;
+  _arbeitsplatzActivePanel = panelType;
+  _renderArbeitsplatzPanel(panelType);
 }
-window.addEventListener('resize', () => {
-  clearTimeout(_arbeitsplatzResizeT);
-  _arbeitsplatzResizeT = setTimeout(_arbeitsplatzOnResize, 150);
+
+function closeArbeitsplatzPanel() {
+  const flyout = document.getElementById('ab-flyout');
+  if (flyout) flyout.hidden = true;
+  document.querySelectorAll('#ab-rail .ab-rail-panel.is-active').forEach(b => b.classList.remove('is-active'));
+  document.querySelectorAll('#ab-flyout .ab-flyout-panel').forEach(p => p.hidden = true);
+  _arbeitsplatzActivePanel = null;
+}
+
+function _renderArbeitsplatzPanel(panelType) {
+  const PANEL_CONFIG = {
+    pins:      { title: 'Angeheftet',         renderer: typeof renderArbeitsplatzPins      === 'function' ? renderArbeitsplatzPins      : null },
+    recent:    { title: 'Zuletzt bearbeitet', renderer: typeof renderArbeitsplatzRecent    === 'function' ? renderArbeitsplatzRecent    : null },
+    inbox:     { title: 'Dranbleiben',        renderer: typeof renderArbeitsplatzInbox     === 'function' ? renderArbeitsplatzInbox     : null },
+    today:     { title: 'Heute von dir',      renderer: typeof renderArbeitsplatzToday     === 'function' ? renderArbeitsplatzToday     : null },
+    templates: { title: 'Vorlagen',           renderer: typeof renderArbeitsplatzTemplates === 'function' ? renderArbeitsplatzTemplates : null },
+    continue:  { title: 'Fortführen',         renderer: null },
+    care:      { title: 'Datenpflege',        renderer: typeof renderArbeitsplatzCare      === 'function' ? renderArbeitsplatzCare      : null },
+    shortcuts: { title: 'Quick-Links',        renderer: typeof renderArbeitsplatzShortcuts === 'function' ? renderArbeitsplatzShortcuts : null }
+  };
+  const cfg = PANEL_CONFIG[panelType];
+  if (!cfg) return;
+
+  const flyout   = document.getElementById('ab-flyout');
+  const titleEl  = document.getElementById('ab-flyout-title');
+  if (!flyout || !titleEl) return;
+
+  flyout.hidden = false;
+  titleEl.textContent = cfg.title;
+
+  // Aktiv-Markierung am Rail-Button
+  document.querySelectorAll('#ab-rail .ab-rail-panel').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.panel === panelType));
+  // Nur das gewählte Panel im Body sichtbar machen
+  document.querySelectorAll('#ab-flyout .ab-flyout-panel').forEach(p =>
+    p.hidden = p.dataset.panel !== panelType);
+
+  // Inhalt (re)rendern. Die Render-Funktionen sind idempotent und können
+  // sicher mehrmals laufen.
+  if (typeof cfg.renderer === 'function') {
+    Promise.resolve().then(cfg.renderer).catch(err => console.error('Panel-Render fehlgeschlagen:', err));
+  }
+}
+
+function _restoreArbeitsplatzPanelOnEnter() {
+  if (_arbeitsplatzActivePanel) _renderArbeitsplatzPanel(_arbeitsplatzActivePanel);
+}
+
+// Esc schließt das Flyout
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!_arbeitsplatzActivePanel) return;
+  const page = document.getElementById('page-arbeitsplatz');
+  if (!page || !page.classList.contains('active')) return;
+  // Nicht schließen, wenn ein Modal/Drawer offen ist — der hat den Vorrang.
+  if (document.querySelector('.modal.open, .drawer.open')) return;
+  closeArbeitsplatzPanel();
+});
+
+// Klick auf die Bühne (außerhalb von Rail und Flyout) schließt das Panel.
+document.addEventListener('click', (e) => {
+  if (!_arbeitsplatzActivePanel) return;
+  const page = document.getElementById('page-arbeitsplatz');
+  if (!page || !page.classList.contains('active')) return;
+  if (e.target.closest('#ab-rail') || e.target.closest('#ab-flyout')) return;
+  closeArbeitsplatzPanel();
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -5005,13 +5028,15 @@ async function togglePin(entityType, entityId, label) {
 async function renderArbeitsplatzPins() {
   const wrap = document.getElementById('arbeitsplatz-pins');
   const block = document.getElementById('arbeitsplatz-pins-block');
-  if (!wrap || !block) return;
+  if (!wrap) return;
+  if (block) block.style.display = '';
   const pins = await loadPinsForCurrentUser();
   if (pins.length === 0) {
-    block.style.display = 'none';
+    // v2.26.0: Statt das Block zu verstecken (führt im Flyout zu leerem Panel)
+    // einen Empty-State anzeigen.
+    wrap.innerHTML = '<div class="info-card-empty">Noch nichts angeheftet. Pinne Firmen/Projekte/Kontakte über den Stern auf der Detail-Seite.</div>';
     return;
   }
-  block.style.display = '';
 
   // Items pro Typ nachladen
   const byType = { company: [], project: [], contact: [] };
@@ -5182,11 +5207,12 @@ async function renderArbeitsplatzCare() {
   if (aNoDoc > 0)      items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('appointments')" title="Zur Termin-Liste">${aNoDoc} Termine ohne Doku</button>`);
   if (dNoReport > 0)   items.push(`<button class="arbeitsplatz-care-item" onclick="navigateTo('deployments')" title="Zur Einsatz-Liste">${dNoReport} Einsätze ohne Bericht</button>`);
 
+  if (block) block.style.display = '';
   if (items.length === 0) {
-    block.style.display = 'none';
+    // v2.26.0: Im Flyout immer sichtbar lassen — Empty-State statt komplett verstecken.
+    wrap.innerHTML = '<div class="info-card-empty">Alle Daten sauber gepflegt — nichts zu tun.</div>';
     return;
   }
-  block.style.display = '';
   wrap.innerHTML = items.join('');
 }
 
@@ -26145,14 +26171,15 @@ async function deleteShortcut() {
 async function renderArbeitsplatzShortcuts() {
   const block = document.getElementById('arbeitsplatz-shortcuts-block');
   const wrap = document.getElementById('arbeitsplatz-shortcuts');
-  if (!block || !wrap) return;
+  if (!wrap) return;
+  if (block) block.style.display = '';
   await loadShortcutsCache(true);
   const active = _shortcutsCache.filter(s => s.ist_aktiv);
   if (active.length === 0) {
-    block.style.display = 'none';
+    // v2.26.0: Empty-State statt Block verstecken — im Flyout sonst leeres Panel.
+    wrap.innerHTML = '<div class="info-card-empty">Noch keine Quick-Links angelegt. Admins können diese in den Einstellungen pflegen.</div>';
     return;
   }
-  block.style.display = '';
 
   // Nach Kategorie gruppieren — innerhalb sortiert nach reihenfolge/label
   const byKat = {};

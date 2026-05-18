@@ -1344,137 +1344,153 @@ body {
   .arbeitsplatz { padding-bottom: calc(var(--mobile-nav-height) + 32px); }
 }
 
-/* v2.18.0 / v2.19.1: 3-Spalten-Layout für den Arbeitsplatz —
-   volle Bildschirmbreite ohne max-width-Centering. */
-.arbeitsplatz-3col {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
-  gap: 24px;
-  align-items: start;
+/* v2.26.0: Arbeitsplatz neu — Activity-Bar-Layout.
+   48-px-Rail links, on-demand-Flyout-Panel (300 px) und große Bühne.
+   Statt zweier permanenter Akkordeon-Spalten gibt es eine einzige Rail
+   und ein Panel, das nur erscheint wenn der User es explizit braucht. */
+.arbeitsplatz-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
   width: 100%;
   margin: 0;
-  padding-bottom: 64px;
-  transition: grid-template-columns .2s ease;
+  min-height: calc(100vh - 80px);
 }
-/* v2.25.8: Einklappbare Seitenspalten — auf einen 36 px schmalen Streifen
-   zusammenschieben, sodass die Bühne in der Mitte mehr Platz bekommt. */
-.arbeitsplatz-3col.left-collapsed  { grid-template-columns: 36px minmax(0, 1fr) 340px; }
-.arbeitsplatz-3col.right-collapsed { grid-template-columns: 280px minmax(0, 1fr) 36px; }
-.arbeitsplatz-3col.left-collapsed.right-collapsed { grid-template-columns: 36px minmax(0, 1fr) 36px; }
-
-.arbeitsplatz-col-left,
-.arbeitsplatz-col-right {
+.ab-rail {
+  flex: 0 0 48px;
+  width: 48px;
   position: sticky;
   top: 80px;
-  max-height: calc(100vh - 100px);
+  align-self: flex-start;
+  max-height: calc(100vh - 80px);
   overflow-y: auto;
-  padding-right: 4px;
-}
-.arbeitsplatz-col-left { padding-right: 0; }
-
-/* v2.25.8: Toggle-Knopf am oberen Rand jeder Spalte */
-.arbeitsplatz-col-toggle {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex; align-items: center; justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin: 0 0 8px auto;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: var(--surface);
-  cursor: pointer;
-  color: var(--muted);
-  transition: color .12s, border-color .12s, background .12s;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0 24px;
+  gap: 4px;
+  z-index: 5;
 }
-.arbeitsplatz-col-toggle:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--bg);
-}
-.arbeitsplatz-col-toggle.is-right { margin: 0 auto 8px 0; }
-.arbeitsplatz-col-toggle-icon {
-  display: inline-block;
-  width: 0; height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-right: 5px solid currentColor;
-}
-.arbeitsplatz-col-toggle.is-right .arbeitsplatz-col-toggle-icon {
-  border-right: 0;
-  border-left: 5px solid currentColor;
-}
-.arbeitsplatz-col-toggle-collapsed-label {
-  display: none;
-  font-size: 9px; font-weight: 700;
-  letter-spacing: 0.5px;
-  color: var(--muted);
-}
-
-/* Eingeklappt: Spalte schrumpft, Labels weg — aber alle + Symbole bleiben
-   sichtbar, damit der User direkt klicken kann ohne erst aufklappen zu müssen.
-   v2.25.10: Eyebrow + Live-Preview werden versteckt, Action-Buttons werden
-   zu schmalen +-Tasten, Widgets-Header bleiben mit nur dem +-Symbol erhalten. */
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left,
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right {
-  padding-right: 0;
-  overflow: hidden;
-}
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-eyebrow,
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-live-preview {
-  display: none;
-}
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-actions-list { gap: 6px; }
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-action-row {
-  padding: 0;
-  height: 30px;
-  width: 30px;
-  margin: 0 auto;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px; font-weight: 600;
-  border-left-width: 2px;
-}
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-action-label { display: none; }
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-action-plus  { font-size: 18px; }
-
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-widget {
-  margin-bottom: 4px;
-  box-shadow: none;
-}
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-widget summary {
-  padding: 8px 0;
-  font-size: 0;
-  justify-content: center;
-  letter-spacing: 0;
-}
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-widget summary::after {
-  font-size: 16px;
-}
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-widget[open] .arbeitsplatz-widget-body {
-  display: none;
-}
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-widget[open] summary::after {
-  content: '＋';
-}
-
-/* Toggle-Knopf im Collapsed-Modus — vertikal mit Label „AKT." / „WIDG." */
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-toggle,
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-col-toggle {
-  margin: 0 auto 8px auto;
+.ab-rail-group {
   display: flex; flex-direction: column;
-  height: auto;
-  padding: 6px 0;
+  align-items: center;
   gap: 4px;
 }
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-toggle .arbeitsplatz-col-toggle-icon { border-right: 0; border-left: 5px solid currentColor; }
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-col-toggle .arbeitsplatz-col-toggle-icon { border-left: 0; border-right: 5px solid currentColor; }
-.arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left  .arbeitsplatz-col-toggle-collapsed-label,
-.arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right .arbeitsplatz-col-toggle-collapsed-label {
-  display: block;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
+.ab-rail-sep {
+  width: 24px;
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
+.ab-rail-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+  transition: background .12s, border-color .12s, color .12s;
+}
+.ab-rail-btn:hover {
+  background: var(--bg);
+  border-color: var(--border);
+}
+.ab-rail-btn.is-active {
+  background: var(--text);
+  color: #fff;
+  border-color: var(--text);
+}
+.ab-rail-action {
+  border-left: 3px solid var(--entity-color, var(--border));
+}
+.ab-rail-action:hover {
+  background: var(--entity-tint, var(--bg));
+  border-color: var(--entity-color, var(--border));
+  border-left-color: var(--entity-color, var(--border));
+}
+.ab-rail-panel { color: var(--muted); font-size: 15px; }
+.ab-rail-panel:hover { color: var(--text); }
+.ab-rail-panel.is-active { color: #fff; }
+
+/* Entity-Farbtokens für die Rail-Action-Buttons (gleiches Schema wie früher) */
+.ab-rail-action[data-entity="firma"]   { --entity-color: #047857; --entity-tint: #E1F5EE; }
+.ab-rail-action[data-entity="kontakt"] { --entity-color: #6d28d9; --entity-tint: #EEEDFE; }
+.ab-rail-action[data-entity="projekt"] { --entity-color: #1d4ed8; --entity-tint: #E6F1FB; }
+.ab-rail-action[data-entity="einsatz"] { --entity-color: #b45309; --entity-tint: #FAEEDA; }
+.ab-rail-action[data-entity="termin"]  { --entity-color: #0e7490; --entity-tint: #E0F2F1; }
+.ab-rail-action[data-entity="aufgabe"] { --entity-color: #be185d; --entity-tint: #FBEAF0; }
+.ab-rail-action[data-entity="notiz"]   { --entity-color: #57534e; --entity-tint: #EFEDE8; }
+
+/* On-Demand-Flyout — schiebt sich rechts neben die Rail rein wenn ein
+   Panel aktiv ist. Klick außerhalb oder Esc schließt es wieder. */
+.ab-flyout {
+  flex: 0 0 300px;
+  width: 300px;
+  position: sticky;
+  top: 80px;
+  align-self: flex-start;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 12px rgba(0,0,0,.04);
+  z-index: 4;
+  animation: ab-flyout-in .15s ease-out;
+}
+.ab-flyout[hidden] { display: none; }
+@keyframes ab-flyout-in {
+  from { transform: translateX(-8px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.ab-flyout-header {
+  position: sticky; top: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+.ab-flyout-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.ab-flyout-close {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 18px; line-height: 1;
+  color: var(--muted);
+}
+.ab-flyout-close:hover {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ab-flyout-body {
+  padding: 12px 14px;
+}
+.ab-flyout-panel[hidden] { display: none; }
+
+/* Bühne in der Mitte — volle restliche Breite */
+.ab-stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 16px 24px 64px;
 }
 .arbeitsplatz-col-eyebrow {
   font-size: 10px;
@@ -1797,30 +1813,29 @@ body {
 }
 .arbeitsplatz-widget .info-card-empty { padding: 4px 0; font-size: 12px; }
 
-/* Mobile: Eine Spalte. Linke + rechte Spalte unter die Bühne, nicht sticky.
-   v2.25.8: Auf Mobile greift der Spalten-Kollaps nicht — alle drei Bereiche
-   stapeln sich vertikal, der Toggle-Knopf wird ausgeblendet. */
+/* Mobile: Rail bleibt links sichtbar (kompakt), Flyout schiebt sich als
+   Overlay über die Bühne statt sie zu verschieben — sonst hätte die
+   Bühne auf Mobile nichts mehr von ihrem Platz. */
 @media (max-width: 1000px) {
-  .arbeitsplatz-3col,
-  .arbeitsplatz-3col.left-collapsed,
-  .arbeitsplatz-3col.right-collapsed,
-  .arbeitsplatz-3col.left-collapsed.right-collapsed {
-    grid-template-columns: 1fr;
-    padding-bottom: calc(var(--mobile-nav-height) + 32px);
+  .arbeitsplatz-shell {
+    min-height: calc(100vh - var(--mobile-nav-height) - 80px);
+    padding-bottom: var(--mobile-nav-height);
   }
-  .arbeitsplatz-col-left,
-  .arbeitsplatz-col-right {
-    position: static;
+  .ab-rail { padding: 8px 0 16px; }
+  .ab-flyout {
+    position: fixed;
+    top: 56px;
+    left: 48px;
+    bottom: 0;
+    right: 0;
+    width: auto;
     max-height: none;
-    overflow: visible;
+    border-right: none;
+    border-left: 1px solid var(--border);
+    box-shadow: 0 0 24px rgba(0,0,0,.12);
+    z-index: 50;
   }
-  .arbeitsplatz-col-toggle { display: none; }
-  /* Kollaps-Effekt zurücknehmen, falls Klasse gesetzt war */
-  .arbeitsplatz-3col.left-collapsed  .arbeitsplatz-col-left > *:not(.arbeitsplatz-col-toggle),
-  .arbeitsplatz-3col.right-collapsed .arbeitsplatz-col-right > *:not(.arbeitsplatz-col-toggle) {
-    display: revert;
-  }
-  .arbeitsplatz-stage { padding: 20px; min-height: auto; }
+  .ab-stage { padding: 16px; }
   .stage-welcome-title { font-size: 22px; }
 }
 .arbeitsplatz-head {
