@@ -1810,6 +1810,26 @@ body {
   color: var(--muted);
   line-height: 1.35;
 }
+/* v2.27.7: Kleiner Hinweis-Chip am Ende jeder Fortführen-Karte, der
+   verdeutlicht, dass nach der Auswahl direkt in den Doku-Tab gesprungen
+   wird (statt in die Aktivitäten oder eine generische Detail-Page). */
+.ab-welcome-action-hint {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  background: var(--entity-tint, var(--bg-soft));
+  color: var(--entity-color, var(--muted));
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  align-self: flex-start;
+}
+.ab-welcome-action-hint::before {
+  content: '→';
+  font-size: 11px;
+  line-height: 1;
+}
 
 .ab-welcome-action[data-entity="firma"]   { --entity-color: #047857; --entity-tint: #E1F5EE; }
 .ab-welcome-action[data-entity="kontakt"] { --entity-color: #6d28d9; --entity-tint: #EEEDFE; }

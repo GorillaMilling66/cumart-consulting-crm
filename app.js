@@ -5611,9 +5611,11 @@ async function arbeitsplatzPrepare(typ) {
 }
 
 const PREPARE_LABELS = {
-  termin:  { plural: 'Bevorstehende Termine',  goal: 'vorbereiten',  tab: 'vorbereitung' },
-  einsatz: { plural: 'Bevorstehende Einsätze', goal: 'vorbereiten',  tab: 'planlogistik' },
-  projekt: { plural: 'Aktive Projekte',         goal: 'briefen',      tab: 'brief' }
+  // v2.27.7: Alle drei „Fortführen"-Aktionen springen nach der Auswahl direkt
+  // in den Doku-Tab des gewählten Items — dort wird vorbereitet/dokumentiert.
+  termin:  { plural: 'Bevorstehende Termine',  goal: 'vorbereiten',  tab: 'doku' },
+  einsatz: { plural: 'Bevorstehende Einsätze', goal: 'vorbereiten',  tab: 'doku' },
+  projekt: { plural: 'Aktive Projekte',         goal: 'briefen',      tab: 'doku' }
 };
 
 async function loadPrepareSuggestions(typ) {
