@@ -28564,6 +28564,371 @@ function _docPickerOutsideClick(e) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  v2.28.0 — KUNDENBERICHT (Projekt → PDF/HTML im neuen Tab)
+//  Sammelt Projekt + Einsätze + Doku + Logs + Produkte und
+//  rendert sie als eigenständige, druckbare HTML-Seite.
+//  Storno-Einsätze raus, Einkaufswerte/Marge raus — nur das,
+//  was der Kunde bezahlt und liest.
+// ═══════════════════════════════════════════════════════════
+
+const CUMART_KOPF = {
+  firma: 'Cumart Consulting',
+  inhaber: 'Selcuk Cumart',
+  email: 'selcuk@cumart.tech',
+  web: 'cumart.cloud'
+};
+
+async function openCustomerReport(projectId) {
+  if (!projectId) { showToast('Kein Projekt aktiv.', true); return; }
+  showToast('Kundenbericht wird vorbereitet …');
+  try {
+    const data = await _loadCustomerReportData(projectId);
+    if (!data) return;
+    const html = _buildCustomerReportHtml(data);
+    const win = window.open('', '_blank');
+    if (!win) {
+      showToast('Pop-up-Blocker verhindert das Öffnen. Bitte Pop-ups für diese Seite erlauben.', true);
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  } catch (e) {
+    console.error('Kundenbericht-Fehler:', e);
+    showToast('Bericht konnte nicht erzeugt werden: ' + (e?.message || 'Unbekannt'), true);
+  }
+}
+
+async function _loadCustomerReportData(projectId) {
+  const [projRes, depRes, prodRes, projDocsRes] = await Promise.all([
+    db.from('projects').select(`
+      id, name, beschreibung, status, startdatum, enddatum, geschaetzter_umsatz,
+      company:companies(id, name, strasse, plz, stadt),
+      verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(name),
+      hauptkontakt:contacts(id, vorname, nachname, position, email, telefon)
+    `).eq('id', projectId).is('deleted_at', null).single(),
+    db.from('deployments').select(`
+      id, titel, datum_von, datum_bis, einzelpreis, menge, status, ort,
+      uhrzeit_von, uhrzeit_bis,
+      service:services(name)
+    `).eq('project_id', projectId).is('deleted_at', null)
+      .neq('status', 'Storniert')
+      .order('datum_von', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true }),
+    db.from('project_products').select('bezeichnung, menge, einzelpreis_vk, im_paket, notizen, product:products(einheit)')
+      .is('deleted_at', null).eq('project_id', projectId)
+      .order('created_at', { ascending: true }),
+    db.from('doc_sections').select('id, titel, inhalt, reihenfolge')
+      .eq('entity_type', 'project').eq('entity_id', projectId)
+      .order('reihenfolge').order('created_at')
+  ]);
+  if (projRes.error || !projRes.data) {
+    showToast('Projekt konnte nicht geladen werden.', true);
+    return null;
+  }
+
+  const deployments = depRes.data || [];
+  const depIds = deployments.map(d => d.id);
+
+  const [depDocsRes, depLogsRes] = await Promise.all([
+    depIds.length
+      ? db.from('doc_sections').select('id, entity_id, titel, inhalt, reihenfolge')
+          .eq('entity_type', 'deployment').in('entity_id', depIds)
+          .order('reihenfolge').order('created_at')
+      : Promise.resolve({ data: [] }),
+    depIds.length
+      ? db.from('deployment_log').select('id, deployment_id, kategorie, inhalt, created_at')
+          .is('deleted_at', null).in('deployment_id', depIds)
+          .in('kategorie', ['erkenntnis', 'log'])
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: [] })
+  ]);
+
+  // Map Doku + Logs pro Einsatz
+  const docsByDep = new Map();
+  for (const d of (depDocsRes.data || [])) {
+    if (!docsByDep.has(d.entity_id)) docsByDep.set(d.entity_id, []);
+    docsByDep.get(d.entity_id).push(d);
+  }
+  const logsByDep = new Map();
+  for (const l of (depLogsRes.data || [])) {
+    if (!logsByDep.has(l.deployment_id)) logsByDep.set(l.deployment_id, []);
+    logsByDep.get(l.deployment_id).push(l);
+  }
+
+  return {
+    project: projRes.data,
+    deployments,
+    products: prodRes.data || [],
+    projectDocs: projDocsRes.data || [],
+    docsByDep,
+    logsByDep
+  };
+}
+
+function _buildCustomerReportHtml(data) {
+  const p = data.project;
+  const company = p.company || {};
+  const ek = p.hauptkontakt;
+  const verant = p.verantwortlicher?.name || '—';
+
+  const todayDE = formatDateDE(toISODate(new Date()));
+  const projZeitraum = (p.startdatum && p.enddatum)
+    ? `${formatDateDE(p.startdatum)} – ${formatDateDE(p.enddatum)}`
+    : p.startdatum ? `ab ${formatDateDE(p.startdatum)}`
+    : p.enddatum   ? `bis ${formatDateDE(p.enddatum)}` : '—';
+
+  const kontaktName = ek ? [ek.vorname, ek.nachname].filter(Boolean).join(' ') : '';
+
+  // Briefing-Bereiche
+  const briefingHtml = data.projectDocs.length === 0
+    ? `<p class="muted">— Kein Briefing hinterlegt —</p>`
+    : data.projectDocs.map(s => `
+        <section class="doc-block">
+          <h3>${_e(s.titel)}</h3>
+          ${_textToParas(s.inhalt)}
+        </section>`).join('');
+
+  // Einsätze
+  const einsaetzeHtml = data.deployments.length === 0
+    ? `<p class="muted">— Noch keine durchgeführten Einsätze —</p>`
+    : data.deployments.map(d => {
+        const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
+        const datumBis = d.datum_bis && d.datum_bis !== d.datum_von ? ` – ${formatDateDE(d.datum_bis)}` : '';
+        const zeit = (d.uhrzeit_von || d.uhrzeit_bis)
+          ? `${(d.uhrzeit_von || '').substring(0,5)}${d.uhrzeit_bis ? '–' + d.uhrzeit_bis.substring(0,5) : ''} Uhr`
+          : 'ganztags';
+        const leistung = d.service?.name || '';
+        const docs = data.docsByDep.get(d.id) || [];
+        const logs = data.logsByDep.get(d.id) || [];
+
+        const docsHtml = docs.map(s => `
+          <div class="doc-block sub">
+            <h4>${_e(s.titel)}</h4>
+            ${_textToParas(s.inhalt)}
+          </div>`).join('');
+
+        const logsHtml = logs.length === 0 ? '' : `
+          <div class="logs">
+            <h4>Notizen</h4>
+            <ul>${logs.map(l => `<li><span class="log-kat">${l.kategorie === 'erkenntnis' ? 'Erkenntnis' : 'Log'}</span> ${_e(l.inhalt || '')}</li>`).join('')}</ul>
+          </div>`;
+
+        return `
+          <section class="einsatz">
+            <div class="einsatz-head">
+              <div class="einsatz-datum">${_e(datum)}${_e(datumBis)}</div>
+              <div class="einsatz-meta">${_e(zeit)}${d.ort ? ' · ' + _e(d.ort) : ''}</div>
+            </div>
+            <h3 class="einsatz-titel">${_e(d.titel || '—')}</h3>
+            ${leistung ? `<div class="einsatz-leistung">${_e(leistung)}</div>` : ''}
+            ${docsHtml}
+            ${logsHtml}
+          </section>`;
+      }).join('');
+
+  // Produkte (alle anzeigen, mit Hinweis im-Paket/zusätzlich; Preise nur VK)
+  const produkteRows = data.products.map(pp => {
+    const menge = Number(pp.menge) || 0;
+    const vk = Number(pp.einzelpreis_vk) || 0;
+    const einheit = pp.product?.einheit ? ` ${_e(pp.product.einheit)}` : '';
+    const pos = menge * vk;
+    const tag = pp.im_paket
+      ? `<span class="tag tag-muted">im Paket</span>`
+      : `<span class="tag">zusätzlich</span>`;
+    const note = pp.notizen ? `<div class="prod-note">${_e(pp.notizen)}</div>` : '';
+    return `
+      <tr>
+        <td>${_e(pp.bezeichnung || '—')}${note}</td>
+        <td class="num">${_fmtMenge(menge)}${einheit}</td>
+        <td class="num">${pp.im_paket ? '—' : _fmtPreis(vk)}</td>
+        <td class="num">${pp.im_paket ? '—' : _fmtPreis(pos)}</td>
+        <td>${tag}</td>
+      </tr>`;
+  }).join('');
+  const produkteHtml = data.products.length === 0 ? '' : `
+    <h2>3. Lieferumfang Produkte</h2>
+    <table class="prod-table">
+      <thead><tr><th>Bezeichnung</th><th class="num">Menge</th><th class="num">Einzelpreis</th><th class="num">Position</th><th>Hinweis</th></tr></thead>
+      <tbody>${produkteRows}</tbody>
+    </table>`;
+
+  // Rechnung
+  const paket = Number(p.geschaetzter_umsatz) || 0;
+  const produkteVkExkl = data.products
+    .filter(pp => !pp.im_paket)
+    .reduce((s, pp) => s + (Number(pp.menge) || 0) * (Number(pp.einzelpreis_vk) || 0), 0);
+  const gesamt = paket + produkteVkExkl;
+
+  const rechnungHtml = `
+    <h2>${data.products.length > 0 ? '4' : '3'}. Rechnungs-Übersicht</h2>
+    <table class="bill-table">
+      <tbody>
+        <tr><td>Projekt-Paketpreis</td><td class="num">${_fmtPreis(paket)}</td></tr>
+        ${produkteVkExkl > 0 ? `<tr><td>Zusätzliche Produkte (außerhalb Paket)</td><td class="num">${_fmtPreis(produkteVkExkl)}</td></tr>` : ''}
+        <tr class="bill-total"><td>Gesamtsumme (netto)</td><td class="num">${_fmtPreis(gesamt)}</td></tr>
+      </tbody>
+    </table>
+    <p class="ust-hint">Alle Beträge zuzüglich gesetzlicher Umsatzsteuer.</p>`;
+
+  const css = `
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #f4f3ee; color: #1d1d1f; font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 12px; line-height: 1.5; }
+    body { padding: 28px 40px 80px; }
+    .toolbar { position: sticky; top: 0; background: #f4f3ee; padding: 8px 0 14px; margin: -28px -40px 12px; border-bottom: 1px solid #d6d3cc; display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+    .toolbar button { font: inherit; padding: 8px 14px; border: 1px solid #1d1d1f; background: #1d1d1f; color: #fff; border-radius: 6px; cursor: pointer; font-weight: 500; }
+    .toolbar button.secondary { background: #fff; color: #1d1d1f; }
+    .page { max-width: 800px; margin: 0 auto; background: #fff; padding: 48px 56px 56px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+
+    .hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 18px; border-bottom: 2px solid #1d1d1f; margin-bottom: 28px; }
+    .hdr-left .hdr-firma { font-size: 18px; font-weight: 700; letter-spacing: -.2px; }
+    .hdr-left .hdr-sub { font-size: 11px; color: #6b6b6b; margin-top: 2px; }
+    .hdr-right { text-align: right; font-size: 11px; color: #6b6b6b; }
+    .hdr-right .hdr-titel { font-size: 13px; font-weight: 600; color: #1d1d1f; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 4px; }
+
+    .recipient { font-size: 12px; line-height: 1.6; margin-bottom: 28px; }
+    .recipient .recipient-label { font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: #6b6b6b; margin-bottom: 4px; }
+
+    h1.proj-title { font-size: 24px; font-weight: 600; margin: 0 0 6px; letter-spacing: -.3px; }
+    .proj-sub { font-size: 12px; color: #6b6b6b; margin-bottom: 22px; }
+
+    .proj-meta-table { font-size: 11px; width: 100%; margin-bottom: 32px; border-collapse: collapse; }
+    .proj-meta-table td { padding: 4px 0; }
+    .proj-meta-table td:first-child { color: #6b6b6b; width: 160px; }
+
+    h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; margin: 30px 0 14px; padding-bottom: 8px; border-bottom: 1px solid #d6d3cc; }
+    h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+    h4 { font-size: 12px; font-weight: 600; margin: 14px 0 4px; color: #444; }
+
+    .doc-block { margin-bottom: 18px; }
+    .doc-block.sub h4 { margin-top: 14px; margin-bottom: 4px; }
+    .doc-block p { margin: 0 0 6px; white-space: pre-wrap; }
+
+    .einsatz { padding: 16px 0; border-top: 1px solid #ececec; break-inside: avoid; }
+    .einsatz:first-of-type { border-top: none; padding-top: 0; }
+    .einsatz-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+    .einsatz-datum { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #1d1d1f; }
+    .einsatz-meta { font-size: 11px; color: #6b6b6b; }
+    .einsatz-titel { font-size: 14px; font-weight: 600; margin: 2px 0 2px; }
+    .einsatz-leistung { font-size: 11px; color: #6b6b6b; margin-bottom: 10px; }
+
+    .logs { margin-top: 12px; }
+    .logs ul { padding-left: 18px; margin: 4px 0; }
+    .logs li { margin-bottom: 6px; font-size: 12px; }
+    .log-kat { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 1px 6px; background: #e7e5e4; color: #444; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+
+    .prod-table, .bill-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+    .prod-table th, .prod-table td, .bill-table td { padding: 8px 10px; border-bottom: 1px solid #ececec; text-align: left; }
+    .prod-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #6b6b6b; border-bottom: 1px solid #1d1d1f; }
+    .prod-table .num, .bill-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .prod-note { font-size: 11px; color: #6b6b6b; margin-top: 3px; }
+    .tag { display: inline-block; font-size: 10px; padding: 2px 8px; background: #e3f2eb; color: #1f6f48; border-radius: 999px; }
+    .tag.tag-muted { background: #ececec; color: #6b6b6b; }
+
+    .bill-table .bill-total td { font-weight: 700; font-size: 13px; padding-top: 14px; border-top: 2px solid #1d1d1f; border-bottom: none; }
+    .ust-hint { font-size: 11px; color: #6b6b6b; margin-top: 6px; }
+
+    .footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid #d6d3cc; font-size: 11px; color: #6b6b6b; }
+    .footer strong { color: #1d1d1f; }
+
+    .muted { color: #6b6b6b; font-style: italic; }
+
+    @media print {
+      body { background: #fff; padding: 0; }
+      .toolbar { display: none; }
+      .page { box-shadow: none; max-width: none; padding: 24px 30px; border-radius: 0; }
+      .einsatz { break-inside: avoid; }
+      .doc-block { break-inside: avoid; }
+      h2 { break-after: avoid; }
+    }
+  `;
+
+  const body = `
+    <div class="toolbar">
+      <button class="secondary" onclick="window.close()">Schließen</button>
+      <button onclick="window.print()">Drucken / als PDF speichern</button>
+    </div>
+    <div class="page">
+      <header class="hdr">
+        <div class="hdr-left">
+          <div class="hdr-firma">${_e(CUMART_KOPF.firma)}</div>
+          <div class="hdr-sub">${_e(CUMART_KOPF.inhaber)} · ${_e(CUMART_KOPF.email)}</div>
+        </div>
+        <div class="hdr-right">
+          <div class="hdr-titel">Projektbericht</div>
+          <div>Stand: ${_e(todayDE)}</div>
+        </div>
+      </header>
+
+      <section class="recipient">
+        <div class="recipient-label">An</div>
+        <strong>${_e(company.name || '—')}</strong>
+        ${company.strasse ? `<br>${_e(company.strasse)}` : ''}
+        ${(company.plz || company.stadt) ? `<br>${_e([company.plz, company.stadt].filter(Boolean).join(' '))}` : ''}
+        ${kontaktName ? `<br><span class="muted">z. Hd. ${_e(kontaktName)}</span>` : ''}
+      </section>
+
+      <h1 class="proj-title">${_e(p.name || 'Projekt')}</h1>
+      <div class="proj-sub">${_e(p.status || '')}</div>
+
+      <table class="proj-meta-table">
+        <tr><td>Projektzeitraum</td><td>${_e(projZeitraum)}</td></tr>
+        <tr><td>Verantwortlich (Cumart)</td><td>${_e(verant)}</td></tr>
+        ${kontaktName ? `<tr><td>Hauptkontakt Kunde</td><td>${_e(kontaktName)}${ek?.position ? ' · ' + _e(ek.position) : ''}</td></tr>` : ''}
+      </table>
+
+      <h2>1. Projekt-Briefing</h2>
+      ${briefingHtml}
+
+      <h2>2. Durchgeführte Einsätze</h2>
+      ${einsaetzeHtml}
+
+      ${produkteHtml}
+
+      ${rechnungHtml}
+
+      <footer class="footer">
+        <strong>${_e(CUMART_KOPF.firma)}</strong> · ${_e(CUMART_KOPF.inhaber)}<br>
+        ${_e(CUMART_KOPF.email)} · ${_e(CUMART_KOPF.web)}<br>
+        <small>Bei Rückfragen zum Bericht melden Sie sich gerne direkt.</small>
+      </footer>
+    </div>
+  `;
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Kundenbericht — ${_e(p.name || 'Projekt')}</title>
+  <style>${css}</style>
+</head>
+<body>${body}</body>
+</html>`;
+}
+
+// ─ Helpers für den Report-Builder ─
+function _e(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function _textToParas(text) {
+  if (!text) return '<p class="muted">—</p>';
+  // Pro Leerzeile ein neuer Paragraph, sonst Line-Break per CSS (white-space: pre-wrap).
+  const parts = String(text).split(/\n\s*\n/);
+  return parts.map(p => `<p>${_e(p)}</p>`).join('');
+}
+function _fmtPreis(n) {
+  const x = Number(n) || 0;
+  return x.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+function _fmtMenge(n) {
+  const x = Number(n) || 0;
+  return Number.isInteger(x) ? String(x) : x.toLocaleString('de-DE', { maximumFractionDigits: 3 });
+}
+
+// ═══════════════════════════════════════════════════════════
 //  INITIALIZATION
 // ═══════════════════════════════════════════════════════════
 
