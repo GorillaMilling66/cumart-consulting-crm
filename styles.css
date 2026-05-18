@@ -1429,6 +1429,11 @@ body {
   font-weight: 600;
   line-height: 1;
 }
+/* v2.27.2: Lucide-Style SVG-Icons im Rail-Icon-Slot */
+.ab-rail-icon svg {
+  width: 20px; height: 20px;
+  display: block;
+}
 .ab-rail-label {
   flex: 1 1 auto;
   min-width: 0;
