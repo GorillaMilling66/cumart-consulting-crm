@@ -13032,6 +13032,50 @@ function calcDeploymentGesamt(menge, einzelpreis) {
   return m * e;
 }
 
+/** v2.28.2 — Rabatt-Helper.
+ *  Errechnet aus Brutto + Rabatt-Typ/-Wert den Rabatt-Betrag und das Netto.
+ *  Brutto bleibt unverändert die Basis (Menge × Einzelpreis bzw. VK).
+ *  rabattTyp NULL/undefined/'' = kein Rabatt → rabatt = 0, netto = brutto. */
+function applyRabatt(brutto, rabattTyp, rabattWert) {
+  const b = Number(brutto) || 0;
+  if (!rabattTyp || rabattWert == null) return { brutto: b, rabatt: 0, netto: b };
+  const w = Number(rabattWert) || 0;
+  let rabatt = 0;
+  if (rabattTyp === 'prozent')      rabatt = Math.min(b, b * (w / 100));
+  else if (rabattTyp === 'betrag')  rabatt = Math.min(b, w);
+  const netto = b - rabatt;
+  return { brutto: b, rabatt, netto };
+}
+
+/** Netto eines Einsatzes (Menge × Einzelpreis abzüglich Rabatt). */
+function calcDeploymentNetto(d) {
+  const brutto = calcDeploymentGesamt(d?.menge, d?.einzelpreis);
+  return applyRabatt(brutto, d?.rabatt_typ, d?.rabatt_wert).netto;
+}
+
+/** Netto einer Produktposition (Menge × VK abzüglich Rabatt). */
+function calcProductPositionNetto(p) {
+  const brutto = (Number(p?.menge) || 0) * (Number(p?.einzelpreis_vk) || 0);
+  return applyRabatt(brutto, p?.rabatt_typ, p?.rabatt_wert).netto;
+}
+
+// v2.28.2 — Toggle-Handler für die Rabatt-Felder in den Modals: Wert ist
+// disabled, solange kein Typ gewählt ist (verhindert versehentliche Werte).
+function onDeploymentRabattTypChange() {
+  const typ = document.getElementById('d-rabatt-typ')?.value || '';
+  const wert = document.getElementById('d-rabatt-wert');
+  if (!wert) return;
+  if (!typ) { wert.value = ''; wert.disabled = true; }
+  else      { wert.disabled = false; if (!wert.value) wert.focus(); }
+}
+function onProductRabattTypChange() {
+  const typ = document.getElementById('pp-rabatt-typ')?.value || '';
+  const wert = document.getElementById('pp-rabatt-wert');
+  if (!wert) return;
+  if (!typ) { wert.value = ''; wert.disabled = true; }
+  else      { wert.disabled = false; if (!wert.value) wert.focus(); }
+}
+
 async function loadDeployments() {
   const tbody = document.getElementById('deployments-table-body');
   tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Lade Einsätze ...</div></td></tr>';
@@ -13336,6 +13380,11 @@ async function openDeploymentModal(mode, deploymentId = null) {
   document.getElementById('d-ort-hint').style.display = 'none';
   document.getElementById('d-menge').value = '1';
   document.getElementById('d-einzelpreis').value = '';
+  // v2.28.2: Rabatt-Felder zurücksetzen
+  const dRabattTyp = document.getElementById('d-rabatt-typ');
+  const dRabattWert = document.getElementById('d-rabatt-wert');
+  if (dRabattTyp) dRabattTyp.value = '';
+  if (dRabattWert) { dRabattWert.value = ''; dRabattWert.disabled = true; }
   // v2.25.2: Kurz-Beschreibung + Doku-Block aus dem Einsatz-Modal entfernt
   // (User-Wunsch). Daten in deployments.beschreibung / .dokumentation bleiben
   // in der DB — werden beim Speichern nur nicht mehr überschrieben.
@@ -13416,6 +13465,14 @@ async function openDeploymentModal(mode, deploymentId = null) {
     document.getElementById('d-menge').value = data.menge ?? 1;
     _deploymentMengeManuallyEdited = true;  // v1.33: existierende Menge nicht durch Auto-Berechnung ersetzen
     document.getElementById('d-einzelpreis').value = data.einzelpreis ?? '';
+    // v2.28.2: Rabatt aus DB lesen
+    const dRabattTypEl = document.getElementById('d-rabatt-typ');
+    const dRabattWertEl = document.getElementById('d-rabatt-wert');
+    if (dRabattTypEl)  dRabattTypEl.value  = data.rabatt_typ || '';
+    if (dRabattWertEl) {
+      dRabattWertEl.value = data.rabatt_wert ?? '';
+      dRabattWertEl.disabled = !data.rabatt_typ;
+    }
     _deploymentEinzelpreisManuallyEdited = true;  // v2.11.2: gespeicherter Preis ist heilig — Service-Wechsel überschreibt ihn nicht
     // v2.25.2: Kurz-Beschreibung + Doku-Block aus dem Einsatz-Modal entfernt
     // (User-Wunsch). Werte werden hier nicht mehr in die UI gespiegelt.
@@ -13876,6 +13933,23 @@ async function saveDeployment() {
   const einzelpreis = einzelRaw === '' ? 0 : Number(einzelRaw);
   if (Number.isNaN(einzelpreis) || einzelpreis < 0) { showToast('Einzelpreis muss eine Zahl ≥ 0 sein.', true); return; }
 
+  // v2.28.2: Rabatt-Felder einlesen + validieren
+  const rabattTypRaw  = document.getElementById('d-rabatt-typ')?.value || '';
+  const rabattWertRaw = document.getElementById('d-rabatt-wert')?.value || '';
+  let rabatt_typ = null;
+  let rabatt_wert = null;
+  if (rabattTypRaw && rabattWertRaw !== '') {
+    const wert = Number(rabattWertRaw);
+    if (Number.isNaN(wert) || wert < 0) {
+      showToast('Rabatt-Wert muss eine Zahl ≥ 0 sein.', true); return;
+    }
+    if (rabattTypRaw === 'prozent' && wert > 100) {
+      showToast('Rabatt-Prozent kann nicht über 100 % liegen.', true); return;
+    }
+    rabatt_typ = rabattTypRaw;
+    rabatt_wert = wert;
+  }
+
   btn.disabled = true;
   btn.textContent = editingDeploymentId ? 'Wird gespeichert ...' : 'Wird angelegt ...';
 
@@ -13903,6 +13977,8 @@ async function saveDeployment() {
       status: effStatus,
       company_id, project_id, service_id,
       menge, einzelpreis,
+      rabatt_typ,         // v2.28.2
+      rabatt_wert,        // v2.28.2
       ort: ort || null,
       beschreibung: finalBeschreibung || null,
       dokumentation,
@@ -14492,7 +14568,8 @@ async function loadProjectDeployments(projectId) {
     .reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
 
   // Leistungsumsatz (Summe aller nicht-stornierten Einsatz-Werte) im Header
-  const leistungsUmsatz = billable.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+  // v2.28.2: Leistungsumsatz/-Aufwand mit Rabatt-Effekt (echter Kundenwert).
+  const leistungsUmsatz = billable.reduce((s, d) => s + calcDeploymentNetto(d), 0);
   if (leistungsUmsatzEl) {
     leistungsUmsatzEl.textContent = formatPreis(leistungsUmsatz);
     leistungsUmsatzEl.style.color = leistungsUmsatz > 0 ? 'var(--text)' : 'var(--muted)';
@@ -14567,7 +14644,8 @@ async function loadProjectDeployments(projectId) {
     // dass das Bündel ursprünglich mehr Tage hatte.
     const billableMembers = members.filter(d => d.status !== 'Storniert');
     const stornoMembers   = members.filter(d => d.status === 'Storniert');
-    const bundleSum = billableMembers.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+    // v2.28.2: Bündel-Summe mit Rabatt-Berücksichtigung
+    const bundleSum = billableMembers.reduce((s, d) => s + calcDeploymentNetto(d), 0);
     const bundleStornoSum = stornoMembers.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
     const dateLabels = members.filter(d => d.datum_von).map(d => formatDateDE(d.datum_von)).join(' · ');
     const collapsed = _collapsedBundleIds.has(b.id);
@@ -14709,20 +14787,21 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
 
   const [projRes, depRes, prodRes] = await Promise.all([
     db.from('projects').select('geschaetzter_umsatz').is('deleted_at', null).eq('id', projectId).single(),
-    // v2.25.11: status mitlesen, damit wir Storniert aus der Marge rausnehmen können.
-    db.from('deployments').select('menge, einzelpreis, status').is('deleted_at', null).eq('project_id', projectId),
-    db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket').is('deleted_at', null).eq('project_id', projectId)
+    // v2.25.11/v2.28.2: status + Rabatt mitlesen für korrekte Marge.
+    db.from('deployments').select('menge, einzelpreis, status, rabatt_typ, rabatt_wert').is('deleted_at', null).eq('project_id', projectId),
+    db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket, rabatt_typ, rabatt_wert').is('deleted_at', null).eq('project_id', projectId)
   ]);
   if (!isStillOnDetail('project', projectId)) return;
 
   const paket = Number(projRes.data?.geschaetzter_umsatz) || 0;
   // v2.25.11: Stornierte Einsätze sind nie ein Aufwand — sie entstehen nie.
+  // v2.28.2: Rabatt wirkt mit (echter Rabatt → Marge sinkt).
   const einsatzAufwand = (depRes.data || [])
     .filter(d => d.status !== 'Storniert')
-    .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+    .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodRes.data || [];
   const produktUmsatzExkl = prods.filter(p => !p.im_paket)
-    .reduce((s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis_vk) || 0), 0);
+    .reduce((s, p) => s + calcProductPositionNetto(p), 0);
   const produktEkGesamt = prods.reduce((s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis_ek) || 0), 0);
 
   const erloese = paket + produktUmsatzExkl;
@@ -14803,6 +14882,11 @@ async function openProjectProductModal(mode, id) {
   document.getElementById('pp-ek').value = 0;
   document.getElementById('pp-im-paket').checked = false;
   document.getElementById('pp-notizen').value = '';
+  // v2.28.2: Rabatt zurücksetzen
+  const ppRabattTyp = document.getElementById('pp-rabatt-typ');
+  const ppRabattWert = document.getElementById('pp-rabatt-wert');
+  if (ppRabattTyp) ppRabattTyp.value = '';
+  if (ppRabattWert) { ppRabattWert.value = ''; ppRabattWert.disabled = true; }
 
   if (mode === 'edit') {
     const { data: row, error } = await db.from('project_products').select('*').eq('id', id).single();
@@ -14817,6 +14901,12 @@ async function openProjectProductModal(mode, id) {
     document.getElementById('pp-ek').value = row.einzelpreis_ek ?? 0;
     document.getElementById('pp-im-paket').checked = !!row.im_paket;
     document.getElementById('pp-notizen').value = row.notizen || '';
+    // v2.28.2: Rabatt aus DB lesen
+    if (ppRabattTyp)  ppRabattTyp.value  = row.rabatt_typ || '';
+    if (ppRabattWert) {
+      ppRabattWert.value = row.rabatt_wert ?? '';
+      ppRabattWert.disabled = !row.rabatt_typ;
+    }
     // Einheit aus dem Produktoption übernehmen, falls vorhanden
     const opt = sel?.selectedOptions?.[0];
     if (opt?.dataset?.einheit) document.getElementById('pp-einheit').value = opt.dataset.einheit;
@@ -14857,6 +14947,23 @@ async function saveProjectProduct() {
   if (!(menge > 0)) { showToast('Menge muss größer als 0 sein.', true); return; }
   if (vk < 0 || ek < 0) { showToast('Preise dürfen nicht negativ sein.', true); return; }
 
+  // v2.28.2: Rabatt einlesen + validieren
+  const ppRabattTypRaw  = document.getElementById('pp-rabatt-typ')?.value || '';
+  const ppRabattWertRaw = document.getElementById('pp-rabatt-wert')?.value || '';
+  let rabatt_typ = null;
+  let rabatt_wert = null;
+  if (ppRabattTypRaw && ppRabattWertRaw !== '') {
+    const wert = Number(ppRabattWertRaw);
+    if (Number.isNaN(wert) || wert < 0) {
+      showToast('Rabatt-Wert muss eine Zahl ≥ 0 sein.', true); return;
+    }
+    if (ppRabattTypRaw === 'prozent' && wert > 100) {
+      showToast('Rabatt-Prozent kann nicht über 100 % liegen.', true); return;
+    }
+    rabatt_typ = ppRabattTypRaw;
+    rabatt_wert = wert;
+  }
+
   const payload = {
     project_id: currentProjectDetailId,
     product_id: productId,
@@ -14864,6 +14971,8 @@ async function saveProjectProduct() {
     menge,
     einzelpreis_vk: vk,
     einzelpreis_ek: ek,
+    rabatt_typ,        // v2.28.2
+    rabatt_wert,       // v2.28.2
     im_paket: imPaket,
     notizen
   };
