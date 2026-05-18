@@ -28798,18 +28798,31 @@ function _buildCustomerReportHtml(data) {
           ${_textToParas(s.inhalt)}
         </section>`).join('');
 
-  // Einsätze
+  // Einsätze — v2.28.4: strukturierte Header-Meta (Zeit, Ort untereinander)
+  // plus Tagessatz pro Einsatz (Menge × Einzelpreis nach Rabatt).
   const einsaetzeHtml = data.deployments.length === 0
     ? `<p class="muted">— Noch keine durchgeführten Einsätze —</p>`
     : data.deployments.map(d => {
         const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
         const datumBis = d.datum_bis && d.datum_bis !== d.datum_von ? ` – ${formatDateDE(d.datum_bis)}` : '';
-        const zeit = (d.uhrzeit_von || d.uhrzeit_bis)
+        const zeitText = (d.uhrzeit_von || d.uhrzeit_bis)
           ? `${(d.uhrzeit_von || '').substring(0,5)}${d.uhrzeit_bis ? '–' + d.uhrzeit_bis.substring(0,5) : ''} Uhr`
           : 'ganztags';
         const leistung = d.service?.name || '';
         const docs = data.docsByDep.get(d.id) || [];
         const logs = data.logsByDep.get(d.id) || [];
+
+        // Honorar pro Einsatz: Menge × Einzelpreis - ggf. Rabatt
+        const menge = Number(d.menge) || 0;
+        const einzel = Number(d.einzelpreis) || 0;
+        const brutto = menge * einzel;
+        const { rabatt, netto } = applyRabatt(brutto, d.rabatt_typ, d.rabatt_wert);
+        let rabattText = '';
+        if (rabatt > 0) {
+          if (d.rabatt_typ === 'prozent') rabattText = ` · Rabatt ${_fmtMenge(d.rabatt_wert)} % (−${_fmtPreis(rabatt)})`;
+          else                            rabattText = ` · Rabatt −${_fmtPreis(rabatt)}`;
+        }
+        const basisText = `${_fmtMenge(menge)} × ${_fmtPreis(einzel)}${rabattText}`;
 
         const docsHtml = docs.map(s => `
           <div class="doc-block sub">
@@ -28827,10 +28840,20 @@ function _buildCustomerReportHtml(data) {
           <section class="einsatz">
             <div class="einsatz-head">
               <div class="einsatz-datum">${_e(datum)}${_e(datumBis)}</div>
-              <div class="einsatz-meta">${_e(zeit)}${d.ort ? ' · ' + _e(d.ort) : ''}</div>
+              <div class="einsatz-honorar">
+                <span class="einsatz-honorar-label">Honorar</span>
+                <span class="einsatz-honorar-value">${_e(_fmtPreis(netto))}</span>
+              </div>
             </div>
             <h3 class="einsatz-titel">${_e(d.titel || '—')}</h3>
             ${leistung ? `<div class="einsatz-leistung">${_e(leistung)}</div>` : ''}
+            <table class="einsatz-meta-grid">
+              <tbody>
+                <tr><td>Zeit</td><td>${_e(zeitText)}</td></tr>
+                ${d.ort ? `<tr><td>Ort</td><td>${_e(d.ort)}</td></tr>` : ''}
+                <tr><td>Berechnung</td><td>${_e(basisText)}</td></tr>
+              </tbody>
+            </table>
             ${docsHtml}
             ${logsHtml}
           </section>`;
@@ -28921,11 +28944,17 @@ function _buildCustomerReportHtml(data) {
 
     .einsatz { padding: 16px 0; border-top: 1px solid #ececec; break-inside: avoid; }
     .einsatz:first-of-type { border-top: none; padding-top: 0; }
-    .einsatz-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+    .einsatz-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 6px; }
     .einsatz-datum { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #1d1d1f; }
-    .einsatz-meta { font-size: 11px; color: #6b6b6b; }
+    .einsatz-honorar { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+    .einsatz-honorar-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #6b6b6b; }
+    .einsatz-honorar-value { font-size: 14px; font-weight: 700; color: #1d1d1f; font-variant-numeric: tabular-nums; margin-top: 2px; }
     .einsatz-titel { font-size: 14px; font-weight: 600; margin: 2px 0 2px; }
     .einsatz-leistung { font-size: 11px; color: #6b6b6b; margin-bottom: 10px; }
+    .einsatz-meta-grid { font-size: 11px; border-collapse: collapse; margin: 0 0 14px; width: 100%; max-width: 480px; }
+    .einsatz-meta-grid td { padding: 3px 0; vertical-align: top; }
+    .einsatz-meta-grid td:first-child { color: #6b6b6b; width: 90px; text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: .3px; padding-right: 12px; }
+    .einsatz-meta-grid td:last-child { color: #1d1d1f; }
 
     .logs { margin-top: 12px; }
     .logs ul { padding-left: 18px; margin: 4px 0; }
