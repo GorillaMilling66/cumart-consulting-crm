@@ -14853,8 +14853,11 @@ async function loadProjectProducts(projectId) {
     return;
   }
 
+  // v2.28.12: Rabatt fließt in die Erlös-Summe „außerhalb Paket". Für
+  // Pakete-Positionen ist der Rabatt informativ und nicht erlöswirksam,
+  // weil dort der Paketpreis maßgeblich ist.
   const sumVkExkl = all.filter(r => !r.im_paket)
-    .reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis_vk) || 0), 0);
+    .reduce((s, r) => s + calcProductPositionNetto(r), 0);
   const sumEkAll = all.reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis_ek) || 0), 0);
   const sumEkPaket = all.filter(r => r.im_paket)
     .reduce((s, r) => s + (Number(r.menge) || 0) * (Number(r.einzelpreis_ek) || 0), 0);
@@ -14873,7 +14876,19 @@ async function loadProjectProducts(projectId) {
     const vk = Number(r.einzelpreis_vk) || 0;
     const ek = Number(r.einzelpreis_ek) || 0;
     const einheit = r.product?.einheit ? ` ${esc(r.product.einheit)}` : '';
-    const positionsWert = menge * vk;
+    const bruttoWert = menge * vk;
+    // v2.28.12: bei zusätzlichen Positionen den Rabatt anwenden,
+    // bei Paket-Positionen den Brutto-Wert behalten (Rabatt ist dort nicht wirksam).
+    const { rabatt, netto } = applyRabatt(bruttoWert, r.rabatt_typ, r.rabatt_wert);
+    const positionsWert = r.im_paket ? bruttoWert : netto;
+    const showRabatt = !r.im_paket && rabatt > 0;
+    let rabattLine = '';
+    if (showRabatt) {
+      const rabattLabel = r.rabatt_typ === 'prozent'
+        ? `Rabatt ${formatMenge(r.rabatt_wert)} % (−${formatPreis(rabatt)})`
+        : `Rabatt −${formatPreis(rabatt)}`;
+      rabattLine = `<div style="font-size:11px;color:var(--status-overdue-accent);margin-top:2px">${rabattLabel}</div>`;
+    }
     const paketBadge = r.im_paket
       ? '<span class="badge" style="background:#94a3b822;color:#475569">im Paket</span>'
       : '<span class="badge" style="background:#22c55e22;color:#16a34a">zusätzlich</span>';
@@ -14882,6 +14897,7 @@ async function loadProjectProducts(projectId) {
         <td>
           <div class="cell-link" onclick="openProjectProductModal('edit','${esc(r.id)}')">${esc(r.bezeichnung || '—')}</div>
           ${r.notizen ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(r.notizen)}</div>` : ''}
+          ${rabattLine}
         </td>
         <td class="col-tablet">${esc(formatMenge(menge))}${einheit}</td>
         <td class="col-tablet">${esc(formatPreis(vk))}</td>
