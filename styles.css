@@ -1384,12 +1384,12 @@ body {
   gap: 1px;
 }
 .ab-rail-section-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: .8px;
   color: var(--muted);
   text-transform: uppercase;
-  padding: 4px 10px 2px;
+  padding: 6px 10px 4px;
 }
 .ab-rail-sep {
   height: 1px;
@@ -1399,14 +1399,14 @@ body {
 .ab-rail-btn {
   display: flex; align-items: center;
   width: 100%;
-  padding: 6px 10px;
-  gap: 10px;
+  padding: 8px 12px;
+  gap: 12px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
   text-align: left;
@@ -1423,9 +1423,9 @@ body {
 }
 .ab-rail-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  flex: 0 0 22px;
-  width: 22px; height: 22px;
-  font-size: 17px;
+  flex: 0 0 24px;
+  width: 24px; height: 24px;
+  font-size: 19px;
   font-weight: 600;
   line-height: 1;
 }
@@ -1445,7 +1445,7 @@ body {
   background: var(--entity-tint, var(--bg));
 }
 .ab-rail-panel { color: var(--text); }
-.ab-rail-panel .ab-rail-icon { color: var(--muted); font-size: 16px; }
+.ab-rail-panel .ab-rail-icon { color: var(--muted); font-size: 18px; }
 .ab-rail-panel:hover .ab-rail-icon { color: var(--text); }
 .ab-rail-panel.is-active .ab-rail-icon { color: var(--surface); }
 
@@ -1610,9 +1610,18 @@ body {
   .ab-welcome-kpis { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Section „Schnell weitermachen" */
-.ab-welcome-section { margin-top: 22px; }
-.ab-welcome-section-head { margin-bottom: 10px; }
+/* Section „Schnell weitermachen" / „Fortführen"
+   v2.26.7: Sektions-Header sitzt in einem grauen Streifen, der über die
+   ganze Breite der Welcome-Karte läuft — klare visuelle Trennung
+   zwischen den Bereichen. */
+.ab-welcome-section { margin-top: 24px; }
+.ab-welcome-section-head {
+  margin: 0 -22px 16px;
+  padding: 10px 22px;
+  background: var(--bg-soft);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
 .ab-welcome-section-title {
   font-size: 11px;
   font-weight: 700;
@@ -1620,6 +1629,15 @@ body {
   color: var(--muted);
   text-transform: uppercase;
 }
+
+/* Auch zwischen den unbeschrifteten Blöcken (KPIs, Schnell-Eingabe) etwas
+   mehr Abstand und je eine zarte Trennlinie, damit die Welcome-Karte
+   sauber in Sektionen gegliedert wirkt. */
+.ab-welcome-kpis { margin-top: 18px; }
+.stage-welcome-card .arbeitsplatz-capture { margin-top: 18px; }
+
+/* Welcome-Card schneidet die Sektions-Streifen sauber an den Rundungen ab */
+.stage-welcome-card { overflow: hidden; }
 .ab-welcome-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
