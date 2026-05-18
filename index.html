@@ -536,10 +536,22 @@
           <div id="arbeitsplatz-stage" class="arbeitsplatz-stage">
             <div class="stage-welcome">
               <div class="stage-welcome-card">
-                <div class="arbeitsplatz-col-eyebrow">ARBEITSPLATZ · <span id="arbeitsplatz-date"></span></div>
-                <h1 class="stage-welcome-title">An was möchtest du arbeiten?</h1>
-                <div class="stage-welcome-hint">Wähle links eine Aktion (+) — die Maske öffnet hier in der Mitte. Oder klicke auf eine Entität in den Listen / im Briefing, dann erscheint die Karteikarte zum Bearbeiten. Die kleinen Symbol-Icons links unten öffnen On-Demand-Panels (Pins, Vorlagen, …).</div>
+                <!-- v2.26.4: Greeting + Datum statt nur „Arbeitsplatz · …" -->
+                <div class="ab-welcome-greet">
+                  <div class="ab-welcome-eyebrow" id="ab-welcome-date">…</div>
+                  <h1 class="ab-welcome-title" id="ab-welcome-greeting">Guten Tag</h1>
+                </div>
 
+                <!-- v2.26.4: 4 KPI-Tiles im Briefing-Stil: heutige Einsätze, Termine,
+                     offene Aufgaben, überfällige Aufgaben. Klick springt in die jew. Liste. -->
+                <div class="ab-welcome-kpis" id="ab-welcome-kpis">
+                  <div class="ab-welcome-kpi-skel"></div>
+                  <div class="ab-welcome-kpi-skel"></div>
+                  <div class="ab-welcome-kpi-skel"></div>
+                  <div class="ab-welcome-kpi-skel"></div>
+                </div>
+
+                <!-- Schnell-Eingabe (kompakter) -->
                 <div class="arbeitsplatz-capture">
                   <input type="text" id="arbeitsplatz-capture-input"
                          placeholder='Schnell-Eingabe — z. B. „Telefonat mit Müller morgen 10 Uhr"'
@@ -549,6 +561,17 @@
                     <span class="arbeitsplatz-context-pill-area" id="arbeitsplatz-context-pill-area">
                       <button class="arbeitsplatz-context-set" onclick="openArbeitsplatzContextPicker()">+ Kontext setzen (Firma · Projekt · Kontakt)</button>
                     </span>
+                  </div>
+                </div>
+
+                <!-- v2.26.4: Schnell-weitermachen — angeheftete + zuletzt besuchte Items
+                     als Karten, Klick öffnet die Karteikarte direkt in der Bühne. -->
+                <div class="ab-welcome-section" id="ab-welcome-quick-section">
+                  <div class="ab-welcome-section-head">
+                    <span class="ab-welcome-section-title">Schnell weitermachen</span>
+                  </div>
+                  <div class="ab-welcome-cards" id="ab-welcome-quick">
+                    <div class="info-card-empty">Lade …</div>
                   </div>
                 </div>
 

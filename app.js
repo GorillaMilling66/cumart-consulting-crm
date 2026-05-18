@@ -4824,12 +4824,8 @@ async function loadArbeitsplatz() {
   // wiederherstellen (siehe _arbeitsplatzActivePanel).
   _restoreArbeitsplatzPanelOnEnter();
 
-  // Datum oben rechts
-  const dateEl = document.getElementById('arbeitsplatz-date');
-  if (dateEl) {
-    const d = new Date();
-    dateEl.textContent = `${WEEKDAYS_DE[d.getDay()]}, ${d.getDate()}. ${MONTHS_DE[d.getMonth()]} ${d.getFullYear()}`;
-  }
+  // v2.26.4: Greeting + KPI-Tiles + Quick-Access-Karten in der Welcome-Card.
+  renderArbeitsplatzHome().catch(err => console.error('Arbeitsplatz-Home-Render fehlgeschlagen:', err));
 
   // Capture-Feld an State binden
   const captureInput = document.getElementById('arbeitsplatz-capture-input');
@@ -4870,6 +4866,150 @@ async function loadArbeitsplatz() {
       }
     })
   ));
+}
+
+/** v2.26.4: Welcome-Card-Inhalt — Tagesgruß, Datum, KPI-Tiles, Quick-Access-Karten.
+ *  Wird beim Betreten des Arbeitsplatzes aufgerufen. Wenn eine Karteikarte oder
+ *  ein Drawer aktiv ist, ist die Welcome-Card per CSS versteckt (siehe
+ *  #arbeitsplatz-stage:has(> .page.active) > .stage-welcome → display:none),
+ *  dann ist das Rendern wirkungslos aber unschädlich. */
+async function renderArbeitsplatzHome() {
+  // Datum + Tagesgruß
+  const d = new Date();
+  const dateEl = document.getElementById('ab-welcome-date');
+  if (dateEl) dateEl.textContent = `${WEEKDAYS_DE[d.getDay()]}, ${d.getDate()}. ${MONTHS_DE[d.getMonth()]} ${d.getFullYear()}`;
+  const hour = d.getHours();
+  const greet = hour < 11 ? 'Guten Morgen' : hour < 17 ? 'Guten Tag' : 'Guten Abend';
+  const firstName = (currentProfile?.name || '').split(' ')[0] || '';
+  const greetEl = document.getElementById('ab-welcome-greeting');
+  if (greetEl) greetEl.textContent = firstName ? `${greet}, ${firstName}` : greet;
+
+  // KPI-Tiles + Quick-Access parallel
+  await Promise.all([
+    _renderArbeitsplatzKpis().catch(err => console.error('KPI-Render:', err)),
+    _renderArbeitsplatzQuickAccess().catch(err => console.error('Quick-Access-Render:', err))
+  ]);
+}
+
+async function _renderArbeitsplatzKpis() {
+  const el = document.getElementById('ab-welcome-kpis');
+  if (!el) return;
+  const today = toISODate(new Date());
+
+  // Vier kleine Count-Queries parallel. Storniert wird bei Einsätzen rausgefiltert,
+  // weil das laut neuer Konvention nicht mehr als „Einsatz heute" zählt.
+  const [eRes, tRes, aOpenRes, aOverdueRes] = await Promise.all([
+    db.from('deployments').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null)
+      .lte('datum_von', today)
+      .or(`datum_bis.gte.${today},datum_bis.is.null`)
+      .not('status', 'in', '(Storniert)'),
+    db.from('appointments').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null).eq('datum', today),
+    db.from('tasks').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null).neq('status', 'erledigt'),
+    db.from('tasks').select('id', { count: 'exact', head: true })
+      .is('deleted_at', null).neq('status', 'erledigt')
+      .not('faelligkeit', 'is', null).lt('faelligkeit', today)
+  ]);
+
+  const ec = eRes.count || 0;
+  const tc = tRes.count || 0;
+  const ac = aOpenRes.count || 0;
+  const oc = aOverdueRes.count || 0;
+  const overdueAlert = oc > 0;
+
+  const tile = (cls, label, value, sub, click) => `
+    <button type="button" class="ab-welcome-kpi ${cls}" onclick="${click}">
+      <div class="ab-welcome-kpi-label">${esc(label)}</div>
+      <div class="ab-welcome-kpi-value">${value}</div>
+      <div class="ab-welcome-kpi-sub">${esc(sub)}</div>
+    </button>`;
+  el.innerHTML = [
+    tile('is-einsatz', 'Heute Einsätze', ec, ec === 0 ? 'kein Einsatz vor Ort' : ec === 1 ? '1 Einsatz vor Ort' : `${ec} Einsätze vor Ort`, `navigateTo('deployments')`),
+    tile('is-termin',  'Heute Termine',  tc, tc === 0 ? 'kein Termin geplant' : tc === 1 ? '1 Termin geplant'  : `${tc} Termine geplant`,    `navigateTo('appointments')`),
+    tile('is-aufgabe', 'Offene Aufgaben', ac, ac === 0 ? 'alles erledigt' : 'noch zu tun',                                                    `navigateTo('tasks')`),
+    tile(`is-overdue ${overdueAlert ? 'is-alert' : ''}`, 'Überfällig', oc, oc === 0 ? 'nichts versäumt' : 'sofort prüfen',                    `navigateTo('tasks')`)
+  ].join('');
+}
+
+async function _renderArbeitsplatzQuickAccess() {
+  const el = document.getElementById('ab-welcome-quick');
+  if (!el) return;
+
+  const pins = (await loadPinsForCurrentUser().catch(() => [])) || [];
+  const recent = (typeof getRecentlyVisited === 'function' ? getRecentlyVisited() : []) || [];
+
+  // Pins haben Vorrang, danach Recent — dedupliziert. Insgesamt max. 6 Karten.
+  const seen = new Set();
+  const items = [];
+  for (const p of pins) {
+    const key = `${p.entity_type}:${p.entity_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ type: p.entity_type, id: p.entity_id, isPinned: true });
+    if (items.length >= 6) break;
+  }
+  for (const r of recent) {
+    const key = `${r.type}:${r.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ type: r.type, id: r.id, title: r.title, isPinned: false });
+    if (items.length >= 6) break;
+  }
+
+  if (items.length === 0) {
+    el.innerHTML = '<div class="info-card-empty">Noch nichts angepinnt oder besucht. Pinne Firmen, Projekte oder Kontakte über den ★-Knopf auf der Detail-Seite — sie tauchen dann hier auf.</div>';
+    return;
+  }
+
+  // Titel für angeheftete Items frisch aus der DB nachholen.
+  const pinIds = { company: [], project: [], contact: [] };
+  for (const it of items) {
+    if (it.isPinned && pinIds[it.type]) pinIds[it.type].push(it.id);
+  }
+  const [cRes, pRes, kRes] = await Promise.all([
+    pinIds.company.length ? db.from('companies').select('id, name, abc_klassifizierung').is('deleted_at', null).in('id', pinIds.company) : Promise.resolve({ data: [] }),
+    pinIds.project.length ? db.from('projects').select('id, name, status').is('deleted_at', null).in('id', pinIds.project) : Promise.resolve({ data: [] }),
+    pinIds.contact.length ? db.from('contacts').select('id, vorname, nachname').is('deleted_at', null).in('id', pinIds.contact) : Promise.resolve({ data: [] })
+  ]);
+  const cMap = new Map((cRes.data || []).map(c => [c.id, c]));
+  const pMap = new Map((pRes.data || []).map(p => [p.id, p]));
+  const kMap = new Map((kRes.data || []).map(k => [k.id, k]));
+
+  const TYPE_LABEL  = { firma: 'FIRMA', company: 'FIRMA', kontakt: 'KONTAKT', contact: 'KONTAKT', projekt: 'PROJEKT', project: 'PROJEKT', einsatz: 'EINSATZ', deployment: 'EINSATZ', termin: 'TERMIN', appointment: 'TERMIN' };
+  const TYPE_DETAIL = { firma: 'firma', company: 'firma', kontakt: 'kontakt', contact: 'kontakt', projekt: 'projekt', project: 'projekt', einsatz: 'einsatz', deployment: 'einsatz', termin: 'termin', appointment: 'termin' };
+
+  el.innerHTML = items.map(it => {
+    let title = it.title;
+    let sub = '';
+    if (it.isPinned) {
+      if (it.type === 'company') {
+        const c = cMap.get(it.id); title = c?.name; sub = c?.abc_klassifizierung ? `Kunde ${c.abc_klassifizierung}` : 'Kunde';
+      } else if (it.type === 'project') {
+        const p = pMap.get(it.id); title = p?.name; sub = p?.status || '';
+      } else if (it.type === 'contact') {
+        const k = kMap.get(it.id); title = [k?.vorname, k?.nachname].filter(Boolean).join(' ');
+      }
+    }
+    if (!title) title = '—';
+    const typeKey = (it.type || '').toLowerCase();
+    const label = TYPE_LABEL[typeKey] || typeKey.toUpperCase();
+    const detailType = TYPE_DETAIL[typeKey] || typeKey;
+    const initials = title.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+    const pinMark = it.isPinned ? '<span class="ab-welcome-card-pin" title="Angeheftet">★</span>' : '';
+
+    return `
+      <button type="button" class="ab-welcome-card" data-entity="${esc(detailType)}" onclick="navigateTo('karteikarte', { type: '${esc(detailType)}', id: '${esc(it.id)}' })">
+        <div class="ab-welcome-card-head">
+          <span class="ab-welcome-card-avatar">${esc(initials)}</span>
+          ${pinMark}
+        </div>
+        <span class="ab-welcome-card-type">${esc(label)}</span>
+        <span class="ab-welcome-card-title">${esc(title)}</span>
+        ${sub ? `<span class="ab-welcome-card-sub">${esc(sub)}</span>` : ''}
+      </button>`;
+  }).join('');
 }
 
 /** v2.26.0: Activity-Bar + On-Demand-Flyout für den Arbeitsplatz.
