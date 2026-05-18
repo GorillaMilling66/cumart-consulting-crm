@@ -575,6 +575,38 @@
                   </div>
                 </div>
 
+                <!-- v2.26.5: Fortführen — die drei bestehenden Prepare-Aktionen
+                     direkt auf der Welcome-Card, damit sie nicht erst über das
+                     Flyout-Panel gefunden werden müssen. -->
+                <div class="ab-welcome-section">
+                  <div class="ab-welcome-section-head">
+                    <span class="ab-welcome-section-title">Fortführen</span>
+                  </div>
+                  <div class="ab-welcome-actions">
+                    <button type="button" class="ab-welcome-action" data-entity="termin"  onclick="arbeitsplatzPrepare('termin')">
+                      <span class="ab-welcome-action-icon" aria-hidden="true">→</span>
+                      <span class="ab-welcome-action-body">
+                        <span class="ab-welcome-action-title">Termin vorbereiten</span>
+                        <span class="ab-welcome-action-sub">Bevorstehende Termine briefen — Agenda, Gesprächsziele, Doku</span>
+                      </span>
+                    </button>
+                    <button type="button" class="ab-welcome-action" data-entity="einsatz" onclick="arbeitsplatzPrepare('einsatz')">
+                      <span class="ab-welcome-action-icon" aria-hidden="true">→</span>
+                      <span class="ab-welcome-action-body">
+                        <span class="ab-welcome-action-title">Einsatz vorbereiten</span>
+                        <span class="ab-welcome-action-sub">Geplante Einsätze planlogistisch durchgehen — Anreise, Werkzeug, Themen</span>
+                      </span>
+                    </button>
+                    <button type="button" class="ab-welcome-action" data-entity="projekt" onclick="arbeitsplatzPrepare('projekt')">
+                      <span class="ab-welcome-action-icon" aria-hidden="true">→</span>
+                      <span class="ab-welcome-action-body">
+                        <span class="ab-welcome-action-title">Projekt-Briefing starten</span>
+                        <span class="ab-welcome-action-sub">Aktive Projekte durchgehen — Status, nächste Schritte, Risiken</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
                 <!-- Live-Vorschau wandert in die Bühne (war früher in der linken Spalte) -->
                 <div id="arbeitsplatz-live-preview" class="arbeitsplatz-live-preview" style="display:none"></div>
               </div>
