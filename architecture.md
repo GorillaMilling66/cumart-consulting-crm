@@ -1,8 +1,8 @@
 # Cumart CRM — Architektur-Dokumentation
 
-**Version:** 2.13.7
-**Stand:** 14. Mai 2026 (Phase 3 — Karteikarten-Sicht im Arbeitsplatz-Stage)
-**Betreiber:** Cumart Consulting (Selcuk Cumart)
+**Version:** 2.29.0
+**Stand:** 18. Mai 2026 (Block-1-Refactor — Branding-Layer extrahiert für Multi-Instanz-Betrieb)
+**Betreiber:** Cumart Consulting (Selcuk Cumart) — Mandanten-spezifisch konfigurierbar via Vercel-ENV (siehe `SETUP.md`)
 **Repository:** `GorillaMilling66/cumart-consulting-crm` (GitHub)
 **Live:** `https://cumart.cloud` (Primary) · `https://cumart-consulting-crm.vercel.app` (Fallback)
 
@@ -59,11 +59,18 @@ Internes CRM für Cumart Consulting zur Verwaltung von:
 
 ```
 cumart-consulting-crm/
-├── index.html       ~2.64k Zeilen  (alle Pages + Modals als hidden divs)
-├── styles.css       ~2.23k Zeilen  (CSS-Variablen, Desktop + Mobile)
-├── app.js            ~9.79k Zeilen  (alle Module in einer Datei)
-├── CLAUDE.md                        (Onboarding-Guide für Claude-Code-Sessions)
-├── migrations/                      (versionierte SQL-Migrationen, manuell in Supabase angewandt)
+├── index.html             ~4.69k Zeilen  (alle Pages + Modals als hidden divs)
+├── styles.css             ~9.80k Zeilen  (CSS-Variablen, Desktop + Mobile)
+├── app.js                ~29.4k Zeilen   (alle Module in einer Datei)
+├── config.js                              (window.APP_CONFIG — Branding + Backend-URLs;
+│                                           im Vercel-Build aus ENV regeneriert)
+├── branding.js                            (applyBranding() — DOM-Anwendung, immer gleich)
+├── generate-config.js                     (Build-Script: schreibt config.js aus ENV)
+├── package.json                           (nur Build-Script, keine Runtime-Deps)
+├── vercel.json                            (Build-Command + outputDirectory)
+├── SETUP.md                               (Anleitung: zweite Mandanten-Instanz aufsetzen)
+├── CLAUDE.md                              (Onboarding-Guide für Claude-Code-Sessions)
+├── migrations/                            (versionierte SQL-Migrationen, manuell in Supabase angewandt)
 │   ├── v1.15.0_auth_hardening.sql
 │   ├── v1.16.0_soft_delete.sql
 │   ├── v1.22.0_tasks.sql
@@ -73,13 +80,22 @@ cumart-consulting-crm/
 └── .git/
 ```
 
-Supabase:
+Branding-Layer (seit v2.29.0): Alle mandanten-spezifischen Strings (App-Name, Firmenname,
+Logo-URL, Supabase-URL/Key, Bericht-Footer-Daten) leben in `window.APP_CONFIG`, das
+`config.js` setzt. Lokal sind die Cumart-Werte committed; bei jedem Vercel-Deploy
+überschreibt `generate-config.js` die Datei aus den Project-ENV-Variablen. So bedient
+ein einziges Repo mehrere Vercel-Projekte / Supabase-Projekte mit unterschiedlichem
+Branding — ohne Code-Fork, ohne Multi-Tenancy in der DB. Details siehe `SETUP.md`.
+
+Supabase (Cumart-Instanz):
 ```
 Project: loohjeiysjxzbmfwkyvv.supabase.co
 ├── Schema: public (17 operative Tabellen)
 └── Edge Functions:
     └── manage-users   (invite, update, delete, reset_password)
 ```
+Weitere Instanzen haben eigene Supabase-Projekte; die SUPABASE_URL kommt pro Instanz
+aus der ENV-Variable, nicht aus dem Code.
 
 ---
 
@@ -931,6 +947,7 @@ CSS-Variablen in `:root`. Status-Farben aus `lookup_values.farbe`. Progress-Bars
 
 | Version | Datum       | Highlights                                                         |
 |---------|-------------|--------------------------------------------------------------------|
+| **v2.29.0** | **18.05.2026** | **Block-1-Refactor — Branding-Layer für Multi-Instanz-Betrieb.** Vorbereitung für die zweite produktive Instanz (FiveAx GmbH) parallel zu Cumart: ein Repo, zwei Vercel-Projekte, zwei Supabase-Projekte. Alle Cumart-spezifischen Strings raus aus dem Code in `window.APP_CONFIG` (neue Datei `config.js`): `APP_NAME`, `APP_SLUG`, `BRAND_TEXT`, `COMPANY_NAME`/`OWNER`/`EMAIL`/`WEB`, `EMAIL_DOMAIN`, `LOGO_URL`/`ALT`, `SUPABASE_URL`/`ANON_KEY`. Abgeleitet daraus `FUNCTIONS_URL`, `STORAGE_PREFIX`, `EMAIL_PLACEHOLDER`. `branding.js` (neu) wendet die Config bei DOMContentLoaded auf den statischen DOM an (Auth-Logo, Top-Nav-Brand, Sidebar-Brand, Mobile-Header, u-email-Placeholder). `app.js` referenziert für SUPABASE_URL/KEY/FUNCTIONS_URL, RECENT_VISITS_KEY (`{SLUG}_recent_visits` statt `cumart_recent_visits` — wichtig für Browser-Multi-Instanz), Kundenbericht-Header (`REPORT_HEADER` statt `CUMART_KOPF`) sowie die Cumart-Strings im Bericht-Disclaimer. Vercel-Setup: `generate-config.js` (Node-Build-Script) regeneriert `config.js` aus den Project-ENV-Variablen; bricht den Build mit klarer Fehlermeldung ab, wenn eine Pflicht-Variable fehlt (12 Stück). Lokal bleibt die committed `config.js` mit Cumart-Defaults unverändert — `python3 -m http.server` funktioniert weiter wie bisher. `package.json`, `vercel.json`, `SETUP.md` (Schritt-für-Schritt für neue Instanz) ergänzt. Kein Schema-Change. Kein UI-Change für Cumart-Nutzer. |
 | **v2.19.0** | **14.05.2026** | **Phase 3 des Redesigns — Karteikarten-Sicht im Arbeitsplatz-Stage.** Wenn der User eine Entität aus dem Recent-Widget (oder via Hash `#/karteikarte/:type/:id`) anklickt, landet er nicht mehr auf der eigenen Detail-Page, sondern in der Arbeitsplatz-Bühne mit einer schlanken Karteikarte: Eyebrow (TYPE · KARTEIKARTE) + Title + Status-Pille + 3 Hero-Metriken (typ-spezifisch — Firma: ABC/Ort/Telefon, Kontakt: Firma/E-Mail/Telefon, Projekt: Firma/Paketpreis/Zeitplan, Einsatz: Datum/Honorar/Leistung, Termin: Datum/Typ/Firma) + „Bearbeiten" (öffnet das existierende Edit-Modal) + „Volle Sicht →" (führt zur klassischen Detail-Page als Fallback) + Mini-Aktivitäten-Stream (Notizen + Aufgaben + bei Einsatz auch `deployment_log`-Capture-Einträge, chronologisch absteigend, max. 8 Items). Detail-Pages bleiben unangetastet — Klick auf eine Entität aus den großen Listen führt weiterhin dorthin; nur das Recent-Widget routet auf die neue Karteikarte. JS: `stageRenderEntityCard(type, id)`, `_stageRenderCardActivities(type, id)`, `_stageCaptureWelcomeHTML`/`_stageRenderWelcome` (Welcome-Block-Backup für Reset), `resetArbeitsplatzStage`. `navigateTo` erweitert um `karteikarte`-Route mit `{type, id}`-Parameter; Hash-Router fängt `#/karteikarte/:type/:id` ab. `arbeitsplatzOpenRecent` (vom Recent-Widget) ruft jetzt `navigateTo('karteikarte', {type, id})` statt `navigateTo(detail, id)`. CSS-Klassen `.stage-card`, `.stage-card-head/-eyebrow/-title/-actions/-status`, `.stage-card-metrics/-metric` (+ `-label/-value`), `.stage-card-section/-section-title`, `.stage-card-activity/-type/-text/-meta`. Mobile: 3-Spalten-Metriken kollabieren auf 1 Spalte. Folgephasen (optional): Inline-Anlage-Forms in der Stage, Klick-Routing aus allen Listen auf die Karteikarte, vollständigere Karteikarte mit Tabs (Aktivitäten / Wirtschaftlichkeit / etc.). Kein Schema-Change. |
 | **v2.18.0** | **14.05.2026** | **Phase 2 des Redesigns — Arbeitsplatz in 3-Spalten-Layout.** Der bisherige lineare Arbeitsplatz (Smart-Capture-Hero + 8 Tiles + diverse Sektionen darunter) ist neu in drei Spalten organisiert. **Links** (260 px, sticky): Aktionen-Liste vertikal — „+ Neue Firma", „+ Neuer Kontakt", „+ Neues Projekt", „+ Neuer Einsatz", „+ Neuer Termin", „+ Neue Aufgabe", „+ Neue Notiz". Klick auf eine Aktion markiert sie als aktiv (`.is-active`, dunkel ausgefüllt) und zeigt direkt darunter eine Live-Vorschau-Karte mit Titel + Hinweis-Text, was im Formular vorkommt. **Mitte** (flex): die Bühne — Default-Zustand zeigt einen Welcome-Block („Was möchtest du anlegen?") + die bestehende Smart-Capture-Eingabe (mit Kontext-Bezügen). Bei Aktions-Klick öffnet weiterhin das bestehende Modal — der Inline-Form-Mechanismus wird in Phase 3 nachgezogen. **Rechts** (320 px, sticky): Akkordeon mit allen bisherigen Sektionen als einzeln aufklappbare `<details>`-Widgets — Quick-Links · Angeheftet · Fortführen · Dranbleiben · Datenpflege · Zuletzt bearbeitet · Heute von Dir · Vorlagen. Native `<details>`-Element für saubere Mechanik ohne JS. Mobile (Breakpoint 1000 px): kollabiert auf eine Spalte, sticky wird normal. JS: `stageOpenAction(typ)`, `_STAGE_PREVIEW_META`-Map, `_renderArbeitsplatzLivePreview`, `resetArbeitsplatzStage` (Reset-Hook für Phase 3). CSS: `.arbeitsplatz-3col`, `.arbeitsplatz-col-left/-center/-right`, `.arbeitsplatz-col-eyebrow`, `.arbeitsplatz-actions-list`, `.arbeitsplatz-action-row` (+ `.is-active`), `.arbeitsplatz-live-preview`, `.arbeitsplatz-stage`, `.stage-welcome-title`/`-hint`, `.arbeitsplatz-widget` (+ `-body`), `.stage-preview-eyebrow`/`-title`/`-hint`. Die alten `.arbeitsplatz-tiles`/`.arbeitsplatz-grid`/`.arbeitsplatz-templates`-Klassen werden vom Markup nicht mehr referenziert; CSS bleibt für andere Stellen erhalten. Kein Schema-Change. |
 | v2.17.1 | 14.05.2026 | **Phase 1f — Anhänge-Tab pro Entität.** Projekt, Einsatz und Termin bekommen jeweils einen eigenen `Anhänge`-Tab am Ende der Tab-Reihe. Existierender `renderAttachmentZone(entityType, entityId, containerId)`-Mechanismus (v2.9.0) wieder angebunden — die Container hatten beim Phase-1-Rip die alten Tab-Panels mitverloren. `renderAttachmentZone` für Einsatz/Termin wieder explizit aus `loadDeploymentDetail` / `loadAppointmentDetail` aufgerufen. Kein Schema-Change. |

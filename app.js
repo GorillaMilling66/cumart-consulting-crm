@@ -1,5 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
-   Cumart CRM – Application Script
+   CRM – Application Script (Branding pro Mandant via config.js)
+   Version 2.29.0 (Block-1-Refactor — Branding-Layer extrahiert.
+   Alle mandanten-spezifischen Strings (App-Name, Firma, Logo,
+   Supabase-URL/Key, Bericht-Footer) leben jetzt in
+   `window.APP_CONFIG` aus `config.js`; DOM-Anwendung in
+   `branding.js` bei DOMContentLoaded. `generate-config.js`
+   regeneriert `config.js` im Vercel-Build aus Project-ENV.
+   Hier in app.js betroffen: SUPABASE_URL/KEY/FUNCTIONS_URL
+   (Z. 2164ff), RECENT_VISITS_KEY (`{SLUG}_recent_visits`),
+   REPORT_HEADER (statt CUMART_KOPF), Bericht-Disclaimer.
+   Cumart-Defaults sind committed — lokales Arbeiten ändert sich
+   nicht. Details: architecture.md §3 + §12, SETUP.md.)
    Version 2.24.0 (Phase 6 — Anlage-/Edit-Drawer rendern in der
    Arbeitsplatz-Bühne. Bisher öffneten sich Firma/Kontakt/Termin/
    Projekt/Einsatz/Aufgabe/Notiz-Drawer als Slide-Out vom rechten
@@ -2156,12 +2167,26 @@
 'use strict';
 
 // ── KONFIGURATION ────────────────────────────────────────────
-const SUPABASE_URL        = 'https://loohjeiysjxzbmfwkyvv.supabase.co';
-const SUPABASE_ANON_KEY   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxvb2hqZWl5c2p4emJtZndreXZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0MjUwNzUsImV4cCI6MjA5MjAwMTA3NX0.L75kTzqx4hJY7buBFv9iMZ-mrQ3vdNqB-G50MPpRbNw';
-const FUNCTIONS_URL       = SUPABASE_URL + '/functions/v1';
+// Werte kommen aus config.js (committed) oder werden im
+// Vercel-Build durch generate-config.js aus ENV überschrieben.
+if (!window.APP_CONFIG) {
+  throw new Error('config.js fehlt — APP_CONFIG ist nicht initialisiert.');
+}
+const SUPABASE_URL        = window.APP_CONFIG.SUPABASE_URL;
+const SUPABASE_ANON_KEY   = window.APP_CONFIG.SUPABASE_ANON_KEY;
+const FUNCTIONS_URL       = window.APP_CONFIG.FUNCTIONS_URL;
 
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Branding (Logo / Firmenname / Mobile-Header / …) anwenden,
+// sobald der DOM bereit ist. app.js wird zwar am Body-Ende
+// geladen, aber wir schützen uns gegen beide Lade-Reihenfolgen.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => window.applyBranding());
+} else {
+  window.applyBranding();
+}
 
 // SVG-Copy-Icon als String-Konstante
 const COPY_ICON_SVG = `
@@ -15976,7 +16001,7 @@ let searchAbortController = null;
 let searchResults = [];        // flache Liste {type, id, title, subtitle}
 let searchActiveIndex = -1;
 
-const RECENT_VISITS_KEY = 'cumart_recent_visits';
+const RECENT_VISITS_KEY = window.APP_CONFIG.STORAGE_PREFIX + '_recent_visits';
 const RECENT_VISITS_MAX = 30;   // v2.10.4: 10 sichtbar, scrollbar bis 30
 
 function getRecentlyVisited() {
@@ -28935,11 +28960,11 @@ function _docPickerOutsideClick(e) {
 //  was der Kunde bezahlt und liest.
 // ═══════════════════════════════════════════════════════════
 
-const CUMART_KOPF = {
-  firma: 'Cumart Consulting',
-  inhaber: 'Selcuk Cumart',
-  email: 'selcuk@cumart.tech',
-  web: 'cumart.cloud'
+const REPORT_HEADER = {
+  firma:   window.APP_CONFIG.COMPANY_NAME,
+  inhaber: window.APP_CONFIG.COMPANY_OWNER,
+  email:   window.APP_CONFIG.COMPANY_EMAIL,
+  web:     window.APP_CONFIG.COMPANY_WEB
 };
 
 async function openCustomerReport(projectId) {
@@ -29312,8 +29337,8 @@ function _buildCustomerReportHtml(data) {
     <div class="page">
       <header class="hdr">
         <div class="hdr-left">
-          <div class="hdr-firma">${_e(CUMART_KOPF.firma)}</div>
-          <div class="hdr-sub">${_e(CUMART_KOPF.inhaber)} · ${_e(CUMART_KOPF.email)}</div>
+          <div class="hdr-firma">${_e(REPORT_HEADER.firma)}</div>
+          <div class="hdr-sub">${_e(REPORT_HEADER.inhaber)} · ${_e(REPORT_HEADER.email)}</div>
         </div>
         <div class="hdr-right">
           <div class="hdr-titel">Projektbericht</div>
@@ -29334,7 +29359,7 @@ function _buildCustomerReportHtml(data) {
 
       <table class="proj-meta-table">
         <tr><td>Projektzeitraum</td><td>${_e(projZeitraum)}</td></tr>
-        <tr><td>Verantwortlich (Cumart)</td><td>${_e(verant)}</td></tr>
+        <tr><td>Verantwortlich (${_e(window.APP_CONFIG.COMPANY_NAME)})</td><td>${_e(verant)}</td></tr>
         ${kontaktName ? `<tr><td>Hauptkontakt Kunde</td><td>${_e(kontaktName)}${ek?.position ? ' · ' + _e(ek.position) : ''}</td></tr>` : ''}
       </table>
 
@@ -29350,14 +29375,14 @@ function _buildCustomerReportHtml(data) {
 
       <div class="disclaimer">
         <strong>Hinweis:</strong> Dieser Bericht dient lediglich der Abnahme, der Kostentransparenz und
-        der Berichterstattung seitens Cumart Consulting. Er ist ausschließlich Vorlage zur
+        der Berichterstattung seitens ${_e(window.APP_CONFIG.COMPANY_NAME)}. Er ist ausschließlich Vorlage zur
         Rechnungsstellung und stellt <strong>keine Rechnung</strong> dar. Rechnungen werden separat
         als offizielles Rechnungsdokument versendet.
       </div>
 
       <footer class="footer">
-        <strong>${_e(CUMART_KOPF.firma)}</strong> · ${_e(CUMART_KOPF.inhaber)}<br>
-        ${_e(CUMART_KOPF.email)} · ${_e(CUMART_KOPF.web)}<br>
+        <strong>${_e(REPORT_HEADER.firma)}</strong> · ${_e(REPORT_HEADER.inhaber)}<br>
+        ${_e(REPORT_HEADER.email)} · ${_e(REPORT_HEADER.web)}<br>
         <small>Bei Rückfragen zum Bericht melden Sie sich gerne direkt.</small>
       </footer>
     </div>

@@ -1,0 +1,9 @@
+{
+  "name": "cumart-crm",
+  "version": "2.29.0",
+  "private": true,
+  "description": "Internes CRM (Vanilla HTML/CSS/JS, Supabase). Branding pro Mandant über Vercel-ENV.",
+  "scripts": {
+    "build": "node generate-config.js"
+  }
+}

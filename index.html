@@ -3,8 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cumart CRM</title>
-<!-- VERSION: 1.14.0 (Einsatz → Entitlement-Einlösung: Bonis werden beim Einsatz verbucht) -->
+<title>CRM</title>
+<!-- Branding & Backend-Konfiguration.
+     config.js   = Mandanten-Daten (wird im Vercel-Build aus ENV regeneriert).
+     branding.js = DOM-Anwendung (immer gleich, niemals regeneriert). -->
+<script src="config.js"></script>
+<script src="branding.js"></script>
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
