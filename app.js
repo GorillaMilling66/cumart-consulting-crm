@@ -14978,19 +14978,37 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
             </div>`;
   };
 
+  // v2.28.13: Render-Zeilen je nach Preis-Modus differenziert. Bei
+  // „Preis nach Aufwand" sind Einsätze ein Erlös (Σ Einsätze), nicht ein
+  // Aufwand. Variablenname `einsatzSumme` wurde in v2.28.11 umbenannt.
+  const erloeseRows = nachAufwand
+    ? `
+        ${row('Summe Einsätze', formatPreis(einsatzSumme))}
+        ${row('Zusätzliche Produkte (nicht im Paket)', formatPreis(produktUmsatzExkl))}
+        ${row('Erlöse gesamt', formatPreis(erloese), { bold: true })}`
+    : `
+        ${row('Projekt-Paketpreis', formatPreis(paket))}
+        ${row('Zusätzliche Produkte (nicht im Paket)', formatPreis(produktUmsatzExkl))}
+        ${row('Erlöse gesamt', formatPreis(erloese), { bold: true })}`;
+
+  const aufwandRows = nachAufwand
+    ? `
+        ${row('Produkt-Einkauf (Material)', formatPreis(produktEkGesamt))}
+        ${row('Aufwand gesamt', formatPreis(aufwand), { bold: true })}`
+    : `
+        ${row('Interner Einsatz-Aufwand', formatPreis(einsatzSumme))}
+        ${row('Produkt-Einkauf (alle Positionen)', formatPreis(produktEkGesamt))}
+        ${row('Aufwand gesamt', formatPreis(aufwand), { bold: true })}`;
+
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
       <div>
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Erlöse</div>
-        ${row('Projekt-Paketpreis', formatPreis(paket))}
-        ${row('Zusätzliche Produkte (nicht im Paket)', formatPreis(produktUmsatzExkl))}
-        ${row('Erlöse gesamt', formatPreis(erloese), { bold: true })}
+        ${erloeseRows}
       </div>
       <div>
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Aufwand</div>
-        ${row('Interner Einsatz-Aufwand', formatPreis(einsatzAufwand))}
-        ${row('Produkt-Einkauf (alle Positionen)', formatPreis(produktEkGesamt))}
-        ${row('Aufwand gesamt', formatPreis(aufwand), { bold: true })}
+        ${aufwandRows}
       </div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline">
@@ -17032,10 +17050,10 @@ async function loadProjectDashboard(p) {
     lastApptResult, lastDepResult,
     upcomingApptResult, upcomingDepResult
   ] = await Promise.all([
-    // Projekt-Einsätze für Soll/Ist — v2.25.11: status mitlesen für Storno-Filter
-    db.from('deployments').select('menge, einzelpreis, status').is('deleted_at', null).eq('project_id', p.id),
-    // Projekt-Produktpositionen (v2.10.0)
-    db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket').is('deleted_at', null).eq('project_id', p.id),
+    // Projekt-Einsätze für Soll/Ist — v2.25.11/v2.28.2: status + Rabatt für korrekte Marge.
+    db.from('deployments').select('menge, einzelpreis, status, rabatt_typ, rabatt_wert').is('deleted_at', null).eq('project_id', p.id),
+    // Projekt-Produktpositionen (v2.10.0) + Rabatt (v2.28.2)
+    db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket, rabatt_typ, rabatt_wert').is('deleted_at', null).eq('project_id', p.id),
     // Offene Aufgaben
     db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
       .eq('project_id', p.id).neq('status', 'erledigt'),
