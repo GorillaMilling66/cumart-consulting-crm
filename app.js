@@ -4840,16 +4840,35 @@ async function loadArbeitsplatz() {
   // Kontext-Pille rendern
   renderArbeitsplatzContext();
 
-  // Drei Lazy-Loads
-  await Promise.all([
-    renderArbeitsplatzShortcuts(),  // v2.8.0
-    renderArbeitsplatzPins(),       // v2.3.0
-    renderArbeitsplatzInbox(),      // v2.3.0
-    renderArbeitsplatzCare(),       // v2.3.0
-    renderArbeitsplatzRecent(),
-    renderArbeitsplatzToday(),
-    renderArbeitsplatzTemplates()
-  ]);
+  // v2.25.12: Jede Widget-Renderfunktion einzeln umhüllen, damit ein Fehler
+  // in einem Widget die anderen nicht steckenbleiben lässt („Lade …" für
+  // immer). Falls ein Render scheitert, ersetzen wir den Platzhalter mit
+  // einem unauffälligen Empty-State und loggen den Fehler in die Konsole.
+  const widgetTargets = [
+    ['arbeitsplatz-shortcuts', renderArbeitsplatzShortcuts],
+    ['arbeitsplatz-pins',      renderArbeitsplatzPins],
+    ['arbeitsplatz-inbox',     renderArbeitsplatzInbox],
+    ['arbeitsplatz-care',      renderArbeitsplatzCare],
+    ['arbeitsplatz-recent',    renderArbeitsplatzRecent],
+    ['arbeitsplatz-today',     renderArbeitsplatzToday],
+    ['arbeitsplatz-template-grid', renderArbeitsplatzTemplates]
+  ];
+  await Promise.all(widgetTargets.map(([id, fn]) =>
+    Promise.resolve().then(fn).catch(err => {
+      console.error(`Arbeitsplatz-Widget ${id} failed:`, err);
+    }).finally(() => {
+      // Wenn das Widget seinen „Lade …"-Platzhalter nicht ersetzt hat
+      // (still rausgelaufen oder Fehler), durch unauffälligen Empty-State
+      // ersetzen — sonst hängt das „Lade …" für immer.
+      const el = document.getElementById(id);
+      if (el) {
+        const empty = el.querySelector('.info-card-empty');
+        if (empty && /Lade/.test(empty.textContent || '')) {
+          el.innerHTML = '<div class="info-card-empty">—</div>';
+        }
+      }
+    })
+  ));
 }
 
 /** v2.25.8/10: Spalten-Kollaps für den Arbeitsplatz. Persistierte User-Pref
@@ -5316,7 +5335,12 @@ async function renderArbeitsplatzToday() {
   const counter = document.getElementById('arbeitsplatz-today-count');
   if (!wrap) return;
   const userId = currentProfile?.id;
-  if (!userId) return;
+  if (!userId) {
+    // v2.25.12: nicht still raus, sonst bleibt „Lade …" für immer stehen.
+    wrap.innerHTML = '<div class="info-card-empty">Anmeldung wird geladen …</div>';
+    if (counter) counter.textContent = '0 Aktionen';
+    return;
+  }
 
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const todayStartISO = todayStart.toISOString();
