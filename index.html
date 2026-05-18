@@ -2306,6 +2306,28 @@
           </table>
         </div>
       </div>
+
+      <!-- v2.27.1: Doku-Vorlagen — Bundle aus mehreren Doku-Bereichen (Titel+Inhalt) -->
+      <div class="card">
+        <div class="card-title">
+          <span>Doku-Vorlagen</span>
+          <button class="btn btn-sm" onclick="openTemplateModal('new','doc')">+ Neue Doku-Vorlage</button>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">
+          Bundle aus mehreren Doku-Bereichen (Titel + Boilerplate-Inhalt) für einen Entity-Typ.
+          Auf der jeweiligen Detail-Seite kann die Vorlage über „▾ Vorlage anwenden" im Doku-Tab eingesetzt werden.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Für</th><th>Bereiche</th><th>Status</th><th class="col-action"></th></tr>
+            </thead>
+            <tbody id="templates-table-body-doc">
+              <tr><td colspan="5"><div class="empty">Lade Templates ...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- PAGE: MITGLIEDSCHAFTS-PROGRAMME -->
@@ -4169,6 +4191,7 @@
           <option value="aufgabe">Aufgabe</option>
           <option value="einsatz">Einsatz</option>
           <option value="projekt">Projekt</option>
+          <option value="doc">Doku-Bundle</option>
         </select>
       </div>
       <div class="form-group">

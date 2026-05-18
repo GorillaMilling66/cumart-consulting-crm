@@ -7694,13 +7694,14 @@ function invalidateTemplatesCache() {
 }
 
 /** v2.25.5: Liste auf der Admin-Seite — pro Typ ein eigener Tabellenkörper
- *  (Termin / Aufgabe / Einsatz / Projekt), inkl. archivierter Vorlagen. */
+ *  (Termin / Aufgabe / Einsatz / Projekt + v2.27.1: Doku), inkl. archivierter Vorlagen. */
 async function loadTemplates() {
   if (!isAdmin()) { showToast('Du hast keine Berechtigung für diese Seite.', true); return; }
-  const TYPEN = ['termin','aufgabe','einsatz','projekt'];
+  const TYPEN = ['termin','aufgabe','einsatz','projekt','doc'];
   for (const typ of TYPEN) {
     const tb = document.getElementById(`templates-table-body-${typ}`);
-    if (tb) tb.innerHTML = '<tr><td colspan="4"><div class="empty">Lade ...</div></td></tr>';
+    const colspan = typ === 'doc' ? 5 : 4;
+    if (tb) tb.innerHTML = `<tr><td colspan="${colspan}"><div class="empty">Lade ...</div></td></tr>`;
   }
 
   const { data, error } = await db.from('templates')
@@ -7709,28 +7710,49 @@ async function loadTemplates() {
   if (error) {
     for (const typ of TYPEN) {
       const tb = document.getElementById(`templates-table-body-${typ}`);
-      if (tb) tb.innerHTML = `<tr><td colspan="4"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
+      const colspan = typ === 'doc' ? 5 : 4;
+      if (tb) tb.innerHTML = `<tr><td colspan="${colspan}"><div class="empty">Fehler: ${esc(error.message)}</div></td></tr>`;
     }
     return;
   }
 
-  const grouped = { termin: [], aufgabe: [], einsatz: [], projekt: [] };
+  const grouped = { termin: [], aufgabe: [], einsatz: [], projekt: [], doc: [] };
   for (const t of (data || [])) {
     if (grouped[t.typ]) grouped[t.typ].push(t);
   }
+
+  const ENTITY_LABEL = { company: 'Firma', contact: 'Kontakt', project: 'Projekt', deployment: 'Einsatz', appointment: 'Termin' };
 
   for (const typ of TYPEN) {
     const tb = document.getElementById(`templates-table-body-${typ}`);
     if (!tb) continue;
     const rows = grouped[typ];
+    const colspan = typ === 'doc' ? 5 : 4;
     if (rows.length === 0) {
-      tb.innerHTML = '<tr><td colspan="4"><div class="empty">Noch keine Vorlagen. Klicke oben auf „+ Neue Vorlage".</div></td></tr>';
+      tb.innerHTML = `<tr><td colspan="${colspan}"><div class="empty">Noch keine Vorlagen. Klicke oben auf „+ Neue Vorlage".</div></td></tr>`;
       continue;
     }
     tb.innerHTML = rows.map(t => {
-      // v2.25.6: aus Einsatz-Vorlagen lässt sich direkt eine Leistung
-      // erzeugen — Titel/Einzelpreis/Uhrzeiten/Beschreibung werden ins
-      // Leistungs-Modal vorbelegt.
+      const statusBadge = t.ist_aktiv
+        ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>'
+        : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>';
+      // v2.27.1: Doku-Vorlagen haben eigene Spalten — Ziel-Entity + Section-Count.
+      if (typ === 'doc') {
+        const target = t.daten?.target_entity || '—';
+        const targetLabel = ENTITY_LABEL[target] || target;
+        const count = Array.isArray(t.daten?.sections) ? t.daten.sections.length : 0;
+        return `
+          <tr>
+            <td><div class="cell-link" onclick="openTemplateModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
+            <td>${esc(targetLabel)}</td>
+            <td>${count} Bereich${count === 1 ? '' : 'e'}</td>
+            <td>${statusBadge}</td>
+            <td class="col-action" style="text-align:right">
+              <button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
+            </td>
+          </tr>`;
+      }
+      // v2.25.6: aus Einsatz-Vorlagen lässt sich direkt eine Leistung erzeugen.
       const alsLeistungBtn = typ === 'einsatz'
         ? `<button class="btn btn-sm" style="margin-right:6px" onclick="createServiceFromEinsatzTemplate('${esc(t.id)}')" title="Aus dieser Einsatz-Vorlage eine Leistung anlegen">Als Leistung anlegen</button>`
         : '';
@@ -7738,7 +7760,7 @@ async function loadTemplates() {
       <tr>
         <td><div class="cell-link" onclick="openTemplateModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
         <td>${t.reihenfolge}</td>
-        <td>${t.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>' : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>'}</td>
+        <td>${statusBadge}</td>
         <td class="col-action" style="text-align:right">
           ${alsLeistungBtn}<button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
         </td>
@@ -7825,6 +7847,14 @@ async function onTemplateTypeChange() {
 /** Generiert die Vorbelegungs-Felder dynamisch aus dem Schema. */
 async function renderTemplateFields(typ, prefilled) {
   const wrap = document.getElementById('tpl-fields');
+
+  // v2.27.1: Doku-Bundles haben einen eigenen Editor — Section-Liste mit
+  // Titel + Inhalt, plus „Für welche Entität?"-Dropdown.
+  if (typ === 'doc') {
+    renderDocTemplateEditor(wrap, prefilled);
+    return;
+  }
+
   const schema = TEMPLATE_SCHEMAS[typ] || [];
 
   // Lookup-Optionen vorab laden
@@ -8098,6 +8128,9 @@ function readTemplateSubItems() {
  *  v1.51.0: Bei typ='projekt' werden zusätzlich die Sub-Items unter `_subitems`
  *  abgelegt — Auto-Erstellen passiert beim Anwenden des Templates. */
 function readTemplateFields(typ) {
+  // v2.27.1: Doku-Bundles haben einen eigenen Editor — eigene Read-Funktion.
+  if (typ === 'doc') return readDocTemplateFields();
+
   const schema = TEMPLATE_SCHEMAS[typ] || [];
   const out = {};
   for (const f of schema) {
@@ -28147,16 +28180,26 @@ async function renderDocSections(entityType, entityId, containerId) {
 
   const sections = await loadDocSections(entityType, entityId);
 
+  // v2.27.1: oben rechts ein „Vorlage anwenden"-Knopf, der ein Picker-Popover öffnet.
+  const headerHtml = `
+    <div class="doc-sections-header">
+      <div class="doc-template-picker-anchor">
+        <button type="button" class="btn btn-sm doc-tpl-picker-trigger" onclick="openDocTemplatePicker('${esc(entityType)}','${esc(entityId)}','${esc(containerId)}')">
+          ▾ Vorlage anwenden
+        </button>
+      </div>
+    </div>`;
+
   const sectionsHtml = sections.map(s => _renderDocSection(s)).join('');
   const emptyHtml = sections.length === 0
-    ? '<div class="doc-empty"><div class="info-card-empty">Noch keine Doku angelegt. Klicke unten auf „+ Neuer Bereich", um anzufangen.</div></div>'
+    ? '<div class="doc-empty"><div class="info-card-empty">Noch keine Doku angelegt. Klicke unten auf „+ Neuer Bereich" oder oben auf „▾ Vorlage anwenden", um eine vorgefertigte Doku-Struktur einzusetzen.</div></div>'
     : '';
   const addHtml = `
     <div class="doc-add-area">
       <button class="doc-add-btn" onclick="docSectionStartAdd('${esc(entityType)}','${esc(entityId)}','${esc(containerId)}')">+ Neuer Bereich</button>
     </div>`;
 
-  wrap.innerHTML = `<div class="doc-sections-list">${sectionsHtml}${emptyHtml}</div>${addHtml}`;
+  wrap.innerHTML = `${headerHtml}<div class="doc-sections-list">${sectionsHtml}${emptyHtml}</div>${addHtml}`;
 }
 
 function _renderDocSection(s) {
@@ -28284,6 +28327,185 @@ async function docSectionSaveNew(entityType, entityId, containerId, btn) {
   }
   row.outerHTML = _renderDocSection(data);
   showToast('Bereich angelegt.');
+}
+
+// ───────────────────────────────────────────────────────────
+//  v2.27.1 — DOKU-VORLAGEN (Template-Typ 'doc')
+//  Bundle aus mehreren Doku-Bereichen, in der Templates-Verwaltung
+//  pflegbar. Auf der Detail-Seite über „▾ Vorlage anwenden" im
+//  Doku-Tab einsetzbar.
+// ───────────────────────────────────────────────────────────
+
+const DOC_TEMPLATE_ENTITIES = [
+  { value: 'company',     label: 'Firma'     },
+  { value: 'contact',     label: 'Kontakt'   },
+  { value: 'project',     label: 'Projekt'   },
+  { value: 'deployment',  label: 'Einsatz'   },
+  { value: 'appointment', label: 'Termin'    }
+];
+
+function renderDocTemplateEditor(wrap, prefilled) {
+  const target = prefilled.target_entity || 'project';
+  const sections = Array.isArray(prefilled.sections) ? prefilled.sections : [];
+
+  const targetOpts = DOC_TEMPLATE_ENTITIES.map(e =>
+    `<option value="${esc(e.value)}" ${target === e.value ? 'selected' : ''}>${esc(e.label)}</option>`).join('');
+
+  wrap.innerHTML = `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Für welche Entität?</label>
+        <select id="tpl-doc-target">${targetOpts}</select>
+        <small class="field-hint">Auf welcher Detail-Seite (z. B. Projekt) erscheint diese Vorlage in der Vorlage-Auswahl.</small>
+      </div>
+    </div>
+    <div class="tpl-subitems-block">
+      <div class="tpl-subitems-head">
+        <div class="tpl-subitems-title">Doku-Bereiche</div>
+        <button type="button" class="btn btn-sm" onclick="addDocTemplateSection()">+ Bereich</button>
+      </div>
+      <p class="tpl-subitems-hint">Bereiche, die beim Anwenden in der Doku-Tab angelegt werden. Titel ist Pflicht, Inhalt ist optional und wird als Boilerplate übernommen.</p>
+      <div id="tpl-doc-sections-list">
+        ${sections.map((s, i) => renderDocTemplateSectionRow(s, i)).join('')}
+        ${sections.length === 0 ? '<div class="info-card-empty">Noch keine Bereiche. Klicke oben auf „+ Bereich".</div>' : ''}
+      </div>
+    </div>`;
+}
+
+function renderDocTemplateSectionRow(item, idx) {
+  return `
+    <div class="tpl-doc-section-row" data-idx="${idx}">
+      <div class="tpl-doc-section-head">
+        <span class="tpl-doc-section-num">#${idx + 1}</span>
+        <input type="text" class="tpl-doc-titel" placeholder="Titel des Bereichs (z. B. Briefing)" value="${esc(item.titel || '')}">
+        <button type="button" class="tpl-si-del" onclick="removeDocTemplateSection(${idx})" title="Bereich entfernen" aria-label="Bereich entfernen">×</button>
+      </div>
+      <textarea class="tpl-doc-inhalt" rows="3" placeholder="Boilerplate-Inhalt (optional — kannst du beim Anwenden noch füllen)">${esc(item.inhalt || '')}</textarea>
+    </div>`;
+}
+
+function addDocTemplateSection() {
+  const list = document.getElementById('tpl-doc-sections-list');
+  if (!list) return;
+  const empty = list.querySelector('.info-card-empty');
+  if (empty) empty.remove();
+  const idx = list.querySelectorAll('.tpl-doc-section-row').length;
+  list.insertAdjacentHTML('beforeend', renderDocTemplateSectionRow({}, idx));
+  setTimeout(() => list.querySelector(`.tpl-doc-section-row[data-idx="${idx}"] input.tpl-doc-titel`)?.focus(), 30);
+}
+
+function removeDocTemplateSection(idx) {
+  const list = document.getElementById('tpl-doc-sections-list');
+  if (!list) return;
+  const row = list.querySelector(`.tpl-doc-section-row[data-idx="${idx}"]`);
+  if (row) row.remove();
+  // Re-number remaining rows so handler-Indizes wieder passen.
+  list.querySelectorAll('.tpl-doc-section-row').forEach((r, i) => {
+    r.dataset.idx = i;
+    const num = r.querySelector('.tpl-doc-section-num');
+    if (num) num.textContent = `#${i + 1}`;
+    const del = r.querySelector('.tpl-si-del');
+    if (del) del.setAttribute('onclick', `removeDocTemplateSection(${i})`);
+  });
+  if (list.querySelectorAll('.tpl-doc-section-row').length === 0) {
+    list.innerHTML = '<div class="info-card-empty">Noch keine Bereiche. Klicke oben auf „+ Bereich".</div>';
+  }
+}
+
+function readDocTemplateFields() {
+  const target = document.getElementById('tpl-doc-target')?.value || 'project';
+  const rows = document.querySelectorAll('#tpl-doc-sections-list .tpl-doc-section-row');
+  const sections = [];
+  rows.forEach((row, i) => {
+    const titel = (row.querySelector('.tpl-doc-titel')?.value || '').trim();
+    const inhalt = (row.querySelector('.tpl-doc-inhalt')?.value || '').trim();
+    if (titel) sections.push({ titel, inhalt: inhalt || '', reihenfolge: i });
+  });
+  return { target_entity: target, sections };
+}
+
+// ───────────────────────────────────────────────────────────
+//  Auf der Detail-Seite: „Vorlage anwenden"-Picker im Doku-Tab
+// ───────────────────────────────────────────────────────────
+
+async function applyDocTemplate(templateId, entityType, entityId, containerId) {
+  const { data: tpl, error } = await db.from('templates').select('*').eq('id', templateId).single();
+  if (error || !tpl) { showToast('Vorlage nicht gefunden.', true); return; }
+  const sections = Array.isArray(tpl.daten?.sections) ? tpl.daten.sections : [];
+  if (sections.length === 0) { showToast('Diese Vorlage enthält keine Bereiche.', true); return; }
+
+  // Aktuelle max-Reihenfolge ermitteln, damit neue Sections hinten angehängt werden.
+  const { data: existing } = await db.from('doc_sections')
+    .select('reihenfolge').eq('entity_type', entityType).eq('entity_id', entityId)
+    .order('reihenfolge', { ascending: false }).limit(1);
+  let nextRf = (existing?.[0]?.reihenfolge ?? -1) + 1;
+
+  const rows = sections.map(s => ({
+    entity_type: entityType, entity_id: entityId,
+    titel: (s.titel || '').trim() || 'Bereich',
+    inhalt: (s.inhalt || '').trim() || null,
+    reihenfolge: nextRf++,
+    erstellt_von: currentProfile?.id || null
+  }));
+
+  const { error: insErr } = await db.from('doc_sections').insert(rows);
+  if (insErr) { showToast('Anwenden fehlgeschlagen: ' + insErr.message, true); return; }
+  showToast(`Vorlage „${tpl.name}" angewendet — ${rows.length} Bereich${rows.length === 1 ? '' : 'e'} angelegt.`);
+  await renderDocSections(entityType, entityId, containerId);
+  closeDocTemplatePicker();
+}
+
+async function openDocTemplatePicker(entityType, entityId, containerId) {
+  const { data, error } = await db.from('templates')
+    .select('id, name, daten')
+    .eq('typ', 'doc').eq('ist_aktiv', true)
+    .order('reihenfolge').order('name');
+  if (error) { showToast('Vorlagen laden fehlgeschlagen: ' + error.message, true); return; }
+  const filtered = (data || []).filter(t => (t.daten?.target_entity || '') === entityType);
+
+  // Vorhandenen Picker entfernen + frisch rendern.
+  closeDocTemplatePicker();
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const anchor = wrap.querySelector('.doc-template-picker-anchor');
+  if (!anchor) return;
+
+  const itemsHtml = filtered.length === 0
+    ? '<div class="info-card-empty doc-tpl-picker-empty">Noch keine Doku-Vorlagen für diesen Typ. Lege welche unter Einstellungen → Templates → Doku-Vorlagen an.</div>'
+    : filtered.map(t => {
+        const count = Array.isArray(t.daten?.sections) ? t.daten.sections.length : 0;
+        return `
+          <button type="button" class="doc-tpl-picker-item" onclick="applyDocTemplate('${esc(t.id)}','${esc(entityType)}','${esc(entityId)}','${esc(containerId)}')">
+            <span class="doc-tpl-picker-name">${esc(t.name)}</span>
+            <span class="doc-tpl-picker-meta">${count} Bereich${count === 1 ? '' : 'e'}</span>
+          </button>`;
+      }).join('');
+
+  const html = `
+    <div class="doc-tpl-picker" id="doc-tpl-picker">
+      <div class="doc-tpl-picker-head">
+        <span class="doc-tpl-picker-title">Doku-Vorlage anwenden</span>
+        <button type="button" class="doc-tpl-picker-close" onclick="closeDocTemplatePicker()" aria-label="Schließen">×</button>
+      </div>
+      <div class="doc-tpl-picker-body">${itemsHtml}</div>
+    </div>`;
+  anchor.insertAdjacentHTML('beforeend', html);
+
+  // Klick außerhalb schließt
+  setTimeout(() => {
+    document.addEventListener('click', _docPickerOutsideClick, true);
+  }, 50);
+}
+
+function closeDocTemplatePicker() {
+  document.getElementById('doc-tpl-picker')?.remove();
+  document.removeEventListener('click', _docPickerOutsideClick, true);
+}
+
+function _docPickerOutsideClick(e) {
+  if (!e.target.closest('#doc-tpl-picker') && !e.target.closest('.doc-tpl-picker-trigger')) {
+    closeDocTemplatePicker();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
