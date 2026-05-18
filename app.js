@@ -2368,6 +2368,27 @@ function statusIn(actual, ...expecteds) {
   return expecteds.some(e => statusEq(actual, e));
 }
 
+/**
+ * Display-Helper: liefert das UI-Label für einen Status-Wert, egal ob
+ * der Wert ein altes Label ('Abgeschlossen') oder ein neuer system_key
+ * ('abgeschlossen') ist. Auto-detektiert die Kategorie über den Cache.
+ * Vor Cache-Load oder bei unbekannten Werten: gibt den Wert as-is zurück.
+ *
+ * Pattern:  ${esc(d.status)}  →  ${esc(dispStatus(d.status))}
+ *
+ * Name `dispStatus` statt `statusLabel`, weil letzteres bereits für
+ * user_profiles.status (eingeladen/aktiv/inaktiv) belegt ist (Z. ~2742).
+ */
+function dispStatus(status) {
+  if (!status) return '';
+  if (!_statusLabelCache) return status;
+  for (const kat of Object.keys(_statusLabelCache)) {
+    const entry = _statusLabelCache[kat][status];
+    if (entry) return entry.label;
+  }
+  return status; // Unknown → Wert selbst (vermutlich schon Legacy-Label)
+}
+
 // SVG-Copy-Icon als String-Konstante
 const COPY_ICON_SVG = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"
@@ -6163,7 +6184,7 @@ async function stageRenderEntityCard(type, id) {
           <h1 class="stage-card-title">${esc(hero.title)}</h1>
         </div>
         <div class="stage-card-actions">
-          <span class="stage-card-status">${esc(hero.status)}</span>
+          <span class="stage-card-status">${esc(dispStatus(hero.status))}</span>
           <button class="btn btn-sm" onclick="${hero.editFn}">Bearbeiten</button>
           <button class="btn btn-sm" onclick="${hero.fullPage}">Volle Sicht →</button>
         </div>
@@ -12164,7 +12185,7 @@ function renderProjectsTable(projects) {
           <div class="cell-link" onclick="navigateTo('projekt', '${esc(p.id)}')">${esc(p.name)}</div>
           ${p.beschreibung ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.beschreibung)}</div>` : ''}
         </td>
-        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span></td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(p.status))}</span></td>
         <td class="col-tablet">${firmaHtml}</td>
         <td class="col-desktop" style="color:var(--muted)">${verantwortlich}</td>
         <td class="col-desktop" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
@@ -12682,7 +12703,7 @@ async function renderProjectDetail(p) {
 
   const statusColor = projektStatusFarbe(p.status);
   const subline = document.getElementById('project-detail-subline');
-  const sublineParts = [`<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span>`];
+  const sublineParts = [`<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(p.status))}</span>`];
   if (p.company) {
     sublineParts.push(`<span>· <span class="cell-link" onclick="navigateTo('firma', '${esc(p.company.id)}')">${esc(p.company.name)}</span></span>`);
   } else {
@@ -12875,7 +12896,7 @@ async function loadProjectAppointments(projectId) {
     const checkboxTitle = isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren';
 
     return `
-      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(a.status)}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}" data-project-id="${esc(a.project_id || '')}">
+      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(dispStatus(a.status))}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}" data-project-id="${esc(a.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="appointment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -12959,7 +12980,7 @@ async function loadCompanyProjects(companyId) {
         <td>
           <div class="cell-link" onclick="navigateTo('projekt', '${esc(p.id)}')">${esc(p.name)}</div>
         </td>
-        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span></td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(p.status))}</span></td>
         <td class="col-tablet" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
         <td class="col-tablet" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
         <td class="col-desktop">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
@@ -13308,7 +13329,7 @@ async function loadContactProjects(contactId) {
         <td>
           <div class="cell-link" onclick="navigateTo('projekt', '${esc(p.id)}')">${esc(p.name)}</div>
         </td>
-        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(p.status)}</span></td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(p.status))}</span></td>
         <td class="col-tablet" style="color:var(--muted)">${p.startdatum ? esc(formatDateCompact(p.startdatum)) : '—'}</td>
         <td class="col-tablet" style="color:var(--muted)">${p.enddatum ? esc(formatDateCompact(p.enddatum)) : '—'}</td>
         <td class="col-desktop">${esc(formatPreis(p.geschaetzter_umsatz))}</td>
@@ -13575,7 +13596,7 @@ function renderDeploymentsTable(deployments) {
         <td class="col-tablet">${firmaHtml}</td>
         <td class="col-desktop">${projektHtml}</td>
         <td class="col-desktop" style="color:var(--muted)">${leistungHtml}</td>
-        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
         <td class="col-tablet">${esc(formatPreis(gesamt))}</td>
         <td class="col-action" style="text-align:right">${renderActionIcons('deployment', d.id, renderDeploymentQuickStatusIcons(d))}</td>
       </tr>`;
@@ -14169,7 +14190,7 @@ async function rebuildProjectDropdownForDeployment(companyId) {
   if (error) { select.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
   const projects = data || [];
   select.innerHTML = '<option value="">— Kein Projekt (Einzelbuchung) —</option>'
-    + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.status)}</option>`).join('');
+    + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(dispStatus(p.status))}</option>`).join('');
 }
 
 function renderTechnikerChipsForDeployment() {
@@ -14825,7 +14846,7 @@ async function loadCompanyDeployments(companyId) {
           <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}${d.datum_von ? ROW_CAL_ICON : ''}</div>
         </td>
         <td class="col-tablet">${projektHtml}</td>
-        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
         <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
         <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
@@ -14855,7 +14876,7 @@ async function loadCompanyDeployments(companyId) {
           <td class="col-tablet">${renderDeploymentDateCell(d.datum_von, d.datum_bis)}</td>
           <td class="col-tablet">${esc(d.service?.name || '—')}</td>
           <td class="col-desktop">${projektHtml}</td>
-          <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+          <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
           <td>${esc(formatPreis(gesamt))}</td>
           <td class="col-action" style="text-align:right">
             <button class="btn btn-sm" onclick="openDeploymentModal('edit','${esc(d.id)}')">Bearbeiten</button>
@@ -14956,7 +14977,7 @@ async function loadProjectDeployments(projectId) {
       ? `Status „${d.status}" kann nicht per Checkbox geändert werden`
       : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
     return `
-      <tr class="${isMember ? 'bundle-member-row' : ''}" data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
+      <tr class="${isMember ? 'bundle-member-row' : ''}" data-dep-id="${esc(d.id)}" data-dep-status="${esc(dispStatus(d.status))}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="deployment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -14970,7 +14991,7 @@ async function loadProjectDeployments(projectId) {
           <div class="cell-link" onclick="toggleRowExpand('deployment','${esc(d.id)}',this.closest('tr'))">${esc(d.titel || '—')}${d.datum_von ? ROW_CAL_ICON : ''}</div>
         </td>
         <td class="col-tablet" style="color:var(--muted)">${leistungHtml}</td>
-        <td class="dep-status-cell"><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></td>
+        <td class="dep-status-cell"><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
         <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
         <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
@@ -15641,7 +15662,7 @@ function renderBundleDayRows() {
       <td><input type="time" value="${esc(r.uhrzeit_von || '')}" onchange="updateBundleDayField(${i},'uhrzeit_von',this.value)"></td>
       <td><input type="time" value="${esc(r.uhrzeit_bis || '')}" onchange="updateBundleDayField(${i},'uhrzeit_bis',this.value)"></td>
       <td><input type="number" min="0" step="0.5" value="${esc(String(r.menge ?? 1))}" onchange="updateBundleDayField(${i},'menge',this.value)"></td>
-      <td><select onchange="updateBundleDayField(${i},'status',this.value)">${statusOptions.replace(`value="${esc(r.status)}"`, `value="${esc(r.status)}" selected`)}</select></td>
+      <td><select onchange="updateBundleDayField(${i},'status',this.value)">${statusOptions.replace(`value="${esc(dispStatus(r.status))}"`, `value="${esc(dispStatus(r.status))}" selected`)}</select></td>
       <td style="text-align:center"><button type="button" class="b-day-remove" title="Tag entfernen" onclick="removeBundleDayRow(${i})">×</button></td>
     </tr>`).join('');
 }
@@ -15867,7 +15888,7 @@ async function openBundleFromExistingPicker() {
       <input type="checkbox" value="${esc(d.id)}" style="width:16px;height:16px;margin:0">
       <span style="font-size:12px;color:var(--muted);min-width:90px">${esc(date)}</span>
       <span style="flex:1;font-size:13px;color:var(--text)">${esc(d.titel || '—')}</span>
-      <span style="font-size:12px;color:var(--muted)">${esc(d.status)}</span>
+      <span style="font-size:12px;color:var(--muted)">${esc(dispStatus(d.status))}</span>
       <span style="font-size:12px;color:var(--text);font-variant-numeric:tabular-nums">${esc(wert)}</span>
     </label>`;
   }).join('');
@@ -15953,8 +15974,8 @@ function refreshProjectAppointmentsCountLabel() {
   if (total === 0) return;
 
   const arr = Array.from(rows);
-  const anzGeplant       = arr.filter(r => r.getAttribute('data-appt-status') === 'geplant').length;
-  const anzDurchgefuehrt = arr.filter(r => r.getAttribute('data-appt-status') === 'durchgefuehrt').length;
+  const anzGeplant       = arr.filter(r => statusEq(r.getAttribute('data-appt-status'), 'geplant')).length;
+  const anzDurchgefuehrt = arr.filter(r => statusEq(r.getAttribute('data-appt-status'), 'durchgefuehrt')).length;
   countEl.textContent = `${total} Termin${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgeführt`;
 }
 
@@ -16975,7 +16996,7 @@ async function loadCompanyDashboard(companyId, manualAbc) {
         <div class="opportunity-row">
           <div style="min-width:0;flex:1">
             <div class="opportunity-name cell-link" onclick="navigateTo('projekt','${esc(p.id)}')">${esc(p.name)}</div>
-            <div class="opportunity-meta">${esc(p.status)}${p.enddatum ? ' · Zieldatum ' + esc(formatDateDE(p.enddatum)) : ''}</div>
+            <div class="opportunity-meta">${esc(dispStatus(p.status))}${p.enddatum ? ' · Zieldatum ' + esc(formatDateDE(p.enddatum)) : ''}</div>
           </div>
           <div class="opportunity-value">${esc(formatPreis(p.geschaetzter_umsatz || 0))}</div>
         </div>
@@ -17162,7 +17183,7 @@ async function loadContactDashboard(contactId, companyId, manualAbc, companyName
         <div class="opportunity-row">
           <div style="min-width:0;flex:1">
             <div class="opportunity-name cell-link" onclick="navigateTo('projekt','${esc(p.id)}')">${esc(p.name)}</div>
-            <div class="opportunity-meta">${esc(p.status)}${p.enddatum ? ' · Zieldatum ' + esc(formatDateDE(p.enddatum)) : ''}</div>
+            <div class="opportunity-meta">${esc(dispStatus(p.status))}${p.enddatum ? ' · Zieldatum ' + esc(formatDateDE(p.enddatum)) : ''}</div>
           </div>
           <div class="opportunity-value">${esc(formatPreis(p.geschaetzter_umsatz || 0))}</div>
         </div>
@@ -17230,7 +17251,7 @@ async function loadProjectDashboard(p) {
   const statusSublineEl = document.getElementById('project-status-subline');
   if (statusEl) {
     const color = projektStatusFarbe(p.status);
-    statusEl.innerHTML = `<span class="badge" style="background:${esc(color)}22;color:${esc(color)}">${esc(p.status)}</span>`;
+    statusEl.innerHTML = `<span class="badge" style="background:${esc(color)}22;color:${esc(color)}">${esc(dispStatus(p.status))}</span>`;
   }
   if (statusSublineEl) {
     if (p.startdatum) statusSublineEl.textContent = `Start: ${formatDateDE(p.startdatum)}`;
@@ -17856,7 +17877,7 @@ async function renderAppointmentExpandedRow(appointmentId, hint) {
     ? `<span class="cell-link" onclick="navigateTo('kontakt','${esc(a.contact.id)}')">${esc([a.contact.vorname, a.contact.nachname].filter(Boolean).join(' '))}</span>`
     : '<span class="erp-kv-muted">—</span>';
   const projektVal = a.project
-    ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(a.project.id)}')">${esc(a.project.name)}</span> <span style="color:var(--muted);font-size:11px">· ${esc(a.project.status)}</span>`
+    ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(a.project.id)}')">${esc(a.project.name)}</span> <span style="color:var(--muted);font-size:11px">· ${esc(dispStatus(a.project.status))}</span>`
     : '<span class="erp-kv-muted">—</span>';
   const ortVal = a.ort ? esc(a.ort) : '<span class="erp-kv-muted">—</span>';
   const notizenVal = a.notizen
@@ -18136,7 +18157,7 @@ async function renderDeploymentExpandedRow(deploymentId, hint) {
     <div class="erp-stats">
       <div class="erp-stat-item">
         <div class="erp-stat-label">Status</div>
-        <div><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(d.status)}</span></div>
+        <div><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></div>
       </div>
       <div class="erp-stat-item">
         <div class="erp-stat-label">${esc(wertLabel)}</div>
@@ -18237,7 +18258,7 @@ async function renderDeploymentExpandedRow(deploymentId, hint) {
              <div class="erp-related-row">
                <div class="erp-related-date">${r.datum_von ? esc(formatDateDE(r.datum_von)) : '<span style="color:var(--muted)">—</span>'}</div>
                <div class="erp-related-title" onclick="openDeploymentModal('edit','${esc(r.id)}')">${esc(r.titel || '—')}</div>
-               <div class="erp-related-meta">${esc(r.status)} · ${esc(formatPreis(gRel))}</div>
+               <div class="erp-related-meta">${esc(dispStatus(r.status))} · ${esc(formatPreis(gRel))}</div>
              </div>`;
          }).join('')}
        </div>`
@@ -18451,7 +18472,7 @@ async function renderTaskExpandedRow(taskId, hint) {
     ? `<span class="cell-link" onclick="navigateTo('kontakt','${esc(t.contact.id)}')">${esc([t.contact.vorname, t.contact.nachname].filter(Boolean).join(' '))}</span>`
     : '<span class="erp-kv-muted">—</span>';
   const projektVal = t.project
-    ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(t.project.id)}')">${esc(t.project.name)}</span> <span style="color:var(--muted);font-size:11px">· ${esc(t.project.status)}</span>`
+    ? `<span class="cell-link" onclick="navigateTo('projekt','${esc(t.project.id)}')">${esc(t.project.name)}</span> <span style="color:var(--muted);font-size:11px">· ${esc(dispStatus(t.project.status))}</span>`
     : '<span class="erp-kv-muted">—</span>';
   const beschreibungVal = t.beschreibung
     ? `<div style="white-space:pre-wrap;font-size:12px;color:var(--text);max-height:80px;overflow:auto">${esc(t.beschreibung)}</div>`
@@ -18884,7 +18905,7 @@ function openCalendarDayPopover(iso, evt) {
         ${ev.einsatze.map(d => `
           <div class="calendar-popover-item" onclick="openDeploymentModal('edit','${esc(d.id)}'); closeCalendarDayPopover()">
             ${esc(d.titel || '—')}
-            <div class="calendar-popover-item-meta">${esc(d.company?.name || '—')} · ${esc(d.status)}</div>
+            <div class="calendar-popover-item-meta">${esc(d.company?.name || '—')} · ${esc(dispStatus(d.status))}</div>
           </div>`).join('')}
       </div>`);
   }
@@ -21954,15 +21975,19 @@ function renderBriefingPreview(scope, data) {
 // Aufgaben sind bewusst entkoppelt — kein Auto-Projektstatus-Trigger,
 // keine Termin-/Einsatz-Kopplung. Das schützt die Domänen-Invarianten.
 
-// Status-Badge-Helper (Lookup-Werte: offen / in_arbeit / erledigt)
+// Status-Badge-Helper (Lookup-Werte: offen / in_arbeit / erledigt / storniert)
+// Dual-Mode: akzeptiert sowohl Legacy-Label 'Storniert' als auch system_key 'storniert'.
 function aufgabeStatusBg(s) {
-  return { offen: '#f3f4f6', in_arbeit: '#fffbeb', erledigt: '#f0fdf4' }[s] || '#f3f4f6';
+  return { offen: '#f3f4f6', in_arbeit: '#fffbeb', erledigt: '#f0fdf4',
+           Storniert: '#fef2f2', storniert: '#fef2f2' }[s] || '#f3f4f6';
 }
 function aufgabeStatusColor(s) {
-  return { offen: '#6b7280', in_arbeit: '#d97706', erledigt: '#16a34a' }[s] || '#6b7280';
+  return { offen: '#6b7280', in_arbeit: '#d97706', erledigt: '#16a34a',
+           Storniert: '#dc2626', storniert: '#dc2626' }[s] || '#6b7280';
 }
 function aufgabeStatusLabel(s) {
-  return { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt' }[s] || s;
+  return { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt',
+           Storniert: 'Storniert', storniert: 'Storniert' }[s] || s;
 }
 
 async function loadAufgabeStatus() {
@@ -23050,7 +23075,7 @@ async function renderProjectV2Layout(p) {
   const statusPill = document.getElementById('project-status-pill');
   if (statusPill && p.status) {
     const statusKey = p.status.toLowerCase().replace(/[^a-z]/g, '');
-    statusPill.innerHTML = `${esc(p.status)}<span class="status-pill-caret">▾</span>`;
+    statusPill.innerHTML = `${esc(dispStatus(p.status))}<span class="status-pill-caret">▾</span>`;
     statusPill.className = `status-pill status-pill-clickable status-pill-${statusKey}`;
     statusPill.dataset.currentStatus = p.status;
     statusPill.dataset.entityId = p.id;
@@ -24661,7 +24686,7 @@ async function loadDeploymentDetail(deploymentId) {
   const statusPill = document.getElementById('dep-status-pill');
   if (d.status) {
     const cls = d.status.toLowerCase().replace(/[^a-z]/g, '');
-    statusPill.innerHTML = `${esc(d.status)}<span class="status-pill-caret">▾</span>`;
+    statusPill.innerHTML = `${esc(dispStatus(d.status))}<span class="status-pill-caret">▾</span>`;
     statusPill.className = `status-pill status-pill-clickable status-pill-${cls}`;
     statusPill.dataset.currentStatus = d.status;
     statusPill.dataset.entityId = deploymentId;
