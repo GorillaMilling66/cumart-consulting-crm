@@ -4852,25 +4852,24 @@ async function loadArbeitsplatz() {
   ]);
 }
 
-/** v2.25.8: Spalten-Kollaps für den Arbeitsplatz. Persistierte User-Pref
- *  pro Seite (links / rechts). Ohne gespeicherte Pref wird bei einem
- *  schmalen Viewport (< 1280 px) initial eingeklappt, damit die mittlere
- *  Bühne genug Platz hat. */
+/** v2.25.8/10: Spalten-Kollaps für den Arbeitsplatz. Persistierte User-Pref
+ *  pro Seite (links/rechts). Ohne gespeicherte Pref klappt der Kollaps unter
+ *  1280 px Viewport automatisch ein. Resize-Listener (v2.25.10) faltet beim
+ *  Verkleinern unter die Schwelle automatisch zusammen und beim Weiten
+ *  wieder zurück auf die gespeicherte Pref. */
 const ARBEITSPLATZ_COLLAPSE_BREAKPOINT = 1280;
+function _readArbeitsplatzPref(key, narrowFallback) {
+  const v = localStorage.getItem(key);
+  if (v === '1') return true;
+  if (v === '0') return false;
+  return narrowFallback;
+}
 function applyArbeitsplatzColumnState() {
   const root = document.getElementById('arbeitsplatz-3col');
   if (!root) return;
   const narrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
-  const readPref = (key) => {
-    const v = localStorage.getItem(key);
-    if (v === '1') return true;
-    if (v === '0') return false;
-    return narrow; // ohne gespeicherte Pref: am schmalen Viewport eingeklappt
-  };
-  const leftCollapsed  = readPref('arbeitsplatz-left-collapsed');
-  const rightCollapsed = readPref('arbeitsplatz-right-collapsed');
-  root.classList.toggle('left-collapsed',  leftCollapsed);
-  root.classList.toggle('right-collapsed', rightCollapsed);
+  root.classList.toggle('left-collapsed',  _readArbeitsplatzPref('arbeitsplatz-left-collapsed',  narrow));
+  root.classList.toggle('right-collapsed', _readArbeitsplatzPref('arbeitsplatz-right-collapsed', narrow));
 }
 function toggleArbeitsplatzColumn(side) {
   const root = document.getElementById('arbeitsplatz-3col');
@@ -4880,6 +4879,39 @@ function toggleArbeitsplatzColumn(side) {
   root.classList.toggle(cls, nowCollapsed);
   localStorage.setItem(`arbeitsplatz-${side}-collapsed`, nowCollapsed ? '1' : '0');
 }
+
+// v2.25.10: Auto-Kollaps beim Resize über die 1280-px-Schwelle hinaus.
+// Wir reagieren nur auf TRANSITIONS (wide→narrow / narrow→wide), nicht
+// jeder Pixel — sonst würde ein User-Toggle innerhalb desselben Regimes
+// sofort wieder zurückgesetzt.
+let _arbeitsplatzPrevNarrow = null;
+let _arbeitsplatzResizeT = null;
+function _arbeitsplatzOnResize() {
+  const root = document.getElementById('arbeitsplatz-3col');
+  if (!root) return;
+  const page = document.getElementById('page-arbeitsplatz');
+  if (!page || !page.classList.contains('active')) {
+    // Trotzdem den narrow-State aktualisieren, damit nach Page-Wechsel
+    // die Transition korrekt erkannt wird.
+    _arbeitsplatzPrevNarrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
+    return;
+  }
+  const narrow = window.innerWidth < ARBEITSPLATZ_COLLAPSE_BREAKPOINT;
+  if (_arbeitsplatzPrevNarrow === null) { _arbeitsplatzPrevNarrow = narrow; return; }
+  if (narrow && !_arbeitsplatzPrevNarrow) {
+    // wide → narrow: einklappen
+    root.classList.add('left-collapsed');
+    root.classList.add('right-collapsed');
+  } else if (!narrow && _arbeitsplatzPrevNarrow) {
+    // narrow → wide: gespeicherte User-Pref wiederherstellen (oder default)
+    applyArbeitsplatzColumnState();
+  }
+  _arbeitsplatzPrevNarrow = narrow;
+}
+window.addEventListener('resize', () => {
+  clearTimeout(_arbeitsplatzResizeT);
+  _arbeitsplatzResizeT = setTimeout(_arbeitsplatzOnResize, 150);
+});
 
 // ═══════════════════════════════════════════════════════════
 //  v2.3.0 — PINS / FAVORITEN
