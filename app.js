@@ -14254,8 +14254,16 @@ async function loadProjectDeployments(projectId) {
   const total = all.length;
   setTabCount('project', 'einsaetze', total);
 
-  // Leistungsumsatz (Summe aller Einsatz-Werte) im Header anzeigen
-  const leistungsUmsatz = all.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+  // v2.25.11: Stornierte Einsätze fließen NICHT in Aufwand/Leistungsumsatz.
+  // Sie bleiben in der Tabelle sichtbar (durchgestrichen als Storniert-Badge),
+  // werden aber für jede Summe konsequent ausgenommen.
+  const billable = all.filter(d => d.status !== 'Storniert');
+  const stornoCount = all.length - billable.length;
+  const stornoSum   = all.filter(d => d.status === 'Storniert')
+    .reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+
+  // Leistungsumsatz (Summe aller nicht-stornierten Einsatz-Werte) im Header
+  const leistungsUmsatz = billable.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
   if (leistungsUmsatzEl) {
     leistungsUmsatzEl.textContent = formatPreis(leistungsUmsatz);
     leistungsUmsatzEl.style.color = leistungsUmsatz > 0 ? 'var(--text)' : 'var(--muted)';
@@ -14271,10 +14279,12 @@ async function loadProjectDeployments(projectId) {
   const anzGeplant      = all.filter(d => d.status === 'Geplant').length;
   const anzDurchgefuehrt = all.filter(d => d.status === 'Durchgeführt').length;
   const anzAbgerechnet  = all.filter(d => d.status === 'Abgerechnet').length;
+  const anzStorniert    = all.filter(d => d.status === 'Storniert').length;
   const anzUngeplant    = all.filter(d => !d.datum_von).length;
-  const summeAufwand    = all.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+  const summeAufwand    = leistungsUmsatz;
 
   let countText = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
+  if (anzStorniert > 0) countText += ` · ${anzStorniert} storniert`;
   if (anzUngeplant > 0) countText += ` · ${anzUngeplant} ohne Datum`;
   if (bundles.length > 0) countText += ` · ${bundles.length} Bündel`;
   countEl.textContent = countText;
@@ -14323,9 +14333,18 @@ async function loadProjectDeployments(projectId) {
   bundles.forEach(b => {
     const members = all.filter(d => d.bundle_id === b.id);
     if (members.length === 0) return;
-    const bundleSum = members.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+    // v2.25.11: Bündel-Header zeigt nur die nicht-stornierten Werte und Tage.
+    // Stornierte Mitglieder werden separat ausgewiesen, damit der User weiß,
+    // dass das Bündel ursprünglich mehr Tage hatte.
+    const billableMembers = members.filter(d => d.status !== 'Storniert');
+    const stornoMembers   = members.filter(d => d.status === 'Storniert');
+    const bundleSum = billableMembers.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+    const bundleStornoSum = stornoMembers.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
     const dateLabels = members.filter(d => d.datum_von).map(d => formatDateDE(d.datum_von)).join(' · ');
     const collapsed = _collapsedBundleIds.has(b.id);
+    const stornoHint = stornoMembers.length > 0
+      ? ` · <span style="color:var(--status-overdue-accent)">${stornoMembers.length} storn. (${esc(formatPreis(bundleStornoSum))})</span>`
+      : '';
     htmlParts.push(`
       <tr class="bundle-header-row${collapsed ? ' is-collapsed' : ''}" data-bundle-id="${esc(b.id)}" onclick="toggleBundleCollapse('${esc(b.id)}')">
         <td colspan="7" class="bundle-header-cell">
@@ -14334,7 +14353,7 @@ async function loadProjectDeployments(projectId) {
             <span class="bundle-header-label">Bündel</span>
             <span class="bundle-header-title">${esc(b.titel)}</span>
             <span style="font-size:11px;color:var(--muted)">${esc(dateLabels)}</span>
-            <span class="bundle-header-stats">${members.length} Tag${members.length === 1 ? '' : 'e'} · ${esc(formatPreis(bundleSum))}</span>
+            <span class="bundle-header-stats">${billableMembers.length} Tag${billableMembers.length === 1 ? '' : 'e'} · ${esc(formatPreis(bundleSum))}${stornoHint}</span>
             <button class="btn btn-sm" style="margin-left:8px" onclick="event.stopPropagation();openDeploymentBundleModal('edit','${esc(b.id)}')">Bündel bearbeiten</button>
           </div>
         </td>
@@ -14345,9 +14364,12 @@ async function loadProjectDeployments(projectId) {
   tbody.innerHTML = htmlParts.join('') ||
     '<tr><td colspan="7"><div class="empty">Noch keine Einsätze für dieses Projekt.</div></td></tr>';
 
-  // Summary mit Aufwands-Info
+  // Summary mit Aufwands-Info — v2.25.11: Storniert wird separat ausgewiesen.
   summaryEl.style.display = '';
-  summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>. Kundenumsatz läuft über den Projekt-Paketpreis.`;
+  const stornoHintHtml = stornoCount > 0
+    ? ` <span style="color:var(--status-overdue-accent)">· ${stornoCount} storniert (${esc(formatPreis(stornoSum))} ignoriert)</span>`
+    : '';
+  summaryEl.innerHTML = `Interner Aufwand laut Einsatz-Preisen: <strong>${esc(formatPreis(summeAufwand))}</strong>${stornoHintHtml}. Kundenumsatz läuft über den Projekt-Paketpreis.`;
 
   // Auto-Expand wenn genau ein Einsatz (v1.28)
   autoExpandSingleRow(tbody, 'deployment', all);
@@ -14458,13 +14480,16 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
 
   const [projRes, depRes, prodRes] = await Promise.all([
     db.from('projects').select('geschaetzter_umsatz').is('deleted_at', null).eq('id', projectId).single(),
-    db.from('deployments').select('menge, einzelpreis').is('deleted_at', null).eq('project_id', projectId),
+    // v2.25.11: status mitlesen, damit wir Storniert aus der Marge rausnehmen können.
+    db.from('deployments').select('menge, einzelpreis, status').is('deleted_at', null).eq('project_id', projectId),
     db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket').is('deleted_at', null).eq('project_id', projectId)
   ]);
   if (!isStillOnDetail('project', projectId)) return;
 
   const paket = Number(projRes.data?.geschaetzter_umsatz) || 0;
+  // v2.25.11: Stornierte Einsätze sind nie ein Aufwand — sie entstehen nie.
   const einsatzAufwand = (depRes.data || [])
+    .filter(d => d.status !== 'Storniert')
     .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
   const prods = prodRes.data || [];
   const produktUmsatzExkl = prods.filter(p => !p.im_paket)
@@ -16512,8 +16537,8 @@ async function loadProjectDashboard(p) {
     lastApptResult, lastDepResult,
     upcomingApptResult, upcomingDepResult
   ] = await Promise.all([
-    // Projekt-Einsätze für Soll/Ist
-    db.from('deployments').select('menge, einzelpreis').is('deleted_at', null).eq('project_id', p.id),
+    // Projekt-Einsätze für Soll/Ist — v2.25.11: status mitlesen für Storno-Filter
+    db.from('deployments').select('menge, einzelpreis, status').is('deleted_at', null).eq('project_id', p.id),
     // Projekt-Produktpositionen (v2.10.0)
     db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket').is('deleted_at', null).eq('project_id', p.id),
     // Offene Aufgaben
@@ -16542,8 +16567,10 @@ async function loadProjectDashboard(p) {
   ]);
   if (!isStillOnDetail('project', p.id)) return;  // v2.0.6: race-guard
 
-  // ── FINANCE-CARD: Soll vs. Ist + Marge (v2.10.0: inkl. Produkt-Positionen) ───
+  // ── FINANCE-CARD: Soll vs. Ist + Marge (v2.10.0: inkl. Produkt-Positionen)
+  // v2.25.11: Stornierte Einsätze sind kein Aufwand — wurden nie erbracht.
   const einsatzAufwand = (depsResult.data || [])
+    .filter(d => d.status !== 'Storniert')
     .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
   const prods = prodsResult.data || [];
   const produktUmsatzExkl = prods.filter(pp => !pp.im_paket)
