@@ -12063,6 +12063,12 @@ async function openProjectModal(mode, projectId = null) {
     document.getElementById('p-enddatum').value = data.enddatum || '';
     document.getElementById('p-umsatz').value = data.geschaetzter_umsatz ?? '';
     document.getElementById('p-notizen').value = data.notizen || '';
+    // v2.28.9: Preis-Modus aus DB lesen
+    const pNachAufwandEl = document.getElementById('p-nach-aufwand');
+    if (pNachAufwandEl) {
+      pNachAufwandEl.checked = !!data.preis_nach_aufwand;
+      onProjectPreisModusChange();
+    }
     statusSelect.value = data.status || 'Angebot';
     if (data.verantwortlicher_id) userSelect.value = data.verantwortlicher_id;
     if (data.company_id) {
@@ -12158,11 +12164,14 @@ async function saveProject() {
       btn.disabled = false; btn.textContent = editingProjectId ? 'Speichern' : 'Anlegen';
       return;
     }
+    // v2.28.9: Preis-Modus persistieren
+    const preisNachAufwand = document.getElementById('p-nach-aufwand')?.checked || false;
     const payload = {
       name, status,
       company_id, hauptkontakt_id, verantwortlicher_id,
       startdatum, enddatum,
       geschaetzter_umsatz,
+      preis_nach_aufwand: preisNachAufwand,
       beschreibung: beschreibung || null,
       notizen: notizen || null
     };
@@ -14909,7 +14918,8 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
   if (!el) return;
 
   const [projRes, depRes, prodRes] = await Promise.all([
-    db.from('projects').select('geschaetzter_umsatz').is('deleted_at', null).eq('id', projectId).single(),
+    // v2.28.9: preis_nach_aufwand-Flag mitlesen.
+    db.from('projects').select('geschaetzter_umsatz, preis_nach_aufwand').is('deleted_at', null).eq('id', projectId).single(),
     // v2.25.11/v2.28.2: status + Rabatt mitlesen für korrekte Marge.
     db.from('deployments').select('menge, einzelpreis, status, rabatt_typ, rabatt_wert').is('deleted_at', null).eq('project_id', projectId),
     db.from('project_products').select('menge, einzelpreis_vk, einzelpreis_ek, im_paket, rabatt_typ, rabatt_wert').is('deleted_at', null).eq('project_id', projectId)
@@ -14917,9 +14927,10 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
   if (!isStillOnDetail('project', projectId)) return;
 
   const paket = Number(projRes.data?.geschaetzter_umsatz) || 0;
+  const nachAufwand = !!projRes.data?.preis_nach_aufwand;
   // v2.25.11: Stornierte Einsätze sind nie ein Aufwand — sie entstehen nie.
   // v2.28.2: Rabatt wirkt mit (echter Rabatt → Marge sinkt).
-  const einsatzAufwand = (depRes.data || [])
+  const einsatzSumme = (depRes.data || [])
     .filter(d => d.status !== 'Storniert')
     .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodRes.data || [];
@@ -14927,8 +14938,15 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
     .reduce((s, p) => s + calcProductPositionNetto(p), 0);
   const produktEkGesamt = prods.reduce((s, p) => s + (Number(p.menge) || 0) * (Number(p.einzelpreis_ek) || 0), 0);
 
-  const erloese = paket + produktUmsatzExkl;
-  const aufwand = einsatzAufwand + produktEkGesamt;
+  // v2.28.9: Bei „Preis nach Aufwand" werden die Einsätze zu Erlösen statt
+  // zu Aufwand — der Kunde zahlt sie ja direkt. Sonst (Festpreis-Projekt)
+  // bleibt es wie bisher: Paketpreis = Erlös, Einsätze = interner Aufwand.
+  const erloese = nachAufwand
+    ? (einsatzSumme + produktUmsatzExkl)
+    : (paket + produktUmsatzExkl);
+  const aufwand = nachAufwand
+    ? produktEkGesamt
+    : (einsatzSumme + produktEkGesamt);
   const marge = erloese - aufwand;
   const margePct = erloese > 0 ? (marge / erloese * 100) : null;
 
@@ -17029,17 +17047,19 @@ async function loadProjectDashboard(p) {
   if (!isStillOnDetail('project', p.id)) return;  // v2.0.6: race-guard
 
   // ── FINANCE-CARD: Soll vs. Ist + Marge (v2.10.0: inkl. Produkt-Positionen)
-  // v2.25.11: Stornierte Einsätze sind kein Aufwand — wurden nie erbracht.
-  const einsatzAufwand = (depsResult.data || [])
+  // v2.25.11/v2.28.2/v2.28.9: Stornierte raus, Rabatt rein, „Preis nach
+  // Aufwand"-Modus berücksichtigen.
+  const einsatzSumme = (depsResult.data || [])
     .filter(d => d.status !== 'Storniert')
-    .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
+    .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodsResult.data || [];
   const produktUmsatzExkl = prods.filter(pp => !pp.im_paket)
-    .reduce((s, pp) => s + (Number(pp.menge) || 0) * (Number(pp.einzelpreis_vk) || 0), 0);
+    .reduce((s, pp) => s + calcProductPositionNetto(pp), 0);
   const produktEkGesamt = prods.reduce((s, pp) => s + (Number(pp.menge) || 0) * (Number(pp.einzelpreis_ek) || 0), 0);
   const paket = Number(p.geschaetzter_umsatz) || 0;
-  const erloese = paket + produktUmsatzExkl;
-  const aufwand = einsatzAufwand + produktEkGesamt;
+  const nachAufwand = !!p.preis_nach_aufwand;
+  const erloese = nachAufwand ? (einsatzSumme + produktUmsatzExkl) : (paket + produktUmsatzExkl);
+  const aufwand = nachAufwand ? produktEkGesamt : (einsatzSumme + produktEkGesamt);
   const marge = erloese - aufwand;
 
   const financeMarginEl = document.getElementById('project-finance-margin');
@@ -17059,9 +17079,17 @@ async function loadProjectDashboard(p) {
     }
   }
   if (financeSublineEl) {
-    const parts = [`Paket ${formatPreis(paket)}`];
-    if (produktUmsatzExkl > 0) parts.push(`+ Produkte ${formatPreis(produktUmsatzExkl)}`);
-    parts.push(`Aufwand ${formatPreis(aufwand)}`);
+    // v2.28.9: Subline-Texte je nach Preis-Modus.
+    const parts = [];
+    if (nachAufwand) {
+      parts.push(`Einsätze ${formatPreis(einsatzSumme)}`);
+      if (produktUmsatzExkl > 0) parts.push(`+ Produkte ${formatPreis(produktUmsatzExkl)}`);
+      if (produktEkGesamt > 0)   parts.push(`Material-EK ${formatPreis(produktEkGesamt)}`);
+    } else {
+      parts.push(`Paket ${formatPreis(paket)}`);
+      if (produktUmsatzExkl > 0) parts.push(`+ Produkte ${formatPreis(produktUmsatzExkl)}`);
+      parts.push(`Aufwand ${formatPreis(aufwand)}`);
+    }
     financeSublineEl.textContent = parts.join(' · ');
   }
 
@@ -28904,20 +28932,20 @@ async function openCustomerReport(projectId) {
 async function _loadCustomerReportData(projectId) {
   const [projRes, depRes, prodRes, projDocsRes] = await Promise.all([
     db.from('projects').select(`
-      id, name, beschreibung, status, startdatum, enddatum, geschaetzter_umsatz,
+      id, name, beschreibung, status, startdatum, enddatum, geschaetzter_umsatz, preis_nach_aufwand,
       company:companies(id, name, strasse, plz, stadt),
       verantwortlicher:user_profiles!projects_verantwortlicher_id_fkey(name),
       hauptkontakt:contacts(id, vorname, nachname, position, email, telefon)
     `).eq('id', projectId).is('deleted_at', null).single(),
     db.from('deployments').select(`
       id, titel, datum_von, datum_bis, einzelpreis, menge, status, ort,
-      uhrzeit_von, uhrzeit_bis,
+      uhrzeit_von, uhrzeit_bis, rabatt_typ, rabatt_wert,
       service:services(name)
     `).eq('project_id', projectId).is('deleted_at', null)
       .neq('status', 'Storniert')
       .order('datum_von', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true }),
-    db.from('project_products').select('bezeichnung, menge, einzelpreis_vk, im_paket, notizen, product:products(einheit)')
+    db.from('project_products').select('bezeichnung, menge, einzelpreis_vk, im_paket, notizen, rabatt_typ, rabatt_wert, product:products(einheit)')
       .is('deleted_at', null).eq('project_id', projectId)
       .order('created_at', { ascending: true }),
     db.from('doc_sections').select('id, titel, inhalt, reihenfolge')
@@ -29078,21 +29106,33 @@ function _buildCustomerReportHtml(data) {
       <tbody>${produkteRows}</tbody>
     </table>`;
 
-  // Rechnung
+  // Rechnung — v2.28.9: zwei Modi.
+  //  • Festpreis-Projekt (preis_nach_aufwand=false): Paketpreis + zusätzliche
+  //    Produkte = Gesamt.
+  //  • Aufwand-Projekt (preis_nach_aufwand=true): Summe der Einsatz-Netti
+  //    + zusätzliche Produkte = Gesamt; kein Paketpreis-Eintrag.
   const paket = Number(p.geschaetzter_umsatz) || 0;
+  const nachAufwand = !!p.preis_nach_aufwand;
   const produkteVkExkl = data.products
     .filter(pp => !pp.im_paket)
-    .reduce((s, pp) => s + (Number(pp.menge) || 0) * (Number(pp.einzelpreis_vk) || 0), 0);
-  const gesamt = paket + produkteVkExkl;
+    .reduce((s, pp) => s + applyRabatt((Number(pp.menge) || 0) * (Number(pp.einzelpreis_vk) || 0), pp.rabatt_typ, pp.rabatt_wert).netto, 0);
+  const einsaetzeSumme = data.deployments.reduce((s, d) => s + calcDeploymentNetto(d), 0);
+  const gesamt = nachAufwand ? (einsaetzeSumme + produkteVkExkl) : (paket + produkteVkExkl);
+
+  const rechnungRowsHtml = nachAufwand
+    ? `
+        <tr><td>Summe Einsätze (siehe Einzelaufstellung oben)</td><td class="num">${_fmtPreis(einsaetzeSumme)}</td></tr>
+        ${produkteVkExkl > 0 ? `<tr><td>Zusätzliche Produkte</td><td class="num">${_fmtPreis(produkteVkExkl)}</td></tr>` : ''}
+        <tr class="bill-total"><td>Gesamtsumme (netto)</td><td class="num">${_fmtPreis(gesamt)}</td></tr>`
+    : `
+        <tr><td>Projekt-Paketpreis</td><td class="num">${_fmtPreis(paket)}</td></tr>
+        ${produkteVkExkl > 0 ? `<tr><td>Zusätzliche Produkte (außerhalb Paket)</td><td class="num">${_fmtPreis(produkteVkExkl)}</td></tr>` : ''}
+        <tr class="bill-total"><td>Gesamtsumme (netto)</td><td class="num">${_fmtPreis(gesamt)}</td></tr>`;
 
   const rechnungHtml = `
     <h2>${data.products.length > 0 ? '4' : '3'}. Rechnungs-Übersicht</h2>
     <table class="bill-table">
-      <tbody>
-        <tr><td>Projekt-Paketpreis</td><td class="num">${_fmtPreis(paket)}</td></tr>
-        ${produkteVkExkl > 0 ? `<tr><td>Zusätzliche Produkte (außerhalb Paket)</td><td class="num">${_fmtPreis(produkteVkExkl)}</td></tr>` : ''}
-        <tr class="bill-total"><td>Gesamtsumme (netto)</td><td class="num">${_fmtPreis(gesamt)}</td></tr>
-      </tbody>
+      <tbody>${rechnungRowsHtml}</tbody>
     </table>
     <p class="ust-hint">Alle Beträge zuzüglich gesetzlicher Umsatzsteuer.</p>`;
 
