@@ -7385,17 +7385,50 @@ async function loadTemplates() {
       tb.innerHTML = '<tr><td colspan="4"><div class="empty">Noch keine Vorlagen. Klicke oben auf „+ Neue Vorlage".</div></td></tr>';
       continue;
     }
-    tb.innerHTML = rows.map(t => `
+    tb.innerHTML = rows.map(t => {
+      // v2.25.6: aus Einsatz-Vorlagen lässt sich direkt eine Leistung
+      // erzeugen — Titel/Einzelpreis/Uhrzeiten/Beschreibung werden ins
+      // Leistungs-Modal vorbelegt.
+      const alsLeistungBtn = typ === 'einsatz'
+        ? `<button class="btn btn-sm" style="margin-right:6px" onclick="createServiceFromEinsatzTemplate('${esc(t.id)}')" title="Aus dieser Einsatz-Vorlage eine Leistung anlegen">Als Leistung anlegen</button>`
+        : '';
+      return `
       <tr>
         <td><div class="cell-link" onclick="openTemplateModal('edit','${esc(t.id)}')">${esc(t.name)}</div></td>
         <td>${t.reihenfolge}</td>
         <td>${t.ist_aktiv ? '<span class="badge" style="background:#dcfce7;color:#16a34a">Aktiv</span>' : '<span class="badge" style="background:#f3f4f6;color:#6b7280">Archiviert</span>'}</td>
         <td class="col-action" style="text-align:right">
-          <button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
+          ${alsLeistungBtn}<button class="btn btn-sm" onclick="openTemplateModal('edit','${esc(t.id)}')">Bearbeiten</button>
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   }
+}
+
+/** v2.25.6: Lädt eine Einsatz-Vorlage und öffnet das Leistungs-Modal mit
+ *  daraus übernommenen Werten. Nichts wird gespeichert, bis der Admin
+ *  „Anlegen" klickt. Mapping:
+ *    titel → name (Fallback: Template-Name)
+ *    einzelpreis → standardpreis
+ *    beschreibung → beschreibung
+ *    uhrzeit_von/bis → standard_uhrzeit_von/bis
+ *  einheit und kategorie sind im Einsatz-Template nicht modelliert →
+ *  bleiben auf dem Default „Tag" bzw. leer, der User vervollständigt sie. */
+async function createServiceFromEinsatzTemplate(templateId) {
+  if (!isAdmin()) { showToast('Nur Admins.', true); return; }
+  const { data: tpl, error } = await db.from('templates').select('*').eq('id', templateId).single();
+  if (error || !tpl) { showToast('Einsatz-Vorlage nicht gefunden.', true); return; }
+  if (tpl.typ !== 'einsatz') { showToast('Diese Funktion gilt nur für Einsatz-Vorlagen.', true); return; }
+
+  await openServiceModal('new');
+  const d = tpl.daten || {};
+  const nameVal = (d.titel && String(d.titel).trim()) || tpl.name || '';
+  document.getElementById('s-name').value = nameVal;
+  if (d.beschreibung) document.getElementById('s-beschreibung').value = d.beschreibung;
+  if (d.einzelpreis != null && d.einzelpreis !== '') document.getElementById('s-preis').value = d.einzelpreis;
+  if (d.uhrzeit_von) document.getElementById('s-uhrzeit-von').value = d.uhrzeit_von;
+  if (d.uhrzeit_bis) document.getElementById('s-uhrzeit-bis').value = d.uhrzeit_bis;
+  showToast('Werte aus „' + tpl.name + '" übernommen — Kategorie/Einheit prüfen und speichern.');
 }
 
 /** v2.25.5: zweiter Parameter wirkt kontextabhängig — bei `mode='edit'`
