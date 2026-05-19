@@ -12048,7 +12048,8 @@ async function loadProjektStatus() {
 }
 
 function projektStatusFarbe(wert) {
-  const s = projektStatusCache.find(x => x.wert === wert);
+  // Dual-Mode: input kann Legacy-Label ('Lead') oder system_key ('lead') sein.
+  const s = projektStatusCache.find(x => x.wert === wert || x.system_key === wert);
   return s?.farbe || '#6b7280';
 }
 
@@ -13361,7 +13362,8 @@ async function loadEinsatzStatus() {
 }
 
 function einsatzStatusFarbe(wert) {
-  const s = einsatzStatusCache.find(x => x.wert === wert);
+  // Dual-Mode: input kann Legacy-Label ('Geplant') oder system_key ('geplant') sein.
+  const s = einsatzStatusCache.find(x => x.wert === wert || x.system_key === wert);
   return s?.farbe || '#6b7280';
 }
 
