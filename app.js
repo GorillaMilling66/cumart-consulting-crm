@@ -2239,6 +2239,7 @@ const APPOINTMENT_STATUS = Object.freeze({
 
 const TASK_STATUS = Object.freeze({
   OFFEN:            'offen',
+  IN_ARBEIT:        'in_arbeit',
   ERLEDIGT:         'erledigt',
   STORNIERT:        'storniert'
 });
@@ -2267,6 +2268,7 @@ const _LEGACY_STATUS_MAP = {
   },
   aufgabe_status: {
     'offen':           'offen',
+    'In Arbeit':       'in_arbeit',
     'erledigt':        'erledigt',
     'Storniert':       'storniert'
   }

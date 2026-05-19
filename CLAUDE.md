@@ -2,24 +2,22 @@
 
 Diese Datei enthält Hinweise für Claude Code (claude.ai/code), wenn mit Code in diesem Repository gearbeitet wird.
 
-## ⚠️ Aktiver Refactor: Block 2 — System-Keys für Status-Lookups (WIP)
+## Block 2 — System-Keys für Status-Lookups (abgeschlossen 19.05.2026)
 
-**Stand 19.05.2026:** In Arbeit auf Branch `refactor/block-2-system-keys` (NICHT main). Ziel: alle Status-Magic-Strings (`'Abgeschlossen'`, `'Durchgeführt'`, …) durch system_keys (`'abgeschlossen'`, `'durchgefuehrt'`, …) ersetzen, damit Mandanten Status-Labels umbenennen können, ohne dass Auto-Logik/Filter brechen.
+**Status:** Live auf `main` (v2.30.0). Status-Spalten in `projects`, `deployments`, `appointments`, `tasks` enthalten jetzt system_keys (`'abgeschlossen'`, `'durchgefuehrt'`, …) statt Labels. `lookup_values.system_key` ist die Identitäts-Spalte; `wert` ist nur noch Anzeige-Label und kann pro Mandant frei umbenannt werden, ohne dass Auto-Status-Logik, Filter, Pillen oder Sortierungen brechen.
 
-**Fertig (Foundation):**
-- `migrations/v2.30.0_lookup_system_keys.sql` (geschrieben, **NICHT** appliziert — Datei trägt einen ⚠️-Warn-Header)
-- Status-Konstanten + Helper in `app.js` (`PROJECT_STATUS`, `DEPLOYMENT_STATUS`, `APPOINTMENT_STATUS`, `TASK_STATUS`, `normalizeStatus()`, `dualStatus()`, `getStatusLabel()`, `_loadStatusLabels()`)
-- Umgestellt: `checkAndUpdateProjectStatus()`, `checkAndUpdateProjectStatusSmart()`, `_activityStatusStyle()`
+**Status-Konvention für aktive Sessions:**
+- **NIE** Status-Labels (`'Abgeschlossen'`, `'Durchgeführt'`) im Code referenzieren — immer system_keys über die Konstanten-Maps:
+  - `PROJECT_STATUS.{LEAD, ANGEBOT, IN_ARBEIT, ABSCHLUSSPHASE, ABGESCHLOSSEN, VERLOREN, STORNIERT}`
+  - `DEPLOYMENT_STATUS.{UNGEPLANT, GEPLANT, DURCHGEFUEHRT, ABGERECHNET, STORNIERT}`
+  - `APPOINTMENT_STATUS.{GEPLANT, DURCHGEFUEHRT}`
+  - `TASK_STATUS.{OFFEN, IN_ARBEIT, ERLEDIGT, STORNIERT}`
+- **Supabase-Filter** auf `status` während der Übergangsphase (bis v2.31): durch `dualStatus(kategorie, KEY1, KEY2, ...)` wrappen, damit alte Labels in fremden Mandanten-DBs noch matchen.
+- **JS-Vergleiche** über `statusEq(actual, expected)` oder `statusIn(actual, ...expecteds)` — beide akzeptieren Labels und system_keys.
+- **UI-Display:** `dispStatus(status)` für allgemeine Anzeigen, `getStatusLabel(kategorie, system_key)` für gezielte Lookups.
+- **Achtung Namens-Kollision:** `statusLabel(s)` ist eine ältere Funktion für `user_profiles.status` (eingeladen/aktiv/inaktiv) — nicht verwechseln; für Status-Display ist `dispStatus()` der richtige Helper.
 
-**Offen (kommende Sessions, jeweils ein Sprint pro Welle):**
-- ~57 Supabase-Filter (`.eq/.in/.neq` auf `status`) → `dualStatus()`-Wrap
-- ~170 JS-Vergleichsstellen (`status === 'Label'`) → `normalizeStatus()` + Konstanten
-- ~14 Update-Operationen (`.update({ status: 'Label' })`) → system_keys
-- Display-Stellen → `getStatusLabel()` aus Lookup-Cache
-- Migration applizieren (erst wenn 100% des Codes umgestellt; sonst bricht alles)
-- Branch nach `main` mergen
-
-**Regel für aktive Sessions:** Wer am Code arbeitet, MUSS neue Status-Vergleiche im Dual-Mode-Pattern schreiben (`normalizeStatus(kat, status) === KEY` statt `status === 'Label'`). Sonst wächst die Schuld weiter.
+**v2.31 Cleanup (separater Refactor, optional):** `_LEGACY_STATUS_MAP`, `dualStatus()`, `statusEq()`, `statusIn()` entfernen, Dual-Keys in `sortPrio` / `PIPELINE_FORECAST_WEIGHT` / `_PROJEKT_PHASE_RANG` konsolidieren — sobald sicher ist, dass keine alten Labels mehr in irgendeiner Mandanten-DB stehen.
 
 ## Projekt-Überblick
 

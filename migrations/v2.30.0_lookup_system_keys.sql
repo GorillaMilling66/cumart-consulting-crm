@@ -1,21 +1,4 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- ⚠️  ⚠️  ⚠️   ACHTUNG — DIESE MIGRATION NOCH NICHT APPLIZIEREN!   ⚠️  ⚠️  ⚠️
--- ═══════════════════════════════════════════════════════════════════════════
---
--- Status: WIP — Block 2 Foundation-Commit (v2.29.1).
--- Diese Migration darf erst angewendet werden, wenn ALLE ~350 Magic-String-
--- Stellen in app.js auf Dual-Mode (normalizeStatus / dualStatus / system_keys)
--- umgestellt sind. Aktuell sind nur Migration-File + Helpers + Auto-Status-
--- Funktionen + _activityStatusStyle umgestellt — der Rest folgt in
--- inkrementellen Sessions.
---
--- Wer diese Migration jetzt anwendet, bricht alle übrigen Status-Filter,
--- Status-Pillen, Sort-Maps und Update-Operations in der Cumart-Live-App.
--- Sobald Block 2 vollständig ist, wird dieser WARN-Header entfernt und das
--- File auf v2.30.0 final hochgesetzt (siehe Roadmap in architecture.md §12).
--- ═══════════════════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════════════════
 -- v2.30.0 — System-Keys für Status-Lookups (Multi-Instanz-Tauglichkeit)
 -- ═══════════════════════════════════════════════════════════════════════════
 --
@@ -83,6 +66,7 @@ UPDATE public.lookup_values SET system_key = 'durchgefuehrt'     WHERE kategorie
 
 -- aufgabe_status
 UPDATE public.lookup_values SET system_key = 'offen'             WHERE kategorie = 'aufgabe_status' AND wert = 'offen'              AND system_key IS NULL;
+UPDATE public.lookup_values SET system_key = 'in_arbeit'         WHERE kategorie = 'aufgabe_status' AND wert = 'In Arbeit'          AND system_key IS NULL;
 UPDATE public.lookup_values SET system_key = 'erledigt'          WHERE kategorie = 'aufgabe_status' AND wert = 'erledigt'           AND system_key IS NULL;
 UPDATE public.lookup_values SET system_key = 'storniert'         WHERE kategorie = 'aufgabe_status' AND wert = 'Storniert'          AND system_key IS NULL;
 
@@ -109,9 +93,10 @@ UPDATE public.deployments SET status = 'storniert'      WHERE status = 'Stornier
 -- appointments.status — schon lowercase, nichts zu tun (Defensive: nochmal explizit)
 -- (kein UPDATE nötig; Werte bleiben 'geplant' / 'durchgefuehrt')
 
--- tasks.status — 'Storniert' (Capitalized!) auf 'storniert' angleichen
+-- tasks.status
+UPDATE public.tasks SET status = 'in_arbeit'            WHERE status = 'In Arbeit';
 UPDATE public.tasks SET status = 'storniert'            WHERE status = 'Storniert';
--- 'offen' und 'erledigt' bleiben unverändert.
+-- 'offen' und 'erledigt' bleiben unverändert (system_key == label).
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- 4. Verifikation — muss 0 Zeilen "unbekannt" liefern
