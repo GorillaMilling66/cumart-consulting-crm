@@ -13476,7 +13476,7 @@ function renderDeploymentsTable(deployments) {
   // Hinweis zum Umsatz aktiver Einsätze
   const umsatzAktiv = deployments
     .filter(d => [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status) && !d.project_id)
-    .reduce((sum, d) => sum + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+    .reduce((sum, d) => sum + calcDeploymentNetto(d), 0);
   if (umsatzAktiv > 0) {
     countEl.textContent += ` · ${formatPreis(umsatzAktiv)} direkt abrechenbar`;
   }
@@ -13500,7 +13500,11 @@ function renderDeploymentsTable(deployments) {
     const leistungHtml = d.service
       ? esc(d.service.name)
       : '<span style="color:var(--muted);font-style:italic">—</span>';
-    const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+    const brutto = calcDeploymentGesamt(d.menge, d.einzelpreis);
+    const { rabatt, netto } = applyRabatt(brutto, d.rabatt_typ, d.rabatt_wert);
+    const rabattLine = rabatt > 0
+      ? `<div style="font-size:11px;color:var(--status-overdue-accent);margin-top:2px">${d.rabatt_typ === 'prozent' ? `Rabatt ${formatMenge(d.rabatt_wert)} % (−${formatPreis(rabatt)})` : `Rabatt −${formatPreis(rabatt)}`}</div>`
+      : '';
 
     return `
       <tr data-dep-id="${esc(d.id)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
@@ -13512,7 +13516,7 @@ function renderDeploymentsTable(deployments) {
         <td class="col-desktop">${projektHtml}</td>
         <td class="col-desktop" style="color:var(--muted)">${leistungHtml}</td>
         <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
-        <td class="col-tablet">${esc(formatPreis(gesamt))}</td>
+        <td class="col-tablet">${esc(formatPreis(netto))}${rabattLine}</td>
         <td class="col-action" style="text-align:right">${renderActionIcons('deployment', d.id, renderDeploymentQuickStatusIcons(d))}</td>
       </tr>`;
   }).join('');
@@ -14742,7 +14746,7 @@ async function loadCompanyDeployments(companyId) {
 
   const umsatz = all
     .filter(d => !d.project_id && [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status))
-    .reduce((sum, d) => sum + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
+    .reduce((sum, d) => sum + calcDeploymentNetto(d), 0);
 
   countEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'}`
     + (umsatz > 0 ? ` · ${formatPreis(umsatz)} direkt abrechenbar` : '');
@@ -14752,7 +14756,11 @@ async function loadCompanyDeployments(companyId) {
     const projektHtml = d.project
       ? `<div class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</div>`
       : '<span style="color:var(--muted);font-style:italic">Einzelbuchung</span>';
-    const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+    const brutto = calcDeploymentGesamt(d.menge, d.einzelpreis);
+    const { rabatt, netto } = applyRabatt(brutto, d.rabatt_typ, d.rabatt_wert);
+    const rabattLine = rabatt > 0
+      ? `<div style="font-size:11px;color:var(--status-overdue-accent);margin-top:2px">${d.rabatt_typ === 'prozent' ? `Rabatt ${formatMenge(d.rabatt_wert)} % (−${formatPreis(rabatt)})` : `Rabatt −${formatPreis(rabatt)}`}</div>`
+      : '';
 
     return `
       <tr data-dep-id="${esc(d.id)}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
@@ -14762,7 +14770,7 @@ async function loadCompanyDeployments(companyId) {
         </td>
         <td class="col-tablet">${projektHtml}</td>
         <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
-        <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
+        <td class="col-desktop">${esc(formatPreis(netto))}${rabattLine}</td>
         <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
         </td>
@@ -14784,7 +14792,11 @@ async function loadCompanyDeployments(companyId) {
       const projektHtml = d.project
         ? `<span class="cell-link" onclick="navigateTo('projekt', '${esc(d.project.id)}')">${esc(d.project.name)}</span>`
         : '<span class="muted">Direktverkauf</span>';
-      const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+      const brutto = calcDeploymentGesamt(d.menge, d.einzelpreis);
+      const { rabatt, netto } = applyRabatt(brutto, d.rabatt_typ, d.rabatt_wert);
+      const rabattLine = rabatt > 0
+        ? `<div style="font-size:11px;color:var(--status-overdue-accent);margin-top:2px">${d.rabatt_typ === 'prozent' ? `Rabatt ${formatMenge(d.rabatt_wert)} % (−${formatPreis(rabatt)})` : `Rabatt −${formatPreis(rabatt)}`}</div>`
+        : '';
       return `
         <tr>
           <td><span class="cell-link" onclick="navigateTo('einsatz','${esc(d.id)}')">${esc(d.titel || '—')}</span></td>
@@ -14792,7 +14804,7 @@ async function loadCompanyDeployments(companyId) {
           <td class="col-tablet">${esc(d.service?.name || '—')}</td>
           <td class="col-desktop">${projektHtml}</td>
           <td><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
-          <td>${esc(formatPreis(gesamt))}</td>
+          <td>${esc(formatPreis(netto))}${rabattLine}</td>
           <td class="col-action" style="text-align:right">
             <button class="btn btn-sm" onclick="openDeploymentModal('edit','${esc(d.id)}')">Bearbeiten</button>
           </td>
@@ -14885,7 +14897,11 @@ async function loadProjectDeployments(projectId) {
     const leistungHtml = d.service
       ? esc(d.service.name)
       : '<span style="color:var(--muted);font-style:italic">—</span>';
-    const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+    const brutto = calcDeploymentGesamt(d.menge, d.einzelpreis);
+    const { rabatt, netto } = applyRabatt(brutto, d.rabatt_typ, d.rabatt_wert);
+    const rabattLine = rabatt > 0
+      ? `<div style="font-size:11px;color:var(--status-overdue-accent);margin-top:2px">${d.rabatt_typ === 'prozent' ? `Rabatt ${formatMenge(d.rabatt_wert)} % (−${formatPreis(rabatt)})` : `Rabatt −${formatPreis(rabatt)}`}</div>`
+      : '';
     const isDone = d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET;
     const isLocked = d.status === DEPLOYMENT_STATUS.ABGERECHNET || d.status === DEPLOYMENT_STATUS.STORNIERT;
     const checkboxTitle = isLocked
@@ -14907,7 +14923,7 @@ async function loadProjectDeployments(projectId) {
         </td>
         <td class="col-tablet" style="color:var(--muted)">${leistungHtml}</td>
         <td class="dep-status-cell"><span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(d.status))}</span></td>
-        <td class="col-desktop">${esc(formatPreis(gesamt))}</td>
+        <td class="col-desktop">${esc(formatPreis(netto))}${rabattLine}</td>
         <td class="col-action" style="text-align:right">
           <button class="btn btn-sm" onclick="openDeploymentModal('edit', '${esc(d.id)}')">Bearbeiten</button>
         </td>
@@ -18045,7 +18061,7 @@ async function renderDeploymentExpandedRow(deploymentId, hint) {
 
   // Stats-Row
   const statusColor = einsatzStatusFarbe(d.status);
-  const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
+  const gesamt = calcDeploymentNetto(d);
   const wertLabel = d.project_id ? 'Positionswert (Aufwand)' : 'Wert';
 
   const abcBadge = d.company?.abc_klassifizierung
