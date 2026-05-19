@@ -2295,8 +2295,12 @@ function getStatusLabel(kategorie, system_key, fallback) {
 function dispStatus(status) {
   if (!status) return '';
   if (!_statusLabelCache) return status;
-  for (const kat of Object.keys(_statusLabelCache)) {
-    const entry = _statusLabelCache[kat][status];
+  // Feste Kategorie-Reihenfolge: für ambige system_keys ('storniert',
+  // 'in_arbeit', 'durchgefuehrt', 'geplant') gewinnt das Label aus der
+  // Kategorie mit dem schöneren Title-Case-Wert. `termin_status` zuletzt,
+  // weil sein 'wert' lowercase ist (Migrations-Konvention).
+  for (const kat of ['projekt_status', 'einsatz_status', 'aufgabe_status', 'termin_status']) {
+    const entry = _statusLabelCache[kat]?.[status];
     if (entry) return entry.label;
   }
   return status;
@@ -4735,7 +4739,7 @@ function renderBriefingWoche(data) {
       // v2.25.7: Stornierte Einsätze zählen NICHT in die Tagesumsatz-Summe.
       // Sie werden auf dem Strip durch einen roten Balken markiert, wenn der
       // Tag sonst leer wäre — sonst überlagert sie der aktive Einsatz/Termin.
-      const dayDeps = dayDepsAll.filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+      const dayDeps = dayDepsAll.filter(d => d.status !== DEPLOYMENT_STATUS.STORNIERT);
       const dayDepsCancelled = dayDepsAll.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
       const dayAppts = (data.appointments || []).filter(a => a.datum === iso);
       const sumE = dayDeps.reduce((s, dep) => s + (Number(dep.einzelpreis) || 0), 0);
@@ -14840,7 +14844,7 @@ async function loadProjectDeployments(projectId) {
   // v2.25.11: Stornierte Einsätze fließen NICHT in Aufwand/Leistungsumsatz.
   // Sie bleiben in der Tabelle sichtbar (durchgestrichen als Storniert-Badge),
   // werden aber für jede Summe konsequent ausgenommen.
-  const billable = all.filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+  const billable = all.filter(d => d.status !== DEPLOYMENT_STATUS.STORNIERT);
   const stornoCount = all.length - billable.length;
   const stornoSum   = all.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT)
     .reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
@@ -14920,7 +14924,7 @@ async function loadProjectDeployments(projectId) {
     // v2.25.11: Bündel-Header zeigt nur die nicht-stornierten Werte und Tage.
     // Stornierte Mitglieder werden separat ausgewiesen, damit der User weiß,
     // dass das Bündel ursprünglich mehr Tage hatte.
-    const billableMembers = members.filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+    const billableMembers = members.filter(d => d.status !== DEPLOYMENT_STATUS.STORNIERT);
     const stornoMembers   = members.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
     // v2.28.2: Bündel-Summe mit Rabatt-Berücksichtigung
     const bundleSum = billableMembers.reduce((s, d) => s + calcDeploymentNetto(d), 0);
@@ -15093,7 +15097,7 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
   // v2.25.11: Stornierte Einsätze sind nie ein Aufwand — sie entstehen nie.
   // v2.28.2: Rabatt wirkt mit (echter Rabatt → Marge sinkt).
   const einsatzSumme = (depRes.data || [])
-    .filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT)
+    .filter(d => d.status !== DEPLOYMENT_STATUS.STORNIERT)
     .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodRes.data || [];
   const produktUmsatzExkl = prods.filter(p => !p.im_paket)
@@ -17234,7 +17238,7 @@ async function loadProjectDashboard(p) {
   // v2.25.11/v2.28.2/v2.28.9: Stornierte raus, Rabatt rein, „Preis nach
   // Aufwand"-Modus berücksichtigen.
   const einsatzSumme = (depsResult.data || [])
-    .filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT)
+    .filter(d => d.status !== DEPLOYMENT_STATUS.STORNIERT)
     .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodsResult.data || [];
   const produktUmsatzExkl = prods.filter(pp => !pp.im_paket)
@@ -18236,7 +18240,7 @@ async function quickDeploymentMarkBilled(deploymentId) {
   const { data: dep, error: selErr } = await db.from('deployments')
     .select('id, project_id, status').eq('id', deploymentId).single();
   if (selErr || !dep) { showToast('Einsatz nicht gefunden.', true); return; }
-  if (!dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
+  if (dep.status !== DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
     showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
   }
   const { error } = await db.from('deployments')
@@ -18749,7 +18753,7 @@ async function renderCalendarBar() {
     // Sobald an demselben Tag ein aktiver Einsatz dazukommt, gewinnt der und
     // der Tag wird wieder grün — Storno-Einsätze allein erzeugen keine
     // „Geld verdient"-Optik mehr.
-    const hasActiveEinsatz = !!ev?.einsatze?.some(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+    const hasActiveEinsatz = !!ev?.einsatze?.some(d => d.status !== DEPLOYMENT_STATUS.STORNIERT);
     const hasStornoEinsatz = !hasActiveEinsatz && !!ev?.einsatze?.some(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
     const isHoliday  = _calendarState.holidays.has(iso);
     const isWeekend  = dow === 0 || dow === 6;
@@ -20594,7 +20598,7 @@ function renderWeekStrip(data) {
     Object.values(dayInfo).forEach(di => {
       if (di.iso >= von && di.iso <= bis) {
         di.deps.push(dep);
-        if (!dep.status === DEPLOYMENT_STATUS.STORNIERT) di.tagSumme += einzel;
+        if (dep.status !== DEPLOYMENT_STATUS.STORNIERT) di.tagSumme += einzel;
       }
     });
   });
@@ -20714,7 +20718,7 @@ function renderBriefingWeekAgenda(data) {
           tagInfo = `Tag ${tagN}/${totalTage}`;
         }
         day.items.push({ kind: 'einsatz', dep, tagInfo });
-        if (!dep.status === DEPLOYMENT_STATUS.STORNIERT) day.tagSumme += einzel;
+        if (dep.status !== DEPLOYMENT_STATUS.STORNIERT) day.tagSumme += einzel;
       }
     });
   });
@@ -21209,7 +21213,7 @@ function renderBriefingHeroDeployment(dep, data) {
   // Geplant → Durchgeführt, Durchgeführt → Abgerechnet. Bei Abgerechnet kein
   // Schnellweg mehr (Korrektur muss bewusst über Vollbearbeitung laufen).
   let toggleBtn = '';
-  if (status === DEPLOYMENT_STATUS.GEPLANT || (!status === DEPLOYMENT_STATUS.DURCHGEFUEHRT && !status === DEPLOYMENT_STATUS.ABGERECHNET)) {
+  if (status === DEPLOYMENT_STATUS.GEPLANT || (status !== DEPLOYMENT_STATUS.DURCHGEFUEHRT && status !== DEPLOYMENT_STATUS.ABGERECHNET)) {
     toggleBtn = `<button class="briefing-btn" onclick="markDeploymentDone('${esc(dep.id)}')">Als durchgeführt markieren</button>`;
   } else if (status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
     toggleBtn = `<button class="briefing-btn" onclick="markDeploymentBilled('${esc(dep.id)}')">Als abgerechnet markieren</button>`;
@@ -21444,7 +21448,7 @@ async function markDeploymentBilled(id) {
     const { data: dep, error: selErr } = await db.from('deployments')
       .select('id, project_id, status').eq('id', id).single();
     if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
-    if (!dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
+    if (dep.status !== DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
       showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
     }
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.ABGERECHNET }).eq('id', id);
@@ -21466,7 +21470,7 @@ function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
     // v1.45.0: Begrüßung referenziert nur Vor-Ort-Einsätze ≠ Abgerechnet
     const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
     const todayAppts = data.appointments.filter(a => a.datum === todayISO);
-    const aktiveDeps = todayDeps.filter(d => !d.status === DEPLOYMENT_STATUS.ABGERECHNET && !d.status === DEPLOYMENT_STATUS.STORNIERT);
+    const aktiveDeps = todayDeps.filter(d => d.status !== DEPLOYMENT_STATUS.ABGERECHNET && d.status !== DEPLOYMENT_STATUS.STORNIERT);
     if (aktiveDeps.length > 0) {
       const firma = aktiveDeps[0].company?.name || 'einem Kunden';
       parts.push(`Heute bist du im Einsatz bei <strong>${esc(firma)}</strong> — der Tag gehört dem Kunden`);
