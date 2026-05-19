@@ -1,5 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
+   Version 2.31.0 (Block-2-Cleanup — dual-mode Status-Helper
+   entfernt. `_LEGACY_STATUS_MAP`, `normalizeStatus()`,
+   `dualStatus()`, `statusEq()`, `statusIn()` sind raus; Code
+   vergleicht Status-Werte direkt gegen die system_key-
+   Konstanten (PROJECT_STATUS / DEPLOYMENT_STATUS /
+   APPOINTMENT_STATUS / TASK_STATUS). Status-Selects speichern
+   system_keys statt Labels (`<option value="${s.system_key}">`),
+   Loader ziehen `system_key` mit, Lookup-Helper (Farbe,
+   `aufgabeStatusLabel`) sind system_key-only. Anzeige läuft
+   konsequent über `dispStatus()` / `getStatusLabel()`. Maps
+   mit Label-Keys (`sortPrio`, `PIPELINE_FORECAST_WEIGHT`,
+   `_PROJEKT_PHASE_RANG`, `stageMap`) auf system_keys
+   konsolidiert. Voraussetzung: alle Mandanten-DBs auf v2.30
+   migriert — siehe architecture.md §14.6.)
    Version 2.29.0 (Block-1-Refactor — Branding-Layer extrahiert.
    Alle mandanten-spezifischen Strings (App-Name, Firma, Logo,
    Supabase-URL/Key, Bericht-Footer) leben jetzt in
@@ -2196,22 +2210,13 @@ if (document.readyState === 'loading') {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  STATUS-KONSTANTEN + DUAL-MODE-HELPER (v2.30.0)
+//  STATUS-KONSTANTEN (v2.31)
 // ───────────────────────────────────────────────────────────
-//  Alle Status-Vergleiche im Code referenzieren ab v2.30 nur
-//  noch die system_keys (lowercase snake_case ASCII), niemals
-//  mehr die deutschen Labels. Die Labels werden über
-//  getStatusLabel() aus dem Lookup-Cache geholt und können
-//  vom Mandanten frei umbenannt werden, ohne dass Code bricht.
-//
-//  Während der Migration (Live-Code wird vor dem Apply der
-//  Migration deployed) läuft alles im DUAL-MODE: Vergleiche
-//  akzeptieren sowohl alte Labels als auch neue system_keys,
-//  Supabase-Filter werden beide Formate mit-übergeben.
-//  → Kein Downtime-Risiko zwischen Code-Deploy und Migration.
-//
-//  Cleanup-Schritt (v2.31, separater Refactor): _LEGACY_*
-//  Tabellen + dualStatus()-Wrapper entfernen.
+//  Status-Vergleiche im Code referenzieren ausschließlich die
+//  system_keys (lowercase snake_case ASCII), niemals deutsche
+//  Labels. Anzeige-Labels (wert) werden über getStatusLabel()
+//  bzw. dispStatus() aus dem Lookup-Cache geholt und können
+//  pro Mandant frei umbenannt werden, ohne dass Code bricht.
 // ═══════════════════════════════════════════════════════════
 
 const PROJECT_STATUS = Object.freeze({
@@ -2243,67 +2248,6 @@ const TASK_STATUS = Object.freeze({
   ERLEDIGT:         'erledigt',
   STORNIERT:        'storniert'
 });
-
-// Mapping alte Labels → system_keys. Wird in v2.31 entfernt.
-const _LEGACY_STATUS_MAP = {
-  projekt_status: {
-    'Lead':            'lead',
-    'Angebot':         'angebot',
-    'In Arbeit':       'in_arbeit',
-    'Abschlussphase':  'abschlussphase',
-    'Abgeschlossen':   'abgeschlossen',
-    'Verloren':        'verloren',
-    'Storniert':       'storniert'
-  },
-  einsatz_status: {
-    'Ungeplant':       'ungeplant',
-    'Geplant':         'geplant',
-    'Durchgeführt':    'durchgefuehrt',
-    'Abgerechnet':     'abgerechnet',
-    'Storniert':       'storniert'
-  },
-  termin_status: {
-    'geplant':         'geplant',
-    'durchgefuehrt':   'durchgefuehrt'
-  },
-  aufgabe_status: {
-    'offen':           'offen',
-    'In Arbeit':       'in_arbeit',
-    'erledigt':        'erledigt',
-    'Storniert':       'storniert'
-  }
-};
-
-/**
- * Normalisiert einen Status-Wert auf den system_key. Akzeptiert
- * sowohl alte Labels ('Abgeschlossen') als auch neue Keys ('abgeschlossen').
- * Für lokale === Vergleiche in JS verwenden.
- */
-function normalizeStatus(kategorie, value) {
-  if (value == null) return value;
-  const map = _LEGACY_STATUS_MAP[kategorie];
-  if (!map) return value;
-  return map[value] || value;
-}
-
-/**
- * Erweitert eine Liste von system_keys um die zugehörigen alten Labels,
- * damit Supabase-Filter (.in/.eq/.neq auf 'status') während des Dual-
- * Mode-Übergangs sowohl alte als auch neue DB-Zustände matchen.
- *   dualStatus('projekt_status', 'lead', 'angebot')
- *   → ['lead', 'angebot', 'Lead', 'Angebot']
- */
-function dualStatus(kategorie, ...systemKeys) {
-  const result = [...systemKeys];
-  const map = _LEGACY_STATUS_MAP[kategorie];
-  if (!map) return result;
-  for (const [legacy, sys] of Object.entries(map)) {
-    if (systemKeys.includes(sys) && !result.includes(legacy)) {
-      result.push(legacy);
-    }
-  }
-  return result;
-}
 
 // Status-Label-Cache (gefüllt beim App-Boot über _loadStatusLabels).
 // Struktur: { 'projekt_status': { 'abgeschlossen': { label: 'Abgeschlossen', farbe: '#…' } } }
@@ -2340,46 +2284,13 @@ function getStatusLabel(kategorie, system_key, fallback) {
 }
 
 /**
- * Vergleicht zwei Status-Werte und gibt true zurück, wenn sie semantisch
- * gleich sind — egal ob als altes Label ('Abgeschlossen') oder als
- * system_key ('abgeschlossen'). Auto-detektiert die Kategorie aus dem
- * Vergleichswert; das funktioniert, weil unsere Status-Werte über alle
- * 4 Kategorien hinweg eindeutig sind (auch 'Storniert' mapped überall
- * auf den system_key 'storniert', ist also konsistent).
- *
- * Pattern:  d.status === 'Abgeschlossen'  →  statusEq(d.status, 'Abgeschlossen')
- *
- * Wird in v2.31 entfernt; dann referenziert Code direkt PROJECT_STATUS.X etc.
- */
-function statusEq(actual, expected) {
-  if (actual === expected) return true;
-  if (actual == null || expected == null) return false;
-  for (const kat of Object.keys(_LEGACY_STATUS_MAP)) {
-    if (normalizeStatus(kat, actual) === normalizeStatus(kat, expected)) return true;
-  }
-  return false;
-}
-
-/**
- * Dual-Mode-Ersatz für [...labels].includes(x.status). Akzeptiert sowohl
- * alte Labels als auch system_keys.
- *
- * Pattern:  ['Lead', 'Angebot'].includes(p.status)  →  statusIn(p.status, 'Lead', 'Angebot')
- */
-function statusIn(actual, ...expecteds) {
-  return expecteds.some(e => statusEq(actual, e));
-}
-
-/**
- * Display-Helper: liefert das UI-Label für einen Status-Wert, egal ob
- * der Wert ein altes Label ('Abgeschlossen') oder ein neuer system_key
- * ('abgeschlossen') ist. Auto-detektiert die Kategorie über den Cache.
- * Vor Cache-Load oder bei unbekannten Werten: gibt den Wert as-is zurück.
- *
- * Pattern:  ${esc(d.status)}  →  ${esc(dispStatus(d.status))}
+ * Display-Helper: liefert das UI-Label für einen system_key, kategorie-
+ * unabhängig (auto-detektiert über den Cache, weil unsere system_keys
+ * über alle 4 Kategorien eindeutig sind — auch 'storniert' / 'in_arbeit'
+ * mappen konsistent). Vor Cache-Load: gibt den Wert as-is zurück.
  *
  * Name `dispStatus` statt `statusLabel`, weil letzteres bereits für
- * user_profiles.status (eingeladen/aktiv/inaktiv) belegt ist (Z. ~2742).
+ * user_profiles.status (eingeladen/aktiv/inaktiv) belegt ist.
  */
 function dispStatus(status) {
   if (!status) return '';
@@ -2388,7 +2299,7 @@ function dispStatus(status) {
     const entry = _statusLabelCache[kat][status];
     if (entry) return entry.label;
   }
-  return status; // Unknown → Wert selbst (vermutlich schon Legacy-Label)
+  return status;
 }
 
 // SVG-Copy-Icon als String-Konstante
@@ -2534,21 +2445,16 @@ function _splitActivities(items) {
 /** v2.25.9: Mappt Einsatz-/Aufgaben-Status auf eine semantische Farbklasse
  *  für den Status-Pill und den Row-Akzent in der Aktivitäten-Timeline. */
 function _activityStatusStyle(status) {
-  // Dual-Mode: akzeptiert sowohl alte Labels als auch system_keys.
-  // Funktion ist shared für Einsatz (einsatz_status) + Aufgabe (aufgabe_status),
-  // deshalb beide Kategorien hier abgedeckt.
+  // Funktion ist shared für Einsatz (einsatz_status), Termin (termin_status)
+  // und Aufgabe (aufgabe_status); 'geplant'/'durchgefuehrt' decken alle drei ab.
   switch (status) {
-    case 'Geplant':
-    case 'geplant':            return { cls: 'is-blue',   label: 'Geplant' };
-    case 'Durchgeführt':
-    case 'durchgefuehrt':      return { cls: 'is-lgreen', label: 'Durchgeführt' };
-    case 'Abgerechnet':
-    case 'abgerechnet':        return { cls: 'is-dgreen', label: 'Abgerechnet' };
-    case 'Storniert':
-    case 'storniert':          return { cls: 'is-red',    label: 'Storniert' };
-    case 'erledigt':           return { cls: 'is-lgreen', label: 'Erledigt' };
-    case 'offen':              return { cls: 'is-grey',   label: 'Offen' };
-    default:                   return status ? { cls: 'is-grey', label: status } : null;
+    case 'geplant':            return { cls: 'is-blue',   label: dispStatus(status) };
+    case 'durchgefuehrt':      return { cls: 'is-lgreen', label: dispStatus(status) };
+    case 'abgerechnet':        return { cls: 'is-dgreen', label: dispStatus(status) };
+    case 'storniert':          return { cls: 'is-red',    label: dispStatus(status) };
+    case 'erledigt':           return { cls: 'is-lgreen', label: dispStatus(status) };
+    case 'offen':              return { cls: 'is-grey',   label: dispStatus(status) };
+    default:                   return status ? { cls: 'is-grey', label: dispStatus(status) } : null;
   }
 }
 
@@ -2562,7 +2468,7 @@ function _activityItemHTML(it) {
   // erkennbar sind, ohne die ganze Zeile lesen zu müssen.
   const statusStyle = _activityStatusStyle(it.status);
   const statusPill = statusStyle ? `<span class="proj-activity-status-pill ${statusStyle.cls}">${esc(statusStyle.label)}</span>` : '';
-  const isStruck = statusEq(it.status, 'Storniert') || it.status === 'erledigt';
+  const isStruck = it.status === TASK_STATUS.STORNIERT || it.status === 'erledigt';
   const rowAccentCls = statusStyle ? ` proj-activity-item-accent-${statusStyle.cls}` : '';
   const titleCls = `proj-activity-title${isStruck ? ' proj-activity-title-struck' : ''}`;
   const titleHtml = it.click
@@ -3013,9 +2919,9 @@ function renderActionIcons(entityType, id, extraIconsHtml = '') {
 function renderDeploymentQuickStatusIcons(d) {
   const todayISO = toISODate(new Date());
   const html = [];
-  if (statusEq(d.status, 'Geplant') && d.datum_von && d.datum_von <= todayISO) {
+  if (d.status === DEPLOYMENT_STATUS.GEPLANT && d.datum_von && d.datum_von <= todayISO) {
     html.push(`<button class="icon-btn icon-btn-success" onclick="quickDeploymentMarkDone('${esc(d.id)}')" title="Als durchgeführt markieren">${ICON_CHECK}</button>`);
-  } else if (statusEq(d.status, 'Durchgeführt') && isAdmin()) {
+  } else if (d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT && isAdmin()) {
     html.push(`<button class="icon-btn icon-btn-billed" onclick="quickDeploymentMarkBilled('${esc(d.id)}')" title="Als abgerechnet markieren">${ICON_BILLED}</button>`);
   }
   return html.join('');
@@ -3243,7 +3149,7 @@ async function duplicateProject(sourceId) {
 
   const payload = {
     name: (src.name || 'Projekt') + ' (Kopie)',
-    status: 'Angebot',  // Kopie startet immer frisch
+    status: PROJECT_STATUS.ANGEBOT,  // Kopie startet immer frisch
     company_id: src.company_id,
     hauptkontakt_id: src.hauptkontakt_id,
     verantwortlicher_id: src.verantwortlicher_id,
@@ -3272,7 +3178,7 @@ async function duplicateDeployment(sourceId) {
     datum_bis: src.datum_bis,
     uhrzeit_von: src.uhrzeit_von,
     uhrzeit_bis: src.uhrzeit_bis,
-    status: 'Geplant',  // Kopie startet frisch
+    status: DEPLOYMENT_STATUS.GEPLANT,  // Kopie startet frisch
     company_id: src.company_id,
     project_id: src.project_id,
     service_id: src.service_id,
@@ -3581,7 +3487,7 @@ function formatTime(timeStr) {
 
 function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fdf4'; }
 function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
-function appointmentStatusLabel(s) { return s === 'geplant' ? 'Geplant' : 'Durchgeführt'; }
+function appointmentStatusLabel(s) { return getStatusLabel('termin_status', s, s); }
 
 /** Kleines Kalender-Indikator-Icon (v1.40) für Listen-Zeilen — zeigt an, dass
  *  der Eintrag im Mitarbeiter-Kalender erscheint. */
@@ -4092,7 +3998,7 @@ function renderProjectPreview() {
 
   const statusColor = projektStatusFarbe(status);
   const statusPill = status
-    ? `<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(status)}</span>`
+    ? `<span class="badge" style="background:${esc(statusColor)}22;color:${esc(statusColor)}">${esc(dispStatus(status))}</span>`
     : '';
 
   const nameHtml = name
@@ -4420,11 +4326,11 @@ function renderBriefingHeute(data) {
   if (heroEl) {
     if (todayDeps.length > 0) {
       const dep = todayDeps[0];
-      const status = dep.status || 'Geplant';
-      const statusCls = statusEq(status, 'Durchgeführt') ? 'is-lgreen' : statusEq(status, 'Abgerechnet') ? 'is-dgreen' : statusEq(status, 'Storniert') ? 'is-red' : 'is-lgreen';
+      const status = dep.status || DEPLOYMENT_STATUS.GEPLANT;
+      const statusCls = status === DEPLOYMENT_STATUS.DURCHGEFUEHRT ? 'is-lgreen' : status === DEPLOYMENT_STATUS.ABGERECHNET ? 'is-dgreen' : status === DEPLOYMENT_STATUS.STORNIERT ? 'is-red' : 'is-lgreen';
       // v2.25.7: Storniert wird prominent dargestellt — eigener Banner-Strip
       // oben, roter Akzent links, Titel/Tagessatz durchgestrichen.
-      const isCancelled = statusEq(status, 'Storniert');
+      const isCancelled = status === DEPLOYMENT_STATUS.STORNIERT;
       const tageVon = formatDateCompact(dep.datum_von);
       const tageBis = dep.datum_bis && dep.datum_bis !== dep.datum_von ? formatDateCompact(dep.datum_bis) : '';
       const zeitraum = tageBis ? `${tageVon} – ${tageBis}` : tageVon;
@@ -4434,7 +4340,7 @@ function renderBriefingHeute(data) {
           ${isCancelled ? '<div class="bv2-hero-cancel-banner">STORNIERT · zählt nicht in den Umsatz</div>' : ''}
           <div class="bv2-hero-pills">
             <span class="bv2-pill is-blue is-lg">JETZT · VOR-ORT</span>
-            <span class="bv2-pill ${statusCls}">${esc(status)}</span>
+            <span class="bv2-pill ${statusCls}">${esc(dispStatus(status))}</span>
           </div>
           <h2 class="bv2-hero-title">${esc(dep.company?.name || dep.titel || '—')}</h2>
           <div class="bv2-hero-sub">${esc(dep.titel || dep.service?.name || '')}${dep.ort ? ' · ' + esc(dep.ort) : ''}</div>
@@ -4465,11 +4371,11 @@ function renderBriefingHeute(data) {
     const remaining = (data.deployments || []).filter(d => d.datum_von > todayISO).slice(0, 3);
     const cards = [
       ...otherDeps.map(d => ({
-        eyebrow: 'VOR-ORT', status: d.status, statusCls: statusEq(d.status, 'Abgerechnet') ? 'is-dgreen' : 'is-lgreen',
+        eyebrow: 'VOR-ORT', status: d.status, statusCls: d.status === DEPLOYMENT_STATUS.ABGERECHNET ? 'is-dgreen' : 'is-lgreen',
         title: d.company?.name || d.titel || '—',
         sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
         click: `navigateTo('einsatz','${d.id}')`,
-        done: statusEq(d.status, 'Abgerechnet')
+        done: d.status === DEPLOYMENT_STATUS.ABGERECHNET
       })),
       ...remaining.map(d => ({
         eyebrow: `VOR-ORT · ${formatDateCompact(d.datum_von)}`, status: d.status, statusCls: 'is-lgreen',
@@ -4602,7 +4508,7 @@ async function renderBriefingHotItems() {
   try {
     const { data: doneDeps } = await db.from('deployments')
       .select('id, titel, datum_von, company:companies(name), deployment_log(id)')
-      .is('deleted_at', null).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.DURCHGEFUEHRT))
+      .is('deleted_at', null).in('status', [DEPLOYMENT_STATUS.DURCHGEFUEHRT])
       .not('datum_von', 'is', null).lt('datum_von', before5ISO)
       .order('datum_von', { ascending: true })
       .limit(15);
@@ -4742,7 +4648,7 @@ function renderTodayChronoList(deps, appts) {
       title: d.titel || d.company?.name || '—',
       sub: [d.company?.name, d.ort].filter(Boolean).join(' · '),
       // v2.25.7: Storniert wird in der Chrono-Liste durchgestrichen + rotes Pill markiert.
-      cancelled: statusEq(d.status, 'Storniert'),
+      cancelled: d.status === DEPLOYMENT_STATUS.STORNIERT,
       click: `navigateTo('einsatz','${esc(d.id)}')`
     });
   });
@@ -4829,8 +4735,8 @@ function renderBriefingWoche(data) {
       // v2.25.7: Stornierte Einsätze zählen NICHT in die Tagesumsatz-Summe.
       // Sie werden auf dem Strip durch einen roten Balken markiert, wenn der
       // Tag sonst leer wäre — sonst überlagert sie der aktive Einsatz/Termin.
-      const dayDeps = dayDepsAll.filter(d => !statusEq(d.status, 'Storniert'));
-      const dayDepsCancelled = dayDepsAll.filter(d => statusEq(d.status, 'Storniert'));
+      const dayDeps = dayDepsAll.filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+      const dayDepsCancelled = dayDepsAll.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
       const dayAppts = (data.appointments || []).filter(a => a.datum === iso);
       const sumE = dayDeps.reduce((s, dep) => s + (Number(dep.einzelpreis) || 0), 0);
 
@@ -4997,11 +4903,11 @@ function renderBriefingMonat(data) {
     const days = Math.max(1, Math.round((new Date(bis) - new Date(von)) / 86400000) + 1);
     return s + (Number(d.einzelpreis) || 0) * days;
   }, 0);
-  const depsAbgerechnet = deps.filter(d => statusEq(d.status, 'Abgerechnet'));
-  const depsGeplant = deps.filter(d => statusEq(d.status, 'Geplant') || statusEq(d.status, 'Durchgeführt'));
+  const depsAbgerechnet = deps.filter(d => d.status === DEPLOYMENT_STATUS.ABGERECHNET);
+  const depsGeplant = deps.filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT || d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT);
   // v2.25.7: Storniert fließt NICHT in Abgerechnet/Geplant — eigene Kennzahl,
   // damit der User auf einen Blick sieht, was im Monat ausgefallen ist.
-  const depsStorniert = deps.filter(d => statusEq(d.status, 'Storniert'));
+  const depsStorniert = deps.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
   const umsatzAbg = sumDays(depsAbgerechnet);
   const umsatzGep = sumDays(depsGeplant);
   const umsatzStorno = sumDays(depsStorniert);
@@ -5096,14 +5002,14 @@ function renderBriefingMonat(data) {
             </div>`;
         }).join('');
 
-    const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
-    const stageMap = { Lead: 'is-lead', 'Angebot': 'is-angebot', 'In Arbeit': 'is-arbeit', 'Abschlussphase': 'is-abschluss' };
+    const stages = [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE];
+    const stageMap = { [PROJECT_STATUS.LEAD]: 'is-lead', [PROJECT_STATUS.ANGEBOT]: 'is-angebot', [PROJECT_STATUS.IN_ARBEIT]: 'is-arbeit', [PROJECT_STATUS.ABSCHLUSSPHASE]: 'is-abschluss' };
     const stagesHtml = stages.map(s => {
-      const projs = pipeline.filter(p => statusEq(p.status, s));
+      const projs = pipeline.filter(p => p.status === s);
       const sum = projs.reduce((acc, p) => acc + (Number(p.geschaetzter_umsatz) || 0), 0);
       return `
         <div class="bv2-stage-row ${stageMap[s] || ''}" onclick="navigateTo('projects', { status: '${esc(s)}' })" style="cursor:pointer">
-          <span class="bv2-stage-row-name">${esc(s)}</span>
+          <span class="bv2-stage-row-name">${esc(dispStatus(s))}</span>
           <span>${projs.length} · ${esc(formatPreis(sum))}</span>
         </div>`;
     }).join('');
@@ -5612,7 +5518,7 @@ async function renderArbeitsplatzInbox() {
       .is('deleted_at', null).eq('status', 'geplant').eq('datum', tomorrowISO)
       .order('uhrzeit_von', { ascending: true, nullsFirst: false }),
     db.from('deployments').select('id, titel, datum_von, company:companies(name)')
-      .is('deleted_at', null).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.DURCHGEFUEHRT))
+      .is('deleted_at', null).in('status', [DEPLOYMENT_STATUS.DURCHGEFUEHRT])
       .order('datum_von', { ascending: false, nullsFirst: false }).limit(10),
     // v2.10.3: Einsätze ohne Datum (Status Ungeplant ODER datum_von leer
     // und nicht abgeschlossen) — damit angefangene Kundendeals nicht aus
@@ -5688,7 +5594,7 @@ async function renderArbeitsplatzCare() {
     // Eintrag = kein Bericht.
     db.from('deployments')
       .select('id, deployment_log(id)')
-      .is('deleted_at', null).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET))
+      .is('deleted_at', null).in('status', [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET])
   ]);
 
   const items = [];
@@ -5988,7 +5894,7 @@ async function loadPrepareSuggestions(typ) {
   if (typ === 'einsatz') {
     const { data } = await db.from('deployments')
       .select('id, titel, datum_von, status, company:companies(name)').is('deleted_at', null)
-      .in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.GEPLANT)).gte('datum_von', todayISO)
+      .in('status', [DEPLOYMENT_STATUS.GEPLANT]).gte('datum_von', todayISO)
       .order('datum_von', { ascending: true }).limit(15);
     return (data || []).map(d => ({
       type: 'deployment', id: d.id,
@@ -5999,7 +5905,7 @@ async function loadPrepareSuggestions(typ) {
   if (typ === 'projekt') {
     const { data } = await db.from('projects')
       .select('id, name, status, company:companies(name)').is('deleted_at', null)
-      .in('status', dualStatus('projekt_status', PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE))
+      .in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE])
       .order('created_at', { ascending: false }).limit(15);
     return (data || []).map(p => ({
       type: 'project', id: p.id,
@@ -6125,7 +6031,7 @@ async function stageRenderEntityCard(type, id) {
     ({ data, error } = await db.from('projects')
       .select('id, name, status, geschaetzter_umsatz, startdatum, enddatum, company:companies(name)').eq('id', id).single());
     hero = data ? {
-      title: data.name, status: data.status || 'Lead',
+      title: data.name, status: data.status || PROJECT_STATUS.LEAD,
       metrics: [
         { label: 'Firma', value: data.company?.name || '—' },
         { label: 'Paketpreis', value: formatPreis(data.geschaetzter_umsatz || 0) },
@@ -6138,7 +6044,7 @@ async function stageRenderEntityCard(type, id) {
     ({ data, error } = await db.from('deployments')
       .select('id, titel, status, datum_von, einzelpreis, menge, ort, service:services(name), company:companies(name)').eq('id', id).single());
     hero = data ? {
-      title: data.titel || '—', status: data.status || 'Geplant',
+      title: data.titel || '—', status: data.status || DEPLOYMENT_STATUS.GEPLANT,
       metrics: [
         { label: 'Datum', value: data.datum_von ? formatDateCompact(data.datum_von) : '—' },
         { label: 'Honorar', value: formatPreis((Number(data.einzelpreis) || 0) * (Number(data.menge) || 1)) },
@@ -6151,7 +6057,7 @@ async function stageRenderEntityCard(type, id) {
     ({ data, error } = await db.from('appointments')
       .select('id, titel, status, datum, uhrzeit_von, uhrzeit_bis, typ:lookup_values!appointments_typ_id_fkey(wert), company:companies(name)').eq('id', id).single());
     hero = data ? {
-      title: data.titel || '—', status: data.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant',
+      title: data.titel || '—', status: appointmentStatusLabel(data.status),
       metrics: [
         { label: 'Datum', value: data.datum ? formatDateCompact(data.datum) : '—' },
         { label: 'Typ', value: data.typ?.wert || '—' },
@@ -8739,7 +8645,7 @@ async function createTemplateSubItems(templateId, projectId, projectStartdatum) 
         titel: it.titel,
         datum_von: datum,
         datum_bis: datum,
-        status: 'Geplant',
+        status: DEPLOYMENT_STATUS.GEPLANT,
         project_id: projectId,
         company_id: projectCompanyId,
         ort: projectCompanyOrt,
@@ -12041,15 +11947,14 @@ async function _refreshAppointmentContext() {
 async function loadProjektStatus() {
   if (projektStatusCache.length > 0) return projektStatusCache;
   const { data, error } = await db.from('lookup_values')
-    .select('id, wert, farbe, reihenfolge').eq('kategorie', 'projekt_status').eq('ist_aktiv', true).order('reihenfolge');
+    .select('id, wert, farbe, reihenfolge, system_key').eq('kategorie', 'projekt_status').eq('ist_aktiv', true).order('reihenfolge');
   if (error) { showToast('Fehler beim Laden der Projekt-Status: ' + error.message, true); return []; }
   projektStatusCache = data || [];
   return projektStatusCache;
 }
 
-function projektStatusFarbe(wert) {
-  // Dual-Mode: input kann Legacy-Label ('Lead') oder system_key ('lead') sein.
-  const s = projektStatusCache.find(x => x.wert === wert || x.system_key === wert);
+function projektStatusFarbe(systemKey) {
+  const s = projektStatusCache.find(x => x.system_key === systemKey);
   return s?.farbe || '#6b7280';
 }
 
@@ -12085,7 +11990,7 @@ async function loadProjects() {
   if (statusFilter.options.length <= 2) {
     const existing = statusFilter.value;
     let options = '<option value="">Alle Status</option><option value="_active">Aktive (Lead, Angebot, In Arbeit)</option>';
-    options += projektStatusCache.map(s => `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
+    options += projektStatusCache.map(s => `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`).join('');
     statusFilter.innerHTML = options;
     if (existing) statusFilter.value = existing;
   }
@@ -12129,7 +12034,7 @@ async function filterProjects() {
   let filtered = projectsCache;
 
   if (statusFilterVal === '_active') {
-    filtered = filtered.filter(p => statusIn(p.status, 'Lead', 'Angebot', 'In Arbeit'));
+    filtered = filtered.filter(p => [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT].includes(p.status));
   } else if (statusFilterVal) {
     filtered = filtered.filter(p => p.status === statusFilterVal);
   }
@@ -12223,7 +12128,7 @@ async function openProjectModal(mode, projectId = null) {
 
   const statusSelect = document.getElementById('p-status');
   statusSelect.innerHTML = projektStatusCache.map(s =>
-    `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
+    `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`).join('');
 
   // v1.44.11: p-company ist eine Combobox
   fillCompanyCombobox('p-company', 'p-company-list');
@@ -12254,8 +12159,8 @@ async function openProjectModal(mode, projectId = null) {
   // v2.13.2: Default für neue Projekte ist „Lead" (Pipeline-Start), nicht
   // mehr „Angebot" — Projekte starten faktisch immer als Lead.
   statusSelect.value = (mode === 'new')
-    ? (projektStatusCache.find(s => s.system_key === PROJECT_STATUS.LEAD || s.wert === 'Lead')?.wert || projektStatusCache[0]?.wert || '')
-    : 'Angebot';
+    ? (projektStatusCache.find(s => s.system_key === PROJECT_STATUS.LEAD)?.system_key || projektStatusCache[0]?.system_key || '')
+    : PROJECT_STATUS.ANGEBOT;
   setCompanyComboboxValue('p-company', 'p-company-list', '');
 
   // v2.13.2: „Anlegen & öffnen"-Button nur im New-Mode sichtbar
@@ -12310,7 +12215,7 @@ async function openProjectModal(mode, projectId = null) {
       pNachAufwandEl.checked = !!data.preis_nach_aufwand;
       onProjectPreisModusChange();
     }
-    statusSelect.value = data.status || 'Angebot';
+    statusSelect.value = data.status || PROJECT_STATUS.ANGEBOT;
     if (data.verantwortlicher_id) userSelect.value = data.verantwortlicher_id;
     if (data.company_id) {
       setCompanyComboboxValue('p-company', 'p-company-list', data.company_id);
@@ -12371,7 +12276,7 @@ async function saveProject() {
   if (!name) { showToast('Bitte Name eingeben.', true); return; }
   if (!status) { showToast('Bitte Status auswählen.', true); return; }
   // Status gegen Lookup-Cache validieren (dynamisch statt hardcoded)
-  const validProjectStatuses = projektStatusCache.map(s => s.wert);
+  const validProjectStatuses = projektStatusCache.map(s => s.system_key);
   if (validProjectStatuses.length > 0 && !validProjectStatuses.includes(status)) {
     showToast('Status ungültig. Erlaubte Werte: ' + validProjectStatuses.join(', '), true);
     return;
@@ -12624,7 +12529,7 @@ async function quickAddProjectActivity(typ) {
     const service_id = document.getElementById('pq-einsatz-service').value || null;
     if (!titel) { showToast('Titel fehlt.', true); return; }
     const { error } = await db.from('deployments').insert({
-      titel, datum_von: datum, datum_bis: datum, status: 'Geplant',
+      titel, datum_von: datum, datum_bis: datum, status: DEPLOYMENT_STATUS.GEPLANT,
       project_id: editingProjectId, service_id,
       menge: 1, einzelpreis: 0,
       erstellt_von: userId
@@ -12904,7 +12809,7 @@ async function loadProjectAppointments(projectId) {
     const checkboxTitle = isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren';
 
     return `
-      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(dispStatus(a.status))}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}" data-project-id="${esc(a.project_id || '')}">
+      <tr data-appt-id="${esc(a.id)}" data-appt-status="${esc(a.status || '')}" data-company-id="${esc(a.company_id || '')}" data-contact-id="${esc(a.contact_id || '')}" data-project-id="${esc(a.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="appointment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -12967,13 +12872,12 @@ async function loadCompanyProjects(companyId) {
     return;
   }
 
-  const anzAktiv = all.filter(p => statusIn(p.status, 'Lead', 'Angebot', 'In Arbeit')).length;
-  const anzAbgeschlossen = all.filter(p => statusEq(p.status, 'Abgeschlossen')).length;
+  const anzAktiv = all.filter(p => [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT].includes(p.status)).length;
+  const anzAbgeschlossen = all.filter(p => p.status === PROJECT_STATUS.ABGESCHLOSSEN).length;
   countEl.textContent = `${total} Projekt${total === 1 ? '' : 'e'} · ${anzAktiv} aktiv · ${anzAbgeschlossen} abgeschlossen`;
 
   // Sortierung: aktive zuerst, dann abgeschlossen, dann verloren
-  const sortPrio = { 'In Arbeit': 1, 'Angebot': 2, 'Lead': 3, 'Abgeschlossen': 4, 'Verloren': 5,
-                     'in_arbeit': 1, 'angebot': 2, 'lead': 3, 'abgeschlossen': 4, 'verloren': 5 };
+  const sortPrio = { in_arbeit: 1, angebot: 2, lead: 3, abgeschlossen: 4, verloren: 5 };
   const sorted = [...all].sort((a, b) => {
     const pa = sortPrio[a.status] || 99;
     const pb = sortPrio[b.status] || 99;
@@ -13010,7 +12914,7 @@ async function rebuildProjectDropdownForAppointment(companyId) {
   // Alle aktiven Projekte der Firma (oder interne, wenn keine Firma)
   let query = db.from('projects')
     .select('id, name, status').is('deleted_at', null)
-    .in('status', dualStatus('projekt_status', PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT));
+    .in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT]);
 
   if (companyId) {
     query = query.eq('company_id', companyId);
@@ -13316,13 +13220,12 @@ async function loadContactProjects(contactId) {
     return;
   }
 
-  const anzAktiv = all.filter(p => statusIn(p.status, 'Lead', 'Angebot', 'In Arbeit')).length;
-  const anzAbgeschlossen = all.filter(p => statusEq(p.status, 'Abgeschlossen')).length;
+  const anzAktiv = all.filter(p => [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT].includes(p.status)).length;
+  const anzAbgeschlossen = all.filter(p => p.status === PROJECT_STATUS.ABGESCHLOSSEN).length;
   countEl.textContent = `${total} Projekt${total === 1 ? '' : 'e'} · ${anzAktiv} aktiv · ${anzAbgeschlossen} abgeschlossen`;
 
   // Sortierung wie Firmen-Detail: aktive zuerst
-  const sortPrio = { 'In Arbeit': 1, 'Angebot': 2, 'Lead': 3, 'Abgeschlossen': 4, 'Verloren': 5,
-                     'in_arbeit': 1, 'angebot': 2, 'lead': 3, 'abgeschlossen': 4, 'verloren': 5 };
+  const sortPrio = { in_arbeit: 1, angebot: 2, lead: 3, abgeschlossen: 4, verloren: 5 };
   const sorted = [...all].sort((a, b) => {
     const pa = sortPrio[a.status] || 99;
     const pb = sortPrio[b.status] || 99;
@@ -13355,15 +13258,14 @@ async function loadContactProjects(contactId) {
 async function loadEinsatzStatus() {
   if (einsatzStatusCache.length > 0) return einsatzStatusCache;
   const { data, error } = await db.from('lookup_values')
-    .select('id, wert, farbe, reihenfolge').eq('kategorie', 'einsatz_status').eq('ist_aktiv', true).order('reihenfolge');
+    .select('id, wert, farbe, reihenfolge, system_key').eq('kategorie', 'einsatz_status').eq('ist_aktiv', true).order('reihenfolge');
   if (error) { return []; }
   einsatzStatusCache = data || [];
   return einsatzStatusCache;
 }
 
-function einsatzStatusFarbe(wert) {
-  // Dual-Mode: input kann Legacy-Label ('Geplant') oder system_key ('geplant') sein.
-  const s = einsatzStatusCache.find(x => x.wert === wert || x.system_key === wert);
+function einsatzStatusFarbe(systemKey) {
+  const s = einsatzStatusCache.find(x => x.system_key === systemKey);
   return s?.farbe || '#6b7280';
 }
 
@@ -13569,7 +13471,7 @@ function renderDeploymentsTable(deployments) {
   // v2.6.3: Tab-Count zeigt Total, nicht shown
   // Hinweis zum Umsatz aktiver Einsätze
   const umsatzAktiv = deployments
-    .filter(d => statusIn(d.status, 'Durchgeführt', 'Abgerechnet') && !d.project_id)
+    .filter(d => [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status) && !d.project_id)
     .reduce((sum, d) => sum + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
   if (umsatzAktiv > 0) {
     countEl.textContent += ` · ${formatPreis(umsatzAktiv)} direkt abrechenbar`;
@@ -13738,9 +13640,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
   // Status-Select dynamisch aus Lookup-Cache
   const statusSelect = document.getElementById('d-status');
   statusSelect.innerHTML = einsatzStatusCache.map(s =>
-    `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`
+    `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`
   ).join('');
-  statusSelect.value = einsatzStatusCache.find(s => s.system_key === DEPLOYMENT_STATUS.GEPLANT || s.wert === 'Geplant')?.wert || einsatzStatusCache[0]?.wert || '';
+  statusSelect.value = einsatzStatusCache.find(s => s.system_key === DEPLOYMENT_STATUS.GEPLANT)?.system_key || einsatzStatusCache[0]?.system_key || '';
 
   // Felder zurücksetzen
   document.getElementById('d-titel').value = '';
@@ -13836,7 +13738,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     document.getElementById('d-datum-bis').value = data.datum_bis || '';
     document.getElementById('d-uhrzeit-von').value = data.uhrzeit_von ? data.uhrzeit_von.substring(0, 5) : '';
     document.getElementById('d-uhrzeit-bis').value = data.uhrzeit_bis ? data.uhrzeit_bis.substring(0, 5) : '';
-    document.getElementById('d-status').value = data.status || 'Geplant';
+    document.getElementById('d-status').value = data.status || DEPLOYMENT_STATUS.GEPLANT;
     document.getElementById('d-ort').value = data.ort || '';
     document.getElementById('d-menge').value = data.menge ?? 1;
     _deploymentMengeManuallyEdited = true;  // v1.33: existierende Menge nicht durch Auto-Berechnung ersetzen
@@ -14194,7 +14096,7 @@ async function rebuildProjectDropdownForDeployment(companyId) {
   }
   const { data, error } = await db.from('projects')
     .select('id, name, status').is('deleted_at', null).eq('company_id', companyId)
-    .in('status', dualStatus('projekt_status', PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABGESCHLOSSEN))
+    .in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABGESCHLOSSEN])
     .order('name');
   if (error) { select.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
   const projects = data || [];
@@ -14296,8 +14198,8 @@ async function saveDeployment() {
     showToast('Datum bis muss nach Datum von liegen.', true); return;
   }
 
-  if (!statusIn(status, 'Ungeplant', 'Geplant', 'Durchgeführt', 'Abgerechnet', 'Storniert') &&
-      !einsatzStatusCache.some(s => s.wert === status)) {
+  if (!Object.values(DEPLOYMENT_STATUS).includes(status) &&
+      !einsatzStatusCache.some(s => s.system_key === status)) {
     showToast('Status ungültig. Bitte aus Liste wählen.', true); return;
   }
   if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
@@ -14342,7 +14244,7 @@ async function saveDeployment() {
     // Bestandsschutz, falls der User einen abgeschlossenen Einsatz nachträglich
     // ohne Datum bearbeiten muss.)
     let effStatus = status;
-    if (!effDatumVon && statusEq(effStatus, 'Geplant')) effStatus = 'Ungeplant';
+    if (!effDatumVon && effStatus === DEPLOYMENT_STATUS.GEPLANT) effStatus = DEPLOYMENT_STATUS.UNGEPLANT;
 
     const payload = {
       titel: finalTitel,
@@ -14494,7 +14396,7 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   const typ_id = typVorOrt?.id || null;
 
   // Terminstatus: Geplant → 'geplant', sonst 'durchgefuehrt'
-  const terminStatus = statusEq(deployment.status, 'Geplant') ? 'geplant' : 'durchgefuehrt';
+  const terminStatus = deployment.status === DEPLOYMENT_STATUS.GEPLANT ? 'geplant' : 'durchgefuehrt';
 
   const payload = {
     titel: deployment.titel,
@@ -14835,7 +14737,7 @@ async function loadCompanyDeployments(companyId) {
   }
 
   const umsatz = all
-    .filter(d => !d.project_id && statusIn(d.status, 'Durchgeführt', 'Abgerechnet'))
+    .filter(d => !d.project_id && [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status))
     .reduce((sum, d) => sum + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
 
   countEl.textContent = `${total} Einsatz${total === 1 ? '' : 'e'}`
@@ -14938,9 +14840,9 @@ async function loadProjectDeployments(projectId) {
   // v2.25.11: Stornierte Einsätze fließen NICHT in Aufwand/Leistungsumsatz.
   // Sie bleiben in der Tabelle sichtbar (durchgestrichen als Storniert-Badge),
   // werden aber für jede Summe konsequent ausgenommen.
-  const billable = all.filter(d => !statusEq(d.status, 'Storniert'));
+  const billable = all.filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
   const stornoCount = all.length - billable.length;
-  const stornoSum   = all.filter(d => statusEq(d.status, 'Storniert'))
+  const stornoSum   = all.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT)
     .reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
 
   // Leistungsumsatz (Summe aller nicht-stornierten Einsatz-Werte) im Header
@@ -14958,10 +14860,10 @@ async function loadProjectDeployments(projectId) {
     return;
   }
 
-  const anzGeplant      = all.filter(d => statusEq(d.status, 'Geplant')).length;
-  const anzDurchgefuehrt = all.filter(d => statusEq(d.status, 'Durchgeführt')).length;
-  const anzAbgerechnet  = all.filter(d => statusEq(d.status, 'Abgerechnet')).length;
-  const anzStorniert    = all.filter(d => statusEq(d.status, 'Storniert')).length;
+  const anzGeplant      = all.filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT).length;
+  const anzDurchgefuehrt = all.filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT).length;
+  const anzAbgerechnet  = all.filter(d => d.status === DEPLOYMENT_STATUS.ABGERECHNET).length;
+  const anzStorniert    = all.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT).length;
   const anzUngeplant    = all.filter(d => !d.datum_von).length;
   const summeAufwand    = leistungsUmsatz;
 
@@ -14980,13 +14882,13 @@ async function loadProjectDeployments(projectId) {
       ? esc(d.service.name)
       : '<span style="color:var(--muted);font-style:italic">—</span>';
     const gesamt = calcDeploymentGesamt(d.menge, d.einzelpreis);
-    const isDone = statusEq(d.status, 'Durchgeführt') || statusEq(d.status, 'Abgerechnet');
-    const isLocked = statusEq(d.status, 'Abgerechnet') || statusEq(d.status, 'Storniert');
+    const isDone = d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET;
+    const isLocked = d.status === DEPLOYMENT_STATUS.ABGERECHNET || d.status === DEPLOYMENT_STATUS.STORNIERT;
     const checkboxTitle = isLocked
       ? `Status „${d.status}" kann nicht per Checkbox geändert werden`
       : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
     return `
-      <tr class="${isMember ? 'bundle-member-row' : ''}" data-dep-id="${esc(d.id)}" data-dep-status="${esc(dispStatus(d.status))}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
+      <tr class="${isMember ? 'bundle-member-row' : ''}" data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status || '')}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
         <td style="text-align:center">
           <input type="checkbox" class="deployment-done-check"
                  ${isDone ? 'checked' : ''}
@@ -15018,8 +14920,8 @@ async function loadProjectDeployments(projectId) {
     // v2.25.11: Bündel-Header zeigt nur die nicht-stornierten Werte und Tage.
     // Stornierte Mitglieder werden separat ausgewiesen, damit der User weiß,
     // dass das Bündel ursprünglich mehr Tage hatte.
-    const billableMembers = members.filter(d => !statusEq(d.status, 'Storniert'));
-    const stornoMembers   = members.filter(d => statusEq(d.status, 'Storniert'));
+    const billableMembers = members.filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+    const stornoMembers   = members.filter(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
     // v2.28.2: Bündel-Summe mit Rabatt-Berücksichtigung
     const bundleSum = billableMembers.reduce((s, d) => s + calcDeploymentNetto(d), 0);
     const bundleStornoSum = stornoMembers.reduce((s, d) => s + calcDeploymentGesamt(d.menge, d.einzelpreis), 0);
@@ -15191,7 +15093,7 @@ async function loadProjectWirtschaftlichkeitSummary(projectId) {
   // v2.25.11: Stornierte Einsätze sind nie ein Aufwand — sie entstehen nie.
   // v2.28.2: Rabatt wirkt mit (echter Rabatt → Marge sinkt).
   const einsatzSumme = (depRes.data || [])
-    .filter(d => !statusEq(d.status, 'Storniert'))
+    .filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT)
     .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodRes.data || [];
   const produktUmsatzExkl = prods.filter(p => !p.im_paket)
@@ -15539,7 +15441,7 @@ async function openDeploymentBundleModal(mode, bundleId = null, opts = {}) {
       uhrzeit_von: d.uhrzeit_von ? d.uhrzeit_von.substring(0,5) : '',
       uhrzeit_bis: d.uhrzeit_bis ? d.uhrzeit_bis.substring(0,5) : '',
       menge: d.menge ?? 1,
-      status: d.status || 'Geplant'
+      status: d.status || DEPLOYMENT_STATUS.GEPLANT
     }));
   } else if (Array.isArray(opts.fromDeploymentIds) && opts.fromDeploymentIds.length > 0) {
     // Konvertier-Flow: bestehende Einsätze in ein neues Bündel ziehen.
@@ -15568,7 +15470,7 @@ async function openDeploymentBundleModal(mode, bundleId = null, opts = {}) {
         uhrzeit_von: d.uhrzeit_von ? d.uhrzeit_von.substring(0,5) : '',
         uhrzeit_bis: d.uhrzeit_bis ? d.uhrzeit_bis.substring(0,5) : '',
         menge: d.menge ?? 1,
-        status: d.status || 'Geplant'
+        status: d.status || DEPLOYMENT_STATUS.GEPLANT
       }));
     }
   }
@@ -15634,7 +15536,7 @@ function addBundleDayRow() {
     uhrzeit_von: last?.uhrzeit_von || '',
     uhrzeit_bis: last?.uhrzeit_bis || '',
     menge: last?.menge || 1,
-    status: 'Geplant'
+    status: DEPLOYMENT_STATUS.GEPLANT
   });
   renderBundleDayRows();
   updateBundleDaysSummary();
@@ -15664,14 +15566,14 @@ function renderBundleDayRows() {
     return;
   }
   const statusOptions = einsatzStatusCache
-    .map(s => `<option value="${esc(s.wert)}">${esc(s.wert)}</option>`).join('');
+    .map(s => `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`).join('');
   tbody.innerHTML = _bundleDayRows.map((r, i) => `
     <tr data-bundle-day-idx="${i}">
       <td><input type="date" value="${esc(r.datum_von || '')}" onchange="updateBundleDayField(${i},'datum_von',this.value)"></td>
       <td><input type="time" value="${esc(r.uhrzeit_von || '')}" onchange="updateBundleDayField(${i},'uhrzeit_von',this.value)"></td>
       <td><input type="time" value="${esc(r.uhrzeit_bis || '')}" onchange="updateBundleDayField(${i},'uhrzeit_bis',this.value)"></td>
       <td><input type="number" min="0" step="0.5" value="${esc(String(r.menge ?? 1))}" onchange="updateBundleDayField(${i},'menge',this.value)"></td>
-      <td><select onchange="updateBundleDayField(${i},'status',this.value)">${statusOptions.replace(`value="${esc(dispStatus(r.status))}"`, `value="${esc(dispStatus(r.status))}" selected`)}</select></td>
+      <td><select onchange="updateBundleDayField(${i},'status',this.value)">${statusOptions.replace(`value="${esc(r.status || '')}"`, `value="${esc(r.status || '')}" selected`)}</select></td>
       <td style="text-align:center"><button type="button" class="b-day-remove" title="Tag entfernen" onclick="removeBundleDayRow(${i})">×</button></td>
     </tr>`).join('');
 }
@@ -15794,7 +15696,7 @@ async function saveDeploymentBundle() {
         uhrzeit_von: r.uhrzeit_von || null,
         uhrzeit_bis: r.uhrzeit_bis || null,
         menge: Number(r.menge) || 1,
-        status: r.status || 'Geplant'
+        status: r.status || DEPLOYMENT_STATUS.GEPLANT
       };
       if (r.id) {
         // Bestehender Einsatz — bundle_overrides respektieren.
@@ -15983,8 +15885,8 @@ function refreshProjectAppointmentsCountLabel() {
   if (total === 0) return;
 
   const arr = Array.from(rows);
-  const anzGeplant       = arr.filter(r => statusEq(r.getAttribute('data-appt-status'), 'geplant')).length;
-  const anzDurchgefuehrt = arr.filter(r => statusEq(r.getAttribute('data-appt-status'), 'durchgefuehrt')).length;
+  const anzGeplant       = arr.filter(r => r.getAttribute('data-appt-status') === APPOINTMENT_STATUS.GEPLANT).length;
+  const anzDurchgefuehrt = arr.filter(r => r.getAttribute('data-appt-status') === APPOINTMENT_STATUS.DURCHGEFUEHRT).length;
   countEl.textContent = `${total} Termin${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgeführt`;
 }
 
@@ -15997,7 +15899,7 @@ async function checkAndUpdateProjectStatusSmart(projectId) {
     .select('id, status').is('deleted_at', null).eq('id', projectId).single();
   if (pErr || !project) return;
 
-  const projektStatusKey = normalizeStatus('projekt_status', project.status);
+  const projektStatusKey = project.status;
   const aktiveStatus = [PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE, PROJECT_STATUS.ABGESCHLOSSEN];
   if (!aktiveStatus.includes(projektStatusKey)) return;
 
@@ -16011,7 +15913,7 @@ async function checkAndUpdateProjectStatusSmart(projectId) {
 
   const countsDone = (arr, doneSystemKeys, kategorie) => {
     if (arr.length === 0) return { hasAny: false, allDone: true };
-    const done = arr.filter(x => doneSystemKeys.includes(normalizeStatus(kategorie, x.status))).length;
+    const done = arr.filter(x => doneSystemKeys.includes(x.status)).length;
     return { hasAny: true, allDone: done === arr.length };
   };
 
@@ -16064,7 +15966,7 @@ function updateProjectHeaderStatusBadge(newStatus) {
  * Togglet zwischen 'Geplant' und 'Durchgeführt' per direktes DOM-Update (kein Page-Reload).
  */
 async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
-  const newStatus = isChecked ? 'Durchgeführt' : 'Geplant';
+  const newStatus = isChecked ? DEPLOYMENT_STATUS.DURCHGEFUEHRT : DEPLOYMENT_STATUS.GEPLANT;
 
   if (checkboxEl) checkboxEl.disabled = true;
 
@@ -16113,9 +16015,9 @@ function refreshProjectDeploymentsCountLabel() {
   if (total === 0) return;
 
   const arr = Array.from(rows);
-  const anzGeplant       = arr.filter(r => statusEq(r.getAttribute('data-dep-status'), 'Geplant')).length;
-  const anzDurchgefuehrt = arr.filter(r => statusEq(r.getAttribute('data-dep-status'), 'Durchgeführt')).length;
-  const anzAbgerechnet   = arr.filter(r => statusEq(r.getAttribute('data-dep-status'), 'Abgerechnet')).length;
+  const anzGeplant       = arr.filter(r => r.getAttribute('data-dep-status') === DEPLOYMENT_STATUS.GEPLANT).length;
+  const anzDurchgefuehrt = arr.filter(r => r.getAttribute('data-dep-status') === DEPLOYMENT_STATUS.DURCHGEFUEHRT).length;
+  const anzAbgerechnet   = arr.filter(r => r.getAttribute('data-dep-status') === DEPLOYMENT_STATUS.ABGERECHNET).length;
   // "ohne Datum" bleibt vom Initial-Load korrekt - Status-Toggle ändert das Datum nicht
 
   let text = `${total} Einsatz${total === 1 ? '' : 'e'} · ${anzGeplant} geplant · ${anzDurchgefuehrt} durchgef. · ${anzAbgerechnet} abgerechnet`;
@@ -16142,7 +16044,7 @@ async function checkAndUpdateProjectStatus(projectId) {
     .select('id, status, name').is('deleted_at', null).eq('id', projectId).single();
   if (pErr || !project) return;
 
-  const projektStatusKey = normalizeStatus('projekt_status', project.status);
+  const projektStatusKey = project.status;
   const aktiveStatus = [PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE, PROJECT_STATUS.ABGESCHLOSSEN];
   if (!aktiveStatus.includes(projektStatusKey)) return; // Lead/Angebot/Verloren: keine Automatik
 
@@ -16158,7 +16060,7 @@ async function checkAndUpdateProjectStatus(projectId) {
 
   const countsDone = (arr, doneSystemKeys, kategorie) => {
     if (arr.length === 0) return { hasAny: false, allDone: true }; // leer = neutral
-    const done = arr.filter(x => doneSystemKeys.includes(normalizeStatus(kategorie, x.status))).length;
+    const done = arr.filter(x => doneSystemKeys.includes(x.status)).length;
     return { hasAny: true, allDone: done === arr.length };
   };
 
@@ -16851,18 +16753,18 @@ async function loadCompanyDashboard(companyId, manualAbc) {
     // Einsätze (direkt) im aktuellen Kalenderjahr, abgerechnet (datum_von in YYYY oder created_at falls kein datum)
     db.from('deployments')
       .select('menge, einzelpreis, status, project_id, datum_von, created_at').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.ABGERECHNET)).is('project_id', null),
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.ABGERECHNET]).is('project_id', null),
     // Alle abgerechneten Einsätze (für Historie seit Erstkontakt)
     db.from('deployments')
       .select('menge, einzelpreis, datum_von, created_at').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.ABGERECHNET)).is('project_id', null),
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.ABGERECHNET]).is('project_id', null),
     // Projekte abgeschlossen — wir brauchen enddatum (sonst created_at) für Kalenderjahr-Zuordnung
     db.from('projects')
       .select('geschaetzter_umsatz, enddatum, created_at').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('projekt_status', PROJECT_STATUS.ABGESCHLOSSEN)),
+      .eq('company_id', companyId).in('status', [PROJECT_STATUS.ABGESCHLOSSEN]),
     db.from('projects')
       .select('geschaetzter_umsatz').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('projekt_status', PROJECT_STATUS.ABGESCHLOSSEN)),
+      .eq('company_id', companyId).in('status', [PROJECT_STATUS.ABGESCHLOSSEN]),
     // Offene Aufgaben
     db.from('tasks').select('id, faelligkeit').is('deleted_at', null)
       .eq('company_id', companyId).neq('status', 'erledigt'),
@@ -16874,7 +16776,7 @@ async function loadCompanyDashboard(companyId, manualAbc) {
     // Letzter durchgeführter/abgerechneter Einsatz
     db.from('deployments')
       .select('id, titel, datum_von').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET))
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET])
       .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
     // Bevorstehender geplanter Termin
     db.from('appointments')
@@ -16884,12 +16786,12 @@ async function loadCompanyDashboard(companyId, manualAbc) {
     // Bevorstehender geplanter Einsatz
     db.from('deployments')
       .select('id, titel, datum_von').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.GEPLANT))
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.GEPLANT])
       .gte('datum_von', todayISO).order('datum_von', { ascending: true }).limit(2),
     // Opportunities (Projekte mit Status Lead/Angebot)
     db.from('projects')
       .select('id, name, status, geschaetzter_umsatz, enddatum').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('projekt_status', PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT))
+      .eq('company_id', companyId).in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT])
       .order('enddatum', { ascending: true, nullsFirst: false })
   ]);
   if (!isStillOnDetail('company', companyId)) return;  // v2.0.6: race-guard
@@ -17028,23 +16930,23 @@ async function loadContactDashboard(contactId, companyId, manualAbc, companyName
   const companyQueries = hasCompany ? [
     db.from('deployments')
       .select('menge, einzelpreis, datum_von, created_at').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.ABGERECHNET)).is('project_id', null),
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.ABGERECHNET]).is('project_id', null),
     db.from('deployments')
       .select('menge, einzelpreis, datum_von, created_at').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.ABGERECHNET)).is('project_id', null),
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.ABGERECHNET]).is('project_id', null),
     db.from('projects')
       .select('geschaetzter_umsatz, enddatum, created_at').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('projekt_status', PROJECT_STATUS.ABGESCHLOSSEN)),
+      .eq('company_id', companyId).in('status', [PROJECT_STATUS.ABGESCHLOSSEN]),
     db.from('projects')
       .select('geschaetzter_umsatz').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('projekt_status', PROJECT_STATUS.ABGESCHLOSSEN)),
+      .eq('company_id', companyId).in('status', [PROJECT_STATUS.ABGESCHLOSSEN]),
     db.from('deployments')
       .select('id, titel, datum_von').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET))
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET])
       .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
     db.from('deployments')
       .select('id, titel, datum_von').is('deleted_at', null)
-      .eq('company_id', companyId).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.GEPLANT))
+      .eq('company_id', companyId).in('status', [DEPLOYMENT_STATUS.GEPLANT])
       .gte('datum_von', todayISO).order('datum_von', { ascending: true }).limit(2)
   ] : [null, null, null, null, null, null];
 
@@ -17069,7 +16971,7 @@ async function loadContactDashboard(contactId, companyId, manualAbc, companyName
     // Opportunities: Projekte wo DIESER Kontakt Hauptkontakt ist und Status Lead/Angebot
     db.from('projects')
       .select('id, name, status, geschaetzter_umsatz, enddatum').is('deleted_at', null)
-      .eq('hauptkontakt_id', contactId).in('status', dualStatus('projekt_status', PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT))
+      .eq('hauptkontakt_id', contactId).in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT])
       .order('enddatum', { ascending: true, nullsFirst: false }),
     ...companyQueries
   ]);
@@ -17276,7 +17178,7 @@ async function loadProjectDashboard(p) {
       if (deadlineSublineEl) deadlineSublineEl.textContent = '';
     } else {
       const days = Math.round((new Date(p.enddatum) - new Date(todayISO)) / 86400000);
-      const isClosed = statusEq(p.status, 'Abgeschlossen');
+      const isClosed = p.status === PROJECT_STATUS.ABGESCHLOSSEN;
       if (isClosed) {
         deadlineEl.innerHTML = '<span style="color:var(--success);font-weight:600">Abgeschlossen</span>';
       } else if (days < 0) {
@@ -17313,7 +17215,7 @@ async function loadProjectDashboard(p) {
     // Letzter durchgeführter/abgerechneter Einsatz
     db.from('deployments')
       .select('id, titel, datum_von').is('deleted_at', null)
-      .eq('project_id', p.id).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET))
+      .eq('project_id', p.id).in('status', [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET])
       .not('datum_von', 'is', null).order('datum_von', { ascending: false }).limit(1),
     // Bevorstehender geplanter Termin
     db.from('appointments')
@@ -17323,7 +17225,7 @@ async function loadProjectDashboard(p) {
     // Bevorstehender geplanter Einsatz
     db.from('deployments')
       .select('id, titel, datum_von').is('deleted_at', null)
-      .eq('project_id', p.id).in('status', dualStatus('einsatz_status', DEPLOYMENT_STATUS.GEPLANT))
+      .eq('project_id', p.id).in('status', [DEPLOYMENT_STATUS.GEPLANT])
       .gte('datum_von', todayISO).order('datum_von', { ascending: true }).limit(2)
   ]);
   if (!isStillOnDetail('project', p.id)) return;  // v2.0.6: race-guard
@@ -17332,7 +17234,7 @@ async function loadProjectDashboard(p) {
   // v2.25.11/v2.28.2/v2.28.9: Stornierte raus, Rabatt rein, „Preis nach
   // Aufwand"-Modus berücksichtigen.
   const einsatzSumme = (depsResult.data || [])
-    .filter(d => !statusEq(d.status, 'Storniert'))
+    .filter(d => !d.status === DEPLOYMENT_STATUS.STORNIERT)
     .reduce((s, d) => s + calcDeploymentNetto(d), 0);
   const prods = prodsResult.data || [];
   const produktUmsatzExkl = prods.filter(pp => !pp.im_paket)
@@ -18274,9 +18176,9 @@ async function renderDeploymentExpandedRow(deploymentId, hint) {
     : '';
 
   // Schnellaktionen
-  const isGeplant      = statusEq(d.status, 'Geplant');
-  const isDurchgefuehrt = statusEq(d.status, 'Durchgeführt');
-  const isAbgerechnet  = statusEq(d.status, 'Abgerechnet');
+  const isGeplant      = d.status === DEPLOYMENT_STATUS.GEPLANT;
+  const isDurchgefuehrt = d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT;
+  const isAbgerechnet  = d.status === DEPLOYMENT_STATUS.ABGERECHNET;
 
   const actionsHtml = `
     <div class="erp-actions">
@@ -18317,7 +18219,7 @@ async function quickDeploymentMarkDone(deploymentId) {
   const { data: dep, error: selErr } = await db.from('deployments')
     .select('id, project_id, status').eq('id', deploymentId).single();
   if (selErr || !dep) { showToast('Einsatz nicht gefunden.', true); return; }
-  if (statusEq(dep.status, 'Durchgeführt') || statusEq(dep.status, 'Abgerechnet')) {
+  if (dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || dep.status === DEPLOYMENT_STATUS.ABGERECHNET) {
     showToast(`Einsatz ist bereits „${dep.status}".`, true); return;
   }
   const { error } = await db.from('deployments')
@@ -18334,7 +18236,7 @@ async function quickDeploymentMarkBilled(deploymentId) {
   const { data: dep, error: selErr } = await db.from('deployments')
     .select('id, project_id, status').eq('id', deploymentId).single();
   if (selErr || !dep) { showToast('Einsatz nicht gefunden.', true); return; }
-  if (!statusEq(dep.status, 'Durchgeführt')) {
+  if (!dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
     showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
   }
   const { error } = await db.from('deployments')
@@ -18847,8 +18749,8 @@ async function renderCalendarBar() {
     // Sobald an demselben Tag ein aktiver Einsatz dazukommt, gewinnt der und
     // der Tag wird wieder grün — Storno-Einsätze allein erzeugen keine
     // „Geld verdient"-Optik mehr.
-    const hasActiveEinsatz = !!ev?.einsatze?.some(d => !statusEq(d.status, 'Storniert'));
-    const hasStornoEinsatz = !hasActiveEinsatz && !!ev?.einsatze?.some(d => statusEq(d.status, 'Storniert'));
+    const hasActiveEinsatz = !!ev?.einsatze?.some(d => !d.status === DEPLOYMENT_STATUS.STORNIERT);
+    const hasStornoEinsatz = !hasActiveEinsatz && !!ev?.einsatze?.some(d => d.status === DEPLOYMENT_STATUS.STORNIERT);
     const isHoliday  = _calendarState.holidays.has(iso);
     const isWeekend  = dow === 0 || dow === 6;
     // v2.11.5: Konflikt-Warnung jetzt auch bei Wochenend-Einsatz, nicht nur
@@ -19518,7 +19420,7 @@ async function loadBriefingData(userId, scope) {
   const depsThisWeekDone = extractDeps(weekDoneDeps)
     .filter(d => d.datum_von)
     .filter(d => d.datum_von >= toISODate(new Date(Date.now() - 7 * 86400000)) && d.datum_von <= todayISO)
-    .filter(d => statusEq(d.status, 'Durchgeführt') || statusEq(d.status, 'Abgerechnet'));
+    .filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET);
 
   // v1.44: Für Heute-Hero — alle Techniker der heutigen Einsätze laden, damit
   // im Hero-Block das volle Team angezeigt werden kann (nicht nur „ich").
@@ -19604,7 +19506,7 @@ async function loadBriefingData(userId, scope) {
       db.from('projects')
         .select('id, name, status, geschaetzter_umsatz, company:companies(id, name)')
         .is('deleted_at', null)
-        .in('status', dualStatus('projekt_status', PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE)),
+        .in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE]),
       // v1.46.0: titel/ort/service ergänzt; v2.11.7: __all__-Branch via depsQuery.
       depsQuery('id, titel, datum_von, datum_bis, status, deleted_at, menge, einzelpreis, ort, company:companies(id, name), service:services(name), deployment_technicians(user_id)'),
       // Vorige 3 Monate für Ziel-Berechnung; v2.11.7: __all__-Branch.
@@ -19653,7 +19555,7 @@ async function loadBriefingData(userId, scope) {
       sparkMap[toISODate(d)] = 0;
     }
     allDepsBroad.forEach(d => {
-      if (!statusIn(d.status, 'Durchgeführt', 'Abgerechnet')) return;
+      if (![DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status)) return;
       // Tageswert pro abgedecktem Tag im Sparkline-Fenster
       const von = d.datum_von, bis = d.datum_bis || d.datum_von;
       const einzel = Number(d.einzelpreis) || 0;
@@ -19679,9 +19581,9 @@ async function loadBriefingData(userId, scope) {
       const einzel = Number(d.einzelpreis) || 0;
       Object.keys(dailyMap).forEach(iso => {
         if (iso < von || iso > bis) return;
-        if (statusEq(d.status, 'Durchgeführt') || statusEq(d.status, 'Abgerechnet')) {
+        if (d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET) {
           dailyMap[iso].realized += einzel;
-        } else if (statusEq(d.status, 'Geplant')) {
+        } else if (d.status === DEPLOYMENT_STATUS.GEPLANT) {
           dailyMap[iso].forecast += einzel;
         }
       });
@@ -19692,7 +19594,7 @@ async function loadBriefingData(userId, scope) {
     const customerMap = new Map();
     allDepsBroad.forEach(d => {
       if (!d.company?.id) return;
-      if (!statusIn(d.status, 'Durchgeführt', 'Abgerechnet')) return;
+      if (![DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status)) return;
       const von = d.datum_von, bis = d.datum_bis || d.datum_von;
       if (von > mEnd || bis < mStart) return;
       // Tageswert × abgedeckter Anteil im Monat
@@ -19713,7 +19615,7 @@ async function loadBriefingData(userId, scope) {
     const customerDayMap = new Map();
     allDepsBroad.forEach(d => {
       if (!d.company?.id) return;
-      if (!statusIn(d.status, 'Durchgeführt', 'Abgerechnet')) return;
+      if (![DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status)) return;
       const von = d.datum_von, bis = d.datum_bis || d.datum_von;
       if (von > monthEndISO || bis < monthStartISO) return;
       const overlapStart = von > monthStartISO ? von : monthStartISO;
@@ -19742,10 +19644,10 @@ async function loadBriefingData(userId, scope) {
 
     // v1.46.0: Pflegerückstand & Restmonat (Technik) — aus dem breiten Einsatz-Pool
     overdueGeplant = allDepsBroad
-      .filter(d => statusEq(d.status, 'Geplant') && (d.datum_bis || d.datum_von) < todayISO)
+      .filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT && (d.datum_bis || d.datum_von) < todayISO)
       .sort((a, b) => (b.datum_bis || b.datum_von).localeCompare(a.datum_bis || a.datum_von));
     restmonatGeplant = allDepsBroad
-      .filter(d => statusEq(d.status, 'Geplant')
+      .filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT
                 && (d.datum_bis || d.datum_von) >= todayISO
                 && d.datum_von <= monthEndISO)
       .sort((a, b) => (a.datum_von || '').localeCompare(b.datum_von || ''));
@@ -19793,7 +19695,7 @@ async function loadBriefingData(userId, scope) {
     const prev3End_ISO   = toISODate(prev3End);
     const monthlySum = {};
     prev3Deps.forEach(d => {
-      if (!statusIn(d.status, 'Durchgeführt', 'Abgerechnet')) return;
+      if (![DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(d.status)) return;
       const von = d.datum_von;
       if (von < prev3Start_ISO || von > prev3End_ISO) return;
       const ym = von.substring(0, 7);
@@ -20005,7 +19907,7 @@ function restmonatDateLabel(von, bis) {
  *  Kein Umsatz-Verlauf, keine Pipeline. */
 function renderMonthDashTechnik(data) {
   const todayISO = toISODate(new Date());
-  const depsDurchgef = data.deployments.filter(d => statusEq(d.status, 'Durchgeführt'));
+  const depsDurchgef = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT);
 
   // Auslastung (v2.11.7: gesamt = Erbracht + Geplant, Stacked-Bar)
   const arbeitsTage = computeMonthAuslastung(data, todayISO);
@@ -20030,13 +19932,13 @@ function renderMonthDashTechnik(data) {
   const kpiRow = `
     <div class="month-kpi-row">
       ${monthKpiTile('Auslastung', `${auslastungPct}%`, auslastungSub, 'done',
-        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })", null, auslastungBar)}
+        "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.DURCHGEFUEHRT })", null, auslastungBar)}
       ${monthKpiTile('Durchgeführt', depsDurchgef.length, 'Einsätze im Monat', 'done',
-        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })")}
+        "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.DURCHGEFUEHRT })")}
       ${monthKpiTile('Pflegerückstand', overdue.length,
         overdue.length > 0 ? 'Geplant, Datum vorbei' : 'alle Status aktuell',
         overdue.length > 0 ? 'overdue' : 'done',
-        "navigateTo('deployments',{ status:'Geplant' })")}
+        "navigateTo('deployments',{ status:DEPLOYMENT_STATUS.GEPLANT })")}
       ${monthKpiTile('Aufgaben offen', tasksOpen, tasksOverdue > 0 ? `${tasksOverdue} überfällig` : 'gesamt', tasksOverdue > 0 ? 'overdue' : 'plan',
         "navigateTo('tasks',{ scope:'mine_open' })")}
     </div>`;
@@ -20110,10 +20012,10 @@ function renderMonthDashTechnik(data) {
 
 /** v1.46.0: Pipeline-Forecast-Gewichtung (Wahrscheinlichkeit pro Stage). */
 const PIPELINE_FORECAST_WEIGHT = {
-  'Lead': 0.10,        'lead': 0.10,
-  'Angebot': 0.30,     'angebot': 0.30,
-  'In Arbeit': 0.70,   'in_arbeit': 0.70,
-  'Abschlussphase': 0.90, 'abschlussphase': 0.90
+  [PROJECT_STATUS.LEAD]:           0.10,
+  [PROJECT_STATUS.ANGEBOT]:        0.30,
+  [PROJECT_STATUS.IN_ARBEIT]:      0.70,
+  [PROJECT_STATUS.ABSCHLUSSPHASE]: 0.90
 };
 
 /** v1.46.0: Vertrieb-Sicht — Forecast, Akquise, Mitgliedschaften.
@@ -20121,9 +20023,9 @@ const PIPELINE_FORECAST_WEIGHT = {
  *  Bottom-Grid: Top-Kunden | Pipeline | Mitgliedschaften. */
 function renderMonthDashVertrieb(data) {
   const todayISO = toISODate(new Date());
-  const depsGeplant     = data.deployments.filter(d => statusEq(d.status, 'Geplant'));
-  const depsDurchgef    = data.deployments.filter(d => statusEq(d.status, 'Durchgeführt'));
-  const depsAbgerechnet = data.deployments.filter(d => statusEq(d.status, 'Abgerechnet'));
+  const depsGeplant     = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT);
+  const depsDurchgef    = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT);
+  const depsAbgerechnet = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.ABGERECHNET);
 
   const sumDays = (arr) => arr.reduce((s, d) => {
     const von = d.datum_von, bis = d.datum_bis || d.datum_von;
@@ -20152,7 +20054,7 @@ function renderMonthDashVertrieb(data) {
   const kpiRow = `
     <div class="month-kpi-row">
       ${monthKpiTile('Abgerechnet', formatPreis(umsatzAbgerechnet), `${depsAbgerechnet.length} Einsätze`, 'billed',
-        "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })", sparkData)}
+        "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.ABGERECHNET })", sparkData)}
       ${monthKpiTile('Forecast', formatPreis(forecast),
         `inkl. ${formatPreis(pipelineWeighted)} Pipeline (gew.)`, 'plan',
         "navigateTo('projects')", sparkData)}
@@ -20207,15 +20109,15 @@ function renderMonthDashVertrieb(data) {
 
 /** v1.46.0: Pipeline-Stage-Liste (extrahiert für Wiederverwendung in Beides). */
 function renderPipelineStages(pipelineProjects) {
-  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
-  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
+  const stages = [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE];
+  const stageMap = { [PROJECT_STATUS.LEAD]: 'plan', [PROJECT_STATUS.ANGEBOT]: 'plan', [PROJECT_STATUS.IN_ARBEIT]: 'done', [PROJECT_STATUS.ABSCHLUSSPHASE]: 'billed' };
   return stages.map(stage => {
-    const projs = pipelineProjects.filter(p => statusEq(p.status, stage));
+    const projs = pipelineProjects.filter(p => p.status === stage);
     const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
     const weight = Math.round((PIPELINE_FORECAST_WEIGHT[stage] || 0) * 100);
     return `
       <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects', { status: '${esc(stage)}' })">
-        <span class="pipeline-stage-name">${esc(stage)} <span class="pipeline-stage-weight">${weight}%</span></span>
+        <span class="pipeline-stage-name">${esc(dispStatus(stage))} <span class="pipeline-stage-weight">${weight}%</span></span>
         <span class="pipeline-stage-count">${projs.length}</span>
         <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
       </button>`;
@@ -20259,9 +20161,9 @@ function renderMembershipAttention(attentionList) {
  *  Mitgliedschaften) und Technik (Auslastung). */
 function renderMonthDashBeides(data) {
   const todayISO = toISODate(new Date());
-  const depsGeplant     = data.deployments.filter(d => statusEq(d.status, 'Geplant'));
-  const depsDurchgef    = data.deployments.filter(d => statusEq(d.status, 'Durchgeführt'));
-  const depsAbgerechnet = data.deployments.filter(d => statusEq(d.status, 'Abgerechnet'));
+  const depsGeplant     = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT);
+  const depsDurchgef    = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT);
+  const depsAbgerechnet = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.ABGERECHNET);
 
   const sumDays = (arr) => arr.reduce((s, d) => {
     const von = d.datum_von, bis = d.datum_bis || d.datum_von;
@@ -20294,12 +20196,12 @@ function renderMonthDashBeides(data) {
   const kpiRow = `
     <div class="month-kpi-row">
       ${monthKpiTile('Abgerechnet', formatPreis(umsatzAbgerechnet), `${depsAbgerechnet.length} Einsätze`, 'billed',
-        "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })", sparkData)}
+        "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.ABGERECHNET })", sparkData)}
       ${monthKpiTile('Forecast', formatPreis(forecast),
         `inkl. ${formatPreis(pipelineWeighted)} Pipeline (gew.)`, 'plan',
         "navigateTo('projects')", sparkData)}
       ${monthKpiTile('Auslastung', `${auslastungPct}%`, auslastungSub, 'done',
-        "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })", null, auslastungBar)}
+        "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.DURCHGEFUEHRT })", null, auslastungBar)}
       ${monthKpiTile('Pipeline', formatPreis(pipelineSum), `${pipelineProjects.length} Projekte`, 'info',
         "navigateTo('projects')")}
     </div>`;
@@ -20403,10 +20305,10 @@ function computeMonthAuslastung(data, todayISO) {
         for (const dep of depsAtDay) {
           const techs = (dep.deployment_technicians || []).map(t => t.user_id);
           if (!techs.includes(uid)) continue;
-          if (statusEq(dep.status, 'Durchgeführt') || statusEq(dep.status, 'Abgerechnet')) {
+          if (dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || dep.status === DEPLOYMENT_STATUS.ABGERECHNET) {
             userBelegt = true; break;
           }
-          if (statusEq(dep.status, 'Geplant')) userGeplant = true;
+          if (dep.status === DEPLOYMENT_STATUS.GEPLANT) userGeplant = true;
         }
         if (userBelegt) belegt++;
         else if (userGeplant) geplant++;
@@ -20414,14 +20316,14 @@ function computeMonthAuslastung(data, todayISO) {
     } else {
       werk++;
       const isBelegt = data.deployments.some(dep =>
-        statusIn(dep.status, 'Durchgeführt', 'Abgerechnet') &&
+        [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(dep.status) &&
         iso >= dep.datum_von &&
         iso <= (dep.datum_bis || dep.datum_von)
       );
       if (isBelegt) {
         belegt++;
       } else if (data.deployments.some(dep =>
-        statusEq(dep.status, 'Geplant') &&
+        dep.status === DEPLOYMENT_STATUS.GEPLANT &&
         iso >= dep.datum_von &&
         iso <= (dep.datum_bis || dep.datum_von)
       )) {
@@ -20437,9 +20339,9 @@ function computeMonthAuslastung(data, todayISO) {
  *  Bleibt im Code als Fallback, falls jemand direkt darauf zugreift. */
 function _renderBriefingMonthDashboard_legacy(data) {
   const todayISO = toISODate(new Date());
-  const depsGeplant     = data.deployments.filter(d => statusEq(d.status, 'Geplant'));
-  const depsDurchgef    = data.deployments.filter(d => statusEq(d.status, 'Durchgeführt'));
-  const depsAbgerechnet = data.deployments.filter(d => statusEq(d.status, 'Abgerechnet'));
+  const depsGeplant     = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT);
+  const depsDurchgef    = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT);
+  const depsAbgerechnet = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.ABGERECHNET);
 
   // Umsatz pro Tag aus dem Monat × abgedeckter Tage = Summe
   const sumDays = (arr) => arr.reduce((s, d) => {
@@ -20466,7 +20368,7 @@ function _renderBriefingMonthDashboard_legacy(data) {
       if (isWorkday) {
         werk++;
         if (data.deployments.some(dep =>
-          statusIn(dep.status, 'Durchgeführt', 'Abgerechnet') &&
+          [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET].includes(dep.status) &&
           iso >= dep.datum_von &&
           iso <= (dep.datum_bis || dep.datum_von)
         )) belegt++;
@@ -20500,15 +20402,15 @@ function _renderBriefingMonthDashboard_legacy(data) {
     <div class="month-kpi-row">
       ${tile('Abgerechnet', formatPreis(umsatzAbgerechnet),
           `${depsAbgerechnet.length} Einsätze`, 'billed',
-          "navigateTo('deployments',{ range:'month', status:'Abgerechnet' })",
+          "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.ABGERECHNET })",
           sparkData)}
       ${tile('Geplant', formatPreis(umsatzGeplant),
           `${depsGeplant.length + depsDurchgef.length} Einsätze`, 'plan',
-          "navigateTo('deployments',{ range:'month', status:'Geplant' })",
+          "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.GEPLANT })",
           sparkData)}
       ${tile('Auslastung', `${auslastungPct}%`,
           `${arbeitsTage.belegt} / ${arbeitsTage.werk} Tage`, 'done',
-          "navigateTo('deployments',{ range:'month', status:'Durchgeführt' })",
+          "navigateTo('deployments',{ range:'month', status:DEPLOYMENT_STATUS.DURCHGEFUEHRT })",
           null)}
       ${tile('Pipeline', formatPreis(pipelineSum),
           `${pipelineProjects.length} Projekte`, 'info',
@@ -20537,14 +20439,14 @@ function _renderBriefingMonthDashboard_legacy(data) {
       }).join('');
 
   // Pipeline-Stages
-  const stages = ['Lead', 'Angebot', 'In Arbeit', 'Abschlussphase'];
-  const stageMap = { Lead: 'plan', 'Angebot': 'plan', 'In Arbeit': 'done', 'Abschlussphase': 'billed' };
+  const stages = [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE];
+  const stageMap = { [PROJECT_STATUS.LEAD]: 'plan', [PROJECT_STATUS.ANGEBOT]: 'plan', [PROJECT_STATUS.IN_ARBEIT]: 'done', [PROJECT_STATUS.ABSCHLUSSPHASE]: 'billed' };
   const stagesHtml = stages.map(stage => {
-    const projs = pipelineProjects.filter(p => statusEq(p.status, stage));
+    const projs = pipelineProjects.filter(p => p.status === stage);
     const sum   = projs.reduce((s, p) => s + (Number(p.geschaetzter_umsatz) || 0), 0);
     return `
       <button class="pipeline-stage-row is-${stageMap[stage]}" type="button" onclick="navigateTo('projects', { status: '${esc(stage)}' })">
-        <span class="pipeline-stage-name">${esc(stage)}</span>
+        <span class="pipeline-stage-name">${esc(dispStatus(stage))}</span>
         <span class="pipeline-stage-count">${projs.length}</span>
         <span class="pipeline-stage-sum">${esc(formatPreis(sum))}</span>
       </button>`;
@@ -20692,7 +20594,7 @@ function renderWeekStrip(data) {
     Object.values(dayInfo).forEach(di => {
       if (di.iso >= von && di.iso <= bis) {
         di.deps.push(dep);
-        if (!statusEq(dep.status, 'Storniert')) di.tagSumme += einzel;
+        if (!dep.status === DEPLOYMENT_STATUS.STORNIERT) di.tagSumme += einzel;
       }
     });
   });
@@ -20712,10 +20614,10 @@ function renderWeekStrip(data) {
     let indicator = 'free';
     if (isHoliday) indicator = 'holiday';
     else if (di.deps.length > 0) {
-      if (di.deps.some(d => statusEq(d.status, 'Abgerechnet'))) indicator = 'billed';
-      else if (di.deps.some(d => statusEq(d.status, 'Durchgeführt'))) indicator = 'done';
-      else if (di.deps.some(d => statusEq(d.status, 'Geplant'))) indicator = 'plan';
-      else if (di.deps.some(d => statusEq(d.status, 'Storniert'))) indicator = 'overdue';
+      if (di.deps.some(d => d.status === DEPLOYMENT_STATUS.ABGERECHNET)) indicator = 'billed';
+      else if (di.deps.some(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT)) indicator = 'done';
+      else if (di.deps.some(d => d.status === DEPLOYMENT_STATUS.GEPLANT)) indicator = 'plan';
+      else if (di.deps.some(d => d.status === DEPLOYMENT_STATUS.STORNIERT)) indicator = 'overdue';
     }
     else if (di.terms > 0) indicator = 'plan';
 
@@ -20812,7 +20714,7 @@ function renderBriefingWeekAgenda(data) {
           tagInfo = `Tag ${tagN}/${totalTage}`;
         }
         day.items.push({ kind: 'einsatz', dep, tagInfo });
-        if (!statusEq(dep.status, 'Storniert')) day.tagSumme += einzel;
+        if (!dep.status === DEPLOYMENT_STATUS.STORNIERT) day.tagSumme += einzel;
       }
     });
   });
@@ -20871,7 +20773,7 @@ function renderWeekAgendaItem(it) {
   // Damit stehen alle Items sauber untereinander aligned.
   if (it.kind === 'einsatz') {
     const d = it.dep;
-    const status = d.status || 'Geplant';
+    const status = d.status || DEPLOYMENT_STATUS.GEPLANT;
     const firma = d.company?.name || 'Einsatz';
     const titel = d.titel || d.service?.name || 'Einsatz';
     const wert = (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0);
@@ -20968,7 +20870,7 @@ function renderBriefingWeekStrip(data) {
  *  unterhalb der Strip (oder Modal auf Mobile). */
 function renderWeekPill(kind, item) {
   if (kind === 'einsatz') {
-    const status = item.status || 'Geplant';
+    const status = item.status || DEPLOYMENT_STATUS.GEPLANT;
     const firma = item.company?.name || 'Einsatz';
     const titel = item.titel || item.service?.name || 'Einsatz';
     const wert = (Number(item.menge) || 0) * (Number(item.einzelpreis) || 0);
@@ -21051,7 +20953,7 @@ function renderBriefingKpisInline(scope, data, opts = {}) {
     parts.push(`<span class="kpi-inline-num">${data.tasks.length}</span> ${data.tasks.length === 1 ? 'Aufgabe' : 'Aufgaben'}${overdueText}`);
   } else if (scope === 'monat') {
     const umsatz = data.deployments
-      .filter(d => statusEq(d.status, 'Durchgeführt') || statusEq(d.status, 'Abgerechnet'))
+      .filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET)
       .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
     parts.push(`<span class="kpi-inline-num">${data.appointments.length}</span> Termine`);
     parts.push(`<span class="kpi-inline-num">${data.deployments.length}</span> Einsätze`);
@@ -21080,14 +20982,14 @@ function renderHeuteDeploymentGrid(todayDeps) {
   const jetztId = (() => {
     const nowHM = `${String(nowIso.getHours()).padStart(2,'0')}:${String(nowIso.getMinutes()).padStart(2,'0')}`;
     const inWindow = todayDeps.find(d => {
-      if (statusEq(d.status, 'Abgerechnet') || statusEq(d.status, 'Storniert')) return false;
+      if (d.status === DEPLOYMENT_STATUS.ABGERECHNET || d.status === DEPLOYMENT_STATUS.STORNIERT) return false;
       if (!d.uhrzeit_von || !d.uhrzeit_bis) return false;
       const von = d.uhrzeit_von.substring(0, 5);
       const bis = d.uhrzeit_bis.substring(0, 5);
       return nowHM >= von && nowHM <= bis;
     });
     if (inWindow) return inWindow.id;
-    const firstPlanned = todayDeps.find(d => statusEq(d.status, 'Geplant'));
+    const firstPlanned = todayDeps.find(d => d.status === DEPLOYMENT_STATUS.GEPLANT);
     return firstPlanned?.id || null;
   })();
 
@@ -21102,9 +21004,9 @@ function renderHeuteDeploymentGrid(todayDeps) {
 }
 
 function renderHeuteDeploymentCard(d, isNow) {
-  const status = d.status || 'Geplant';
-  const isBilled = statusEq(status, 'Abgerechnet');
-  const isCancel = statusEq(status, 'Storniert');
+  const status = d.status || DEPLOYMENT_STATUS.GEPLANT;
+  const isBilled = status === DEPLOYMENT_STATUS.ABGERECHNET;
+  const isCancel = status === DEPLOYMENT_STATUS.STORNIERT;
 
   const firma = d.company?.name || 'Einsatz';
   const typeLabel = (d.ort || '').toLowerCase().includes('online') ? 'Online' : 'Vor Ort';
@@ -21135,7 +21037,7 @@ function renderHeuteDeploymentCard(d, isNow) {
     <button class="${classes}" type="button" onclick="openDeploymentModal('edit','${esc(d.id)}')">
       <div class="heute-card-row1">
         <span class="heute-card-type">${esc(typeLabel)}</span>
-        <span class="heute-card-status">${esc(status)}</span>
+        <span class="heute-card-status">${esc(dispStatus(status))}</span>
       </div>
       <div class="heute-card-row2">
         <div class="heute-card-firma">${esc(firma)}</div>
@@ -21215,7 +21117,7 @@ function renderHeuteNext3DayCard(day) {
 function renderHeuteNext3Item(it) {
   if (it.kind === 'einsatz') {
     const d = it.dep;
-    const status = d.status || 'Geplant';
+    const status = d.status || DEPLOYMENT_STATUS.GEPLANT;
     const firma = d.company?.name || 'Einsatz';
     const titel = d.titel || d.service?.name || '';
     return `<button class="heute-next3-item is-einsatz dep-status-${esc(status.replace(/\s+/g,'-').toLowerCase())}" type="button" onclick="openDeploymentModal('edit','${esc(d.id)}')" title="${esc(firma + (titel ? ' · ' + titel : ''))}">
@@ -21295,9 +21197,9 @@ function renderBriefingHeroDeployment(dep, data) {
     : '—';
 
   const status = dep.status || 'geplant';
-  const statusClass = statusEq(status, 'Durchgeführt') || statusEq(status, 'Abgerechnet')
+  const statusClass = status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || status === DEPLOYMENT_STATUS.ABGERECHNET
     ? 'is-done'
-    : (statusEq(status, 'In Arbeit') ? 'is-active' : 'is-planned');
+    : (status === PROJECT_STATUS.IN_ARBEIT ? 'is-active' : 'is-planned');
 
   const titel = dep.titel || dep.service?.name || 'Einsatz';
   const firma = dep.company?.name || '—';
@@ -21307,9 +21209,9 @@ function renderBriefingHeroDeployment(dep, data) {
   // Geplant → Durchgeführt, Durchgeführt → Abgerechnet. Bei Abgerechnet kein
   // Schnellweg mehr (Korrektur muss bewusst über Vollbearbeitung laufen).
   let toggleBtn = '';
-  if (statusEq(status, 'Geplant') || (!statusEq(status, 'Durchgeführt') && !statusEq(status, 'Abgerechnet'))) {
+  if (status === DEPLOYMENT_STATUS.GEPLANT || (!status === DEPLOYMENT_STATUS.DURCHGEFUEHRT && !status === DEPLOYMENT_STATUS.ABGERECHNET)) {
     toggleBtn = `<button class="briefing-btn" onclick="markDeploymentDone('${esc(dep.id)}')">Als durchgeführt markieren</button>`;
-  } else if (statusEq(status, 'Durchgeführt')) {
+  } else if (status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
     toggleBtn = `<button class="briefing-btn" onclick="markDeploymentBilled('${esc(dep.id)}')">Als abgerechnet markieren</button>`;
   }
 
@@ -21318,7 +21220,7 @@ function renderBriefingHeroDeployment(dep, data) {
       <div class="briefing-hero-stripe"></div>
       <div class="briefing-hero-head">
         <span class="briefing-hero-kicker">Vor-Ort-Tag · Heute</span>
-        <span class="briefing-hero-status">${esc(status)}</span>
+        <span class="briefing-hero-status">${esc(dispStatus(status))}</span>
       </div>
       <div class="briefing-hero-firma">${esc(firma)}</div>
       <div class="briefing-hero-titel">${esc(titel)}</div>
@@ -21522,7 +21424,7 @@ async function markDeploymentDone(id) {
     const { data: dep, error: selErr } = await db.from('deployments')
       .select('id, project_id, status').eq('id', id).single();
     if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
-    if (statusEq(dep.status, 'Durchgeführt') || statusEq(dep.status, 'Abgerechnet')) {
+    if (dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || dep.status === DEPLOYMENT_STATUS.ABGERECHNET) {
       showToast(`Einsatz ist bereits „${dep.status}".`, true); return;
     }
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.DURCHGEFUEHRT }).eq('id', id);
@@ -21542,7 +21444,7 @@ async function markDeploymentBilled(id) {
     const { data: dep, error: selErr } = await db.from('deployments')
       .select('id, project_id, status').eq('id', id).single();
     if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
-    if (!statusEq(dep.status, 'Durchgeführt')) {
+    if (!dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
       showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
     }
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.ABGERECHNET }).eq('id', id);
@@ -21564,7 +21466,7 @@ function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
     // v1.45.0: Begrüßung referenziert nur Vor-Ort-Einsätze ≠ Abgerechnet
     const todayDeps = data.deployments.filter(d => d.datum_von <= todayISO && (d.datum_bis || d.datum_von) >= todayISO);
     const todayAppts = data.appointments.filter(a => a.datum === todayISO);
-    const aktiveDeps = todayDeps.filter(d => !statusEq(d.status, 'Abgerechnet') && !statusEq(d.status, 'Storniert'));
+    const aktiveDeps = todayDeps.filter(d => !d.status === DEPLOYMENT_STATUS.ABGERECHNET && !d.status === DEPLOYMENT_STATUS.STORNIERT);
     if (aktiveDeps.length > 0) {
       const firma = aktiveDeps[0].company?.name || 'einem Kunden';
       parts.push(`Heute bist du im Einsatz bei <strong>${esc(firma)}</strong> — der Tag gehört dem Kunden`);
@@ -21592,7 +21494,7 @@ function renderBriefingNarrative(scope, data, greeting, firstName, initials) {
   } else {
     // Monat
     const umsatzMonat = data.deployments
-      .filter(d => statusEq(d.status, 'Durchgeführt') || statusEq(d.status, 'Abgerechnet'))
+      .filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET)
       .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
     parts.push(`Diesen Monat: <strong>${data.appointments.length}</strong> Termine, <strong>${data.deployments.length}</strong> Einsätze`);
     if (umsatzMonat > 0) {
@@ -21624,7 +21526,7 @@ function renderBriefingKpis(scope, data, opts = {}) {
   let label4 = 'Überfällig', val4 = data.overdueTasks.length;
   if (scope === 'monat') {
     const umsatz = data.deployments
-      .filter(d => statusEq(d.status, 'Durchgeführt') || statusEq(d.status, 'Abgerechnet'))
+      .filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET)
       .reduce((s, d) => s + (Number(d.menge) || 0) * (Number(d.einzelpreis) || 0), 0);
     label4 = 'Umsatz';
     val4 = formatPreis(umsatz);
@@ -21984,28 +21886,21 @@ function renderBriefingPreview(scope, data) {
 // Aufgaben sind bewusst entkoppelt — kein Auto-Projektstatus-Trigger,
 // keine Termin-/Einsatz-Kopplung. Das schützt die Domänen-Invarianten.
 
-// Status-Badge-Helper (Lookup-Werte: offen / in_arbeit / erledigt / storniert)
-// Dual-Mode: akzeptiert sowohl Legacy-Label 'Storniert' als auch system_key 'storniert'.
+// Status-Badge-Helper (system_keys: offen / in_arbeit / erledigt / storniert)
 function aufgabeStatusBg(s) {
-  return { offen: '#f3f4f6', in_arbeit: '#fffbeb', erledigt: '#f0fdf4',
-           'In Arbeit': '#fffbeb',
-           Storniert: '#fef2f2', storniert: '#fef2f2' }[s] || '#f3f4f6';
+  return { offen: '#f3f4f6', in_arbeit: '#fffbeb', erledigt: '#f0fdf4', storniert: '#fef2f2' }[s] || '#f3f4f6';
 }
 function aufgabeStatusColor(s) {
-  return { offen: '#6b7280', in_arbeit: '#d97706', erledigt: '#16a34a',
-           'In Arbeit': '#d97706',
-           Storniert: '#dc2626', storniert: '#dc2626' }[s] || '#6b7280';
+  return { offen: '#6b7280', in_arbeit: '#d97706', erledigt: '#16a34a', storniert: '#dc2626' }[s] || '#6b7280';
 }
 function aufgabeStatusLabel(s) {
-  return { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt',
-           'In Arbeit': 'In Arbeit',
-           Storniert: 'Storniert', storniert: 'Storniert' }[s] || s;
+  return getStatusLabel('aufgabe_status', s, s);
 }
 
 async function loadAufgabeStatus() {
   if (aufgabeStatusCache.length > 0) return aufgabeStatusCache;
   const { data, error } = await db.from('lookup_values')
-    .select('id, wert, farbe, reihenfolge').eq('kategorie', 'aufgabe_status').eq('ist_aktiv', true).order('reihenfolge');
+    .select('id, wert, farbe, reihenfolge, system_key').eq('kategorie', 'aufgabe_status').eq('ist_aktiv', true).order('reihenfolge');
   if (error) { showToast('Fehler beim Laden der Aufgaben-Status: ' + error.message, true); return []; }
   aufgabeStatusCache = data || [];
   return aufgabeStatusCache;
@@ -22165,7 +22060,7 @@ async function loadTasks() {
   const statusFilter = document.getElementById('tasks-status-filter');
   if (statusFilter.options.length <= 1) {
     statusFilter.innerHTML = '<option value="">Alle Status</option>'
-      + aufgabeStatusCache.map(s => `<option value="${esc(s.wert)}">${esc(aufgabeStatusLabel(s.wert))}</option>`).join('');
+      + aufgabeStatusCache.map(s => `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`).join('');
   }
 
   // Pending filter aus URL
@@ -22326,7 +22221,7 @@ async function openTaskModal(mode, taskId = null) {
   // Dropdowns befüllen
   const statusSelect = document.getElementById('a-status');
   statusSelect.innerHTML = aufgabeStatusCache
-    .map(s => `<option value="${esc(s.wert)}">${esc(aufgabeStatusLabel(s.wert))}</option>`).join('');
+    .map(s => `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`).join('');
 
   const assigneeSelect = document.getElementById('a-assigned-to');
   assigneeSelect.innerHTML = userProfilesCache
@@ -22485,7 +22380,7 @@ async function saveTask() {
 
   if (!titel) { showToast('Bitte Titel eingeben.', true); return; }
   if (!assigned_to) { showToast('Bitte eine Person zuweisen.', true); return; }
-  const gueltigeStatus = aufgabeStatusCache.map(s => s.wert);
+  const gueltigeStatus = aufgabeStatusCache.map(s => s.system_key);
   if (gueltigeStatus.length && !gueltigeStatus.includes(status)) { showToast('Status ungültig.', true); return; }
   if (createAppt && !faelligkeit) {
     showToast('Für die Termin-Kopplung muss ein Fälligkeitsdatum gesetzt sein.', true);
@@ -23202,7 +23097,7 @@ async function renderProjectBeteiligte(p) {
       // Soft-deleted oder stornierte Einsätze zählen nicht als „hat
       // stattgefunden" — der User wäre dann fälschlich beteiligt.
       if (r.deployment?.deleted_at) continue;
-      if (statusEq(r.deployment?.status, 'Storniert')) continue;
+      if (r.deployment?.status === DEPLOYMENT_STATUS.STORNIERT) continue;
       if (seen.has(r.user.id)) continue;
       teamMap.set(r.user.id, r.user);
     }
@@ -23425,7 +23320,7 @@ async function renderProjectPlanTab(projectId) {
   await renderProjectThemes(projectId);
 
   // Phasen-Sichtbarkeit anwenden — jetzt im Planung-Panel
-  applyProjectPlanPhaseVisibility(p?.status || 'Lead');
+  applyProjectPlanPhaseVisibility(p?.status || PROJECT_STATUS.LEAD);
 }
 
 // v2.13.7: Phasen-Rangfolge für die Sichtbarkeit der Brief-Sektionen.
@@ -23434,11 +23329,12 @@ async function renderProjectPlanTab(projectId) {
 //   (2) das zugehörige Feld bereits Inhalt hat (damit niemand seine
 //       Eingaben verliert, wenn der Status zurückgesetzt wird).
 const _PROJEKT_PHASE_RANG = {
-  'Lead': 10, 'Angebot': 20, 'In Arbeit': 30,
-  'Abschlussphase': 40, 'Abgeschlossen': 50, 'Verloren': 50,
-  // Dual-mode: system_keys
-  'lead': 10, 'angebot': 20, 'in_arbeit': 30,
-  'abschlussphase': 40, 'abgeschlossen': 50, 'verloren': 50
+  [PROJECT_STATUS.LEAD]:           10,
+  [PROJECT_STATUS.ANGEBOT]:        20,
+  [PROJECT_STATUS.IN_ARBEIT]:      30,
+  [PROJECT_STATUS.ABSCHLUSSPHASE]: 40,
+  [PROJECT_STATUS.ABGESCHLOSSEN]:  50,
+  [PROJECT_STATUS.VERLOREN]:       50
 };
 
 let _projectPlanForceShowAll = false;
@@ -23483,11 +23379,11 @@ function applyProjectPlanPhaseVisibility(currentStatus) {
   if (bar && lbl && tgl) {
     if (hiddenCount > 0 && !_projectPlanForceShowAll) {
       bar.style.display = '';
-      lbl.textContent = `Phase „${currentStatus}" — ${hiddenCount} Sektion${hiddenCount === 1 ? '' : 'en'} sind für spätere Phasen versteckt.`;
+      lbl.textContent = `Phase „${dispStatus(currentStatus)}" — ${hiddenCount} Sektion${hiddenCount === 1 ? '' : 'en'} sind für spätere Phasen versteckt.`;
       tgl.textContent = 'Alle Sektionen zeigen';
     } else if (_projectPlanForceShowAll && hiddenCount === 0) {
       bar.style.display = '';
-      lbl.textContent = `Phase „${currentStatus}" — alle Sektionen sichtbar (auch zukünftige).`;
+      lbl.textContent = `Phase „${dispStatus(currentStatus)}" — alle Sektionen sichtbar (auch zukünftige).`;
       tgl.textContent = 'Auf Phase reduzieren';
     } else {
       bar.style.display = 'none';
@@ -23499,7 +23395,7 @@ function toggleProjectPlanAllSections() {
   _projectPlanForceShowAll = !_projectPlanForceShowAll;
   if (currentProjectDetailId) {
     db.from('projects').select('status').eq('id', currentProjectDetailId).single()
-      .then(({ data }) => applyProjectPlanPhaseVisibility(data?.status || 'Lead'));
+      .then(({ data }) => applyProjectPlanPhaseVisibility(data?.status || PROJECT_STATUS.LEAD));
   }
 }
 
@@ -23542,7 +23438,7 @@ async function renderProjectBriefView(projectId) {
   ]);
 
   const dok = p?.dokumentation || {};
-  const status = p?.status || 'Lead';
+  const status = p?.status || PROJECT_STATUS.LEAD;
   const ziel = dok.kundenherausforderung || dok.ziel || '';
   const herausforderungen = dok.herausforderungen || '';
   const loesungsansatz    = dok.loesungsansatz || '';
@@ -23552,8 +23448,8 @@ async function renderProjectBriefView(projectId) {
   const critsTotal = crits.length;
 
   const phaseRang = _PROJEKT_PHASE_RANG[status] || 10;
-  const showFromAngebot   = phaseRang >= _PROJEKT_PHASE_RANG['Angebot']   || herausforderungen.trim() || loesungsansatz.trim();
-  const showFromInArbeit  = phaseRang >= _PROJEKT_PHASE_RANG['In Arbeit'] || critsTotal > 0;
+  const showFromAngebot   = phaseRang >= _PROJEKT_PHASE_RANG[PROJECT_STATUS.ANGEBOT]   || herausforderungen.trim() || loesungsansatz.trim();
+  const showFromInArbeit  = phaseRang >= _PROJEKT_PHASE_RANG[PROJECT_STATUS.IN_ARBEIT] || critsTotal > 0;
 
   // Hilfs-Markups
   const editIcon = '<span class="brief-edit-icon" title="Klicken zum Bearbeiten">✎</span>';
@@ -24494,8 +24390,8 @@ async function loadAppointmentDetail(appointmentId) {
   // Status-Pille
   const statusPill = document.getElementById('appt-status-pill');
   if (a.status) {
-    const label = a.status === 'durchgefuehrt' ? 'Durchgeführt' : 'Geplant';
-    const cls = a.status === 'durchgefuehrt' ? 'durchgefhrt' : 'geplant';
+    const label = appointmentStatusLabel(a.status);
+    const cls = a.status === APPOINTMENT_STATUS.DURCHGEFUEHRT ? 'durchgefhrt' : 'geplant';
     statusPill.innerHTML = `${esc(label)}<span class="status-pill-caret">▾</span>`;
     statusPill.className = `status-pill status-pill-clickable status-pill-${cls}`;
     statusPill.dataset.currentStatus = a.status;
@@ -24959,7 +24855,7 @@ function renderDeploymentStatusBriefing(d) {
   const status = (d?.status || '').toString();
 
   // STATUS „Geplant" — Vor-Einsatz-Briefing
-  if (statusEq(status, 'Geplant')) {
+  if (status === DEPLOYMENT_STATUS.GEPLANT) {
     const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
     el.innerHTML = `
       <div class="dep-briefing-card dep-briefing-planned">
@@ -24989,7 +24885,7 @@ function renderDeploymentStatusBriefing(d) {
   }
 
   // STATUS „Durchgeführt" — Pulse-Card mit Eintrags-Zähler
-  if (statusEq(status, 'Durchgeführt')) {
+  if (status === DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
     const entryCountEl = document.getElementById('dep-capture-stream-list');
     const entryCount = entryCountEl
       ? entryCountEl.querySelectorAll('.capture-stream-item').length
@@ -25011,7 +24907,7 @@ function renderDeploymentStatusBriefing(d) {
   }
 
   // STATUS „Abgerechnet" — kompakte Read-only-Zusammenfassung
-  if (statusEq(status, 'Abgerechnet')) {
+  if (status === DEPLOYMENT_STATUS.ABGERECHNET) {
     const datum  = d.datum_von ? formatDateDE(d.datum_von) : '—';
     const honor  = (d.menge != null && d.einzelpreis != null)
       ? formatPreis(Number(d.menge) * Number(d.einzelpreis))
@@ -25330,7 +25226,7 @@ const _STATUS_FLOW = {
 function _statusFlowNext(entityType, currentStatus) {
   const flow = _STATUS_FLOW[entityType];
   if (!flow) return null;
-  const sysKey = normalizeStatus(flow.kategorie, currentStatus);
+  const sysKey = currentStatus;
   const idx = flow.order.indexOf(sysKey);
   if (idx < 0 || idx === flow.order.length - 1) return null;
   return flow.order[idx + 1];
@@ -25347,9 +25243,9 @@ function renderStatusAdvanceAction(entityType, entityId, currentStatus, containe
   if (!flow) { el.innerHTML = ''; return; }
 
   const next = _statusFlowNext(entityType, currentStatus);
-  const currentLabel = getStatusLabel(flow.kategorie, normalizeStatus(flow.kategorie, currentStatus), currentStatus);
+  const currentLabel = getStatusLabel(flow.kategorie, currentStatus, currentStatus);
   if (!next) {
-    const isTerminal = flow.terminal.includes(normalizeStatus(flow.kategorie, currentStatus));
+    const isTerminal = flow.terminal.includes(currentStatus);
     el.innerHTML = isTerminal
       ? `<div class="proj-status-action-done">Status: <strong>${esc(currentLabel)}</strong></div>`
       : '';
@@ -25370,12 +25266,12 @@ function renderStatusAdvanceAction(entityType, entityId, currentStatus, containe
 async function advanceEntityStatus(entityType, entityId, fromStatus, toStatus) {
   const flow = _STATUS_FLOW[entityType];
   if (!flow || !entityId || !toStatus) return;
-  const fromLabel = getStatusLabel(flow.kategorie, normalizeStatus(flow.kategorie, fromStatus), fromStatus);
-  const toLabel   = getStatusLabel(flow.kategorie, normalizeStatus(flow.kategorie, toStatus),   toStatus);
+  const fromLabel = getStatusLabel(flow.kategorie, fromStatus, fromStatus);
+  const toLabel   = getStatusLabel(flow.kategorie, toStatus,   toStatus);
   if (!confirm(`Status weiterbringen?\n\n${fromLabel}  →  ${toLabel}`)) return;
   // Race-Schutz: from-Bedingung als dualStatus, damit auch alte Labels in der DB matchen
   const { error } = await db.from(flow.table)
-    .update({ status: toStatus }).in('status', dualStatus(flow.kategorie, normalizeStatus(flow.kategorie, fromStatus))).eq('id', entityId);
+    .update({ status: toStatus }).in('status', [fromStatus]).eq('id', entityId);
   if (error) { showToast(error.message, true); return; }
   showToast(`Status: ${toLabel}.`);
   // Refresh der jeweiligen Detail-Page
@@ -25469,18 +25365,18 @@ async function selectEntityStatus(entityType, entityId, newStatus, currentStatus
                                      : 'appt-status-popup');
   if (popup) { popup.style.display = 'none'; popup.dataset.openFor = ''; }
 
-  if (statusEq(newStatus, currentStatus)) return; // No-op
+  if (newStatus === currentStatus) return; // No-op
   const flow = _STATUS_FLOW[entityType];
   const table = flow?.table;
   if (!table) return;
-  const currentLabel = getStatusLabel(flow.kategorie, normalizeStatus(flow.kategorie, currentStatus), currentStatus);
-  const newLabel     = getStatusLabel(flow.kategorie, normalizeStatus(flow.kategorie, newStatus),     newStatus);
+  const currentLabel = getStatusLabel(flow.kategorie, currentStatus, currentStatus);
+  const newLabel     = getStatusLabel(flow.kategorie, newStatus,     newStatus);
   if (!confirm(`Status ändern?\n\n${currentLabel}  →  ${newLabel}`)) return;
   // Race-Schutz: from-Bedingung via dualStatus, neuer Wert wird als
   // gewählter Wert geschrieben (kann Label oder system_key sein —
   // der Picker übergibt aktuell o.wert, also Label).
   const { error } = await db.from(table)
-    .update({ status: newStatus }).in('status', dualStatus(flow.kategorie, normalizeStatus(flow.kategorie, currentStatus))).eq('id', entityId);
+    .update({ status: newStatus }).in('status', [currentStatus]).eq('id', entityId);
   if (error) { showToast(error.message, true); return; }
   showToast(`Status: ${newLabel}.`);
   if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
@@ -29247,7 +29143,7 @@ async function _loadCustomerReportData(projectId) {
       uhrzeit_von, uhrzeit_bis, rabatt_typ, rabatt_wert,
       service:services(name)
     `).eq('project_id', projectId).is('deleted_at', null)
-      .neq('status', 'Storniert').neq('status', DEPLOYMENT_STATUS.STORNIERT)
+      .neq('status', DEPLOYMENT_STATUS.STORNIERT)
       .order('datum_von', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true }),
     db.from('project_products').select('bezeichnung, menge, einzelpreis_vk, im_paket, notizen, rabatt_typ, rabatt_wert, product:products(einheit)')

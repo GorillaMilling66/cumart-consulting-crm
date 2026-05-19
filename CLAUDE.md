@@ -2,22 +2,23 @@
 
 Diese Datei enthält Hinweise für Claude Code (claude.ai/code), wenn mit Code in diesem Repository gearbeitet wird.
 
-## Block 2 — System-Keys für Status-Lookups (abgeschlossen 19.05.2026)
+## Block 2 — System-Keys für Status-Lookups (Cleanup abgeschlossen 19.05.2026 mit v2.31.0)
 
-**Status:** Live auf `main` (v2.30.0). Status-Spalten in `projects`, `deployments`, `appointments`, `tasks` enthalten jetzt system_keys (`'abgeschlossen'`, `'durchgefuehrt'`, …) statt Labels. `lookup_values.system_key` ist die Identitäts-Spalte; `wert` ist nur noch Anzeige-Label und kann pro Mandant frei umbenannt werden, ohne dass Auto-Status-Logik, Filter, Pillen oder Sortierungen brechen.
+**Status:** Live auf `main` (v2.31.0). Status-Spalten in `projects`, `deployments`, `appointments`, `tasks` enthalten system_keys (`'abgeschlossen'`, `'durchgefuehrt'`, …) statt Labels. `lookup_values.system_key` ist die Identitäts-Spalte; `wert` ist nur Anzeige-Label und kann pro Mandant frei umbenannt werden, ohne dass Auto-Status-Logik, Filter, Pillen oder Sortierungen brechen. Mit v2.31 sind die Dual-Mode-Übergangs-Helper raus und der Code referenziert die system_keys direkt.
 
-**Status-Konvention für aktive Sessions:**
+**Status-Konvention:**
 - **NIE** Status-Labels (`'Abgeschlossen'`, `'Durchgeführt'`) im Code referenzieren — immer system_keys über die Konstanten-Maps:
   - `PROJECT_STATUS.{LEAD, ANGEBOT, IN_ARBEIT, ABSCHLUSSPHASE, ABGESCHLOSSEN, VERLOREN, STORNIERT}`
   - `DEPLOYMENT_STATUS.{UNGEPLANT, GEPLANT, DURCHGEFUEHRT, ABGERECHNET, STORNIERT}`
   - `APPOINTMENT_STATUS.{GEPLANT, DURCHGEFUEHRT}`
   - `TASK_STATUS.{OFFEN, IN_ARBEIT, ERLEDIGT, STORNIERT}`
-- **Supabase-Filter** auf `status` während der Übergangsphase (bis v2.31): durch `dualStatus(kategorie, KEY1, KEY2, ...)` wrappen, damit alte Labels in fremden Mandanten-DBs noch matchen.
-- **JS-Vergleiche** über `statusEq(actual, expected)` oder `statusIn(actual, ...expecteds)` — beide akzeptieren Labels und system_keys.
-- **UI-Display:** `dispStatus(status)` für allgemeine Anzeigen, `getStatusLabel(kategorie, system_key)` für gezielte Lookups.
-- **Achtung Namens-Kollision:** `statusLabel(s)` ist eine ältere Funktion für `user_profiles.status` (eingeladen/aktiv/inaktiv) — nicht verwechseln; für Status-Display ist `dispStatus()` der richtige Helper.
+- **Supabase-Filter** auf `status`: direkt mit den Konstanten arbeiten, z. B. `.eq('status', DEPLOYMENT_STATUS.GEPLANT)` oder `.in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT])`.
+- **JS-Vergleiche** über `===` und `[...].includes()` direkt gegen die Konstanten.
+- **UI-Display:** `dispStatus(status)` für allgemeine Anzeigen, `getStatusLabel(kategorie, system_key)` für gezielte Lookups, `appointmentStatusLabel(s)` / `aufgabeStatusLabel(s)` als typ-spezifische Wrapper.
+- **Status-Selects in Modals:** `<option value="${s.system_key}">${s.wert}</option>` — der gespeicherte Wert ist der system_key, der angezeigte Text das Mandant-Label.
+- **Achtung Namens-Kollision:** `statusLabel(s)` ist eine ältere Funktion für `user_profiles.status` (eingeladen/aktiv/inaktiv) — nicht verwechseln; für Entity-Status-Display ist `dispStatus()` der richtige Helper.
 
-**v2.31 Cleanup (separater Refactor, optional):** `_LEGACY_STATUS_MAP`, `dualStatus()`, `statusEq()`, `statusIn()` entfernen, Dual-Keys in `sortPrio` / `PIPELINE_FORECAST_WEIGHT` / `_PROJEKT_PHASE_RANG` konsolidieren — sobald sicher ist, dass keine alten Labels mehr in irgendeiner Mandanten-DB stehen.
+**Bevor v2.31 auf eine neue Mandanten-Instanz deployt wird:** Migration `migrations/v2.30.0_lookup_system_keys.sql` muss appliziert sein (Status-Identitäten auf system_keys umstellen). Ohne diese Migration brechen alle Status-Vergleiche, da der Code keine Legacy-Labels mehr toleriert.
 
 ## Projekt-Überblick
 
