@@ -29227,6 +29227,15 @@ function _buildCustomerReportHtml(data) {
   // Einsatz verborgen („im Paket inkl."), weil der Kunde den Paketpreis zahlt.
   const reportNachAufwand = !!p.preis_nach_aufwand;
 
+  // v2.32.4: Zwischenbericht-Modus. Wenn noch nicht alle Einsätze durchgeführt
+  // (oder abgerechnet) sind, wird der Bericht als Zwischenstand ausgewiesen
+  // und Punkt 2 in Sub-Sections (durchgeführt / geplant / offen) unterteilt.
+  const depsDurchgef = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET);
+  const depsGeplant  = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.GEPLANT);
+  const depsOffen    = data.deployments.filter(d => d.status === DEPLOYMENT_STATUS.UNGEPLANT);
+  const isZwischenbericht = depsGeplant.length > 0 || depsOffen.length > 0;
+  const berichtTitel = isZwischenbericht ? 'Zwischenbericht' : 'Projektbericht';
+
   const todayDE = formatDateDE(toISODate(new Date()));
   const projZeitraum = (p.startdatum && p.enddatum)
     ? `${formatDateDE(p.startdatum)} – ${formatDateDE(p.enddatum)}`
@@ -29244,11 +29253,10 @@ function _buildCustomerReportHtml(data) {
           ${_textToParas(s.inhalt)}
         </section>`).join('');
 
-  // Einsätze — v2.28.4: strukturierte Header-Meta (Zeit, Ort untereinander)
-  // plus Tagessatz pro Einsatz (Menge × Einzelpreis nach Rabatt).
-  const einsaetzeHtml = data.deployments.length === 0
-    ? `<p class="muted">— Noch keine durchgeführten Einsätze —</p>`
-    : data.deployments.map(d => {
+  // v2.32.4: Render-Funktion für einen Einsatz; bei geplant/offen entfällt
+  // die Notizen-/Doku-Sektion (gibt's noch nicht), Honorar-Block zeigt Status
+  // statt Betrag.
+  const renderEinsatz = (d, modus) => {
         const datum = d.datum_von ? formatDateDE(d.datum_von) : '—';
         const datumBis = d.datum_bis && d.datum_bis !== d.datum_von ? ` – ${formatDateDE(d.datum_bis)}` : '';
         const zeitText = (d.uhrzeit_von || d.uhrzeit_bis)
@@ -29284,41 +29292,75 @@ function _buildCustomerReportHtml(data) {
 
         // v2.28.14: Honorar je Einsatz wird nur bei „Preis nach Aufwand"
         // ausgewiesen. Bei Festpreis sieht der Kunde nur „im Paket inkl.".
-        const honorarBlock = reportNachAufwand
-          ? `<div class="einsatz-honorar">
+        // v2.32.4: Für geplante/offene Einsätze keinen Wert ausweisen, sondern
+        // den Plan-Status — damit der Kunde sofort sieht, dass noch nicht
+        // abgerechnet wird.
+        let honorarBlock;
+        if (modus === 'geplant') {
+          honorarBlock = `<div class="einsatz-honorar">
+               <span class="einsatz-honorar-label">Status</span>
+               <span class="einsatz-honorar-value einsatz-honorar-plan">geplant</span>
+             </div>`;
+        } else if (modus === 'offen') {
+          honorarBlock = `<div class="einsatz-honorar">
+               <span class="einsatz-honorar-label">Status</span>
+               <span class="einsatz-honorar-value einsatz-honorar-plan">noch nicht terminiert</span>
+             </div>`;
+        } else if (reportNachAufwand) {
+          honorarBlock = `<div class="einsatz-honorar">
                <span class="einsatz-honorar-label">Honorar</span>
                <span class="einsatz-honorar-value">${_e(_fmtPreis(netto))}</span>
-             </div>`
-          : `<div class="einsatz-honorar">
+             </div>`;
+        } else {
+          honorarBlock = `<div class="einsatz-honorar">
                <span class="einsatz-honorar-label">Abrechnung</span>
                <span class="einsatz-honorar-value einsatz-honorar-paket">im Paket inkl.</span>
              </div>`;
+        }
 
-        // Berechnungs-Zeile (Menge × Einzelpreis) zeigen wir nur bei „Aufwand",
-        // weil sie sonst den Kunden mit internen Tagessätzen verwirren würde.
-        const berechnungRow = reportNachAufwand
+        // Berechnungs-Zeile (Menge × Einzelpreis) zeigen wir nur bei „Aufwand"
+        // und nur bei durchgeführten Einsätzen — bei geplant/offen ist die
+        // Berechnung noch nicht verbindlich.
+        const berechnungRow = (reportNachAufwand && modus === 'durchgef')
           ? `<tr><td>Berechnung</td><td>${_e(basisText)}</td></tr>`
           : '';
+
+        // Datum-Anzeige: bei offenen Einsätzen ist datum_von null → „noch offen"
+        const datumAnzeige = modus === 'offen'
+          ? 'NOCH OFFEN'
+          : `${_e(datum)}${_e(datumBis)}`;
+
+        // Doku- und Notizen-Sektionen nur bei durchgeführten Einsätzen rendern.
+        // Geplante haben i. d. R. noch keine Notizen; Vorbereitungs-Doku
+        // könnte zwar existieren, ist aber für den Kunden nicht relevant.
+        const showSubContent = modus === 'durchgef';
 
         return `
           <section class="einsatz">
             <div class="einsatz-head">
-              <div class="einsatz-datum">${_e(datum)}${_e(datumBis)}</div>
+              <div class="einsatz-datum">${datumAnzeige}</div>
               ${honorarBlock}
             </div>
             <h3 class="einsatz-titel">${_e(d.titel || '—')}</h3>
             ${leistung ? `<div class="einsatz-leistung">${_e(leistung)}</div>` : ''}
             <table class="einsatz-meta-grid">
               <tbody>
-                <tr><td>Zeit</td><td>${_e(zeitText)}</td></tr>
+                ${modus !== 'offen' ? `<tr><td>Zeit</td><td>${_e(zeitText)}</td></tr>` : ''}
                 ${d.ort ? `<tr><td>Ort</td><td>${_e(d.ort)}</td></tr>` : ''}
                 ${berechnungRow}
               </tbody>
             </table>
-            ${docsHtml}
-            ${logsHtml}
+            ${showSubContent ? docsHtml : ''}
+            ${showSubContent ? logsHtml : ''}
           </section>`;
-      }).join('');
+      };
+
+  // Drei Sub-Listen rendern; leere Sektionen werden weiter unten weggelassen.
+  const einsaetzeDurchgefHtml = depsDurchgef.length === 0
+    ? `<p class="muted">— Noch keine durchgeführten Einsätze —</p>`
+    : depsDurchgef.map(d => renderEinsatz(d, 'durchgef')).join('');
+  const einsaetzeGeplantHtml = depsGeplant.map(d => renderEinsatz(d, 'geplant')).join('');
+  const einsaetzeOffenHtml   = depsOffen.map(d => renderEinsatz(d, 'offen')).join('');
 
   // Produkte (alle anzeigen, mit Hinweis im-Paket/zusätzlich; Preise nur VK)
   // v2.28.14: Rabatt erscheint als eigene Zeile unter der Bezeichnung +
@@ -29368,25 +29410,39 @@ function _buildCustomerReportHtml(data) {
   const produkteVkExkl = data.products
     .filter(pp => !pp.im_paket)
     .reduce((s, pp) => s + applyRabatt((Number(pp.menge) || 0) * (Number(pp.einzelpreis_vk) || 0), pp.rabatt_typ, pp.rabatt_wert).netto, 0);
-  const einsaetzeSumme = data.deployments.reduce((s, d) => s + calcDeploymentNetto(d), 0);
+  // v2.32.4: Bei Zwischenbericht im Aufwand-Modus zählen nur die schon
+  // durchgeführten/abgerechneten Einsätze in die Summe — geplant/offen
+  // werden separat unten ausgewiesen, aber nicht summiert (das Honorar
+  // dafür entsteht erst nach Durchführung).
+  const einsaetzeSumme = depsDurchgef.reduce((s, d) => s + calcDeploymentNetto(d), 0);
+  const einsaetzeAusstehendSumme = isZwischenbericht
+    ? [...depsGeplant, ...depsOffen].reduce((s, d) => s + calcDeploymentNetto(d), 0)
+    : 0;
   const gesamt = nachAufwand ? (einsaetzeSumme + produkteVkExkl) : (paket + produkteVkExkl);
+
+  const rechnungLabel = isZwischenbericht ? 'Zwischenstand-Übersicht' : 'Rechnungs-Übersicht';
 
   const rechnungRowsHtml = nachAufwand
     ? `
-        <tr><td>Summe Einsätze (siehe Einzelaufstellung oben)</td><td class="num">${_fmtPreis(einsaetzeSumme)}</td></tr>
+        <tr><td>Summe durchgeführter Einsätze${isZwischenbericht ? ' (Stand heute)' : ''}</td><td class="num">${_fmtPreis(einsaetzeSumme)}</td></tr>
+        ${isZwischenbericht && einsaetzeAusstehendSumme > 0 ? `<tr><td><span class="muted">Davon noch ausstehend (geplant / offen)</span></td><td class="num"><span class="muted">${_fmtPreis(einsaetzeAusstehendSumme)}</span></td></tr>` : ''}
         ${produkteVkExkl > 0 ? `<tr><td>Zusätzliche Produkte</td><td class="num">${_fmtPreis(produkteVkExkl)}</td></tr>` : ''}
-        <tr class="bill-total"><td>Gesamtsumme (netto)</td><td class="num">${_fmtPreis(gesamt)}</td></tr>`
+        <tr class="bill-total"><td>${isZwischenbericht ? 'Zwischensumme (netto)' : 'Gesamtsumme (netto)'}</td><td class="num">${_fmtPreis(gesamt)}</td></tr>`
     : `
-        <tr><td>Projekt-Paketpreis</td><td class="num">${_fmtPreis(paket)}</td></tr>
+        <tr><td>Projekt-Paketpreis${isZwischenbericht ? ' (gesamt)' : ''}</td><td class="num">${_fmtPreis(paket)}</td></tr>
         ${produkteVkExkl > 0 ? `<tr><td>Zusätzliche Produkte (außerhalb Paket)</td><td class="num">${_fmtPreis(produkteVkExkl)}</td></tr>` : ''}
         <tr class="bill-total"><td>Gesamtsumme (netto)</td><td class="num">${_fmtPreis(gesamt)}</td></tr>`;
 
   const rechnungHtml = `
-    <h2>${data.products.length > 0 ? '4' : '3'}. Rechnungs-Übersicht</h2>
+    <h2>${data.products.length > 0 ? '4' : '3'}. ${_e(rechnungLabel)}</h2>
     <table class="bill-table">
       <tbody>${rechnungRowsHtml}</tbody>
     </table>
-    <p class="ust-hint">Alle Beträge zuzüglich gesetzlicher Umsatzsteuer.</p>`;
+    ${isZwischenbericht && nachAufwand
+      ? `<p class="ust-hint">Abgerechnet wird laufend nach Durchführung der einzelnen Einsätze. Die Endrechnung folgt nach Projektabschluss.</p>`
+      : isZwischenbericht
+        ? `<p class="ust-hint">Der Paketpreis wird nach vollständigem Projektabschluss fakturiert.</p>`
+        : `<p class="ust-hint">Alle Beträge zuzüglich gesetzlicher Umsatzsteuer.</p>`}`;
 
   const css = `
     /* v2.28.1: @page mit margin:0 verdrängt die Browser-Kopf-/Fußzeile
@@ -29435,6 +29491,9 @@ function _buildCustomerReportHtml(data) {
     .einsatz-honorar-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #6b6b6b; }
     .einsatz-honorar-value { font-size: 14px; font-weight: 700; color: #1d1d1f; font-variant-numeric: tabular-nums; margin-top: 2px; }
     .einsatz-honorar-value.einsatz-honorar-paket { font-size: 12px; font-weight: 600; color: #047857; font-style: italic; }
+    .einsatz-honorar-value.einsatz-honorar-plan { font-size: 12px; font-weight: 600; color: #b45309; font-style: italic; }
+    h3.subsection { font-size: 13px; font-weight: 700; color: #1d1d1f; margin: 22px 0 10px; padding-bottom: 4px; border-bottom: 1px dashed #d6d3cc; text-transform: none; letter-spacing: 0; }
+    h3.subsection .muted { font-size: 11px; font-weight: 500; color: #6b6b6b; }
     .einsatz-titel { font-size: 14px; font-weight: 600; margin: 2px 0 2px; }
     .einsatz-leistung { font-size: 11px; color: #6b6b6b; margin-bottom: 10px; }
     .einsatz-meta-grid { font-size: 11px; border-collapse: collapse; margin: 0 0 14px; width: 100%; max-width: 480px; }
@@ -29503,7 +29562,7 @@ function _buildCustomerReportHtml(data) {
           <div class="hdr-sub">${_e(REPORT_HEADER.inhaber)} · ${_e(REPORT_HEADER.email)}</div>
         </div>
         <div class="hdr-right">
-          <div class="hdr-titel">Projektbericht</div>
+          <div class="hdr-titel">${_e(berichtTitel)}</div>
           <div>Stand: ${_e(todayDE)}</div>
         </div>
       </header>
@@ -29528,8 +29587,20 @@ function _buildCustomerReportHtml(data) {
       <h2>1. Projekt-Briefing</h2>
       ${briefingHtml}
 
+      ${isZwischenbericht ? `
+      <h2>2. Einsätze ${'—'} Zwischenstand</h2>
+      <h3 class="subsection">2.1 Durchgeführte Einsätze${depsDurchgef.length > 0 ? ` <span class="muted">(${depsDurchgef.length})</span>` : ''}</h3>
+      ${einsaetzeDurchgefHtml}
+      ${depsGeplant.length > 0 ? `
+        <h3 class="subsection">2.2 Geplante Einsätze <span class="muted">(${depsGeplant.length})</span></h3>
+        ${einsaetzeGeplantHtml}` : ''}
+      ${depsOffen.length > 0 ? `
+        <h3 class="subsection">2.${depsGeplant.length > 0 ? '3' : '2'} Offene / noch nicht terminierte Einsätze <span class="muted">(${depsOffen.length})</span></h3>
+        ${einsaetzeOffenHtml}` : ''}
+      ` : `
       <h2>2. Durchgeführte Einsätze</h2>
-      ${einsaetzeHtml}
+      ${einsaetzeDurchgefHtml}
+      `}
 
       ${produkteHtml}
 
