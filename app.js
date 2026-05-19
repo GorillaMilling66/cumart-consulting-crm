@@ -6980,6 +6980,11 @@ async function onLogin(user) {
 
   currentProfile = profile;
 
+  // Status-Label-Cache laden (lookup_values ist authenticated-only —
+  // erste Boot-Load in _bootInit schlug pre-auth fehl). Ohne diese
+  // Zeile zeigen Status-Pillen system_keys statt Labels nach v2.30.
+  await _loadStatusLabels();
+
   if (profile.muss_passwort_aendern === true) {
     showMustChangeScreen();
     return;
