@@ -21988,14 +21988,17 @@ function renderBriefingPreview(scope, data) {
 // Dual-Mode: akzeptiert sowohl Legacy-Label 'Storniert' als auch system_key 'storniert'.
 function aufgabeStatusBg(s) {
   return { offen: '#f3f4f6', in_arbeit: '#fffbeb', erledigt: '#f0fdf4',
+           'In Arbeit': '#fffbeb',
            Storniert: '#fef2f2', storniert: '#fef2f2' }[s] || '#f3f4f6';
 }
 function aufgabeStatusColor(s) {
   return { offen: '#6b7280', in_arbeit: '#d97706', erledigt: '#16a34a',
+           'In Arbeit': '#d97706',
            Storniert: '#dc2626', storniert: '#dc2626' }[s] || '#6b7280';
 }
 function aufgabeStatusLabel(s) {
   return { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt',
+           'In Arbeit': 'In Arbeit',
            Storniert: 'Storniert', storniert: 'Storniert' }[s] || s;
 }
 
