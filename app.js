@@ -3686,7 +3686,7 @@ function renderDeploymentPreview() {
 
   // Titel (mit Auto-Generierung wenn leer)
   const titelDisplay = titelVal || (serviceName && company?.name
-    ? `${serviceName} × ${company.name}${currentProfile?.name ? ' × ' + currentProfile.name : ''}`
+    ? `${serviceName} × ${esc(company.name)}${currentProfile?.name ? ' × ' + esc(currentProfile.name) : ''}`
     : '');
   const titelHtml = titelDisplay
     ? `<div class="preview-title">${esc(titelDisplay)}</div>`
@@ -4085,7 +4085,7 @@ function renderMembershipPreview() {
     beendet:   { bg: '#f3f4f6', color: '#6b7280', label: 'Beendet' }
   };
   const s = statusMap[status] || statusMap.aktiv;
-  const statusPill = `<span class="badge" style="background:${s.bg};color:${s.color}">${s.label}</span>`;
+  const statusPill = `<span class="badge" style="background:${s.bg};color:${s.color}">${esc(s.label)}</span>`;
 
   const nameHtml = programName
     ? `<div class="preview-title">${esc(programName)}</div>`
@@ -4338,7 +4338,7 @@ function renderBriefingHeute(data) {
       const tageVon = formatDateCompact(dep.datum_von);
       const tageBis = dep.datum_bis && dep.datum_bis !== dep.datum_von ? formatDateCompact(dep.datum_bis) : '';
       const zeitraum = tageBis ? `${tageVon} – ${tageBis}` : tageVon;
-      const tagessatz = `${formatPreis(dep.einzelpreis || 0)} × ${dep.menge || 1}`;
+      const tagessatz = `${formatPreis(dep.einzelpreis || 0)} × ${Number(dep.menge || 1)}`;
       heroEl.innerHTML = `
         <div class="bv2-hero-einsatz ${isCancelled ? 'is-cancelled' : ''}" onclick="navigateTo('einsatz','${esc(dep.id)}')" style="cursor:pointer">
           ${isCancelled ? '<div class="bv2-hero-cancel-banner">STORNIERT · zählt nicht in den Umsatz</div>' : ''}
@@ -4893,7 +4893,7 @@ function renderBriefingMonat(data) {
       if (uid === '__all__') userLabel = ' · Alle Mitarbeiter';
       else {
         const u = userProfilesCache.find(x => x.id === uid);
-        if (u) userLabel = ` · ${u.name || u.email || ''}`;
+        if (u) userLabel = ` · ${esc(u.name || u.email || '')}`;
       }
     }
     hintEl.textContent = `${monthName} ${year}${userLabel}`;
@@ -5806,7 +5806,7 @@ async function renderArbeitsplatzToday() {
     ...((apptRes.data) || []).map(a => ({ type: 'TERMIN',  ts: a.created_at, label: a.titel, id: a.id, click: `navigateTo('termin','${esc(a.id)}')` })),
     ...((depRes.data) || []).map(d => ({ type: 'EINSATZ', ts: d.created_at, label: d.titel, id: d.id, click: `navigateTo('einsatz','${esc(d.id)}')` })),
     ...((taskRes.data) || []).map(t => ({ type: 'AUFGABE', ts: t.created_at, label: t.titel, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` })),
-    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${t.titel} → erledigt`, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` })),
+    ...((taskDoneRes.data) || []).map(t => ({ type: 'STATUS', ts: t.erledigt_am, label: `${esc(t.titel)} → erledigt`, id: t.id, click: `openTaskModal('edit','${esc(t.id)}')` })),
     ...((companyRes.data) || []).map(c => ({ type: 'FIRMA', ts: c.created_at, label: c.name, id: c.id, click: `navigateTo('firma','${esc(c.id)}')` })),
     ...((contactRes.data) || []).map(k => ({ type: 'KONTAKT', ts: k.created_at, label: [k.vorname, k.nachname].filter(Boolean).join(' ') || '—', id: k.id, click: `navigateTo('kontakt','${esc(k.id)}')` })),
     ...((noteRes.data) || []).map(n => ({ type: 'NOTIZ', ts: n.created_at, label: (n.inhalt || '').substring(0, 80), id: n.id })),
@@ -6192,7 +6192,7 @@ async function loadStageCardActivityStream(type, id) {
     }));
     (atts.data || []).forEach(a => items.push({
       type: 'ANHANG', ts: a.created_at,
-      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${a.filename}`,
+      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${esc(a.filename)}`,
       meta: [_formatBytes ? _formatBytes(a.size_bytes) : '', a.user?.name].filter(Boolean).join(' · '),
       kind: 'anhaenge',
       click: `downloadAttachment('${esc(a.id)}')`
@@ -6208,7 +6208,7 @@ async function loadStageCardActivityStream(type, id) {
     (logs.data || []).forEach(l => {
       const kat = _CAPTURE_KATEGORIEN[l.kategorie] || { emoji: '·', label: l.kategorie };
       items.push({
-        type: `${kat.emoji} ${kat.label}`.toUpperCase(), ts: l.created_at,
+        type: `${kat.emoji} ${esc(kat.label)}`.toUpperCase(), ts: l.created_at,
         title: l.inhalt, meta: l.user?.name || '', kind: 'notizen', click: ''
       });
     });
@@ -6220,7 +6220,7 @@ async function loadStageCardActivityStream(type, id) {
     }));
     (atts.data || []).forEach(a => items.push({
       type: 'ANHANG', ts: a.created_at,
-      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${a.filename}`,
+      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${esc(a.filename)}`,
       meta: [_formatBytes ? _formatBytes(a.size_bytes) : '', a.user?.name].filter(Boolean).join(' · '),
       kind: 'anhaenge',
       click: `downloadAttachment('${esc(a.id)}')`
@@ -6239,7 +6239,7 @@ async function loadStageCardActivityStream(type, id) {
     }));
     (atts.data || []).forEach(a => items.push({
       type: 'ANHANG', ts: a.created_at,
-      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${a.filename}`,
+      title: `${_attachmentIcon ? _attachmentIcon(a.mime_type, a.filename) : '📎'} ${esc(a.filename)}`,
       meta: [_formatBytes ? _formatBytes(a.size_bytes) : '', a.user?.name].filter(Boolean).join(' · '),
       kind: 'anhaenge', click: `downloadAttachment('${esc(a.id)}')`
     }));
@@ -6577,7 +6577,7 @@ function navigateTo(page, param) {
   } else if ((page === 'termin' || page === 'termin_voll') && param) {
     hash = `#/termin/${param}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.firma) {
-    hash = `#/termine?firma=${param.firma}`;
+    hash = `#/termine?firma=${esc(param.firma)}`;
   } else if (page === 'appointments' && param && typeof param === 'object' && param.projekt) {
     hash = `#/termine?projekt=${param.projekt}`;
   } else if (page === 'appointments' && param && typeof param === 'object') {
@@ -8562,7 +8562,7 @@ async function applyTemplateToEntity(typ, templateId) {
   if (typ === 'projekt' && Array.isArray(daten._subitems) && daten._subitems.length > 0) {
     toastSuffix = ` · ${daten._subitems.length} Aktivität${daten._subitems.length === 1 ? '' : 'en'} folgen nach dem Speichern`;
   }
-  if (applied > 0 || toastSuffix) showToast(`Template „${tpl.name}" angewendet${applied > 0 ? ` (${applied} Felder)` : ''}${toastSuffix}.`);
+  if (applied > 0 || toastSuffix) showToast(`Template „${esc(tpl.name)}" angewendet${applied > 0 ? ` (${applied} Felder)` : ''}${toastSuffix}.`);
 }
 
 /** v1.51.0: Datum + N Werktage (Mo-Fr). Sa/So überspringen. */
@@ -9043,7 +9043,7 @@ async function addProjectThemeFromLibrary(libraryId) {
   await db.from('project_theme_assignments').insert({
     project_id: currentProjectDetailId, theme_id: themeId, reihenfolge: 100
   });
-  showToast(`„${lib.name}" übernommen.`);
+  showToast(`„${esc(lib.name)}" übernommen.`);
   _clearThemeQuickInput();
   invalidateThemesCache?.(currentProjectDetailId);
   renderProjectThemes(currentProjectDetailId);
@@ -9123,7 +9123,7 @@ async function promoteThemeToLibrary(themeId, projectId) {
   const { error: linkErr } = await db.from('project_themes')
     .update({ library_theme_id: libId }).eq('id', themeId);
   if (linkErr) { showToast(linkErr.message, true); return; }
-  showToast(`„${t.name}" ist jetzt in der Bibliothek.`);
+  showToast(`„${esc(t.name)}" ist jetzt in der Bibliothek.`);
   invalidateThemesCache?.(projectId);
   renderProjectThemes(projectId);
 }
@@ -10654,7 +10654,7 @@ function renderDetailHeaderMeta(elementId, fields) {
     items.push(`<span class="detail-meta-item"><span class="detail-meta-icon">${ICON_MAIL_SVG}</span><a href="mailto:${esc(fields.email)}">${esc(fields.email)}</a></span>`);
   }
   if (fields.website) {
-    const url = fields.website.startsWith('http') ? fields.website : `https://${fields.website}`;
+    const url = fields.website.startsWith('http') ? fields.website : `https://${esc(fields.website)}`;
     items.push(`<span class="detail-meta-item"><span class="detail-meta-icon">${ICON_GLOBE_SVG}</span><a href="${esc(url)}" target="_blank" rel="noopener">${esc(fields.website)}</a></span>`);
   }
   el.innerHTML = items.join('');
@@ -12993,7 +12993,7 @@ async function loadContactDetail(contactId) {
 
   renderContactDetail(data);
   trackVisit('contact', data.id,
-    `${data.vorname || ''} ${data.nachname || ''}`.trim() || '—',
+    `${esc(data.vorname || '')} ${esc(data.nachname || '')}`.trim() || '—',
     data.company?.name || data.email || '');
   // v2.0.4: Status-Lookup + Layout zuerst (Layout triggert Activity-Stream
   // intern, soll nicht mit Sub-Loadern um Connections kämpfen). Dann die
@@ -14411,7 +14411,7 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
     company_id: deployment.company_id,
     project_id: deployment.project_id,
     ort: deployment.ort,
-    notizen: deployment.notizen ? `[Einsatz-Termin]\n${deployment.notizen}` : '[Einsatz-Termin]',
+    notizen: deployment.notizen ? `[Einsatz-Termin]\n${esc(deployment.notizen)}` : '[Einsatz-Termin]',
     typ_id,
     deployment_id: deployment.id
   };
@@ -14501,9 +14501,9 @@ async function refreshRedeemSection() {
   select.innerHTML = offen.map(e => {
     const rest = Number(e.gesamt_menge) - (redemptionsByEnt[e.id] || 0);
     const quelle = e.memberships
-      ? `Mitgliedschaft: ${e.memberships.membership_programs?.name || '?'}`
+      ? `Mitgliedschaft: ${esc(e.memberships.membership_programs?.name || '?')}`
       : e.projects
-        ? `Projekt: ${e.projects.name}`
+        ? `Projekt: ${esc(e.projects.name)}`
         : 'Manuell';
     const verfallInfo = e.verfall_datum ? ` · bis ${formatDateDE(e.verfall_datum)}` : '';
     return `<option value="${esc(e.id)}" data-rest="${rest}" data-gesamt="${e.gesamt_menge}">
@@ -14889,7 +14889,7 @@ async function loadProjectDeployments(projectId) {
     const isDone = d.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || d.status === DEPLOYMENT_STATUS.ABGERECHNET;
     const isLocked = d.status === DEPLOYMENT_STATUS.ABGERECHNET || d.status === DEPLOYMENT_STATUS.STORNIERT;
     const checkboxTitle = isLocked
-      ? `Status „${d.status}" kann nicht per Checkbox geändert werden`
+      ? `Status „${esc(dispStatus(d.status))}" kann nicht per Checkbox geändert werden`
       : (isDone ? 'Als nicht durchgeführt markieren' : 'Als durchgeführt markieren');
     return `
       <tr class="${isMember ? 'bundle-member-row' : ''}" data-dep-id="${esc(d.id)}" data-dep-status="${esc(d.status || '')}" data-company-id="${esc(d.company_id || '')}" data-project-id="${esc(d.project_id || '')}">
@@ -16506,7 +16506,7 @@ function renderSearchResults(comps, conts, projs, deps, q) {
   }));
   (conts.data || []).forEach(k => results.push({
     type: 'contact', id: k.id,
-    title: `${k.vorname || ''} ${k.nachname || ''}`.trim() || '—',
+    title: `${esc(k.vorname || '')} ${esc(k.nachname || '')}`.trim() || '—',
     subtitle: k.email || ''
   }));
   (projs.data || []).forEach(p => results.push({
@@ -17742,7 +17742,7 @@ async function renderAppointmentExpandedRow(appointmentId, hint) {
   const typWert   = a.typ?.wert  || '—';
 
   const abcBadge = a.company?.abc_klassifizierung
-    ? `<span class="abc-badge abc-badge-${a.company.abc_klassifizierung}" style="width:24px;height:24px;font-size:12px;display:inline-flex;align-items:center;justify-content:center">${esc(a.company.abc_klassifizierung)}</span>`
+    ? `<span class="abc-badge abc-badge-${esc(a.company.abc_klassifizierung)}" style="width:24px;height:24px;font-size:12px;display:inline-flex;align-items:center;justify-content:center">${esc(a.company.abc_klassifizierung)}</span>`
     : `<span style="color:var(--muted)">—</span>`;
 
   const uhrzeit = a.uhrzeit_von
@@ -17916,7 +17916,7 @@ async function quickAppointmentFollowup(appointmentId) {
   const d = new Date(); d.setDate(d.getDate() + 7);
   document.getElementById('t-datum').value = toISODate(d);
   if (a.ort)   document.getElementById('t-ort').value   = a.ort;
-  if (a.titel) document.getElementById('t-titel').value = `Folgetermin: ${a.titel}`;
+  if (a.titel) document.getElementById('t-titel').value = `Folgetermin: ${esc(a.titel)}`;
   if (a.typ_id) {
     const typSelect = document.getElementById('t-typ');
     if (typSelect) typSelect.value = a.typ_id;
@@ -18049,7 +18049,7 @@ async function renderDeploymentExpandedRow(deploymentId, hint) {
   const wertLabel = d.project_id ? 'Positionswert (Aufwand)' : 'Wert';
 
   const abcBadge = d.company?.abc_klassifizierung
-    ? `<span class="abc-badge abc-badge-${d.company.abc_klassifizierung}" style="width:24px;height:24px;font-size:12px;display:inline-flex;align-items:center;justify-content:center">${esc(d.company.abc_klassifizierung)}</span>`
+    ? `<span class="abc-badge abc-badge-${esc(d.company.abc_klassifizierung)}" style="width:24px;height:24px;font-size:12px;display:inline-flex;align-items:center;justify-content:center">${esc(d.company.abc_klassifizierung)}</span>`
     : `<span style="color:var(--muted)">—</span>`;
 
   const datumLabel = d.datum_von
@@ -18224,7 +18224,7 @@ async function quickDeploymentMarkDone(deploymentId) {
     .select('id, project_id, status').eq('id', deploymentId).single();
   if (selErr || !dep) { showToast('Einsatz nicht gefunden.', true); return; }
   if (dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || dep.status === DEPLOYMENT_STATUS.ABGERECHNET) {
-    showToast(`Einsatz ist bereits „${dep.status}".`, true); return;
+    showToast(`Einsatz ist bereits „${esc(dispStatus(dep.status))}".`, true); return;
   }
   const { error } = await db.from('deployments')
     .update({ status: DEPLOYMENT_STATUS.DURCHGEFUEHRT }).eq('id', deploymentId);
@@ -18275,7 +18275,7 @@ async function quickDeploymentFollowup(deploymentId) {
 
   await openDeploymentModal('new');
   if (d.ort)         document.getElementById('d-ort').value = d.ort;
-  if (d.titel)       document.getElementById('d-titel').value = `Folgeeinsatz: ${d.titel}`;
+  if (d.titel)       document.getElementById('d-titel').value = `Folgeeinsatz: ${esc(d.titel)}`;
   // Service-change-Event kümmert sich um Preis/Uhrzeit; wenn kein Service, behalten wir Menge/Preis
   if (!d.service_id) {
     if (d.menge)       document.getElementById('d-menge').value = d.menge;
@@ -18532,7 +18532,7 @@ async function quickTaskFollowup(taskId) {
   if (t.project_id) taskModalPrefillProjectId = t.project_id;
   await openTaskModal('new');
   const titleInput = document.getElementById('a-titel');
-  if (titleInput && t.titel) titleInput.value = `Folge zu: ${t.titel}`;
+  if (titleInput && t.titel) titleInput.value = `Folge zu: ${esc(t.titel)}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -21207,7 +21207,7 @@ function renderBriefingHeroDeployment(dep, data) {
 
   const titel = dep.titel || dep.service?.name || 'Einsatz';
   const firma = dep.company?.name || '—';
-  const ort = (dep.ort || '').trim() || (dep.company?.name ? `bei ${dep.company.name}` : '—');
+  const ort = (dep.ort || '').trim() || (dep.company?.name ? `bei ${esc(dep.company.name)}` : '—');
 
   // Status-Toggle-Button: bietet je nach Status den nächsten logischen Schritt an.
   // Geplant → Durchgeführt, Durchgeführt → Abgerechnet. Bei Abgerechnet kein
@@ -21429,7 +21429,7 @@ async function markDeploymentDone(id) {
       .select('id, project_id, status').eq('id', id).single();
     if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
     if (dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || dep.status === DEPLOYMENT_STATUS.ABGERECHNET) {
-      showToast(`Einsatz ist bereits „${dep.status}".`, true); return;
+      showToast(`Einsatz ist bereits „${esc(dispStatus(dep.status))}".`, true); return;
     }
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.DURCHGEFUEHRT }).eq('id', id);
     if (error) throw error;
@@ -21963,7 +21963,7 @@ async function loadNotesList() {
 
 function _getNotizBezug(n) {
   if (n.company_id && n.company && !n.company.deleted_at) {
-    return { type: 'company', label: n.company.name, click: `navigateTo('firma','${n.company.id}')` };
+    return { type: 'company', label: n.company.name, click: `navigateTo('firma','${esc(n.company.id)}')` };
   }
   if (n.project_id && n.project && !n.project.deleted_at) {
     return { type: 'project', label: n.project.name, click: `navigateTo('projekt','${n.project.id}')` };
@@ -22817,7 +22817,7 @@ function openFabMenu() {
   // Titel an aktuellen Kontext anpassen
   const ctx = _getFabContext();
   const title = document.getElementById('fab-menu-title');
-  if (title) title.textContent = ctx.label ? `Schnell anlegen · ${ctx.label}` : 'Schnell anlegen';
+  if (title) title.textContent = ctx.label ? `Schnell anlegen · ${esc(ctx.label)}` : 'Schnell anlegen';
   // v2.9.3: Menü dynamisch unter dem Topnav-Quickadd-Button positionieren
   const anchor = document.getElementById('topnav-quickadd');
   if (anchor) {
@@ -23176,7 +23176,7 @@ async function loadProjectActivityStream(projectId) {
   // v2.9.1: Anhänge
   (atts.data || []).forEach(a => items.push({
     type: 'ANHANG', ts: a.created_at,
-    title: `${_attachmentIcon(a.mime_type, a.filename)} ${a.filename}`,
+    title: `${_attachmentIcon(a.mime_type, a.filename)} ${esc(a.filename)}`,
     meta: [_formatBytes(a.size_bytes), a.user?.name].filter(Boolean).join(' · '),
     kind: 'anhaenge',
     click: `downloadAttachment('${esc(a.id)}')`
@@ -23896,7 +23896,7 @@ async function addCompanyThemeFromLibrary(libraryId) {
     status:           'offen'
   });
   if (error) { showToast(error.message, true); return; }
-  showToast(`„${lib.name}" zum Firmen-Pool hinzugefügt.`);
+  showToast(`„${esc(lib.name)}" zum Firmen-Pool hinzugefügt.`);
   _clearCompanyThemeQuickInput();
   renderCompanyThemesTab(currentCompanyDetailId);
 }
@@ -24058,7 +24058,7 @@ async function loadCompanyActivityStream(companyId) {
   // v2.9.1: Anhänge
   (atts.data || []).forEach(a => items.push({
     id: a.id, type: 'ANHANG', ts: a.created_at,
-    title: `${_attachmentIcon(a.mime_type, a.filename)} ${a.filename}`,
+    title: `${_attachmentIcon(a.mime_type, a.filename)} ${esc(a.filename)}`,
     meta: [_formatBytes(a.size_bytes), a.user?.name].filter(Boolean).join(' · '),
     kind: 'anhaenge',
     click: `downloadAttachment('${esc(a.id)}')`
@@ -24262,7 +24262,7 @@ async function loadContactActivityStream(contactId) {
   // v2.9.1: Anhänge
   (atts.data || []).forEach(a => items.push({
     type: 'ANHANG', ts: a.created_at,
-    title: `${_attachmentIcon(a.mime_type, a.filename)} ${a.filename}`,
+    title: `${_attachmentIcon(a.mime_type, a.filename)} ${esc(a.filename)}`,
     meta: [_formatBytes(a.size_bytes), a.user?.name].filter(Boolean).join(' · '),
     kind: 'anhaenge',
     click: `downloadAttachment('${esc(a.id)}')`
@@ -24543,7 +24543,7 @@ async function createTaskFromAppointment() {
   taskModalPrefillContactId = a.contact_id;
   taskModalPrefillProjectId = a.project_id;
   await openTaskModal('new');
-  if (a.titel) document.getElementById('a-titel').value = `Aus Termin: ${a.titel}`;
+  if (a.titel) document.getElementById('a-titel').value = `Aus Termin: ${esc(a.titel)}`;
 }
 
 async function createDeploymentFromAppointment() {
@@ -24614,7 +24614,7 @@ async function loadDeploymentDetail(deploymentId) {
 
   const honorar = (Number(d.einzelpreis) || 0) * (Number(d.menge) || 1);
   document.getElementById('dep-hero-honorar').textContent = formatPreis(honorar);
-  document.getElementById('dep-hero-honorar-sub').textContent = `${d.menge || 1} × ${formatPreis(d.einzelpreis || 0)}`;
+  document.getElementById('dep-hero-honorar-sub').textContent = `${Number(d.menge || 1)} × ${formatPreis(d.einzelpreis || 0)}`;
 
   document.getElementById('dep-hero-leistung').textContent = d.service?.name || '—';
   document.getElementById('dep-hero-leistung-sub').textContent = d.ganztag ? 'Ganztag' : ' ';
@@ -25084,7 +25084,7 @@ async function addDeploymentThemeFromLibrary(libraryId) {
     }
   }
   await db.from('deployment_themes').insert({ deployment_id: dep.id, theme_id: themeId });
-  showToast(`„${lib.name}" übernommen.`);
+  showToast(`„${esc(lib.name)}" übernommen.`);
   _clearDepThemeQuickInput();
   invalidateThemesCache?.(dep.project_id);
   await renderDeploymentReportThemes(dep);
@@ -26321,7 +26321,7 @@ async function _runCompanyContactImport(statusEl, errorsEl, btn) {
       firmaPayload.erstellt_von = currentProfile?.id || null;
       const { data: newC, error: cErr } = await db.from('companies').insert(firmaPayload).select('id').single();
       if (cErr) {
-        errors.push({ row: rowIdx + 2, msg: `Firma „${firmaName}" konnte nicht angelegt werden: ${cErr.message}` });
+        errors.push({ row: rowIdx + 2, msg: `Firma „${firmaName}" konnte nicht angelegt werden: ${esc(cErr.message)}` });
         continue;
       }
       companyId = newC.id;
@@ -26335,7 +26335,7 @@ async function _runCompanyContactImport(statusEl, errorsEl, btn) {
     kontaktPayload.erstellt_von = currentProfile?.id || null;
     const { error: kErr } = await db.from('contacts').insert(kontaktPayload);
     if (kErr) {
-      errors.push({ row: rowIdx + 2, msg: `Kontakt nicht angelegt: ${kErr.message}` });
+      errors.push({ row: rowIdx + 2, msg: `Kontakt nicht angelegt: ${esc(kErr.message)}` });
       continue;
     }
     contactsCreated++;
@@ -26579,7 +26579,7 @@ function _getExt(name) {
 
 async function _uploadOneAttachment(entityType, entityId, file, displayName, beschreibung) {
   if (file.size > 50 * 1024 * 1024) {
-    showToast(`„${file.name}" ist größer als 50 MB — übersprungen.`, true);
+    showToast(`„${esc(file.name)}" ist größer als 50 MB — übersprungen.`, true);
     return false;
   }
   const safeFilename = (displayName || file.name).replace(/[^\w.\-]/g, '_');
@@ -26589,7 +26589,7 @@ async function _uploadOneAttachment(entityType, entityId, file, displayName, bes
     contentType: file.type || 'application/octet-stream',
     upsert: false
   });
-  if (upErr) { showToast(`Upload fehlgeschlagen: ${upErr.message}`, true); return false; }
+  if (upErr) { showToast(`Upload fehlgeschlagen: ${esc(upErr.message)}`, true); return false; }
   const { error: dbErr } = await db.from('attachments').insert({
     entity_type: entityType,
     entity_id: entityId,
@@ -26601,7 +26601,7 @@ async function _uploadOneAttachment(entityType, entityId, file, displayName, bes
     uploaded_by: currentProfile?.id || null
   });
   if (dbErr) {
-    showToast(`Metadaten-Eintrag fehlgeschlagen: ${dbErr.message}`, true);
+    showToast(`Metadaten-Eintrag fehlgeschlagen: ${esc(dbErr.message)}`, true);
     await db.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
     return false;
   }
@@ -26719,19 +26719,19 @@ async function onAttachmentFileChosen(entityType, entityId, containerId, input) 
   const wrap = document.getElementById(containerId);
   for (const file of files) {
     if (file.size > 50 * 1024 * 1024) {
-      showToast(`„${file.name}" ist größer als 50 MB — übersprungen.`, true);
+      showToast(`„${esc(file.name)}" ist größer als 50 MB — übersprungen.`, true);
       continue;
     }
     // Pfad: entity_type/entity_id/<uuid>-<filename>
     const safeFilename = file.name.replace(/[^\w.\-]/g, '_');
     const id = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + '-' + Math.random().toString(36).slice(2));
     const storagePath = `${entityType}/${entityId}/${id}-${safeFilename}`;
-    showToast(`Lade „${file.name}" hoch …`);
+    showToast(`Lade „${esc(file.name)}" hoch …`);
     const { error: upErr } = await db.storage.from(ATTACHMENT_BUCKET).upload(storagePath, file, {
       contentType: file.type || 'application/octet-stream',
       upsert: false
     });
-    if (upErr) { showToast(`Upload fehlgeschlagen: ${upErr.message}`, true); continue; }
+    if (upErr) { showToast(`Upload fehlgeschlagen: ${esc(upErr.message)}`, true); continue; }
     // Metadaten in DB
     const { error: dbErr } = await db.from('attachments').insert({
       entity_type: entityType,
@@ -26743,7 +26743,7 @@ async function onAttachmentFileChosen(entityType, entityId, containerId, input) 
       uploaded_by: currentProfile?.id || null
     });
     if (dbErr) {
-      showToast(`Metadaten-Eintrag fehlgeschlagen: ${dbErr.message}`, true);
+      showToast(`Metadaten-Eintrag fehlgeschlagen: ${esc(dbErr.message)}`, true);
       // Storage-Datei aufräumen
       await db.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
       continue;
@@ -27273,7 +27273,7 @@ function startContactMerge(groupIdx) {
   _mergeContactContext = { masterId, dupIds, masterName };
   document.getElementById('merge-summary').innerHTML = `
     <strong>Master (Kontakt):</strong> ${esc(masterName)} · ${esc(masterK?.email || '')}<br>
-    <strong>Dubletten (${dupIds.length}):</strong> ${esc(group.items.filter(k => k.id !== masterId).map(k => `${k.vorname || ''} ${k.nachname || ''}`.trim()).join(', '))}<br>
+    <strong>Dubletten (${dupIds.length}):</strong> ${esc(group.items.filter(k => k.id !== masterId).map(k => `${esc(k.vorname || '')} ${esc(k.nachname || '')}`.trim()).join(', '))}<br>
     <em style="color:var(--muted);font-size:12px">Verknüpfungen (Termine, Aufgaben, Notizen, Projekt-Hauptkontakt, Tags, Pins) wandern zum Master.</em>`;
   // Merge-Confirm-Button auf Kontakt-Variante umbiegen
   const btn = document.getElementById('merge-confirm-btn');
@@ -27682,7 +27682,7 @@ async function bulkAdjustProductPrices() {
     const part = (target === 'ek' || target === 'both')
       ? `EK ${formatPreis(u.oldEk)} → ${formatPreis(u.newEk)}`
       : `VK ${formatPreis(u.oldVk)} → ${formatPreis(u.newVk)}`;
-    return `• ${u.name}: ${part}`;
+    return `• ${esc(u.name)}: ${part}`;
   }).join('\n');
   const more = updates.length > 5 ? `\n… und ${updates.length - 5} weitere` : '';
 
@@ -27911,7 +27911,7 @@ async function applyBulkInline(entityType) {
   btn.disabled = false;
   if (error) { showToast('Fehler: ' + error.message, true); return; }
   const n = data?.length ?? ids.length;
-  showToast(`${field.label} bei ${n} ${cfg.label} geändert${onlyEmpty ? ' (nur leere)' : ''}.`);
+  showToast(`${esc(field.label)} bei ${n} ${esc(cfg.label)} geändert${onlyEmpty ? ' (nur leere)' : ''}.`);
 
   // Reset inline editor
   document.getElementById(`${prefix}-bulk-field`).value = '';
@@ -27974,7 +27974,7 @@ async function onBulkEditFieldChange() {
   const field = cfg.fields.find(f => f.key === fieldKey);
   if (!field) return;
 
-  labelEl.textContent = `Neuer Wert für „${field.label}"`;
+  labelEl.textContent = `Neuer Wert für „${esc(field.label)}"`;
   hintEl.textContent = '';
   wrap.style.display = '';
 
@@ -28076,7 +28076,7 @@ async function applyBulkEdit() {
   btn.disabled = false; btn.textContent = 'Anwenden';
   if (error) { showToast('Fehler: ' + error.message, true); return; }
   const n = data?.length ?? ids.length;
-  showToast(`${field.label} bei ${n} ${cfg.label} geändert${onlyEmpty ? ' (nur leere)' : ''}.`);
+  showToast(`${esc(field.label)} bei ${n} ${esc(cfg.label)} geändert${onlyEmpty ? ' (nur leere)' : ''}.`);
   closeBulkEditModal();
 
   // Cache + Liste aktualisieren
@@ -28791,7 +28791,7 @@ async function docSectionPersist(id, field, value) {
   // Meta-Anzeige in der UI aktualisieren — wir nehmen heute als zuletzt-geändert.
   const row = document.querySelector(`.doc-section[data-section-id="${id}"] .doc-section-meta`);
   if (row && currentProfile?.name) {
-    row.textContent = `${currentProfile.name} · zuletzt geändert ${formatDateCompact(toISODate(new Date()))}`;
+    row.textContent = `${esc(currentProfile.name)} · zuletzt geändert ${formatDateCompact(toISODate(new Date()))}`;
   }
 }
 
@@ -29040,7 +29040,7 @@ async function applyDocTemplate(templateId, entityType, entityId, containerId) {
 
   const { error: insErr } = await db.from('doc_sections').insert(rows);
   if (insErr) { showToast('Anwenden fehlgeschlagen: ' + insErr.message, true); return; }
-  showToast(`Vorlage „${tpl.name}" angewendet — ${rows.length} Bereich${rows.length === 1 ? '' : 'e'} angelegt.`);
+  showToast(`Vorlage „${esc(tpl.name)}" angewendet — ${rows.length} Bereich${rows.length === 1 ? '' : 'e'} angelegt.`);
   await renderDocSections(entityType, entityId, containerId);
   closeDocTemplatePicker();
 }

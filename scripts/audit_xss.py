@@ -65,6 +65,12 @@ def extract_interpolations(text):
 # ──────────────────────────────────────────────────────────────────
 SAFE_PREFIXES = (
     'esc(', 'escSafe(', 'escHtml(', 'escape(',
+    '_e(',  # PDF-Bericht-Generator: lokaler escape-Helper
+    '_textToParas(',  # PDF: escapt intern + wandelt Absätze
+    '_renderActionItemsForReport(',  # PDF: rendert HTML-safe
+    '_renderTeam(',  # PDF: rendert HTML-safe
+    '_attachmentIcon(',  # liefert hartcodierte Emoji-Strings
+    '_getExt(',  # liefert Dateiendung-Substring (z. B. ".pdf")
     'formatPreis(', 'formatDateDE(', 'formatDateCompact(',
     'formatDateTimeCompact(', 'formatLastLogin(', 'formatNumber(',
     'formatTime(', 'formatDuration(',
