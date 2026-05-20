@@ -1,6 +1,18 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.31.0 (Block-2-Cleanup — dual-mode Status-Helper
+   Version 2.31.1 (Bugfix — Einsatz-Bearbeiten in Projekten mit
+   Status „Abschlussphase" hat den Einsatz aus dem Projekt
+   ausgehängt: `rebuildProjectDropdownForDeployment` ließ
+   ABSCHLUSSPHASE als Outlier aus dem Status-Filter raus, die
+   Option fehlte in der Modal-Dropdown, `setValue()` schlug still
+   fehl und beim Save wurde `project_id = null` zurückgeschrieben.
+   Fix: ABSCHLUSSPHASE in den Filter aufgenommen + `forceInclude
+   ProjectId`-Parameter — beim Edit wird das aktuell zugeordnete
+   Projekt immer als Option angehängt, egal welchen Status es hat
+   (deckt auch VERLOREN/STORNIERT ab). Daten waren nie weg:
+   Einsatz hängt weiter am Bündel, nur die Projekt-Zuordnung
+   war gekappt. Vorgängerversion 2.31.0 (Block-2-Cleanup —
+   dual-mode Status-Helper
    entfernt. `_LEGACY_STATUS_MAP`, `normalizeStatus()`,
    `dualStatus()`, `statusEq()`, `statusIn()` sind raus; Code
    vergleicht Status-Werte direkt gegen die system_key-
@@ -13776,7 +13788,10 @@ async function openDeploymentModal(mode, deploymentId = null) {
     }
     if (effectiveCompanyId) {
       setCompanyComboboxValue('d-company', 'd-company-list', effectiveCompanyId);
-      await rebuildProjectDropdownForDeployment(effectiveCompanyId);
+      // v2.31.1: forceIncludeProjectId stellt sicher, dass das aktuell zugeordnete
+      // Projekt in der Dropdown landet, auch wenn sein Status nicht im Default-Filter
+      // ist (z. B. ABSCHLUSSPHASE — vorher Outlier — oder VERLOREN/STORNIERT).
+      await rebuildProjectDropdownForDeployment(effectiveCompanyId, data.project_id || null);
       if (data.project_id) document.getElementById('d-project').value = data.project_id;
       updateDeploymentOrtHint();
     }
@@ -14095,19 +14110,30 @@ function updateDeploymentPriceHint() {
   }
 }
 
-async function rebuildProjectDropdownForDeployment(companyId) {
+async function rebuildProjectDropdownForDeployment(companyId, forceIncludeProjectId = null) {
   const select = document.getElementById('d-project');
   if (!select) return;
   if (!companyId) {
     select.innerHTML = '<option value="">— Kein Projekt (Einzelbuchung) —</option>';
     return;
   }
+  // v2.31.1: ABSCHLUSSPHASE war als Outlier nicht in der Liste — die Modal-Dropdown
+  // hat das Projekt verschluckt, beim Save wurde project_id auf null geschrieben
+  // und der Einsatz aus dem Projekt ausgehängt.
   const { data, error } = await db.from('projects')
     .select('id, name, status').is('deleted_at', null).eq('company_id', companyId)
-    .in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABGESCHLOSSEN])
+    .in('status', [PROJECT_STATUS.LEAD, PROJECT_STATUS.ANGEBOT, PROJECT_STATUS.IN_ARBEIT, PROJECT_STATUS.ABSCHLUSSPHASE, PROJECT_STATUS.ABGESCHLOSSEN])
     .order('name');
   if (error) { select.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
   const projects = data || [];
+  // v2.31.1: defensive — wenn der Edit-Pfad ein zugeordnetes Projekt hat, das nicht
+  // im Filter landet (z. B. VERLOREN, STORNIERT), trotzdem als Option anhängen, damit
+  // setValue() greift und die Zuordnung nicht stillschweigend zerstört wird.
+  if (forceIncludeProjectId && !projects.some(p => p.id === forceIncludeProjectId)) {
+    const { data: extra } = await db.from('projects')
+      .select('id, name, status').is('deleted_at', null).eq('id', forceIncludeProjectId).single();
+    if (extra) projects.push(extra);
+  }
   select.innerHTML = '<option value="">— Kein Projekt (Einzelbuchung) —</option>'
     + projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(dispStatus(p.status))}</option>`).join('');
 }
