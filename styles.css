@@ -9842,3 +9842,323 @@ select.typ-select-secondary {
   font-size: 10px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v2.32.0 — Inline-Composer auf dem Arbeitsplatz
+   Ersetzt das Drawer-Modal für die sieben Anlage-Aktionen durch eine
+   interaktive Eingabefläche direkt in der Welcome-Card: Titel-Feld bleibt
+   sichtbar, „+"-Chip-Reihe blendet Picker unterhalb ein, gewählte Werte
+   sammeln sich als Zeilen darunter. Speichern ruft die existierenden
+   saveXxx()-Funktionen auf, damit Domain-Logik (Termin↔Einsatz, Auto-
+   Status, Entitlements) unverändert greift.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Welcome-Card im Composer-Modus — Greeting bleibt, alles andere weg */
+.stage-welcome-card.composer-active .ab-welcome-kpis,
+.stage-welcome-card.composer-active #ab-welcome-quick-section,
+.stage-welcome-card.composer-active .ab-welcome-section,
+.stage-welcome-card.composer-active .ab-welcome-actions,
+.stage-welcome-card.composer-active .arbeitsplatz-live-preview,
+.stage-welcome-card.composer-active > .arbeitsplatz-capture,
+.stage-welcome-card.composer-active .ab-welcome-main-row .arbeitsplatz-capture,
+.stage-welcome-card.composer-active .ab-welcome-main-row { display: none !important; }
+
+/* Drawer wird unsichtbar, wenn der Composer ihn nur als Daten-Hülle nutzt */
+.drawer-overlay.composer-suppressed { display: none !important; }
+
+/* Composer-Shell */
+.composer {
+  display: flex; flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+  padding: 18px 20px 16px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--entity-color, var(--text));
+}
+.composer[data-entity="firma"]   { --entity-color: var(--type-firma-fg, #04342C); }
+.composer[data-entity="kontakt"] { --entity-color: var(--type-kontakt-fg, #26215C); }
+.composer[data-entity="projekt"] { --entity-color: var(--type-projekt-fg, #042C53); }
+.composer[data-entity="einsatz"] { --entity-color: var(--type-einsatz-fg, #412402); }
+.composer[data-entity="termin"]  { --entity-color: var(--type-termin-fg, #042C53); }
+.composer[data-entity="aufgabe"] { --entity-color: var(--type-aufgabe-fg, #4B1528); }
+.composer[data-entity="notiz"]   { --entity-color: var(--theme-grey-fg, #3A3A37); }
+
+.composer-eyebrow {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--entity-color, var(--muted));
+}
+
+.composer-title-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  border-bottom: 0.5px solid var(--border);
+  padding-bottom: 12px;
+}
+.composer-title-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+  resize: none;
+  padding: 4px 0;
+  min-height: 28px;
+}
+.composer-title-input:focus { outline: none; }
+.composer-title-input::placeholder { color: var(--tertiary); font-weight: 400; }
+
+.composer-actions { display: inline-flex; gap: 8px; align-items: center; }
+.composer-btn {
+  font-family: inherit; font-size: 13px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.composer-btn:hover { border-color: var(--text); }
+.composer-btn--primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.composer-btn--primary:hover { background: #000; }
+.composer-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Chip-Reihe — die anklickbaren „+"-Buttons */
+.composer-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.composer-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; font-size: 12px;
+  border: 0.5px dashed var(--border-strong);
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: border-color .12s ease, color .12s ease, background .12s ease;
+}
+.composer-chip:hover { border-color: var(--text); color: var(--text); }
+.composer-chip.is-set {
+  border-style: solid;
+  border-color: var(--entity-color, var(--text));
+  background: var(--bg-soft);
+  color: var(--text);
+  font-weight: 500;
+}
+.composer-chip.is-open {
+  border-style: solid;
+  border-color: var(--text);
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+/* Inline-Picker — erscheint unter dem Textfeld, sobald ein Chip geklickt wurde */
+.composer-pickers { display: flex; flex-direction: column; gap: 12px; }
+.composer-picker {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 14px 16px;
+  background: var(--bg-soft);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.composer-picker-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 600; letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.composer-picker-close {
+  border: none; background: transparent;
+  cursor: pointer; color: var(--muted);
+  font-size: 16px; line-height: 1;
+  padding: 0 4px;
+}
+.composer-picker-close:hover { color: var(--text); }
+.composer-picker input[type="text"],
+.composer-picker input[type="date"],
+.composer-picker input[type="time"],
+.composer-picker input[type="number"],
+.composer-picker input[type="tel"],
+.composer-picker input[type="email"],
+.composer-picker select,
+.composer-picker textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font: inherit; font-size: 13px;
+  color: var(--text);
+}
+.composer-picker textarea { resize: vertical; min-height: 60px; }
+.composer-picker-row { display: flex; gap: 10px; }
+.composer-picker-row > * { flex: 1; }
+.composer-picker-hint { font-size: 11px; color: var(--muted); }
+.composer-picker-options {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px;
+}
+.composer-picker-option {
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.composer-picker-option:hover { border-color: var(--text); }
+.composer-picker-option.is-selected {
+  background: var(--entity-color, var(--text));
+  color: #fff;
+  border-color: var(--entity-color, var(--text));
+}
+
+/* 2-Monats-Kalender */
+.composer-cal {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+@media (max-width: 700px) {
+  .composer-cal { grid-template-columns: 1fr; }
+}
+.composer-cal-month {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.composer-cal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text);
+}
+.composer-cal-nav {
+  border: none; background: transparent;
+  cursor: pointer; color: var(--muted);
+  font-size: 16px; line-height: 1;
+  padding: 0 6px;
+}
+.composer-cal-nav:hover { color: var(--text); }
+.composer-cal-weekdays,
+.composer-cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+}
+.composer-cal-weekday {
+  text-align: center;
+  font-size: 10px; font-weight: 600;
+  letter-spacing: .4px;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 4px 0;
+}
+.composer-cal-day {
+  border: none; background: transparent;
+  font-family: inherit; font-size: 12px;
+  color: var(--text);
+  padding: 6px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+}
+.composer-cal-day:hover:not(.is-disabled) {
+  background: var(--bg-soft);
+}
+.composer-cal-day.is-other-month { color: var(--tertiary); }
+.composer-cal-day.is-today {
+  font-weight: 700;
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+.composer-cal-day.is-selected,
+.composer-cal-day.is-range-start,
+.composer-cal-day.is-range-end {
+  background: var(--entity-color, var(--text));
+  color: #fff;
+  font-weight: 600;
+}
+.composer-cal-day.is-in-range {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+.composer-cal-day.is-disabled { opacity: .35; cursor: not-allowed; }
+
+.composer-cal-modes { display: flex; gap: 4px; margin-bottom: 8px; }
+.composer-cal-mode {
+  font-family: inherit; font-size: 12px;
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  padding: 4px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.composer-cal-mode.is-active {
+  background: var(--text); color: #fff;
+  border-color: var(--text);
+}
+.composer-cal-summary {
+  margin-top: 8px;
+  font-size: 12px; color: var(--text);
+  font-weight: 500;
+}
+
+/* Gewählte Werte als Zeilen unter dem Composer */
+.composer-values {
+  display: flex; flex-direction: column;
+  gap: 2px;
+}
+.composer-value {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.composer-value:hover { background: var(--bg-soft); }
+.composer-value-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.composer-value-text { color: var(--text); }
+.composer-value-actions { display: inline-flex; gap: 2px; }
+.composer-value-btn {
+  border: none; background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.composer-value-btn:hover { color: var(--text); background: var(--border); }
+
+.composer-error {
+  font-size: 12px;
+  color: var(--danger);
+  padding: 6px 10px;
+  background: var(--status-overdue-bg);
+  border-radius: var(--radius-sm);
+}
+
+/* Composer auf schmalen Viewports — Werte stapeln */
+@media (max-width: 700px) {
+  .composer { padding: 14px 14px 12px; }
+  .composer-value { grid-template-columns: 1fr; gap: 4px; }
+  .composer-value-label { font-size: 9px; }
+  .composer-title-input { font-size: 16px; }
+  .composer-picker-row { flex-direction: column; }
+}

@@ -1,6 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.31.3 (Fix — Doku-Blöcke in „nach 2. Einsätze" /
+   Version 2.32.0 (Feature — Inline-Composer auf dem Arbeitsplatz
+   für alle sieben Anlage-Aktionen: Firma · Kontakt · Projekt ·
+   Einsatz · Termin · Aufgabe · Notiz. Klick in der „Neu anlegen"-
+   Rail öffnet kein Drawer-Modal mehr, sondern einen interaktiven
+   Composer in der Welcome-Card — Titel-Feld + Chip-Reihe + Inline-
+   Picker unter dem Textfeld, gewählte Werte als Zeilen darunter,
+   2-Monats-Kalender für Datums-Felder (Single/Range). Composer
+   nutzt die existierenden Drawer-Modals als unsichtbare Daten-
+   Hülle (composer-suppressed-Klasse), füllt sie über die Picker
+   und ruft beim Speichern die unveränderten saveAppointment() /
+   saveDeployment() / saveTask() / saveProject() / saveCompany() /
+   saveContact()-Funktionen — Domain-Logik (Termin↔Einsatz-Kopplung,
+   Auto-Projektstatus, Entitlements) bleibt unverändert. „Mehr
+   Felder →"-Chip öffnet den Drawer als Fallback für die seltener
+   gebrauchten Felder (Rabatt, Themen, Bonus, Mehrteilnehmer).
+   Notiz und Kontakt sind Sonderfälle (direkter db-Insert bzw.
+   Vor-/Nachname-Split). Welcome-Card im Composer-Modus blendet
+   KPIs, „Schnell weitermachen" und „Fortführen" aus — nur Greeting
+   + Composer sichtbar.
+   Vorgängerversion 2.31.3 (Fix — Doku-Blöcke in „nach 2. Einsätze" /
    „nach 3. Lieferumfang" klebten optisch an der vorherigen
    Tabelle. Wrapper `.extra-docs` mit margin-top:30px + dünner
    Border-Top setzt die gleiche Sektions-Distanz wie unter
@@ -5952,21 +5971,23 @@ async function loadPrepareSuggestions(typ) {
 //  v2.18.0 — ARBEITSPLATZ 3-Spalten-Layout: Stage-Mechanik
 // ═══════════════════════════════════════════════════════════
 
-/** v2.18.0: Klick auf eine Aktion in der linken Spalte.
- *  - Markiert die Aktion als aktiv (.is-active)
- *  - Zeigt eine Live-Vorschau-Karte direkt unter der Aktions-Liste
- *  - Öffnet (vorerst) das bestehende Modal über `arbeitsplatzCreate`.
- *  In Phase 3 wird das Modal durch ein Inline-Formular in der Bühne
- *  ersetzt — die Stage-Mechanik (Hash-State / Karteikarten) kommt dann
- *  hier rein. */
+/** v2.32.0: Klick auf eine Aktion in der linken Rail öffnet jetzt den
+ *  Inline-Composer in der Bühne — kein Drawer-Modal mehr für den
+ *  Standardfall. Die Live-Vorschau-Karte und der `arbeitsplatzCreate()`-
+ *  Pfad bleiben als Fallback für Aktionen, für die kein Composer-Schema
+ *  existiert (z. B. „anhang" — über das Flyout-Panel). */
 async function stageOpenAction(typ) {
-  // Aktive Aktion visuell markieren
+  // Aktive Rail-Markierung pflegen (zusätzlich zu der, die der Composer setzt)
   document.querySelectorAll('.arbeitsplatz-action-row[data-action]').forEach(b => {
     b.classList.toggle('is-active', b.dataset.action === typ);
   });
-  // Live-Vorschau anzeigen
+  // Wenn es ein Composer-Schema gibt, Inline-Composer öffnen.
+  if (COMPOSER_SCHEMAS && COMPOSER_SCHEMAS[typ]) {
+    await openInlineComposer(typ);
+    return;
+  }
+  // Fallback: Live-Vorschau + altes Modal-Flow.
   _renderArbeitsplatzLivePreview(typ);
-  // Bestehende Anlage-Mechanik nutzen (Modal)
   await arbeitsplatzCreate(typ);
 }
 
@@ -29753,6 +29774,931 @@ function _fmtMenge(n) {
   return Number.isInteger(x) ? String(x) : x.toLocaleString('de-DE', { maximumFractionDigits: 3 });
 }
 
+// ═══════════════════════════════════════════════════════════
+//  v2.32.0 — INLINE COMPOSER (Arbeitsplatz-Anlage ohne Modal)
+//
+//  Ersetzt den Drawer-Aufruf der „Neu anlegen"-Rail durch eine
+//  interaktive Eingabefläche direkt in der Welcome-Card. Pro Entität
+//  wird ein Schema mit ~8-10 Inline-Chips angeboten; jeder Chip blendet
+//  einen kleinen Picker (Combobox / Select / Kalender / Text) unterhalb
+//  des Titel-Feldes ein. Gewählte Werte sammeln sich als Zeilen darunter.
+//
+//  Datenfluss: Beim Öffnen wird das volle Drawer-Modal INITIALISIERT
+//  (Datalists/Dropdowns laden), aber visuell unterdrückt (composer-
+//  suppressed). Picker schreiben in die Modal-Inputs. Speichern ruft
+//  saveAppointment() / saveDeployment() / ... — die existierende Save-
+//  und Domain-Logik bleibt damit unverändert. „Mehr Felder →" öffnet
+//  den Drawer als Fallback für Felder, die nicht als Chip exponiert sind.
+// ═══════════════════════════════════════════════════════════
+
+const COMPOSER_SCHEMAS = {
+  // ── TERMIN ─────────────────────────────────────────────────────
+  termin: {
+    label: 'NEUER TERMIN',
+    modalId: 'modal-appointment',
+    open: () => openAppointmentModal('new'),
+    close: () => closeAppointmentModal(),
+    save: () => saveAppointment(),
+    title: { modalInput: 't-titel', label: 'Titel', placeholder: 'Worum geht es bei diesem Termin?' },
+    fields: [
+      { key: 'datum',    label: 'Datum',        type: 'date',     mode: 'single', modalInputs: { single: 't-datum' } },
+      { key: 'uhrzeit',  label: 'Uhrzeit',      type: 'time',     modalInputs: { von: 't-uhrzeit-von', bis: 't-uhrzeit-bis', ganztag: 't-ganztag' } },
+      { key: 'firma',    label: 'Firma',        type: 'company',  modalInputs: { combo: 't-company', list: 't-company-list' } },
+      { key: 'kontakt',  label: 'Hauptkontakt', type: 'contact',  modalInputs: { combo: 't-contact', list: 't-contact-list' } },
+      { key: 'projekt',  label: 'Projekt',      type: 'select',   modalInputs: { select: 't-project' } },
+      { key: 'typ',      label: 'Typ',          type: 'select',   modalInputs: { select: 't-typ' }, required: true },
+      { key: 'status',   label: 'Status',       type: 'select',   modalInputs: { select: 't-status' } },
+      { key: 'ort',      label: 'Ort',          type: 'text',     modalInputs: { input: 't-ort' }, placeholder: 'Adresse, Zoom-Link, Raum …' }
+    ]
+  },
+  // ── AUFGABE ────────────────────────────────────────────────────
+  aufgabe: {
+    label: 'NEUE AUFGABE',
+    modalId: 'modal-aufgabe',
+    open: () => openTaskModal('new'),
+    close: () => closeTaskModal(),
+    save: () => saveTask(),
+    title: { modalInput: 'a-titel', label: 'Titel', placeholder: 'Was ist zu tun?' },
+    fields: [
+      { key: 'faelligkeit', label: 'Fällig am',       type: 'date',     mode: 'single', modalInputs: { single: 'a-faelligkeit' } },
+      { key: 'zugewiesen',  label: 'Zugewiesen an',   type: 'select',   modalInputs: { select: 'a-assigned-to' } },
+      { key: 'status',      label: 'Status',          type: 'select',   modalInputs: { select: 'a-status' } },
+      { key: 'firma',       label: 'Firma',           type: 'company',  modalInputs: { combo: 'a-company', list: 'a-company-list' } },
+      { key: 'kontakt',     label: 'Kontakt',         type: 'contact',  modalInputs: { combo: 'a-contact', list: 'a-contact-list' } },
+      { key: 'projekt',     label: 'Projekt',         type: 'select',   modalInputs: { select: 'a-project' } },
+      { key: 'beschreibung',label: 'Beschreibung',    type: 'textarea', modalInputs: { input: 'a-beschreibung' }, placeholder: 'Was genau ist zu tun?' },
+      { key: 'als_termin',  label: 'Auch als Termin', type: 'checkbox', modalInputs: { input: 'a-create-appointment' }, hint: 'Erstellt parallel einen Ganztag-Termin am Fälligkeitsdatum.' }
+    ]
+  },
+  // ── EINSATZ ────────────────────────────────────────────────────
+  einsatz: {
+    label: 'NEUER EINSATZ',
+    modalId: 'modal-deployment',
+    open: () => openDeploymentModal('new'),
+    close: () => closeDeploymentModal(),
+    save: () => saveDeployment(),
+    title: { modalInput: 'd-titel', label: 'Titel', placeholder: 'Leer = automatisch aus Leistung × Firma' },
+    fields: [
+      { key: 'firma',     label: 'Firma',        type: 'company',  modalInputs: { combo: 'd-company', list: 'd-company-list' }, required: true },
+      { key: 'service',   label: 'Leistung',     type: 'select',   modalInputs: { select: 'd-service' } },
+      { key: 'datum',     label: 'Zeitraum',     type: 'date',     mode: 'range', modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
+      { key: 'menge',     label: 'Menge',        type: 'number',   modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
+      { key: 'preis',     label: 'Einzelpreis',  type: 'number',   modalInputs: { input: 'd-einzelpreis' }, step: '0.01', placeholder: '€' },
+      { key: 'projekt',   label: 'Projekt',      type: 'select',   modalInputs: { select: 'd-project' } },
+      { key: 'status',    label: 'Status',       type: 'select',   modalInputs: { select: 'd-status' } },
+      { key: 'uhrzeit',   label: 'Uhrzeit',      type: 'time',     modalInputs: { von: 'd-uhrzeit-von', bis: 'd-uhrzeit-bis', ganztag: 'd-ganztag' } },
+      { key: 'ort',       label: 'Ort',          type: 'text',     modalInputs: { input: 'd-ort' }, placeholder: 'Vor Ort, Zoom, Raum …' }
+    ]
+  },
+  // ── PROJEKT ────────────────────────────────────────────────────
+  projekt: {
+    label: 'NEUES PROJEKT',
+    modalId: 'modal-project',
+    open: () => openProjectModal('new'),
+    close: () => closeProjectModal(),
+    save: () => saveProject(),
+    title: { modalInput: 'p-name', label: 'Projektname', placeholder: 'z. B. Heidenhain Klartext Grundlagen bei Müller' },
+    fields: [
+      { key: 'firma',         label: 'Firma',           type: 'company',  modalInputs: { combo: 'p-company', list: 'p-company-list' } },
+      { key: 'status',        label: 'Status',          type: 'select',   modalInputs: { select: 'p-status' } },
+      { key: 'umsatz',        label: 'Paketpreis',      type: 'number',   modalInputs: { input: 'p-umsatz' }, step: '0.01', placeholder: '€ (Festpreis)' },
+      { key: 'hauptkontakt',  label: 'Hauptkontakt',    type: 'contact',  modalInputs: { combo: 'p-hauptkontakt', list: 'p-hauptkontakt-list' } },
+      { key: 'verantwortlich',label: 'Verantwortlich',  type: 'select',   modalInputs: { select: 'p-verantwortlicher' } },
+      { key: 'zeitraum',      label: 'Zeitraum',        type: 'date',     mode: 'range', modalInputs: { von: 'p-startdatum', bis: 'p-enddatum' } },
+      { key: 'beschreibung',  label: 'Beschreibung',    type: 'textarea', modalInputs: { input: 'p-beschreibung' }, placeholder: 'Worum geht es bei diesem Projekt?' }
+    ]
+  },
+  // ── FIRMA ──────────────────────────────────────────────────────
+  firma: {
+    label: 'NEUE FIRMA',
+    modalId: 'modal-company',
+    open: () => openCompanyModal('new'),
+    close: () => closeCompanyModal(),
+    save: () => saveCompany(),
+    title: { modalInput: 'c-name', label: 'Firmenname', placeholder: 'z. B. Müller Maschinenbau GmbH' },
+    fields: [
+      { key: 'typ',     label: 'Typ',     type: 'select',   modalInputs: { select: 'c-typ' }, required: true },
+      { key: 'abc',     label: 'ABC',     type: 'select',   modalInputs: { select: 'c-abc' } },
+      { key: 'branche', label: 'Branche', type: 'text',     modalInputs: { input: 'c-branche' }, placeholder: 'z. B. Automotive' },
+      { key: 'website', label: 'Website', type: 'text',     modalInputs: { input: 'c-website' }, placeholder: 'www.firma.de' },
+      { key: 'adresse', label: 'Adresse', type: 'address',  modalInputs: { strasse: 'c-strasse', plz: 'c-plz', stadt: 'c-stadt', land: 'c-land' } },
+      { key: 'telefon', label: 'Telefon', type: 'text',     modalInputs: { input: 'c-telefon' }, placeholder: '+49 …' },
+      { key: 'email',   label: 'E-Mail',  type: 'text',     modalInputs: { input: 'c-email' }, placeholder: 'info@firma.de' },
+      { key: 'notizen', label: 'Notizen', type: 'textarea', modalInputs: { input: 'c-notizen' } }
+    ]
+  },
+  // ── KONTAKT ────────────────────────────────────────────────────
+  kontakt: {
+    label: 'NEUER KONTAKT',
+    modalId: 'modal-contact',
+    open: () => openContactModal('new'),
+    close: () => closeContactModal(),
+    save: () => saveContact(),
+    // Titel-Feld wird beim Save in Vorname/Nachname gesplittet: erstes Wort = Vorname, Rest = Nachname.
+    title: { modalInput: '__contact_name', label: 'Name', placeholder: 'Vorname Nachname — z. B. Thomas Müller' },
+    fields: [
+      { key: 'position', label: 'Position', type: 'text',     modalInputs: { input: 'k-position' }, placeholder: 'z. B. Fertigungsleiter' },
+      { key: 'firma',    label: 'Firma',    type: 'company',  modalInputs: { combo: 'k-company', list: 'k-company-list' } },
+      { key: 'telefon',  label: 'Telefon',  type: 'text',     modalInputs: { input: 'k-telefon' }, placeholder: '+49 …' },
+      { key: 'email',    label: 'E-Mail',   type: 'text',     modalInputs: { input: 'k-email' }, placeholder: 't.mueller@firma.de' },
+      { key: 'notizen',  label: 'Notizen',  type: 'textarea', modalInputs: { input: 'k-notizen' } }
+    ]
+  },
+  // ── NOTIZ ──────────────────────────────────────────────────────
+  // Sonderfall: kein eigenes Drawer-Modal. Speichern macht direkten
+  // db.from('notes').insert(). Bezug (Firma · Projekt · Kontakt) ist Pflicht.
+  notiz: {
+    label: 'NEUE NOTIZ',
+    modalId: null,
+    open: null,
+    close: null,
+    save: null,
+    title: { modalInput: null, label: 'Notiztext', placeholder: 'Worum geht es? Mehrzeilig möglich.', multiline: true },
+    fields: [
+      { key: 'firma',   label: 'Firma',   type: 'company', modalInputs: null, noteFkCol: 'company_id' },
+      { key: 'projekt', label: 'Projekt', type: 'select',  modalInputs: null, noteFkCol: 'project_id' },
+      { key: 'kontakt', label: 'Kontakt', type: 'contact', modalInputs: null, noteFkCol: 'contact_id' }
+    ]
+  }
+};
+
+let _composerState = null;
+
+/** Öffnet den Inline-Composer für die gegebene Anlage-Aktion in der
+ *  Bühne. Initialisiert (außer für Notiz) das zugehörige Drawer-Modal
+ *  im Hintergrund, blendet es aus und montiert den Composer in die
+ *  Welcome-Card. */
+async function openInlineComposer(typ) {
+  const schema = COMPOSER_SCHEMAS[typ];
+  if (!schema) return;
+
+  // Sicherstellen, dass die Arbeitsplatz-Seite aktiv ist
+  if (!document.getElementById('page-arbeitsplatz')?.classList.contains('active')) {
+    navigateTo('arbeitsplatz');
+    await new Promise(r => setTimeout(r, 50));
+  }
+
+  // Falls noch ein anderer Composer offen ist, schließen
+  if (_composerState) closeInlineComposer({ silent: true });
+
+  // Aktive Rail-Markierung
+  document.querySelectorAll('.ab-rail-btn[data-action]').forEach(b => {
+    b.classList.toggle('is-active', b.dataset.action === typ);
+  });
+
+  // Modal (falls vorhanden) im Hintergrund initialisieren, dann
+  // sichtbar unterdrücken — wir wollen nur seine Inputs als Datenträger.
+  if (schema.modalId && schema.open) {
+    try { await schema.open(); } catch (e) { console.warn('Composer-Init-Modal:', e); }
+    const modal = document.getElementById(schema.modalId);
+    if (modal) {
+      modal.classList.remove('open');
+      modal.classList.add('composer-suppressed');
+    }
+  } else if (typ === 'notiz') {
+    // Notiz hat kein Drawer — Caches selbst laden, damit Picker bestückt sind.
+    try {
+      if (!companiesCache || companiesCache.length === 0) {
+        const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+        companiesCache = cs || [];
+      }
+      if (typeof projectsCache !== 'undefined' && (!projectsCache || projectsCache.length === 0)) {
+        const { data: ps } = await db.from('projects').select('id, name').is('deleted_at', null).order('name');
+        projectsCache = ps || [];
+      }
+    } catch (e) { console.warn('Composer-Notiz-Caches:', e); }
+  }
+
+  // Composer-State frisch initialisieren
+  _composerState = {
+    typ,
+    schema,
+    titleValue: '',
+    values: {},          // { fieldKey: { value, displayText } }
+    openChip: null,      // welcher Picker gerade offen ist
+    calendar: {},        // { fieldKey: { mode, refMonth, selectedFrom, selectedTo } }
+    saving: false
+  };
+
+  // Welcome-Card in den Composer-Modus schalten
+  const welcomeCard = document.querySelector('.stage-welcome-card');
+  if (welcomeCard) welcomeCard.classList.add('composer-active');
+
+  // Composer-Mount-Punkt erstellen (oder wiederverwenden)
+  let mount = document.getElementById('arbeitsplatz-composer-mount');
+  if (!mount) {
+    mount = document.createElement('div');
+    mount.id = 'arbeitsplatz-composer-mount';
+    const liveBefore = document.getElementById('arbeitsplatz-live-preview');
+    if (liveBefore && liveBefore.parentNode) {
+      liveBefore.parentNode.insertBefore(mount, liveBefore);
+    } else {
+      welcomeCard?.appendChild(mount);
+    }
+  }
+
+  _composerRender();
+  // Fokus aufs Titel-Feld
+  setTimeout(() => document.getElementById('composer-title-input')?.focus(), 30);
+}
+
+function closeInlineComposer(opts = {}) {
+  const silent = !!opts.silent;
+  const st = _composerState;
+  _composerState = null;
+
+  // Welcome-Card zurück
+  const welcomeCard = document.querySelector('.stage-welcome-card');
+  if (welcomeCard) welcomeCard.classList.remove('composer-active');
+
+  // Rail-Markierung weg
+  document.querySelectorAll('.ab-rail-btn[data-action]').forEach(b => b.classList.remove('is-active'));
+
+  // Composer-DOM weg
+  const mount = document.getElementById('arbeitsplatz-composer-mount');
+  if (mount) mount.innerHTML = '';
+
+  // Drawer freigeben + endgültig schließen
+  if (st && st.schema.modalId) {
+    const modal = document.getElementById(st.schema.modalId);
+    if (modal) modal.classList.remove('composer-suppressed');
+    if (st.schema.close && !silent) {
+      try { st.schema.close(); } catch (_) {}
+    }
+  }
+
+  // Live-Preview-Div leeren (war von _renderArbeitsplatzLivePreview ggf. gesetzt)
+  const lp = document.getElementById('arbeitsplatz-live-preview');
+  if (lp) { lp.style.display = 'none'; lp.innerHTML = ''; }
+}
+
+function _composerRender() {
+  const st = _composerState;
+  if (!st) return;
+  const mount = document.getElementById('arbeitsplatz-composer-mount');
+  if (!mount) return;
+
+  const titleEl = st.schema.title.multiline
+    ? `<textarea id="composer-title-input" class="composer-title-input" rows="2" placeholder="${esc(st.schema.title.placeholder)}" oninput="_composerOnTitleInput(this.value)">${esc(st.titleValue || '')}</textarea>`
+    : `<input id="composer-title-input" class="composer-title-input" type="text" placeholder="${esc(st.schema.title.placeholder)}" value="${esc(st.titleValue || '')}" oninput="_composerOnTitleInput(this.value)">`;
+
+  const valuesHTML = _composerRenderValues(st);
+  const chipsHTML = _composerRenderChips(st);
+  const pickerHTML = st.openChip ? _composerRenderPicker(st, st.openChip) : '';
+
+  mount.innerHTML = `
+    <div class="composer" data-entity="${st.typ}">
+      <div class="composer-eyebrow">${esc(st.schema.label)}</div>
+      <div class="composer-title-row">
+        ${titleEl}
+        <div class="composer-actions">
+          <button type="button" class="composer-btn" onclick="closeInlineComposer()">Abbrechen</button>
+          <button type="button" class="composer-btn composer-btn--primary" id="composer-save-btn" onclick="composerSave()">Anlegen</button>
+        </div>
+      </div>
+      <div class="composer-chips">${chipsHTML}</div>
+      ${pickerHTML ? `<div class="composer-pickers">${pickerHTML}</div>` : ''}
+      <div class="composer-values">${valuesHTML}</div>
+    </div>
+  `;
+}
+
+function _composerRenderChips(st) {
+  const chips = st.schema.fields.map(f => {
+    const isSet = st.values[f.key] !== undefined;
+    const isOpen = st.openChip === f.key;
+    const cls = 'composer-chip' + (isSet ? ' is-set' : '') + (isOpen ? ' is-open' : '');
+    const sign = isSet ? '✓' : '+';
+    return `<button type="button" class="${cls}" onclick="_composerToggleChip('${f.key}')">${sign} ${esc(f.label)}</button>`;
+  }).join('');
+  // „Mehr Felder →"-Chip nur, wenn es ein Drawer-Modal gibt
+  const moreChip = st.schema.modalId
+    ? `<button type="button" class="composer-chip" onclick="_composerOpenFullModal()" title="Alle Felder im klassischen Drawer öffnen">⋯ Mehr Felder</button>`
+    : '';
+  return chips + moreChip;
+}
+
+function _composerRenderValues(st) {
+  return st.schema.fields
+    .filter(f => st.values[f.key] !== undefined)
+    .map(f => {
+      const v = st.values[f.key];
+      return `
+        <div class="composer-value" data-key="${f.key}">
+          <span class="composer-value-label">${esc(f.label)}</span>
+          <span class="composer-value-text">${esc(v.displayText || '—')}</span>
+          <span class="composer-value-actions">
+            <button class="composer-value-btn" title="Ändern" onclick="_composerToggleChip('${f.key}')">✎</button>
+            <button class="composer-value-btn" title="Entfernen" onclick="_composerRemoveValue('${f.key}')">×</button>
+          </span>
+        </div>`;
+    }).join('');
+}
+
+function _composerOnTitleInput(val) {
+  if (!_composerState) return;
+  _composerState.titleValue = val;
+  // Modal-Input live mitschreiben
+  const mi = _composerState.schema.title.modalInput;
+  if (mi && mi !== '__contact_name') {
+    const el = document.getElementById(mi);
+    if (el) el.value = val;
+  }
+}
+
+function _composerToggleChip(key) {
+  const st = _composerState;
+  if (!st) return;
+  st.openChip = (st.openChip === key) ? null : key;
+  _composerRender();
+  // Picker-Fokus
+  setTimeout(() => {
+    const focusEl = document.querySelector('.composer-picker input, .composer-picker select, .composer-picker textarea');
+    if (focusEl) focusEl.focus();
+  }, 30);
+}
+
+function _composerRemoveValue(key) {
+  const st = _composerState;
+  if (!st) return;
+  delete st.values[key];
+  // Auch Modal-Inputs leeren, damit Save nicht alte Werte mitnimmt
+  const f = st.schema.fields.find(x => x.key === key);
+  if (f && f.modalInputs) _composerClearModalInputsForField(f);
+  _composerRender();
+}
+
+function _composerClearModalInputsForField(f) {
+  const mi = f.modalInputs;
+  if (!mi) return;
+  if (f.type === 'company' || f.type === 'contact') {
+    const el = document.getElementById(mi.combo);
+    if (el) { el.value = ''; el.dataset.value = ''; }
+  } else if (f.type === 'date') {
+    if (mi.single) { const el = document.getElementById(mi.single); if (el) el.value = ''; }
+    if (mi.von)    { const el = document.getElementById(mi.von);    if (el) el.value = ''; }
+    if (mi.bis)    { const el = document.getElementById(mi.bis);    if (el) el.value = ''; }
+  } else if (f.type === 'time') {
+    if (mi.von)     { const el = document.getElementById(mi.von);     if (el) el.value = ''; }
+    if (mi.bis)     { const el = document.getElementById(mi.bis);     if (el) el.value = ''; }
+    if (mi.ganztag) { const el = document.getElementById(mi.ganztag); if (el) el.checked = false; }
+  } else if (f.type === 'checkbox') {
+    const el = document.getElementById(mi.input);
+    if (el) el.checked = false;
+  } else if (f.type === 'address') {
+    ['strasse', 'plz', 'stadt', 'land'].forEach(k => {
+      const el = document.getElementById(mi[k]); if (el) el.value = (k === 'land' ? 'Deutschland' : '');
+    });
+  } else if (mi.input) {
+    const el = document.getElementById(mi.input);
+    if (el) el.value = '';
+  } else if (mi.select) {
+    const el = document.getElementById(mi.select);
+    if (el) el.value = '';
+  }
+}
+
+function _composerRenderPicker(st, key) {
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return '';
+  const inner = _composerRenderPickerBody(st, f);
+  return `
+    <div class="composer-picker" data-key="${f.key}">
+      <div class="composer-picker-head">
+        <span>${esc(f.label)}${f.required ? ' *' : ''}</span>
+        <button class="composer-picker-close" onclick="_composerToggleChip('${f.key}')" aria-label="Schließen">×</button>
+      </div>
+      ${inner}
+      ${f.hint ? `<div class="composer-picker-hint">${esc(f.hint)}</div>` : ''}
+    </div>`;
+}
+
+function _composerRenderPickerBody(st, f) {
+  if (f.type === 'text') {
+    return `<input type="text" placeholder="${esc(f.placeholder || '')}" oninput="_composerSetSimple('${f.key}', this.value, this.value)" onkeydown="if(event.key==='Enter'){_composerToggleChip('${f.key}')}">`;
+  }
+  if (f.type === 'number') {
+    return `<input type="number" step="${esc(f.step || 'any')}" placeholder="${esc(f.placeholder || '')}" oninput="_composerSetSimple('${f.key}', this.value, this.value)" onkeydown="if(event.key==='Enter'){_composerToggleChip('${f.key}')}">`;
+  }
+  if (f.type === 'textarea') {
+    return `<textarea rows="3" placeholder="${esc(f.placeholder || '')}" oninput="_composerSetSimple('${f.key}', this.value, this.value)"></textarea>`;
+  }
+  if (f.type === 'checkbox') {
+    return `
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="composer-cb-${f.key}" onchange="_composerSetCheckbox('${f.key}', this.checked)">
+        <span>${esc(f.label)} aktivieren</span>
+      </label>`;
+  }
+  if (f.type === 'address') {
+    return `
+      <div class="composer-picker-row">
+        <input type="text" placeholder="Straße & Nr." oninput="_composerAddressEdit('${f.key}','strasse',this.value)">
+        <input type="text" placeholder="PLZ" oninput="_composerAddressEdit('${f.key}','plz',this.value)" style="max-width:90px;flex:0 0 90px">
+      </div>
+      <div class="composer-picker-row">
+        <input type="text" placeholder="Stadt" oninput="_composerAddressEdit('${f.key}','stadt',this.value)">
+        <input type="text" placeholder="Land" value="Deutschland" oninput="_composerAddressEdit('${f.key}','land',this.value)">
+      </div>`;
+  }
+  if (f.type === 'select') {
+    return _composerRenderSelectPicker(st, f);
+  }
+  if (f.type === 'company') {
+    return _composerRenderCompanyPicker(st, f);
+  }
+  if (f.type === 'contact') {
+    return _composerRenderContactPicker(st, f);
+  }
+  if (f.type === 'date') {
+    return _composerRenderDatePicker(st, f);
+  }
+  if (f.type === 'time') {
+    return _composerRenderTimePicker(st, f);
+  }
+  return '<em>Unbekannter Picker-Typ</em>';
+}
+
+function _composerRenderSelectPicker(st, f) {
+  // Notiz/Projekt-Sonderfall: kein Modal-Select → wir laden Projekte direkt
+  if (st.typ === 'notiz' && f.key === 'projekt') {
+    const opts = (projectsCache && projectsCache.length)
+      ? projectsCache.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
+      : '';
+    return `
+      <select id="composer-pick-${f.key}" onchange="_composerSetSimpleFromSelect('${f.key}', this)">
+        <option value="">— Projekt wählen —</option>
+        ${opts}
+      </select>`;
+  }
+  // Normalfall: Optionen aus dem Modal-Select klonen
+  const sel = document.getElementById(f.modalInputs.select);
+  let opts = '';
+  if (sel) {
+    Array.from(sel.options).forEach(o => {
+      opts += `<option value="${esc(o.value)}">${esc(o.textContent || '—')}</option>`;
+    });
+  }
+  return `
+    <select id="composer-pick-${f.key}" onchange="_composerSetSimpleFromSelect('${f.key}', this)">
+      ${opts || '<option value="">— Keine Optionen —</option>'}
+    </select>`;
+}
+
+function _composerRenderCompanyPicker(st, f) {
+  const list = companiesCache && companiesCache.length ? companiesCache : [];
+  const opts = list.map(c => `<option value="${esc(c.name)}" data-id="${esc(c.id)}"></option>`).join('');
+  const listId = `composer-pick-${f.key}-list`;
+  return `
+    <input type="text" list="${listId}" id="composer-pick-${f.key}" placeholder="Firma wählen oder neuen Namen tippen …"
+           oninput="_composerCompanyInput('${f.key}', this.value, '${listId}')"
+           onchange="_composerCompanyInput('${f.key}', this.value, '${listId}')">
+    <datalist id="${listId}">${opts}</datalist>
+    <div class="composer-picker-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern angelegt.</div>`;
+}
+
+function _composerRenderContactPicker(st, f) {
+  // Kontakt nutzt das Modal-Datalist, das schon durch das Init-Modal befüllt wurde
+  // (kontaktabhängig von Firma).
+  const listId = `composer-pick-${f.key}-list`;
+  let opts = '';
+  if (f.modalInputs && f.modalInputs.list) {
+    const ml = document.getElementById(f.modalInputs.list);
+    if (ml) opts = ml.innerHTML;
+  } else {
+    // Notiz-Pfad
+    opts = '';
+  }
+  return `
+    <input type="text" list="${listId}" id="composer-pick-${f.key}" placeholder="Kontakt wählen oder neuen Namen tippen …"
+           oninput="_composerContactInput('${f.key}', this.value, '${listId}')"
+           onchange="_composerContactInput('${f.key}', this.value, '${listId}')">
+    <datalist id="${listId}">${opts}</datalist>
+    <div class="composer-picker-hint">Aus Liste wählen oder neuen Namen tippen — wird beim Speichern als neuer Kontakt angelegt.</div>`;
+}
+
+function _composerRenderDatePicker(st, f) {
+  const calState = st.calendar[f.key] || (st.calendar[f.key] = {
+    mode: f.mode || 'single',
+    refMonth: _composerStartOfMonth(new Date()),
+    selectedFrom: null,
+    selectedTo: null
+  });
+  return _composerCalendarHTML(f, calState);
+}
+
+function _composerRenderTimePicker(st, f) {
+  return `
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+      <input type="checkbox" id="composer-pick-${f.key}-ganztag" onchange="_composerSetTime('${f.key}', null, null, this.checked)">
+      <span>Ganztag (08:00–16:00)</span>
+    </label>
+    <div class="composer-picker-row">
+      <div>
+        <div class="composer-picker-hint" style="margin-bottom:3px">Von</div>
+        <input type="time" id="composer-pick-${f.key}-von" onchange="_composerSetTime('${f.key}', this.value, document.getElementById('composer-pick-${f.key}-bis').value, false)">
+      </div>
+      <div>
+        <div class="composer-picker-hint" style="margin-bottom:3px">Bis</div>
+        <input type="time" id="composer-pick-${f.key}-bis" onchange="_composerSetTime('${f.key}', document.getElementById('composer-pick-${f.key}-von').value, this.value, false)">
+      </div>
+    </div>`;
+}
+
+/* ─── Simple-Value-Setter (Text, Textarea, Number, Select) ─────────── */
+function _composerSetSimple(key, val, display) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  // In Modal-Input schreiben
+  if (f.modalInputs && f.modalInputs.input) {
+    const el = document.getElementById(f.modalInputs.input);
+    if (el) el.value = val;
+  } else if (f.modalInputs && f.modalInputs.select) {
+    const el = document.getElementById(f.modalInputs.select);
+    if (el) el.value = val;
+  }
+  if (val === '' || val == null) {
+    delete st.values[key];
+  } else {
+    st.values[key] = { value: val, displayText: display || val };
+  }
+}
+
+function _composerSetSimpleFromSelect(key, sel) {
+  const st = _composerState;
+  if (!st) return;
+  const text = sel.options[sel.selectedIndex]?.textContent || sel.value;
+  _composerSetSimple(key, sel.value, text);
+  // Bei Projekt-/Firma-Selects ggf. das Modal nachsynchronisieren
+  // (Termin-Modal hat z. B. abhängige Kontakte/Projekte je Firma)
+  const f = st.schema.fields.find(x => x.key === key);
+  if (f && f.modalInputs && f.modalInputs.select) {
+    const ev = new Event('change');
+    document.getElementById(f.modalInputs.select)?.dispatchEvent(ev);
+  }
+}
+
+function _composerSetCheckbox(key, checked) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  if (f.modalInputs && f.modalInputs.input) {
+    const el = document.getElementById(f.modalInputs.input);
+    if (el) {
+      el.checked = !!checked;
+      el.dispatchEvent(new Event('change'));
+    }
+  }
+  if (checked) st.values[key] = { value: true, displayText: 'Ja' };
+  else delete st.values[key];
+}
+
+function _composerAddressEdit(key, part, val) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f || !f.modalInputs) return;
+  const inputId = f.modalInputs[part];
+  if (inputId) {
+    const el = document.getElementById(inputId);
+    if (el) el.value = val;
+  }
+  // Composed displayText aus allen 4 Adressteilen
+  const parts = ['strasse', 'plz', 'stadt', 'land'].map(p => {
+    const id = f.modalInputs[p];
+    return id ? (document.getElementById(id)?.value || '') : '';
+  }).filter(Boolean);
+  const disp = parts.join(', ');
+  if (disp) st.values[key] = { value: disp, displayText: disp };
+  else delete st.values[key];
+}
+
+function _composerCompanyInput(key, val, listId) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  // ID aus dem Datalist suchen (über Firmen-Namens-Match)
+  const list = (companiesCache || []);
+  const match = list.find(c => c.name === val);
+  if (f.modalInputs && f.modalInputs.combo) {
+    // Setzen via existierendem Helper, damit data-id Attribut konsistent ist
+    if (match) {
+      setCompanyComboboxValue(f.modalInputs.combo, f.modalInputs.list, match.id);
+    } else {
+      const el = document.getElementById(f.modalInputs.combo);
+      if (el) { el.value = val; el.dataset.value = ''; }
+    }
+    // Kaskade: bei Termin/Aufgabe/Einsatz/Projekt änderen sich Kontakte + Projekte
+    const ev = new Event('change');
+    document.getElementById(f.modalInputs.combo)?.dispatchEvent(ev);
+  }
+  if (!val) { delete st.values[key]; return; }
+  st.values[key] = { value: match ? match.id : `__new__${val}`, displayText: val + (match ? '' : ' (neu)') };
+}
+
+function _composerContactInput(key, val, listId) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  if (f.modalInputs && f.modalInputs.combo) {
+    const el = document.getElementById(f.modalInputs.combo);
+    if (el) {
+      el.value = val;
+      el.dispatchEvent(new Event('change'));
+    }
+  }
+  if (!val) { delete st.values[key]; return; }
+  st.values[key] = { value: val, displayText: val };
+}
+
+/* ─── Datums-Picker (2-Monats-Kalender) ──────────────────────────── */
+function _composerStartOfMonth(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), 1);
+  return x;
+}
+function _composerAddMonths(d, n) {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+function _composerDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function _composerParseISO(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+function _composerFmtDateDE(d) {
+  if (!d) return '';
+  return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function _composerCalendarHTML(f, cal) {
+  const months = [cal.refMonth, _composerAddMonths(cal.refMonth, 1)];
+  const modeTabs = f.mode === 'range'
+    ? ''  // bei reinen Range-Feldern kein Mode-Switch
+    : `
+      <div class="composer-cal-modes">
+        <button class="composer-cal-mode ${cal.mode === 'single' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','single')">Einzelner Tag</button>
+        <button class="composer-cal-mode ${cal.mode === 'range' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','range')">Zeitraum</button>
+      </div>`;
+  const monthsHTML = months.map(m => _composerMonthHTML(f, cal, m)).join('');
+  const summary = _composerCalSummary(cal);
+  return `
+    ${modeTabs}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <button class="composer-cal-nav" onclick="_composerCalShift('${f.key}',-1)" aria-label="Vorheriger Monat">‹</button>
+      <button class="composer-cal-nav" onclick="_composerCalShift('${f.key}',1)" aria-label="Nächster Monat">›</button>
+    </div>
+    <div class="composer-cal">${monthsHTML}</div>
+    ${summary ? `<div class="composer-cal-summary">${esc(summary)}</div>` : ''}`;
+}
+
+function _composerCalSummary(cal) {
+  if (!cal.selectedFrom) return '';
+  if (cal.mode === 'single' || !cal.selectedTo) return _composerFmtDateDE(cal.selectedFrom);
+  return `${_composerFmtDateDE(cal.selectedFrom)} → ${_composerFmtDateDE(cal.selectedTo)}`;
+}
+
+function _composerMonthHTML(f, cal, monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const title = monthDate.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;  // Mo=0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey = _composerDateKey(new Date());
+  const fromKey = cal.selectedFrom ? _composerDateKey(cal.selectedFrom) : null;
+  const toKey   = cal.selectedTo   ? _composerDateKey(cal.selectedTo)   : null;
+
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push('<div></div>');
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayDate = new Date(year, month, d);
+    const k = _composerDateKey(dayDate);
+    let cls = 'composer-cal-day';
+    if (k === todayKey) cls += ' is-today';
+    if (k === fromKey)  cls += ' is-range-start';
+    if (k === toKey)    cls += ' is-range-end';
+    if (fromKey && toKey && k > fromKey && k < toKey) cls += ' is-in-range';
+    if (fromKey && !toKey && cal.mode === 'single' && k === fromKey) cls += ' is-selected';
+    cells.push(`<button type="button" class="${cls}" onclick="_composerCalPickDay('${f.key}','${k}')">${d}</button>`);
+  }
+  const weekdays = ['Mo','Di','Mi','Do','Fr','Sa','So']
+    .map(w => `<div class="composer-cal-weekday">${w}</div>`).join('');
+  return `
+    <div class="composer-cal-month">
+      <div class="composer-cal-head"><span>${esc(title)}</span></div>
+      <div class="composer-cal-weekdays">${weekdays}</div>
+      <div class="composer-cal-grid">${cells.join('')}</div>
+    </div>`;
+}
+
+function _composerCalShift(key, delta) {
+  const st = _composerState;
+  if (!st) return;
+  const cal = st.calendar[key];
+  if (!cal) return;
+  cal.refMonth = _composerAddMonths(cal.refMonth, delta);
+  _composerRender();
+}
+
+function _composerCalSetMode(key, mode) {
+  const st = _composerState;
+  if (!st) return;
+  const cal = st.calendar[key];
+  if (!cal) return;
+  cal.mode = mode;
+  if (mode === 'single') cal.selectedTo = null;
+  _composerCalCommitToValues(key);
+  _composerRender();
+}
+
+function _composerCalPickDay(key, isoKey) {
+  const st = _composerState;
+  if (!st) return;
+  const cal = st.calendar[key];
+  if (!cal) return;
+  const picked = _composerParseISO(isoKey);
+  if (!picked) return;
+
+  if (cal.mode === 'single') {
+    cal.selectedFrom = picked;
+    cal.selectedTo = null;
+  } else {
+    // Range-Logik: erst „von", dann „bis". Wenn „von" gesetzt und „bis"
+    // noch leer und Klick liegt vor „von", als neuen „von" werten.
+    if (!cal.selectedFrom || (cal.selectedFrom && cal.selectedTo)) {
+      cal.selectedFrom = picked;
+      cal.selectedTo = null;
+    } else if (picked < cal.selectedFrom) {
+      cal.selectedTo = cal.selectedFrom;
+      cal.selectedFrom = picked;
+    } else {
+      cal.selectedTo = picked;
+    }
+  }
+  _composerCalCommitToValues(key);
+  _composerRender();
+}
+
+function _composerCalCommitToValues(key) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  const cal = st.calendar[key];
+  if (!cal || !cal.selectedFrom) {
+    delete st.values[key];
+    if (f.modalInputs) {
+      if (f.modalInputs.single) document.getElementById(f.modalInputs.single).value = '';
+      if (f.modalInputs.von)    document.getElementById(f.modalInputs.von).value    = '';
+      if (f.modalInputs.bis)    document.getElementById(f.modalInputs.bis).value    = '';
+    }
+    return;
+  }
+  const fromKey = _composerDateKey(cal.selectedFrom);
+  const toKey   = cal.selectedTo ? _composerDateKey(cal.selectedTo) : null;
+  if (f.modalInputs) {
+    if (cal.mode === 'single') {
+      if (f.modalInputs.single) document.getElementById(f.modalInputs.single).value = fromKey;
+      if (f.modalInputs.von)    document.getElementById(f.modalInputs.von).value    = fromKey;
+      if (f.modalInputs.bis)    document.getElementById(f.modalInputs.bis).value    = fromKey;
+    } else {
+      if (f.modalInputs.single) document.getElementById(f.modalInputs.single).value = fromKey;
+      if (f.modalInputs.von)    document.getElementById(f.modalInputs.von).value    = fromKey;
+      if (f.modalInputs.bis)    document.getElementById(f.modalInputs.bis).value    = toKey || fromKey;
+    }
+  }
+  st.values[key] = {
+    value: { from: fromKey, to: toKey, mode: cal.mode },
+    displayText: _composerCalSummary(cal)
+  };
+}
+
+function _composerSetTime(key, von, bis, ganztag) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f || !f.modalInputs) return;
+  if (ganztag) {
+    von = '08:00'; bis = '16:00';
+    const elv = document.getElementById('composer-pick-' + key + '-von'); if (elv) elv.value = von;
+    const elb = document.getElementById('composer-pick-' + key + '-bis'); if (elb) elb.value = bis;
+    if (f.modalInputs.ganztag) {
+      const cg = document.getElementById(f.modalInputs.ganztag);
+      if (cg) { cg.checked = true; cg.dispatchEvent(new Event('change')); }
+    }
+  } else {
+    if (f.modalInputs.ganztag) {
+      const cg = document.getElementById(f.modalInputs.ganztag);
+      if (cg) cg.checked = false;
+    }
+  }
+  if (f.modalInputs.von) document.getElementById(f.modalInputs.von).value = von || '';
+  if (f.modalInputs.bis) document.getElementById(f.modalInputs.bis).value = bis || '';
+  if (!von && !bis) { delete st.values[key]; return; }
+  const disp = ganztag ? 'Ganztag (08:00–16:00)' : `${von || '?'}–${bis || '?'}`;
+  st.values[key] = { value: { von, bis, ganztag: !!ganztag }, displayText: disp };
+}
+
+/* ─── „Mehr Felder →" — Drawer als Fallback öffnen ─────────────── */
+/** Schließt den Composer und übergibt an das volle Drawer-Modal. Alle
+ *  Werte, die im Composer schon eingegeben wurden, stehen bereits in den
+ *  Modal-Inputs — sie bleiben erhalten, weil der Composer das Modal nur
+ *  visuell unterdrückt, nicht zurücksetzt. */
+function _composerOpenFullModal() {
+  const st = _composerState;
+  if (!st || !st.schema.modalId) return;
+  const modal = document.getElementById(st.schema.modalId);
+  if (!modal) return;
+  // Composer-DOM abräumen, Welcome-Card-State zurück — aber Modal sichtbar machen.
+  const welcomeCard = document.querySelector('.stage-welcome-card');
+  if (welcomeCard) welcomeCard.classList.remove('composer-active');
+  document.querySelectorAll('.ab-rail-btn[data-action]').forEach(b => b.classList.remove('is-active'));
+  const mount = document.getElementById('arbeitsplatz-composer-mount');
+  if (mount) mount.innerHTML = '';
+  _composerState = null;
+  modal.classList.remove('composer-suppressed');
+  modal.classList.add('open');
+}
+
+/* ─── Speichern — ruft existierende save-Funktion oder direkten Insert ──── */
+async function composerSave() {
+  const st = _composerState;
+  if (!st || st.saving) return;
+  st.saving = true;
+  const btn = document.getElementById('composer-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird angelegt …'; }
+
+  try {
+    // Titel in Modal schreiben (oder Sonderfall behandeln)
+    const title = (st.titleValue || '').trim();
+    if (st.schema.title.modalInput === '__contact_name') {
+      // Kontakt: splitten in Vor-/Nachname
+      const parts = title.split(/\s+/);
+      const vorname = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+      const nachname = parts[parts.length - 1] || '';
+      document.getElementById('k-vorname').value = vorname;
+      document.getElementById('k-nachname').value = nachname;
+    } else if (st.schema.title.modalInput) {
+      const el = document.getElementById(st.schema.title.modalInput);
+      if (el) el.value = title;
+    }
+
+    if (st.typ === 'notiz') {
+      await _composerSaveNotiz(st, title);
+    } else {
+      // Validierung delegieren an existierende Save-Funktion
+      await st.schema.save();
+    }
+    // Wenn wir hier sind ohne Throw, ist save fertig. Composer schließen.
+    closeInlineComposer({ silent: true });
+  } catch (e) {
+    console.error('composerSave error:', e);
+    showToast('Fehler beim Speichern: ' + (e?.message || e), true);
+  } finally {
+    if (_composerState) _composerState.saving = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Anlegen'; }
+  }
+}
+
+async function _composerSaveNotiz(st, title) {
+  const text = (title || '').trim();
+  if (!text) {
+    showToast('Bitte Notiztext eingeben.', true);
+    throw new Error('Notiztext fehlt');
+  }
+  const bezug = st.values.firma || st.values.projekt || st.values.kontakt;
+  if (!bezug) {
+    showToast('Bitte einen Bezug setzen (Firma · Projekt · Kontakt).', true);
+    throw new Error('Bezug fehlt');
+  }
+  const payload = { inhalt: text, erstellt_von: currentProfile?.id || null };
+  if (st.values.firma)   payload.company_id = st.values.firma.value;
+  if (st.values.projekt) payload.project_id = st.values.projekt.value;
+  if (st.values.kontakt) {
+    // kontakt-displayText ist der Name → wir brauchen die contact-ID. Falls
+    // die ID schon als Wert gesetzt wurde (bei Auswahl aus Datalist), nehmen
+    // wir die; sonst überspringen wir contact-Notiz und nutzen Firma/Projekt.
+    payload.contact_id = st.values.kontakt.value;
+  }
+  // Wenn company_id mit __new__ Marker beginnt: ablehnen — Notizen brauchen reale FK
+  if (typeof payload.company_id === 'string' && payload.company_id.startsWith('__new__')) {
+    showToast('Bitte zuerst die Firma anlegen oder eine bestehende wählen — Notizen brauchen eine bestehende Firma.', true);
+    throw new Error('Neue Firma nicht erlaubt für Notiz');
+  }
+  const { error } = await db.from('notes').insert(payload);
+  if (error) throw new Error(error.message);
+  showToast('Notiz angelegt.');
+}
 // ═══════════════════════════════════════════════════════════
 //  INITIALIZATION
 // ═══════════════════════════════════════════════════════════
