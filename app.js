@@ -1,6 +1,11 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.31.2 (Feature — Doku-Bereiche pro Block + Auto-
+   Version 2.31.3 (Fix — Doku-Blöcke in „nach 2. Einsätze" /
+   „nach 3. Lieferumfang" klebten optisch an der vorherigen
+   Tabelle. Wrapper `.extra-docs` mit margin-top:30px + dünner
+   Border-Top setzt die gleiche Sektions-Distanz wie unter
+   einer H2 — passt jetzt visuell zu „1. Briefing".
+   Vorgängerversion 2.31.2 (Feature — Doku-Bereiche pro Block + Auto-
    Grow-Textareas. Im Projekt-Detail „Doku"-Tab kann pro
    Block entschieden werden, an welcher Stelle er im Kunden-
    bericht erscheint: 1. Briefing · nach 2. Einsätze · nach
@@ -29330,8 +29335,12 @@ function _buildCustomerReportHtml(data) {
   const briefingHtml = briefingDocs.length === 0
     ? `<p class="muted">— Kein Briefing hinterlegt —</p>`
     : _renderDocBlocks(briefingDocs);
-  const nachEinsaetzeHtml   = _renderDocBlocks(nachEinsaetzeDocs);
-  const nachLieferumfangHtml = _renderDocBlocks(nachLieferumfangDocs);
+  // v2.31.3: Wrapper-Div mit margin-top + dünner Trennlinie — ohne den klebte
+  // der erste „nach"-Doku-Block visuell an der vorherigen Tabelle (Einsätze /
+  // Produkte), während die Briefing-Blöcke durch den H2-Sektions-Header
+  // sauber abgesetzt sind.
+  const nachEinsaetzeHtml    = nachEinsaetzeDocs.length === 0    ? '' : `<div class="extra-docs">${_renderDocBlocks(nachEinsaetzeDocs)}</div>`;
+  const nachLieferumfangHtml = nachLieferumfangDocs.length === 0 ? '' : `<div class="extra-docs">${_renderDocBlocks(nachLieferumfangDocs)}</div>`;
 
   // v2.32.4: Render-Funktion für einen Einsatz; bei geplant/offen entfällt
   // die Notizen-/Doku-Sektion (gibt's noch nicht), Honorar-Block zeigt Status
@@ -29562,6 +29571,12 @@ function _buildCustomerReportHtml(data) {
     .doc-block { margin-bottom: 18px; }
     .doc-block.sub h4 { margin-top: 14px; margin-bottom: 4px; }
     .doc-block p { margin: 0 0 6px; white-space: pre-wrap; }
+
+    /* v2.31.3: Doku-Blöcke, die nicht ins Briefing-1 gehören, brauchen
+       denselben Sektions-Abstand wie unter einer H2 — sonst kleben sie
+       optisch an der vorherigen Tabelle (Einsätze / Produkte). */
+    .extra-docs { margin-top: 30px; padding-top: 14px; border-top: 1px solid #d6d3cc; }
+    .extra-docs .doc-block:first-child h3 { margin-top: 0; }
 
     .einsatz { padding: 16px 0; border-top: 1px solid #ececec; break-inside: avoid; }
     .einsatz:first-of-type { border-top: none; padding-top: 0; }
