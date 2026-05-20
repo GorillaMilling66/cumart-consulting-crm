@@ -1,6 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.31.1 (Bugfix — Einsatz-Bearbeiten in Projekten mit
+   Version 2.31.2 (Feature — Doku-Bereiche pro Block + Auto-
+   Grow-Textareas. Im Projekt-Detail „Doku"-Tab kann pro
+   Block entschieden werden, an welcher Stelle er im Kunden-
+   bericht erscheint: 1. Briefing · nach 2. Einsätze · nach
+   3. Lieferumfang. Neue Spalte `doc_sections.bereich` (DEFAULT
+   'briefing'), 3-Way-Chip-Selector im Doku-Tab (nur project),
+   Kundenbericht splittet `data.projectDocs` nach Bereich und
+   rendert in drei Positionen. Textareas im Doku-Tab wachsen
+   jetzt mit dem Inhalt (field-sizing:content, min-height 120
+   px, max-height 720 px). Migration `v2.31.2_doc_sections_
+   bereich.sql` muss vorher appliziert sein. Vorgängerversion
+   2.31.1 (Bugfix — Einsatz-Bearbeiten in Projekten mit
    Status „Abschlussphase" hat den Einsatz aus dem Projekt
    ausgehängt: `rebuildProjectDropdownForDeployment` ließ
    ABSCHLUSSPHASE als Outlier aus dem Status-Filter raus, die
@@ -28766,13 +28777,20 @@ const _docSectionsState = new WeakMap(); // ele → { entityType, entityId, sect
 
 async function loadDocSections(entityType, entityId) {
   const { data, error } = await db.from('doc_sections')
-    .select('id, titel, inhalt, reihenfolge, created_at, updated_at, erstellt_von, user:user_profiles!doc_sections_erstellt_von_fkey(name)')
+    .select('id, titel, inhalt, reihenfolge, bereich, created_at, updated_at, erstellt_von, user:user_profiles!doc_sections_erstellt_von_fkey(name)')
     .eq('entity_type', entityType).eq('entity_id', entityId)
     .order('reihenfolge', { ascending: true })
     .order('created_at', { ascending: true });
   if (error) { console.error('doc_sections laden:', error); return []; }
   return data || [];
 }
+
+// v2.31.2: Drei Ziel-Positionen für Doku-Blöcke im Kundenbericht (nur project).
+const DOC_BEREICH_OPTIONS = [
+  { value: 'briefing',          label: '1. Briefing' },
+  { value: 'nach_einsaetze',    label: 'nach 2. Einsätze' },
+  { value: 'nach_lieferumfang', label: 'nach 3. Lieferumfang' }
+];
 
 async function renderDocSections(entityType, entityId, containerId) {
   const wrap = document.getElementById(containerId);
@@ -28791,7 +28809,7 @@ async function renderDocSections(entityType, entityId, containerId) {
       </div>
     </div>`;
 
-  const sectionsHtml = sections.map(s => _renderDocSection(s)).join('');
+  const sectionsHtml = sections.map(s => _renderDocSection(s, entityType)).join('');
   const emptyHtml = sections.length === 0
     ? '<div class="doc-empty"><div class="info-card-empty">Noch keine Doku angelegt. Klicke unten auf „+ Neuer Bereich" oder oben auf „▾ Vorlage anwenden", um eine vorgefertigte Doku-Struktur einzusetzen.</div></div>'
     : '';
@@ -28803,10 +28821,24 @@ async function renderDocSections(entityType, entityId, containerId) {
   wrap.innerHTML = `${headerHtml}<div class="doc-sections-list">${sectionsHtml}${emptyHtml}</div>${addHtml}`;
 }
 
-function _renderDocSection(s) {
+function _renderDocSection(s, entityType) {
   const u = s.user?.name || '—';
   const t = s.updated_at || s.created_at;
   const when = t ? formatDateCompact(t.substring(0, 10)) : '—';
+  // v2.31.2: Bereich-Selector nur für Projekte sichtbar — entscheidet, wo der
+  // Block im Kundenbericht erscheint (1. Briefing / nach 2. Einsätze / nach
+  // 3. Lieferumfang). Default = briefing.
+  const currentBereich = s.bereich || 'briefing';
+  const bereichSelector = entityType === 'project' ? `
+      <div class="doc-section-bereich">
+        <span class="doc-section-bereich-label">Im Kundenbericht:</span>
+        <div class="doc-section-bereich-chips">
+          ${DOC_BEREICH_OPTIONS.map(opt => `
+            <button type="button" class="doc-bereich-chip${currentBereich === opt.value ? ' is-active' : ''}"
+                    data-value="${esc(opt.value)}"
+                    onclick="docSectionSetBereich('${esc(s.id)}','${esc(opt.value)}', this)">${esc(opt.label)}</button>`).join('')}
+        </div>
+      </div>` : '';
   return `
     <div class="doc-section" data-section-id="${esc(s.id)}">
       <div class="doc-section-head">
@@ -28819,8 +28851,22 @@ function _renderDocSection(s) {
       <textarea class="doc-section-inhalt" rows="4"
                 placeholder="Inhalt — was möchtest du dokumentieren?"
                 onchange="docSectionPersist('${esc(s.id)}','inhalt', this.value)">${esc(s.inhalt || '')}</textarea>
+      ${bereichSelector}
       <div class="doc-section-meta">${esc(u)} · zuletzt geändert ${esc(when)}</div>
     </div>`;
+}
+
+// v2.31.2: Speichert den Bereich-Wert und togglet die aktive Chip-Markierung.
+async function docSectionSetBereich(id, value, btn) {
+  const { error } = await db.from('doc_sections').update({ bereich: value }).eq('id', id);
+  if (error) { showToast('Speichern fehlgeschlagen: ' + error.message, true); return; }
+  const wrap = btn?.parentElement;
+  if (wrap) wrap.querySelectorAll('.doc-bereich-chip').forEach(c => c.classList.toggle('is-active', c === btn));
+  // Meta-Anzeige aktualisieren
+  const row = btn?.closest('.doc-section')?.querySelector('.doc-section-meta');
+  if (row && currentProfile?.name) {
+    row.textContent = `${esc(currentProfile.name)} · zuletzt geändert ${formatDateCompact(toISODate(new Date()))}`;
+  }
 }
 
 async function docSectionPersist(id, field, value) {
@@ -29195,7 +29241,7 @@ async function _loadCustomerReportData(projectId) {
     db.from('project_products').select('bezeichnung, menge, einzelpreis_vk, im_paket, notizen, rabatt_typ, rabatt_wert, product:products(einheit)')
       .is('deleted_at', null).eq('project_id', projectId)
       .order('created_at', { ascending: true }),
-    db.from('doc_sections').select('id, titel, inhalt, reihenfolge')
+    db.from('doc_sections').select('id, titel, inhalt, reihenfolge, bereich')
       .eq('entity_type', 'project').eq('entity_id', projectId)
       .order('reihenfolge').order('created_at')
   ]);
@@ -29270,14 +29316,22 @@ function _buildCustomerReportHtml(data) {
 
   const kontaktName = ek ? [ek.vorname, ek.nachname].filter(Boolean).join(' ') : '';
 
-  // Briefing-Bereiche
-  const briefingHtml = data.projectDocs.length === 0
-    ? `<p class="muted">— Kein Briefing hinterlegt —</p>`
-    : data.projectDocs.map(s => `
+  // v2.31.2: Doku-Blöcke nach Bereich splitten — pro Block hat der User
+  // entschieden, ob er ins Briefing, nach die Einsätze oder nach den
+  // Lieferumfang soll. Default (Legacy + neue ohne Auswahl) = briefing.
+  const _renderDocBlocks = (docs) => docs.map(s => `
         <section class="doc-block">
           <h3>${_e(s.titel)}</h3>
           ${_textToParas(s.inhalt)}
         </section>`).join('');
+  const briefingDocs        = data.projectDocs.filter(s => (s.bereich || 'briefing') === 'briefing');
+  const nachEinsaetzeDocs   = data.projectDocs.filter(s => s.bereich === 'nach_einsaetze');
+  const nachLieferumfangDocs = data.projectDocs.filter(s => s.bereich === 'nach_lieferumfang');
+  const briefingHtml = briefingDocs.length === 0
+    ? `<p class="muted">— Kein Briefing hinterlegt —</p>`
+    : _renderDocBlocks(briefingDocs);
+  const nachEinsaetzeHtml   = _renderDocBlocks(nachEinsaetzeDocs);
+  const nachLieferumfangHtml = _renderDocBlocks(nachLieferumfangDocs);
 
   // v2.32.4: Render-Funktion für einen Einsatz; bei geplant/offen entfällt
   // die Notizen-/Doku-Sektion (gibt's noch nicht), Honorar-Block zeigt Status
@@ -29628,7 +29682,11 @@ function _buildCustomerReportHtml(data) {
       ${einsaetzeDurchgefHtml}
       `}
 
+      ${nachEinsaetzeHtml}
+
       ${produkteHtml}
+
+      ${nachLieferumfangHtml}
 
       ${rechnungHtml}
 

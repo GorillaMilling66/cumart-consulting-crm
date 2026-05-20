@@ -9530,7 +9530,13 @@ select.typ-select-secondary {
 }
 .doc-section-inhalt {
   width: 100%;
-  min-height: 80px;
+  /* v2.31.2: Auto-Grow mit dem Inhalt (Chrome 123+/Safari 18+), Fallback
+     resize:vertical für ältere Browser. min-height höher gezogen, damit
+     ein leeres Feld nicht winzig wirkt; max-height begrenzt das Wachstum
+     bei sehr langen Texten. */
+  field-sizing: content;
+  min-height: 120px;
+  max-height: 720px;
   resize: vertical;
   font: inherit;
   font-size: 13px;
@@ -9545,6 +9551,40 @@ select.typ-select-secondary {
 }
 .doc-section-inhalt:hover { border-color: var(--border); }
 .doc-section-inhalt:focus { outline: none; border-color: var(--primary); background: var(--surface); }
+
+/* v2.31.2: Bereich-Selector pro Doku-Block (nur am Projekt sichtbar) —
+   entscheidet, in welcher Sektion des Kundenberichts der Block landet. */
+.doc-section-bereich {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.doc-section-bereich-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.doc-section-bereich-chips {
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.doc-bereich-chip {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--muted);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.doc-bereich-chip:hover { background: var(--surface); border-color: var(--border-strong); color: var(--text); }
+.doc-bereich-chip.is-active {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+}
 .doc-section-meta {
   font-size: 11px; color: var(--muted);
   margin-top: 8px;
