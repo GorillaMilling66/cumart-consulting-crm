@@ -1,6 +1,24 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.1 (Composer Iteration 2 — drei Live-Test-Fixes:
+   Version 2.32.2 (Composer Iteration 3 — Firma+Kontakt-Combi-Picker
+   und Projekt-Inline-Anlage. Termin/Aufgabe/Projekt-Composer haben
+   jetzt einen einzigen „Firma & Kontakt"-Chip (statt zwei getrennter):
+   Picker zeigt eine Firma-Combobox oben, sobald eine Firma gewählt
+   ist erscheinen die Kontakte dieser Firma als klickbare Pillen
+   darunter (aus companyContactsMap, geladen via loadCompanyContacts
+   falls Cache leer), zusätzlich ein Freitext-Input für neuen Kontakt
+   — beides bleibt freiwillig (nur Firma, nur Kontakt oder beide).
+   Wert-Display: zwei separate Zeilen „FIRMA" + „KONTAKT" (bzw.
+   „HAUPTKONTAKT" beim Projekt), jede einzeln über × entfernbar.
+   Projekt-Picker in Termin/Aufgabe/Einsatz ist jetzt eine Combobox
+   (Typ project-combo): Datalist kommt aus dem schon nach Firma
+   vorgefilterten Modal-Select; tippt der User einen Namen, der
+   nicht in der Liste ist, wird beim Speichern automatisch ein
+   neues Projekt angelegt (Status Lead, Firma aus dem Composer-
+   State, erstellt_von = currentProfile). Pre-Save-Hook fängt
+   __new__-Marker ab und erweitert das Modal-Select um die neue
+   Option vor saveXxx().
+   Vorgängerversion 2.32.1 (Composer Iteration 2 — drei Live-Test-Fixes:
    (1) Kontakt-/Projekt-Datalist wird nach Firmen-Wechsel im
    Composer jetzt explizit per rebuildContactDropdownForXxx /
    rebuildProjectDropdownForXxx neu geladen (vorher blieb die
@@ -29814,14 +29832,13 @@ const COMPOSER_SCHEMAS = {
     save: () => saveAppointment(),
     title: { modalInput: 't-titel', label: 'Titel', placeholder: 'Worum geht es bei diesem Termin?' },
     fields: [
-      { key: 'datum',    label: 'Datum',        type: 'date',     mode: 'single', modalInputs: { single: 't-datum' } },
-      { key: 'uhrzeit',  label: 'Uhrzeit',      type: 'time',     modalInputs: { von: 't-uhrzeit-von', bis: 't-uhrzeit-bis', ganztag: 't-ganztag' } },
-      { key: 'firma',    label: 'Firma',        type: 'company',  modalInputs: { combo: 't-company', list: 't-company-list' } },
-      { key: 'kontakt',  label: 'Hauptkontakt', type: 'contact',  modalInputs: { combo: 't-contact', list: 't-contact-list' } },
-      { key: 'projekt',  label: 'Projekt',      type: 'select',   modalInputs: { select: 't-project' } },
-      { key: 'typ',      label: 'Typ',          type: 'select',   modalInputs: { select: 't-typ' }, required: true },
-      { key: 'status',   label: 'Status',       type: 'select',   modalInputs: { select: 't-status' } },
-      { key: 'ort',      label: 'Ort',          type: 'text',     modalInputs: { input: 't-ort' }, placeholder: 'Adresse, Zoom-Link, Raum …' }
+      { key: 'datum',         label: 'Datum',           type: 'date',         mode: 'single', modalInputs: { single: 't-datum' } },
+      { key: 'uhrzeit',       label: 'Uhrzeit',         type: 'time',         modalInputs: { von: 't-uhrzeit-von', bis: 't-uhrzeit-bis', ganztag: 't-ganztag' } },
+      { key: 'firmaKontakt',  label: 'Firma & Kontakt', type: 'firma-kontakt', modalInputs: { firmaCombo: 't-company', firmaList: 't-company-list', kontaktCombo: 't-contact', kontaktList: 't-contact-list' } },
+      { key: 'projekt',       label: 'Projekt',         type: 'project-combo', modalInputs: { select: 't-project' } },
+      { key: 'typ',           label: 'Typ',             type: 'select',       modalInputs: { select: 't-typ' }, required: true },
+      { key: 'status',        label: 'Status',          type: 'select',       modalInputs: { select: 't-status' } },
+      { key: 'ort',           label: 'Ort',             type: 'text',         modalInputs: { input: 't-ort' }, placeholder: 'Adresse, Zoom-Link, Raum …' }
     ]
   },
   // ── AUFGABE ────────────────────────────────────────────────────
@@ -29833,14 +29850,13 @@ const COMPOSER_SCHEMAS = {
     save: () => saveTask(),
     title: { modalInput: 'a-titel', label: 'Titel', placeholder: 'Was ist zu tun?' },
     fields: [
-      { key: 'faelligkeit', label: 'Fällig am',       type: 'date',     mode: 'single', modalInputs: { single: 'a-faelligkeit' } },
-      { key: 'zugewiesen',  label: 'Zugewiesen an',   type: 'select',   modalInputs: { select: 'a-assigned-to' } },
-      { key: 'status',      label: 'Status',          type: 'select',   modalInputs: { select: 'a-status' } },
-      { key: 'firma',       label: 'Firma',           type: 'company',  modalInputs: { combo: 'a-company', list: 'a-company-list' } },
-      { key: 'kontakt',     label: 'Kontakt',         type: 'contact',  modalInputs: { combo: 'a-contact', list: 'a-contact-list' } },
-      { key: 'projekt',     label: 'Projekt',         type: 'select',   modalInputs: { select: 'a-project' } },
-      { key: 'beschreibung',label: 'Beschreibung',    type: 'textarea', modalInputs: { input: 'a-beschreibung' }, placeholder: 'Was genau ist zu tun?' },
-      { key: 'als_termin',  label: 'Auch als Termin', type: 'checkbox', modalInputs: { input: 'a-create-appointment' }, hint: 'Erstellt parallel einen Ganztag-Termin am Fälligkeitsdatum.' }
+      { key: 'faelligkeit',  label: 'Fällig am',       type: 'date',          mode: 'single', modalInputs: { single: 'a-faelligkeit' } },
+      { key: 'zugewiesen',   label: 'Zugewiesen an',   type: 'select',        modalInputs: { select: 'a-assigned-to' } },
+      { key: 'status',       label: 'Status',          type: 'select',        modalInputs: { select: 'a-status' } },
+      { key: 'firmaKontakt', label: 'Firma & Kontakt', type: 'firma-kontakt', modalInputs: { firmaCombo: 'a-company', firmaList: 'a-company-list', kontaktCombo: 'a-contact', kontaktList: 'a-contact-list' } },
+      { key: 'projekt',      label: 'Projekt',         type: 'project-combo', modalInputs: { select: 'a-project' } },
+      { key: 'beschreibung', label: 'Beschreibung',    type: 'textarea',      modalInputs: { input: 'a-beschreibung' }, placeholder: 'Was genau ist zu tun?' },
+      { key: 'als_termin',   label: 'Auch als Termin', type: 'checkbox',      modalInputs: { input: 'a-create-appointment' }, hint: 'Erstellt parallel einen Ganztag-Termin am Fälligkeitsdatum.' }
     ]
   },
   // ── EINSATZ ────────────────────────────────────────────────────
@@ -29852,15 +29868,15 @@ const COMPOSER_SCHEMAS = {
     save: () => saveDeployment(),
     title: { modalInput: 'd-titel', label: 'Titel', placeholder: 'Leer = automatisch aus Leistung × Firma' },
     fields: [
-      { key: 'firma',     label: 'Firma',        type: 'company',  modalInputs: { combo: 'd-company', list: 'd-company-list' }, required: true },
-      { key: 'service',   label: 'Leistung',     type: 'select',   modalInputs: { select: 'd-service' } },
-      { key: 'datum',     label: 'Zeitraum',     type: 'date',     mode: 'range', modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
-      { key: 'menge',     label: 'Menge',        type: 'number',   modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
-      { key: 'preis',     label: 'Einzelpreis',  type: 'number',   modalInputs: { input: 'd-einzelpreis' }, step: '0.01', placeholder: '€' },
-      { key: 'projekt',   label: 'Projekt',      type: 'select',   modalInputs: { select: 'd-project' } },
-      { key: 'status',    label: 'Status',       type: 'select',   modalInputs: { select: 'd-status' } },
-      { key: 'uhrzeit',   label: 'Uhrzeit',      type: 'time',     modalInputs: { von: 'd-uhrzeit-von', bis: 'd-uhrzeit-bis', ganztag: 'd-ganztag' } },
-      { key: 'ort',       label: 'Ort',          type: 'text',     modalInputs: { input: 'd-ort' }, placeholder: 'Vor Ort, Zoom, Raum …' }
+      { key: 'firma',     label: 'Firma',        type: 'company',       modalInputs: { combo: 'd-company', list: 'd-company-list' }, required: true },
+      { key: 'service',   label: 'Leistung',     type: 'select',        modalInputs: { select: 'd-service' } },
+      { key: 'datum',     label: 'Zeitraum',     type: 'date',          mode: 'range', modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
+      { key: 'menge',     label: 'Menge',        type: 'number',        modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
+      { key: 'preis',     label: 'Einzelpreis',  type: 'number',        modalInputs: { input: 'd-einzelpreis' }, step: '0.01', placeholder: '€' },
+      { key: 'projekt',   label: 'Projekt',      type: 'project-combo', modalInputs: { select: 'd-project' } },
+      { key: 'status',    label: 'Status',       type: 'select',        modalInputs: { select: 'd-status' } },
+      { key: 'uhrzeit',   label: 'Uhrzeit',      type: 'time',          modalInputs: { von: 'd-uhrzeit-von', bis: 'd-uhrzeit-bis', ganztag: 'd-ganztag' } },
+      { key: 'ort',       label: 'Ort',          type: 'text',          modalInputs: { input: 'd-ort' }, placeholder: 'Vor Ort, Zoom, Raum …' }
     ]
   },
   // ── PROJEKT ────────────────────────────────────────────────────
@@ -29872,13 +29888,12 @@ const COMPOSER_SCHEMAS = {
     save: () => saveProject(),
     title: { modalInput: 'p-name', label: 'Projektname', placeholder: 'z. B. Heidenhain Klartext Grundlagen bei Müller' },
     fields: [
-      { key: 'firma',         label: 'Firma',           type: 'company',  modalInputs: { combo: 'p-company', list: 'p-company-list' } },
-      { key: 'status',        label: 'Status',          type: 'select',   modalInputs: { select: 'p-status' } },
-      { key: 'umsatz',        label: 'Paketpreis',      type: 'number',   modalInputs: { input: 'p-umsatz' }, step: '0.01', placeholder: '€ (Festpreis)' },
-      { key: 'hauptkontakt',  label: 'Hauptkontakt',    type: 'contact',  modalInputs: { combo: 'p-hauptkontakt', list: 'p-hauptkontakt-list' } },
-      { key: 'verantwortlich',label: 'Verantwortlich',  type: 'select',   modalInputs: { select: 'p-verantwortlicher' } },
-      { key: 'zeitraum',      label: 'Zeitraum',        type: 'date',     mode: 'range', modalInputs: { von: 'p-startdatum', bis: 'p-enddatum' } },
-      { key: 'beschreibung',  label: 'Beschreibung',    type: 'textarea', modalInputs: { input: 'p-beschreibung' }, placeholder: 'Worum geht es bei diesem Projekt?' }
+      { key: 'firmaKontakt',   label: 'Firma & Hauptkontakt', type: 'firma-kontakt', modalInputs: { firmaCombo: 'p-company', firmaList: 'p-company-list', kontaktCombo: 'p-hauptkontakt', kontaktList: 'p-hauptkontakt-list' } },
+      { key: 'status',         label: 'Status',               type: 'select',        modalInputs: { select: 'p-status' } },
+      { key: 'umsatz',         label: 'Paketpreis',           type: 'number',        modalInputs: { input: 'p-umsatz' }, step: '0.01', placeholder: '€ (Festpreis)' },
+      { key: 'verantwortlich', label: 'Verantwortlich',       type: 'select',        modalInputs: { select: 'p-verantwortlicher' } },
+      { key: 'zeitraum',       label: 'Zeitraum',             type: 'date',          mode: 'range', modalInputs: { von: 'p-startdatum', bis: 'p-enddatum' } },
+      { key: 'beschreibung',   label: 'Beschreibung',         type: 'textarea',      modalInputs: { input: 'p-beschreibung' }, placeholder: 'Worum geht es bei diesem Projekt?' }
     ]
   },
   // ── FIRMA ──────────────────────────────────────────────────────
@@ -30104,11 +30119,37 @@ function _composerRenderChips(st) {
 }
 
 function _composerRenderValues(st) {
-  return st.schema.fields
-    .filter(f => st.values[f.key] !== undefined)
-    .map(f => {
-      const v = st.values[f.key];
-      return `
+  const rows = [];
+  for (const f of st.schema.fields) {
+    const v = st.values[f.key];
+    if (v === undefined) continue;
+    if (f.type === 'firma-kontakt') {
+      // Sonderfall: zwei Wert-Zeilen aus einem Wert, jeweils einzeln entfernbar
+      if (v.firmaName) {
+        rows.push(`
+          <div class="composer-value" data-key="${f.key}" data-sub="firma">
+            <span class="composer-value-label">FIRMA</span>
+            <span class="composer-value-text">${esc(v.firmaName)}${v.firmaIsNew ? ' (neu)' : ''}</span>
+            <span class="composer-value-actions">
+              <button class="composer-value-btn" title="Ändern" onclick="_composerToggleChip('${f.key}')">✎</button>
+              <button class="composer-value-btn" title="Firma entfernen" onclick="_composerRemoveValue('${f.key}','firma')">×</button>
+            </span>
+          </div>`);
+      }
+      if (v.kontaktName) {
+        const kLabel = (f.label || '').toLowerCase().includes('hauptkontakt') ? 'HAUPTKONTAKT' : 'KONTAKT';
+        rows.push(`
+          <div class="composer-value" data-key="${f.key}" data-sub="kontakt">
+            <span class="composer-value-label">${kLabel}</span>
+            <span class="composer-value-text">${esc(v.kontaktName)}${v.kontaktIsNew ? ' (neu)' : ''}</span>
+            <span class="composer-value-actions">
+              <button class="composer-value-btn" title="Ändern" onclick="_composerToggleChip('${f.key}')">✎</button>
+              <button class="composer-value-btn" title="Kontakt entfernen" onclick="_composerRemoveValue('${f.key}','kontakt')">×</button>
+            </span>
+          </div>`);
+      }
+    } else {
+      rows.push(`
         <div class="composer-value" data-key="${f.key}">
           <span class="composer-value-label">${esc(f.label)}</span>
           <span class="composer-value-text">${esc(v.displayText || '—')}</span>
@@ -30116,8 +30157,10 @@ function _composerRenderValues(st) {
             <button class="composer-value-btn" title="Ändern" onclick="_composerToggleChip('${f.key}')">✎</button>
             <button class="composer-value-btn" title="Entfernen" onclick="_composerRemoveValue('${f.key}')">×</button>
           </span>
-        </div>`;
-    }).join('');
+        </div>`);
+    }
+  }
+  return rows.join('');
 }
 
 function _composerOnTitleInput(val) {
@@ -30143,12 +30186,31 @@ function _composerToggleChip(key) {
   }, 30);
 }
 
-function _composerRemoveValue(key) {
+function _composerRemoveValue(key, subKey) {
   const st = _composerState;
   if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (f && f.type === 'firma-kontakt' && subKey) {
+    // Nur einen Teil entfernen (Firma oder Kontakt) — der andere bleibt erhalten
+    const v = st.values[key];
+    if (v) {
+      if (subKey === 'firma') {
+        v.firmaId = null; v.firmaName = ''; v.firmaIsNew = false;
+        const el = document.getElementById(f.modalInputs.firmaCombo);
+        if (el) { el.value = ''; el.dataset.value = ''; }
+      } else if (subKey === 'kontakt') {
+        v.kontaktId = null; v.kontaktName = ''; v.kontaktIsNew = false;
+        const el = document.getElementById(f.modalInputs.kontaktCombo);
+        if (el) { el.value = ''; el.dataset.value = ''; }
+      }
+      // Wenn beide Teile leer sind, ganzen Eintrag entfernen
+      if (!v.firmaName && !v.kontaktName) delete st.values[key];
+    }
+    _composerRender();
+    return;
+  }
   delete st.values[key];
   // Auch Modal-Inputs leeren, damit Save nicht alte Werte mitnimmt
-  const f = st.schema.fields.find(x => x.key === key);
   if (f && f.modalInputs) _composerClearModalInputsForField(f);
   _composerRender();
 }
@@ -30156,7 +30218,12 @@ function _composerRemoveValue(key) {
 function _composerClearModalInputsForField(f) {
   const mi = f.modalInputs;
   if (!mi) return;
-  if (f.type === 'company' || f.type === 'contact') {
+  if (f.type === 'firma-kontakt') {
+    [mi.firmaCombo, mi.kontaktCombo].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.value = ''; el.dataset.value = ''; }
+    });
+  } else if (f.type === 'company' || f.type === 'contact') {
     const el = document.getElementById(mi.combo);
     if (el) { el.value = ''; el.dataset.value = ''; }
   } else if (f.type === 'date') {
@@ -30240,6 +30307,12 @@ function _composerRenderPickerBody(st, f) {
   }
   if (f.type === 'time') {
     return _composerRenderTimePicker(st, f);
+  }
+  if (f.type === 'firma-kontakt') {
+    return _composerRenderFirmaKontaktPicker(st, f);
+  }
+  if (f.type === 'project-combo') {
+    return _composerRenderProjectComboPicker(st, f);
   }
   return '<em>Unbekannter Picker-Typ</em>';
 }
@@ -30328,6 +30401,224 @@ function _composerRenderTimePicker(st, f) {
         <input type="time" id="composer-pick-${f.key}-bis" onchange="_composerSetTime('${f.key}', document.getElementById('composer-pick-${f.key}-von').value, this.value, false)">
       </div>
     </div>`;
+}
+
+/* ─── v2.32.2: Firma+Kontakt-Combi-Picker ───────────────────────── */
+/** Ein Picker, der Firma UND Kontakt in einem Schritt setzt. Firma-Combobox
+ *  oben; sobald eine Firma gewählt ist, erscheinen die Kontakte dieser Firma
+ *  als klickbare Pillen darunter. Neuer Kontakt via Freitext-Input. */
+function _composerRenderFirmaKontaktPicker(st, f) {
+  const v = st.values[f.key] || {};
+  const list = (companiesCache || []);
+  const firmaOpts = list.map(c => `<option value="${esc(c.name)}" data-id="${esc(c.id)}"></option>`).join('');
+  const firmaListId = `composer-pick-${f.key}-firma-list`;
+  const firmaInputId = `composer-pick-${f.key}-firma`;
+  const kontaktInputId = `composer-pick-${f.key}-kontakt`;
+
+  // Kontakte der gewählten Firma — aus companyContactsMap (fallback: leer)
+  let kontaktePillenHTML = '';
+  if (v.firmaId) {
+    const kontakte = companyContactsMap[v.firmaId] || [];
+    if (kontakte.length > 0) {
+      const pillen = kontakte.map(k => {
+        const fullName = `${k.vorname || ''} ${k.nachname || ''}`.trim() || '—';
+        const isSelected = v.kontaktId === k.id;
+        return `<button type="button" class="composer-picker-option${isSelected ? ' is-selected' : ''}" onclick="_composerFirmaKontaktPickKontakt('${f.key}','${esc(k.id)}',${JSON.stringify(fullName).replace(/"/g,'&quot;')})">${esc(fullName)}</button>`;
+      }).join('');
+      kontaktePillenHTML = `
+        <div style="margin-top:10px">
+          <div class="composer-picker-hint" style="margin-bottom:4px">Kontakte dieser Firma — anklicken zum Setzen:</div>
+          <div class="composer-picker-options">${pillen}</div>
+        </div>`;
+    } else {
+      kontaktePillenHTML = `
+        <div style="margin-top:10px">
+          <div class="composer-picker-hint">Keine Kontakte zu dieser Firma hinterlegt. Trage unten einen Namen ein, um einen neuen anzulegen.</div>
+        </div>`;
+    }
+  }
+
+  return `
+    <div>
+      <div class="composer-picker-hint" style="margin-bottom:4px">Firma</div>
+      <input type="text" list="${firmaListId}" id="${firmaInputId}"
+             value="${esc(v.firmaName || '')}"
+             placeholder="Firma wählen oder neuen Namen tippen …"
+             oninput="_composerFirmaKontaktSetFirma('${f.key}', this.value)"
+             onchange="_composerFirmaKontaktSetFirma('${f.key}', this.value)">
+      <datalist id="${firmaListId}">${firmaOpts}</datalist>
+    </div>
+    ${kontaktePillenHTML}
+    <div style="margin-top:10px">
+      <div class="composer-picker-hint" style="margin-bottom:4px">${v.firmaId ? 'Oder neuen Kontakt anlegen:' : 'Kontakt (auch ohne Firma möglich):'}</div>
+      <input type="text" id="${kontaktInputId}"
+             value="${esc(v.kontaktIsNew ? v.kontaktName : '')}"
+             placeholder="Vorname Nachname tippen …"
+             oninput="_composerFirmaKontaktSetKontakt('${f.key}', this.value, true)">
+    </div>
+    <div class="composer-picker-hint" style="margin-top:6px">Beides ist optional — du kannst nur Firma, nur Kontakt oder beide setzen.</div>`;
+}
+
+async function _composerFirmaKontaktSetFirma(key, val) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  const list = (companiesCache || []);
+  const match = list.find(c => c.name === val);
+  const v = st.values[key] || {};
+
+  if (val) {
+    v.firmaId = match ? match.id : null;
+    v.firmaName = val;
+    v.firmaIsNew = !match;
+  } else {
+    v.firmaId = null;
+    v.firmaName = '';
+    v.firmaIsNew = false;
+  }
+  st.values[key] = v;
+
+  // Modal-Inputs synchronisieren
+  if (f.modalInputs && f.modalInputs.firmaCombo) {
+    if (match) {
+      setCompanyComboboxValue(f.modalInputs.firmaCombo, f.modalInputs.firmaList, match.id);
+    } else {
+      const el = document.getElementById(f.modalInputs.firmaCombo);
+      if (el) { el.value = val; el.dataset.value = ''; }
+    }
+  }
+
+  // Kontakte der Firma laden + abhängige Dropdowns rebuilden
+  const firmaId = v.firmaId || '';
+  try {
+    if (firmaId && !companyContactsMap[firmaId]) {
+      await loadCompanyContacts(firmaId);
+    }
+    if (st.typ === 'termin') {
+      await rebuildContactDropdownForAppointment(firmaId);
+      await rebuildProjectDropdownForAppointment(firmaId);
+    } else if (st.typ === 'aufgabe') {
+      await rebuildContactDropdownForTask(firmaId);
+      await rebuildProjectDropdownForTask(firmaId);
+    } else if (st.typ === 'projekt') {
+      await rebuildHauptkontaktDropdown(firmaId);
+    }
+  } catch (e) { console.warn('Composer firmaKontakt-kaskade:', e); }
+
+  // Wenn Wert ganz leer ist, raus
+  if (!v.firmaName && !v.kontaktName) delete st.values[key];
+
+  // Re-render, damit Kontakt-Pillen erscheinen
+  _composerRender();
+  // Fokus zurück aufs Firma-Input
+  setTimeout(() => {
+    const el = document.getElementById(`composer-pick-${key}-firma`);
+    if (el && document.activeElement !== el) el.focus();
+  }, 30);
+}
+
+function _composerFirmaKontaktPickKontakt(key, kontaktId, kontaktName) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  const v = st.values[key] || {};
+  v.kontaktId = kontaktId;
+  v.kontaktName = kontaktName;
+  v.kontaktIsNew = false;
+  st.values[key] = v;
+  // Modal-Input setzen
+  if (f.modalInputs && f.modalInputs.kontaktCombo) {
+    setContactComboboxValue(f.modalInputs.kontaktCombo, f.modalInputs.kontaktList, kontaktId);
+  }
+  _composerRender();
+}
+
+function _composerFirmaKontaktSetKontakt(key, val, isNew) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  const v = st.values[key] || {};
+  if (val) {
+    v.kontaktId = null;       // neuer Kontakt — ID kommt beim Speichern
+    v.kontaktName = val;
+    v.kontaktIsNew = true;
+  } else if (isNew) {
+    // Freitext leer und vorher ein "neuer" Kontakt — entfernen
+    if (v.kontaktIsNew) {
+      v.kontaktId = null; v.kontaktName = ''; v.kontaktIsNew = false;
+    }
+  }
+  st.values[key] = v;
+  // Modal-Input: bei neuem Kontakt schreibt der Composer-Save den Namen rein
+  // (resolveContactComboboxValue legt ihn dann an)
+  if (f.modalInputs && f.modalInputs.kontaktCombo) {
+    const el = document.getElementById(f.modalInputs.kontaktCombo);
+    if (el) { el.value = val; el.dataset.value = ''; }
+  }
+  if (!v.firmaName && !v.kontaktName) delete st.values[key];
+}
+
+/* ─── v2.32.2: Projekt-Combobox-Picker (Inline-Anlage) ──────────── */
+/** Picker für Projekt-Auswahl mit Live-Combobox. Liste kommt aus dem
+ *  Modal-Select, das schon vorgefiltert nach gewählter Firma ist
+ *  (rebuildProjectDropdownForXxx). Tippt der User einen Namen, der
+ *  nicht in der Liste ist, merkt sich der Composer "neues Projekt"
+ *  und legt es beim Speichern an. */
+function _composerRenderProjectComboPicker(st, f) {
+  const sel = document.getElementById(f.modalInputs.select);
+  const opts = [];
+  const projektList = [];
+  if (sel) {
+    Array.from(sel.options).forEach(o => {
+      if (o.value) {
+        projektList.push({ id: o.value, name: o.textContent || '' });
+        opts.push(`<option value="${esc(o.textContent || '')}" data-id="${esc(o.value)}"></option>`);
+      }
+    });
+  }
+  const v = st.values[f.key];
+  const listId = `composer-pick-${f.key}-list`;
+  const hint = projektList.length === 0
+    ? 'Keine Projekte zur aktuellen Firma — tippe einen Namen, um ein neues Projekt anzulegen.'
+    : 'Aus der Liste wählen oder neuen Namen tippen — neues Projekt wird beim Speichern angelegt.';
+  return `
+    <input type="text" list="${listId}" id="composer-pick-${f.key}"
+           value="${esc(v?.displayText || '')}"
+           placeholder="Projekt wählen oder neuen Namen tippen …"
+           oninput="_composerProjectComboInput('${f.key}', this.value)"
+           onchange="_composerProjectComboInput('${f.key}', this.value)">
+    <datalist id="${listId}">${opts.join('')}</datalist>
+    <div class="composer-picker-hint">${esc(hint)}</div>`;
+}
+
+function _composerProjectComboInput(key, val) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  const sel = document.getElementById(f.modalInputs.select);
+  if (!sel) return;
+  if (!val) {
+    sel.value = '';
+    delete st.values[key];
+    return;
+  }
+  // Match per textContent
+  let matchedId = '';
+  for (const o of sel.options) {
+    if ((o.textContent || '').trim() === val.trim()) { matchedId = o.value; break; }
+  }
+  if (matchedId) {
+    sel.value = matchedId;
+    st.values[key] = { value: matchedId, displayText: val };
+  } else {
+    // Neuer Projektname — markieren, beim Speichern anlegen
+    sel.value = '';
+    st.values[key] = { value: `__new__${val}`, displayText: val + ' (neu)', __newName: val };
+  }
 }
 
 /* ─── Simple-Value-Setter (Text, Textarea, Number, Select) ─────────── */
@@ -30723,6 +31014,16 @@ async function composerSave() {
       if (el) el.value = title;
     }
 
+    // v2.32.2: firmaKontakt-State auf Modal-Inputs spiegeln (Datalist-Combobox
+    // erwartet bei bestehendem Match die ID via dataset.value, bei neuer
+    // Entität nur el.value — saveXxx ruft dann resolveCompanyComboboxValue /
+    // resolveContactComboboxValue, die legen ggf. neue Datensätze an).
+    _composerCommitFirmaKontaktToModal(st);
+
+    // v2.32.2: Pre-Save — neue Projekte anlegen (project-combo mit __new__-
+    // Marker), damit das Modal-Select beim saveXxx eine reale ID lesen kann.
+    await _composerPreSaveCreateNewProject(st);
+
     if (st.typ === 'notiz') {
       await _composerSaveNotiz(st, title);
     } else {
@@ -30738,6 +31039,74 @@ async function composerSave() {
     if (_composerState) _composerState.saving = false;
     if (btn) { btn.disabled = false; btn.textContent = 'Anlegen'; }
   }
+}
+
+function _composerCommitFirmaKontaktToModal(st) {
+  for (const f of st.schema.fields) {
+    if (f.type !== 'firma-kontakt') continue;
+    const v = st.values[f.key];
+    const fComboEl = document.getElementById(f.modalInputs.firmaCombo);
+    const kComboEl = document.getElementById(f.modalInputs.kontaktCombo);
+    if (!v) {
+      if (fComboEl) { fComboEl.value = ''; fComboEl.dataset.value = ''; }
+      if (kComboEl) { kComboEl.value = ''; kComboEl.dataset.value = ''; }
+      continue;
+    }
+    // Firma
+    if (v.firmaId && !v.firmaIsNew) {
+      setCompanyComboboxValue(f.modalInputs.firmaCombo, f.modalInputs.firmaList, v.firmaId);
+    } else if (v.firmaName) {
+      if (fComboEl) { fComboEl.value = v.firmaName; fComboEl.dataset.value = ''; }
+    } else {
+      if (fComboEl) { fComboEl.value = ''; fComboEl.dataset.value = ''; }
+    }
+    // Kontakt
+    if (v.kontaktId && !v.kontaktIsNew) {
+      setContactComboboxValue(f.modalInputs.kontaktCombo, f.modalInputs.kontaktList, v.kontaktId);
+    } else if (v.kontaktName) {
+      if (kComboEl) { kComboEl.value = v.kontaktName; kComboEl.dataset.value = ''; }
+    } else {
+      if (kComboEl) { kComboEl.value = ''; kComboEl.dataset.value = ''; }
+    }
+  }
+}
+
+async function _composerPreSaveCreateNewProject(st) {
+  const projField = st.schema.fields.find(f => f.type === 'project-combo');
+  if (!projField) return;
+  const v = st.values.projekt;
+  if (!v || typeof v.value !== 'string' || !v.value.startsWith('__new__')) return;
+  const newName = (v.__newName || v.value.substring(7) || '').trim();
+  if (!newName) return;
+
+  // Firma-ID ermitteln: solo 'firma' (Einsatz) oder 'firmaKontakt' (Termin/Aufgabe)
+  let firmaId = null;
+  if (st.values.firma && typeof st.values.firma.value === 'string' && !st.values.firma.value.startsWith('__new__')) {
+    firmaId = st.values.firma.value;
+  } else if (st.values.firmaKontakt && st.values.firmaKontakt.firmaId && !st.values.firmaKontakt.firmaIsNew) {
+    firmaId = st.values.firmaKontakt.firmaId;
+  }
+  if (!firmaId) {
+    throw new Error('Für ein neues Projekt brauchst du eine bestehende Firma — wähle erst eine Firma aus oder lege sie separat an.');
+  }
+  // Projekt anlegen
+  const payload = { name: newName, status: 'lead', company_id: firmaId, erstellt_von: currentProfile?.id || null };
+  const { data, error } = await db.from('projects').insert(payload).select().single();
+  if (error) throw new Error('Projekt-Anlage fehlgeschlagen: ' + error.message);
+  // Modal-Select um Option erweitern + auswählen
+  const sel = document.getElementById(projField.modalInputs.select);
+  if (sel) {
+    let opt = Array.from(sel.options).find(o => o.value === data.id);
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.value = data.id;
+      opt.textContent = data.name;
+      sel.appendChild(opt);
+    }
+    sel.value = data.id;
+  }
+  st.values.projekt = { value: data.id, displayText: data.name };
+  showToast(`Projekt „${data.name}" angelegt.`);
 }
 
 async function _composerSaveNotiz(st, title) {
