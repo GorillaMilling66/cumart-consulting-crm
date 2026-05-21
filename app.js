@@ -1,6 +1,17 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.2 (Composer Iteration 3 — Firma+Kontakt-Combi-Picker
+   Version 2.32.3 (Hotfix — Firma-Combobox-Eingabe schrieb umgekehrt.
+   `_composerFirmaKontaktSetFirma` und `_composerCompanyInput` riefen
+   bei jedem oninput-Event `_composerRender()` auf, was das Input-
+   Element komplett neu erzeugte; der Browser-Cursor sprang an
+   Position 0, der nächste Buchstabe landete VOR dem schon Getippten
+   („Sedh" wurde zu „hdseS"). Plus: jeder Tastendruck triggerte einen
+   Rebuild-Kaskaden-DB-Query. Fix: Identitäts-Check — Re-Render +
+   Kontakte/Projekte-Rebuild nur dann, wenn sich die Firma-ID
+   tatsächlich ändert (also bei einem exakten Datalist-Match oder
+   beim Leeren). Beim freien Tippen ohne Match: nur State-Update,
+   kein DOM-Refresh, kein Query.
+   Vorgängerversion 2.32.2 (Composer Iteration 3 — Firma+Kontakt-Combi-Picker
    und Projekt-Inline-Anlage. Termin/Aufgabe/Projekt-Composer haben
    jetzt einen einzigen „Firma & Kontakt"-Chip (statt zwei getrennter):
    Picker zeigt eine Firma-Combobox oben, sobald eine Firma gewählt
@@ -30467,6 +30478,7 @@ async function _composerFirmaKontaktSetFirma(key, val) {
   const list = (companiesCache || []);
   const match = list.find(c => c.name === val);
   const v = st.values[key] || {};
+  const prevFirmaId = v.firmaId || null;
 
   if (val) {
     v.firmaId = match ? match.id : null;
@@ -30489,7 +30501,16 @@ async function _composerFirmaKontaktSetFirma(key, val) {
     }
   }
 
-  // Kontakte der Firma laden + abhängige Dropdowns rebuilden
+  if (!v.firmaName && !v.kontaktName) delete st.values[key];
+
+  // v2.32.3: Re-Render nur dann, wenn sich die Firma-Identität ändert —
+  // sonst zerstört jeder Tastendruck das Input-Element, der Cursor springt
+  // an Position 0 und der nächste Buchstabe landet vor dem getippten Text.
+  // Bei Eingabe ohne exakten Match: nur State-Update, kein DOM-Refresh.
+  if (v.firmaId === prevFirmaId) return;
+
+  // Identität hat sich geändert (Match aus Datalist gewählt oder Match weg):
+  // Kontakte + abhängige Dropdowns laden, Composer neu rendern.
   const firmaId = v.firmaId || '';
   try {
     if (firmaId && !companyContactsMap[firmaId]) {
@@ -30506,16 +30527,7 @@ async function _composerFirmaKontaktSetFirma(key, val) {
     }
   } catch (e) { console.warn('Composer firmaKontakt-kaskade:', e); }
 
-  // Wenn Wert ganz leer ist, raus
-  if (!v.firmaName && !v.kontaktName) delete st.values[key];
-
-  // Re-render, damit Kontakt-Pillen erscheinen
   _composerRender();
-  // Fokus zurück aufs Firma-Input
-  setTimeout(() => {
-    const el = document.getElementById(`composer-pick-${key}-firma`);
-    if (el && document.activeElement !== el) el.focus();
-  }, 30);
 }
 
 function _composerFirmaKontaktPickKontakt(key, kontaktId, kontaktName) {
@@ -30700,37 +30712,39 @@ async function _composerCompanyInput(key, val, listId) {
   // ID aus dem Cache suchen (über Firmen-Namens-Match)
   const list = (companiesCache || []);
   const match = list.find(c => c.name === val);
+  const prevValue = st.values[key]?.value || null;
   if (f.modalInputs && f.modalInputs.combo) {
-    // Setzen via existierendem Helper, damit data-id Attribut konsistent ist
     if (match) {
       setCompanyComboboxValue(f.modalInputs.combo, f.modalInputs.list, match.id);
     } else {
       const el = document.getElementById(f.modalInputs.combo);
       if (el) { el.value = val; el.dataset.value = ''; }
     }
-    // v2.32.1: Kaskade — abhängige Datalists/Dropdowns nach Firmen-Wechsel
-    // explizit nachziehen. dispatchEvent('change') reicht nicht, weil die
-    // bestehenden Modale die Rebuilds nur in expliziten Pfaden aufrufen.
-    const firmaId = match ? match.id : '';
-    try {
-      if (st.typ === 'termin') {
-        await rebuildContactDropdownForAppointment(firmaId);
-        await rebuildProjectDropdownForAppointment(firmaId);
-      } else if (st.typ === 'aufgabe') {
-        await rebuildContactDropdownForTask(firmaId);
-        await rebuildProjectDropdownForTask(firmaId);
-      } else if (st.typ === 'einsatz') {
-        await rebuildProjectDropdownForDeployment(firmaId);
-      } else if (st.typ === 'projekt') {
-        await rebuildHauptkontaktDropdown(firmaId);
-      }
-    } catch (e) { console.warn('Composer rebuild-kaskade:', e); }
-    // Falls der Kontakt-Picker (Firma+Kontakt-Combo) gerade offen ist,
-    // neu rendern, damit die Kontakt-Pillen erscheinen.
-    if (st.openChip && st.openChip !== key) _composerRender();
   }
-  if (!val) { delete st.values[key]; return; }
-  st.values[key] = { value: match ? match.id : `__new__${val}`, displayText: val + (match ? '' : ' (neu)') };
+  if (!val) { delete st.values[key]; }
+  else { st.values[key] = { value: match ? match.id : `__new__${val}`, displayText: val + (match ? '' : ' (neu)') }; }
+
+  // v2.32.3: Rebuild-Kaskade NUR wenn sich die Firma-Identität tatsächlich
+  // ändert — sonst läuft pro Tastendruck ein DB-Query. Beim Tippen ohne
+  // Match: keine Aktion (firmaId bleibt null).
+  const newValue = st.values[key]?.value || null;
+  if (newValue === prevValue) return;
+  if (typeof newValue === 'string' && newValue.startsWith('__new__')) return;
+
+  const firmaId = match ? match.id : '';
+  try {
+    if (st.typ === 'termin') {
+      await rebuildContactDropdownForAppointment(firmaId);
+      await rebuildProjectDropdownForAppointment(firmaId);
+    } else if (st.typ === 'aufgabe') {
+      await rebuildContactDropdownForTask(firmaId);
+      await rebuildProjectDropdownForTask(firmaId);
+    } else if (st.typ === 'einsatz') {
+      await rebuildProjectDropdownForDeployment(firmaId);
+    } else if (st.typ === 'projekt') {
+      await rebuildHauptkontaktDropdown(firmaId);
+    }
+  } catch (e) { console.warn('Composer rebuild-kaskade:', e); }
 }
 
 function _composerContactInput(key, val, listId) {
