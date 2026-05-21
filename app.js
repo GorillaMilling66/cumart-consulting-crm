@@ -1,6 +1,24 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.7 (Perf-Fix — Composer-Wechsel zwischen den Anlage-
+   Version 2.32.8 (Composer-Wechsel ohne Welcome-Flicker + neuer
+   Desktop-Button in der Rail. (1) Beim Wechsel zwischen zwei
+   Anlage-Aktionen wurde der Welcome-Block (KPIs, „Schnell weiter-
+   machen", „Fortführen") für 100–300 ms sichtbar, weil `closeInline
+   Composer({silent:true})` die `composer-active`-Klasse von der
+   Welcome-Card entfernte, BEVOR das neue `await openXxxModal('new')`
+   durch war. Fix: beim Wechsel innerhalb des Composers wird das
+   vorherige Modal nur freigegeben (composer-suppressed weg), die
+   composer-active-Klasse und der Mount-DOM bleiben sichtbar — das
+   alte Composer-DOM wird nahtlos durch das neue ersetzt, sobald
+   `_composerRender()` läuft. Kein Welcome-Blitz mehr. (2) Neuer
+   Button „Desktop" oberhalb von „Neu anlegen" in der linken Rail
+   (Monitor-Icon, neutrale Farbe). Klick ruft `goToDesktop()` auf:
+   wenn ein Composer offen ist → `closeInlineComposer()` (Welcome
+   wieder sichtbar); wenn schon Welcome aktiv → no-op; wenn auf
+   anderer Seite → `navigateTo('arbeitsplatz')`. Gibt dem User einen
+   klaren Weg zurück zum Welcome ohne über „Abbrechen" gehen zu
+   müssen.
+   Vorgängerversion 2.32.7 (Perf-Fix — Composer-Wechsel zwischen den Anlage-
    Aktionen wurde spürbar langsam, weil `openAppointmentModal` und
    `openDeploymentModal` den `companiesCache` bei JEDEM Open neu
    aus der DB luden — auch wenn er schon vollständig im RAM war.
@@ -6073,6 +6091,18 @@ async function loadPrepareSuggestions(typ) {
 // ═══════════════════════════════════════════════════════════
 //  v2.18.0 — ARBEITSPLATZ 3-Spalten-Layout: Stage-Mechanik
 // ═══════════════════════════════════════════════════════════
+
+/** v2.32.8: Zurück zum Arbeitsplatz-Welcome. Schließt einen offenen
+ *  Composer und navigiert (falls nötig) zur Arbeitsplatz-Seite. */
+function goToDesktop() {
+  if (_composerState) {
+    closeInlineComposer();
+    return;
+  }
+  if (!document.getElementById('page-arbeitsplatz')?.classList.contains('active')) {
+    navigateTo('arbeitsplatz');
+  }
+}
 
 /** v2.32.0: Klick auf eine Aktion in der linken Rail öffnet jetzt den
  *  Inline-Composer in der Bühne — kein Drawer-Modal mehr für den
@@ -30062,8 +30092,22 @@ async function openInlineComposer(typ) {
     await new Promise(r => setTimeout(r, 50));
   }
 
-  // Falls noch ein anderer Composer offen ist, schließen
-  if (_composerState) closeInlineComposer({ silent: true });
+  // v2.32.8: Beim Wechsel zwischen Composern NICHT closeInlineComposer
+  // aufrufen — das würde composer-active von der Welcome-Card entfernen
+  // und das Welcome-Layout (KPIs etc.) für ein paar hundert Millisekunden
+  // einblenden, bis schema.open() durch ist. Stattdessen: vorheriges
+  // Modal freigeben + neuen State setzen + sofort Skeleton rendern.
+  if (_composerState) {
+    const prevModalId = _composerState.schema.modalId;
+    if (prevModalId) {
+      const prevModal = document.getElementById(prevModalId);
+      if (prevModal) {
+        prevModal.classList.remove('composer-suppressed');
+        prevModal.classList.remove('open');
+      }
+    }
+    _composerState = null;
+  }
 
   // Aktive Rail-Markierung
   document.querySelectorAll('.ab-rail-btn[data-action]').forEach(b => {

@@ -456,6 +456,13 @@
         <!-- ACTIVITY RAIL (breit, durchgängig — Icon + Label sichtbar) -->
         <aside class="ab-rail" id="ab-rail">
           <div class="ab-rail-group">
+            <!-- v2.32.8: Zurück zum Arbeitsplatz-Welcome (schließt einen offenen Composer) -->
+            <button class="ab-rail-btn ab-rail-desktop" data-action="desktop" onclick="goToDesktop()" title="Zurück zum Arbeitsplatz">
+              <span class="ab-rail-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </span>
+              <span class="ab-rail-label">Desktop</span>
+            </button>
             <div class="ab-rail-section-label">Neu anlegen</div>
             <button class="ab-rail-btn ab-rail-action" data-action="firma"   data-entity="firma"   onclick="stageOpenAction('firma')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Firma</span></button>
             <button class="ab-rail-btn ab-rail-action" data-action="kontakt" data-entity="kontakt" onclick="stageOpenAction('kontakt')"><span class="ab-rail-icon">+</span><span class="ab-rail-label">Kontakt</span></button>

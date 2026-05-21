@@ -10162,3 +10162,18 @@ select.typ-select-secondary {
   .composer-title-input { font-size: 16px; }
   .composer-picker-row { flex-direction: column; }
 }
+
+/* v2.32.8 — Desktop-Zurück-Button in der Rail (über „Neu anlegen") */
+.ab-rail-desktop {
+  margin-bottom: 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.ab-rail-desktop:hover {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ab-rail-desktop .ab-rail-icon { color: var(--muted); }
+.ab-rail-desktop:hover .ab-rail-icon { color: var(--text); }
