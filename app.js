@@ -1,6 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.0 (Feature — Inline-Composer auf dem Arbeitsplatz
+   Version 2.32.1 (Composer Iteration 2 — drei Live-Test-Fixes:
+   (1) Kontakt-/Projekt-Datalist wird nach Firmen-Wechsel im
+   Composer jetzt explizit per rebuildContactDropdownForXxx /
+   rebuildProjectDropdownForXxx neu geladen (vorher blieb die
+   Liste leer, weil dispatchEvent('change') keine Rebuild-Logik
+   triggerte). (2) „Mehr Felder →" verwirft den Composer-State
+   nicht mehr — Composer-DOM wird nur per display:none verborgen,
+   X/Abbrechen/Overlay-Klick im Drawer bringt den Composer mit
+   allen Werten zurück; Anlegen im Drawer schließt beides. (3)
+   Default-Picker pro Entität ist beim Öffnen schon offen
+   (Termin → Datum, Aufgabe → Fällig am, Einsatz/Projekt →
+   Zeitraum, Firma → Adresse, Kontakt/Notiz → Firma) — füllt
+   den Platz unter den Chips und gibt direkt etwas zum Anklicken.
+   Vorgängerversion 2.32.0 (Feature — Inline-Composer auf dem Arbeitsplatz
    für alle sieben Anlage-Aktionen: Firma · Kontakt · Projekt ·
    Einsatz · Termin · Aufgabe · Notiz. Klick in der „Neu anlegen"-
    Rail öffnet kein Drawer-Modal mehr, sondern einen interaktiven
@@ -29969,15 +29982,24 @@ async function openInlineComposer(typ) {
     } catch (e) { console.warn('Composer-Notiz-Caches:', e); }
   }
 
+  // v2.32.1: Default-Picker pro Entität, der beim Öffnen schon offen ist —
+  // nutzt den Platz unter den Chips und gibt direkt etwas zum Anklicken.
+  const DEFAULT_OPEN_CHIP = {
+    termin: 'datum', aufgabe: 'faelligkeit', einsatz: 'datum',
+    projekt: 'zeitraum', firma: 'adresse', kontakt: 'firma',
+    notiz: 'firma'
+  };
+
   // Composer-State frisch initialisieren
   _composerState = {
     typ,
     schema,
     titleValue: '',
     values: {},          // { fieldKey: { value, displayText } }
-    openChip: null,      // welcher Picker gerade offen ist
+    openChip: DEFAULT_OPEN_CHIP[typ] || null,
     calendar: {},        // { fieldKey: { mode, refMonth, selectedFrom, selectedTo } }
-    saving: false
+    saving: false,
+    modalHandoff: false  // v2.32.1: true wenn „Mehr Felder" gerade den Drawer zeigt
   };
 
   // Welcome-Card in den Composer-Modus schalten
@@ -29996,6 +30018,9 @@ async function openInlineComposer(typ) {
       welcomeCard?.appendChild(mount);
     }
   }
+  // v2.32.1: defensiv display zurücksetzen, falls aus einem vorherigen
+  // „Mehr Felder"-Handoff noch display:none hängt.
+  mount.style.display = '';
 
   _composerRender();
   // Fokus aufs Titel-Feld
@@ -30376,12 +30401,12 @@ function _composerAddressEdit(key, part, val) {
   else delete st.values[key];
 }
 
-function _composerCompanyInput(key, val, listId) {
+async function _composerCompanyInput(key, val, listId) {
   const st = _composerState;
   if (!st) return;
   const f = st.schema.fields.find(x => x.key === key);
   if (!f) return;
-  // ID aus dem Datalist suchen (über Firmen-Namens-Match)
+  // ID aus dem Cache suchen (über Firmen-Namens-Match)
   const list = (companiesCache || []);
   const match = list.find(c => c.name === val);
   if (f.modalInputs && f.modalInputs.combo) {
@@ -30392,9 +30417,26 @@ function _composerCompanyInput(key, val, listId) {
       const el = document.getElementById(f.modalInputs.combo);
       if (el) { el.value = val; el.dataset.value = ''; }
     }
-    // Kaskade: bei Termin/Aufgabe/Einsatz/Projekt änderen sich Kontakte + Projekte
-    const ev = new Event('change');
-    document.getElementById(f.modalInputs.combo)?.dispatchEvent(ev);
+    // v2.32.1: Kaskade — abhängige Datalists/Dropdowns nach Firmen-Wechsel
+    // explizit nachziehen. dispatchEvent('change') reicht nicht, weil die
+    // bestehenden Modale die Rebuilds nur in expliziten Pfaden aufrufen.
+    const firmaId = match ? match.id : '';
+    try {
+      if (st.typ === 'termin') {
+        await rebuildContactDropdownForAppointment(firmaId);
+        await rebuildProjectDropdownForAppointment(firmaId);
+      } else if (st.typ === 'aufgabe') {
+        await rebuildContactDropdownForTask(firmaId);
+        await rebuildProjectDropdownForTask(firmaId);
+      } else if (st.typ === 'einsatz') {
+        await rebuildProjectDropdownForDeployment(firmaId);
+      } else if (st.typ === 'projekt') {
+        await rebuildHauptkontaktDropdown(firmaId);
+      }
+    } catch (e) { console.warn('Composer rebuild-kaskade:', e); }
+    // Falls der Kontakt-Picker (Firma+Kontakt-Combo) gerade offen ist,
+    // neu rendern, damit die Kontakt-Pillen erscheinen.
+    if (st.openChip && st.openChip !== key) _composerRender();
   }
   if (!val) { delete st.values[key]; return; }
   st.values[key] = { value: match ? match.id : `__new__${val}`, displayText: val + (match ? '' : ' (neu)') };
@@ -30610,24 +30652,52 @@ function _composerSetTime(key, von, bis, ganztag) {
 }
 
 /* ─── „Mehr Felder →" — Drawer als Fallback öffnen ─────────────── */
-/** Schließt den Composer und übergibt an das volle Drawer-Modal. Alle
- *  Werte, die im Composer schon eingegeben wurden, stehen bereits in den
- *  Modal-Inputs — sie bleiben erhalten, weil der Composer das Modal nur
- *  visuell unterdrückt, nicht zurücksetzt. */
+/** v2.32.1: Öffnet den Drawer im Vordergrund, behält aber den Composer-
+ *  State im Hintergrund. X / Abbrechen im Drawer bringt den Composer
+ *  zurück; Anlegen im Drawer schließt beides (Save hat schon committed). */
 function _composerOpenFullModal() {
   const st = _composerState;
   if (!st || !st.schema.modalId) return;
   const modal = document.getElementById(st.schema.modalId);
   if (!modal) return;
-  // Composer-DOM abräumen, Welcome-Card-State zurück — aber Modal sichtbar machen.
-  const welcomeCard = document.querySelector('.stage-welcome-card');
-  if (welcomeCard) welcomeCard.classList.remove('composer-active');
-  document.querySelectorAll('.ab-rail-btn[data-action]').forEach(b => b.classList.remove('is-active'));
+  // Composer-DOM verbergen, State erhalten
   const mount = document.getElementById('arbeitsplatz-composer-mount');
-  if (mount) mount.innerHTML = '';
-  _composerState = null;
+  if (mount) mount.style.display = 'none';
+  st.modalHandoff = true;
+  // Drawer sichtbar machen — Werte stehen bereits in den Modal-Inputs
   modal.classList.remove('composer-suppressed');
   modal.classList.add('open');
+  // Hooks für Drawer-Ausgänge
+  const onCancel = () => {
+    // Composer wieder einblenden, Modal-State NICHT zurücksetzen — Werte bleiben
+    if (!_composerState || !_composerState.modalHandoff) return;
+    if (mount) mount.style.display = '';
+    _composerState.modalHandoff = false;
+    modal.classList.remove('open');
+    modal.classList.add('composer-suppressed');
+  };
+  const onSave = () => {
+    // saveXxx() läuft. Wenn es success-toast wirft, ist Modal eh weg —
+    // Composer parallel räumen.
+    if (!_composerState || !_composerState.modalHandoff) return;
+    setTimeout(() => {
+      // Erst nach kurzem Delay prüfen: wenn Modal weg ist, war's success.
+      if (!modal.classList.contains('open')) closeInlineComposer({ silent: true });
+      else { /* Validation fehlgeschlagen — Modal noch offen — wir lassen den User dort weiterarbeiten */ }
+    }, 200);
+  };
+  const closeBtn  = modal.querySelector('.drawer__close');
+  const cancelBtn = Array.from(modal.querySelectorAll('.drawer__footer-actions .btn'))
+                          .find(b => /Abbrechen/i.test(b.textContent || ''));
+  const saveBtn   = modal.querySelector('[id$="-save-btn"]');
+  if (closeBtn)  closeBtn.addEventListener('click', onCancel, { once: true });
+  if (cancelBtn) cancelBtn.addEventListener('click', onCancel, { once: true });
+  if (saveBtn)   saveBtn.addEventListener('click', onSave, { once: true });
+  // Overlay-Klick (außerhalb der drawer-Aside) auch als Cancel werten
+  const onOverlayClick = (ev) => {
+    if (ev.target === modal) { onCancel(); modal.removeEventListener('click', onOverlayClick); }
+  };
+  modal.addEventListener('click', onOverlayClick);
 }
 
 /* ─── Speichern — ruft existierende save-Funktion oder direkten Insert ──── */
