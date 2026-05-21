@@ -1,6 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.6 (Ansprechpartner am Einsatz — eine Firma kann
+   Version 2.32.7 (Perf-Fix — Composer-Wechsel zwischen den Anlage-
+   Aktionen wurde spürbar langsam, weil `openAppointmentModal` und
+   `openDeploymentModal` den `companiesCache` bei JEDEM Open neu
+   aus der DB luden — auch wenn er schon vollständig im RAM war.
+   Das Anti-Pattern `if (cache.length === 0) { load } else { load
+   again }` bei beiden Funktionen wegoptimiert: der Reload läuft
+   nur noch, wenn der Cache wirklich leer ist. Trade-off: neue
+   Firmen aus parallelen Sessions landen erst nach Browser-Reload
+   im Cache — akzeptabel für die Latenz-Reduktion. Die anderen
+   Loader (`loadUserProfilesCache`, `loadServicesCache`, `loadEinsatz
+   Status`, `loadTerminTypen`, `loadAufgabeStatus`) sind bereits
+   cache-aware (`if (cache.length > 0) return cache`) und waren
+   nicht das Problem.
+   Vorgängerversion 2.32.6 (Ansprechpartner am Einsatz — eine Firma kann
    mehrere Kontakte haben, unterschiedliche Einsätze beim selben
    Kunden können mit verschiedenen Personen vereinbart sein.
    Migration `v2.32.6_deployments_contact_id.sql` ergänzt optionale
@@ -11386,10 +11399,12 @@ async function openAppointmentModal(mode, appointmentId = null) {
   if (companiesCache.length === 0) {
     const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
-  } else {
-    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
-    companiesCache = cs || companiesCache;
   }
+  // v2.32.7: Redundanten Reload-bei-jedem-Open entfernt — beim Composer-
+  // Wechsel zwischen den Anlage-Aktionen lief der Query jedes Mal, was
+  // spürbar bremste. Neue Firmen, die in einer parallelen Session
+  // angelegt wurden, landen erst nach Browser-Reload im Cache — das ist
+  // ein akzeptabler Trade-off für den Speed-Gewinn.
 
   // v1.44.11: t-company ist eine Combobox mit Datalist
   fillCompanyCombobox('t-company', 't-company-list');
@@ -13769,10 +13784,12 @@ async function openDeploymentModal(mode, deploymentId = null) {
   if (companiesCache.length === 0) {
     const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
-  } else {
-    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
-    companiesCache = cs || companiesCache;
   }
+  // v2.32.7: Redundanten Reload-bei-jedem-Open entfernt — beim Composer-
+  // Wechsel zwischen den Anlage-Aktionen lief der Query jedes Mal, was
+  // spürbar bremste. Neue Firmen, die in einer parallelen Session
+  // angelegt wurden, landen erst nach Browser-Reload im Cache — das ist
+  // ein akzeptabler Trade-off für den Speed-Gewinn.
 
   // v1.44.11: d-company ist eine Combobox
   fillCompanyCombobox('d-company', 'd-company-list');
