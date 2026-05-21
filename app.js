@@ -1,6 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.4 (Composer Iteration 4 — Multi-Select-Kalender für
+   Version 2.32.5 (Notiz-Composer bekommt den Firma+Kontakt-Combi-
+   Picker — bisher hatte Notiz drei separate Chips (Firma · Projekt ·
+   Kontakt), jetzt ist es ein „+ Firma & Kontakt"-Chip plus separat
+   „+ Projekt", konsistent zu Termin/Aufgabe/Projekt. Schema-Field
+   `firmaKontakt` mit modalInputs=null (Notiz hat keinen Drawer); die
+   Picker-Renderer und Setter sind gegen null-modalInputs geschützt
+   (if-Guards in _composerCommitFirmaKontaktToModal etc.). _composer
+   SaveNotiz liest jetzt aus st.values.firmaKontakt + st.values
+   .projekt; Validierung: mindestens ein realer FK (firmaId,
+   kontaktId oder project-id ohne __new__-Marker), neue Firmen oder
+   Kontakte sind im Notiz-Pfad NICHT erlaubt (Notiz braucht FK auf
+   bestehende Entität). Einsatz und Firma haben architekturell keine
+   contact_id-Spalte — Combi-Picker dort braucht Schema-Erweiterung
+   (Migration), wird in Folgeversion behandelt.
+   Vorgängerversion 2.32.4 (Composer Iteration 4 — Multi-Select-Kalender für
    Einsatz mit Bündel-Anlage. Beim Einsatz-Composer hat der Zeitraum-
    Picker einen dritten Modus „Mehrere Tage (Bündel)" zusätzlich zu
    „Einzelner Tag" und „Zeitraum". Klick auf einen Tag toggelt ihn in
@@ -29967,9 +29981,8 @@ const COMPOSER_SCHEMAS = {
     save: null,
     title: { modalInput: null, label: 'Notiztext', placeholder: 'Worum geht es? Mehrzeilig möglich.', multiline: true },
     fields: [
-      { key: 'firma',   label: 'Firma',   type: 'company', modalInputs: null, noteFkCol: 'company_id' },
-      { key: 'projekt', label: 'Projekt', type: 'select',  modalInputs: null, noteFkCol: 'project_id' },
-      { key: 'kontakt', label: 'Kontakt', type: 'contact', modalInputs: null, noteFkCol: 'contact_id' }
+      { key: 'firmaKontakt', label: 'Firma & Kontakt', type: 'firma-kontakt', modalInputs: null },
+      { key: 'projekt',      label: 'Projekt',         type: 'select',         modalInputs: null, noteFkCol: 'project_id' }
     ]
   }
 };
@@ -30026,7 +30039,7 @@ async function openInlineComposer(typ) {
   const DEFAULT_OPEN_CHIP = {
     termin: 'datum', aufgabe: 'faelligkeit', einsatz: 'datum',
     projekt: 'zeitraum', firma: 'adresse', kontakt: 'firma',
-    notiz: 'firma'
+    notiz: 'firmaKontakt'
   };
 
   // Composer-State frisch initialisieren
@@ -31135,6 +31148,7 @@ async function composerSave() {
 function _composerCommitFirmaKontaktToModal(st) {
   for (const f of st.schema.fields) {
     if (f.type !== 'firma-kontakt') continue;
+    if (!f.modalInputs) continue;  // v2.32.5: Notiz hat keinen Drawer — Werte stehen im State
     const v = st.values[f.key];
     const fComboEl = document.getElementById(f.modalInputs.firmaCombo);
     const kComboEl = document.getElementById(f.modalInputs.kontaktCombo);
@@ -31288,25 +31302,36 @@ async function _composerSaveNotiz(st, title) {
     showToast('Bitte Notiztext eingeben.', true);
     throw new Error('Notiztext fehlt');
   }
-  const bezug = st.values.firma || st.values.projekt || st.values.kontakt;
-  if (!bezug) {
-    showToast('Bitte einen Bezug setzen (Firma · Projekt · Kontakt).', true);
+  // v2.32.5: Bezug kommt aus dem firmaKontakt-Combi-Picker (Firma und/oder
+  // Kontakt) plus dem separaten Projekt-Picker. Mindestens ein realer FK
+  // muss gesetzt sein. Neue Firma/Kontakt werden im Notiz-Pfad nicht
+  // angelegt — Notizen brauchen bestehende FKs.
+  const fk = st.values.firmaKontakt || {};
+  const projektVal = st.values.projekt;
+
+  if (fk.firmaIsNew && fk.firmaName) {
+    showToast('Bitte wähle eine bestehende Firma — Notizen können keine neue Firma anlegen.', true);
+    throw new Error('Neue Firma nicht erlaubt');
+  }
+  if (fk.kontaktIsNew && fk.kontaktName) {
+    showToast('Bitte wähle einen bestehenden Kontakt — Notizen können keinen neuen Kontakt anlegen.', true);
+    throw new Error('Neuer Kontakt nicht erlaubt');
+  }
+
+  const hasFirma   = !!fk.firmaId;
+  const hasKontakt = !!fk.kontaktId;
+  const hasProjekt = projektVal && typeof projektVal.value === 'string'
+                     && !projektVal.value.startsWith('__new__');
+  if (!hasFirma && !hasKontakt && !hasProjekt) {
+    showToast('Bitte mindestens einen Bezug setzen (Firma · Kontakt · Projekt).', true);
     throw new Error('Bezug fehlt');
   }
+
   const payload = { inhalt: text, erstellt_von: currentProfile?.id || null };
-  if (st.values.firma)   payload.company_id = st.values.firma.value;
-  if (st.values.projekt) payload.project_id = st.values.projekt.value;
-  if (st.values.kontakt) {
-    // kontakt-displayText ist der Name → wir brauchen die contact-ID. Falls
-    // die ID schon als Wert gesetzt wurde (bei Auswahl aus Datalist), nehmen
-    // wir die; sonst überspringen wir contact-Notiz und nutzen Firma/Projekt.
-    payload.contact_id = st.values.kontakt.value;
-  }
-  // Wenn company_id mit __new__ Marker beginnt: ablehnen — Notizen brauchen reale FK
-  if (typeof payload.company_id === 'string' && payload.company_id.startsWith('__new__')) {
-    showToast('Bitte zuerst die Firma anlegen oder eine bestehende wählen — Notizen brauchen eine bestehende Firma.', true);
-    throw new Error('Neue Firma nicht erlaubt für Notiz');
-  }
+  if (hasFirma)   payload.company_id = fk.firmaId;
+  if (hasKontakt) payload.contact_id = fk.kontaktId;
+  if (hasProjekt) payload.project_id = projektVal.value;
+
   const { error } = await db.from('notes').insert(payload);
   if (error) throw new Error(error.message);
   showToast('Notiz angelegt.');
