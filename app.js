@@ -1,6 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.5 (Notiz-Composer bekommt den Firma+Kontakt-Combi-
+   Version 2.32.6 (Ansprechpartner am Einsatz — eine Firma kann
+   mehrere Kontakte haben, unterschiedliche Einsätze beim selben
+   Kunden können mit verschiedenen Personen vereinbart sein.
+   Migration `v2.32.6_deployments_contact_id.sql` ergänzt optionale
+   `contact_id`-FK-Spalten in `deployments` und `deployment_bundles`
+   (ON DELETE SET NULL, idempotent, mit Indexen). Drawer-Modal
+   bekommt ein zweites Combobox-Feld „Ansprechpartner" in der Kunde-
+   Sektion (form-row-2 mit Firma). `openDeploymentModal` initialisiert
+   d-contact und ruft `rebuildContactDropdownForDeployment` beim
+   Prefill / Edit auf. `saveDeployment` resolved `d-contact` mit
+   `resolveContactComboboxValue` (legt ggf. neuen Kontakt mit
+   company_id an) und schreibt `contact_id` in den Payload. Composer-
+   Schema für Einsatz tauscht solo `firma` gegen `firmaKontakt`-Combi-
+   Picker (modalInputs: d-company + d-contact). `_composerFirmaKontakt
+   SetFirma` lernt den Einsatz-Branch und ruft beim Firma-Wechsel
+   `rebuildContactDropdownForDeployment` + `rebuildProjectDropdown
+   ForDeployment`. `_composerSaveEinsatzBundle` resolved zusätzlich
+   contact_id, schreibt es ins Bundle und propagiert es auf alle
+   Tages-Einsätze. VORAUSSETZUNG: Migration muss appliziert sein,
+   sonst schlägt jeder Einsatz-Insert mit „column contact_id does
+   not exist" fehl.
+   Vorgängerversion 2.32.5 (Notiz-Composer bekommt den Firma+Kontakt-Combi-
    Picker — bisher hatte Notiz drei separate Chips (Firma · Projekt ·
    Kontakt), jetzt ist es ein „+ Firma & Kontakt"-Chip plus separat
    „+ Projekt", konsistent zu Termin/Aufgabe/Projekt. Schema-Field
@@ -11524,6 +11545,12 @@ async function rebuildContactDropdownForAppointment(companyId) {
   await renderAppointmentAdditionalContactChips(companyId);
 }
 
+/** v2.32.6: Ansprechpartner-Dropdown im Einsatz-Modal nachladen,
+ *  wenn die Firma wechselt. */
+async function rebuildContactDropdownForDeployment(companyId) {
+  await fillContactCombobox('d-contact', 'd-contact-list', companyId);
+}
+
 // v2.11.0 — Termin-Teilnehmer (interne Kollegen) als Chip-Multi-Select.
 function renderAppointmentTeamChips() {
   const wrap = document.getElementById('t-team-list');
@@ -13749,6 +13776,8 @@ async function openDeploymentModal(mode, deploymentId = null) {
 
   // v1.44.11: d-company ist eine Combobox
   fillCompanyCombobox('d-company', 'd-company-list');
+  // v2.32.6: Ansprechpartner-Combobox initial leer
+  await fillContactCombobox('d-contact', 'd-contact-list', '');
 
   // Service-Dropdown (mit data-Attributen für Auto-Fill von Preis und Zeiten)
   const serviceSelect = document.getElementById('d-service');
@@ -13818,6 +13847,7 @@ async function openDeploymentModal(mode, deploymentId = null) {
     // Prefill aus Firmen-Detail / Projekt-Detail
     if (deploymentModalPrefillCompanyId) {
       setCompanyComboboxValue('d-company', 'd-company-list', deploymentModalPrefillCompanyId);
+      await rebuildContactDropdownForDeployment(deploymentModalPrefillCompanyId);  // v2.32.6
       await rebuildProjectDropdownForDeployment(deploymentModalPrefillCompanyId);
       updateDeploymentOrtHint();
       // v2.1.2: Firma-Adresse direkt ins Ort-Feld
@@ -13894,6 +13924,9 @@ async function openDeploymentModal(mode, deploymentId = null) {
     }
     if (effectiveCompanyId) {
       setCompanyComboboxValue('d-company', 'd-company-list', effectiveCompanyId);
+      // v2.32.6: Kontakt-Dropdown nach Firma laden, dann ggf. den gespeicherten Kontakt setzen
+      await rebuildContactDropdownForDeployment(effectiveCompanyId);
+      if (data.contact_id) setContactComboboxValue('d-contact', 'd-contact-list', data.contact_id);
       // v2.31.1: forceIncludeProjectId stellt sicher, dass das aktuell zugeordnete
       // Projekt in der Dropdown landet, auch wenn sein Status nicht im Default-Filter
       // ist (z. B. ABSCHLUSSPHASE — vorher Outlier — oder VERLOREN/STORNIERT).
@@ -14317,6 +14350,15 @@ async function saveDeployment() {
   } catch (e) {
     return;
   }
+  // v2.32.6: Kontakt-Combobox auflösen — legt ggf. neuen Kontakt mit der
+  // resolved company_id an. Eine Firma kann mehrere Ansprechpartner haben;
+  // saveDeployment akzeptiert auch null (Kontakt optional).
+  let contact_id = null;
+  try {
+    contact_id = await resolveContactComboboxValue('d-contact', 'd-contact-list', company_id);
+  } catch (e) {
+    return;
+  }
 
   const finalTitel = titel || (isNew ? generateDeploymentAutoTitle() : '');
   const finalBeschreibung = beschreibungInput || (isNew ? generateDeploymentAutoDescription() : '');
@@ -14393,7 +14435,7 @@ async function saveDeployment() {
       uhrzeit_von: uhrzeit_von || null,
       uhrzeit_bis: uhrzeit_bis || null,
       status: effStatus,
-      company_id, project_id, service_id,
+      company_id, contact_id, project_id, service_id,
       menge, einzelpreis,
       rabatt_typ,         // v2.28.2
       rabatt_wert,        // v2.28.2
@@ -29906,7 +29948,7 @@ const COMPOSER_SCHEMAS = {
     save: () => saveDeployment(),
     title: { modalInput: 'd-titel', label: 'Titel', placeholder: 'Leer = automatisch aus Leistung × Firma' },
     fields: [
-      { key: 'firma',     label: 'Firma',        type: 'company',       modalInputs: { combo: 'd-company', list: 'd-company-list' }, required: true },
+      { key: 'firmaKontakt', label: 'Firma & Kontakt', type: 'firma-kontakt', modalInputs: { firmaCombo: 'd-company', firmaList: 'd-company-list', kontaktCombo: 'd-contact', kontaktList: 'd-contact-list' }, required: true },
       { key: 'service',   label: 'Leistung',     type: 'select',        modalInputs: { select: 'd-service' } },
       { key: 'datum',     label: 'Zeitraum',     type: 'date',          mode: 'range', multiAllowed: true, modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
       { key: 'menge',     label: 'Menge',        type: 'number',        modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
@@ -30549,6 +30591,9 @@ async function _composerFirmaKontaktSetFirma(key, val) {
     } else if (st.typ === 'aufgabe') {
       await rebuildContactDropdownForTask(firmaId);
       await rebuildProjectDropdownForTask(firmaId);
+    } else if (st.typ === 'einsatz') {
+      await rebuildContactDropdownForDeployment(firmaId);  // v2.32.6
+      await rebuildProjectDropdownForDeployment(firmaId);
     } else if (st.typ === 'projekt') {
       await rebuildHauptkontaktDropdown(firmaId);
     }
@@ -31231,6 +31276,12 @@ async function _composerSaveEinsatzBundle(st, title) {
   } catch (e) { throw new Error('Firma fehlt — bitte erst Firma wählen.'); }
   if (!company_id) throw new Error('Firma ist Pflicht für ein Einsatz-Bündel.');
 
+  // v2.32.6: Ansprechpartner auflösen (optional — kann null sein)
+  let contact_id = null;
+  try {
+    contact_id = await resolveContactComboboxValue('d-contact', 'd-contact-list', company_id);
+  } catch (e) { contact_id = null; }
+
   const service_id = document.getElementById('d-service').value || null;
   if (!service_id) throw new Error('Leistung ist Pflicht für ein Einsatz-Bündel.');
 
@@ -31261,6 +31312,7 @@ async function _composerSaveEinsatzBundle(st, title) {
     ort,
     externe_techniker: externe,
     company_id,
+    contact_id,             // v2.32.6
     project_id,
     dokumentation: {}
   };
@@ -31272,7 +31324,7 @@ async function _composerSaveEinsatzBundle(st, title) {
   // 2. Pro Tag einen Einsatz anlegen, gekoppelt an Bundle
   const deploymentPayloads = days.map(iso => ({
     bundle_id: bundle.id,
-    company_id, project_id, service_id,
+    company_id, contact_id, project_id, service_id,   // v2.32.6: contact_id
     datum_von: iso,
     datum_bis: iso,
     titel: bundleTitel,
