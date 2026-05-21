@@ -1,6 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.8 (Composer-Wechsel ohne Welcome-Flicker + neuer
+   Version 2.32.9 (Mehr Inline-Felder im Composer — Felder, die
+   bisher nur über „Mehr Felder →" erreichbar waren, sind jetzt
+   direkt als Chips verfügbar. Einsatz: + Externe Techniker (Text),
+   + Rabatt (Typ-Dropdown + Wert-Input, neuer Picker-Typ `rabatt`,
+   schreibt in d-rabatt-typ/d-rabatt-wert), + Auch als Termin
+   (Checkbox, aktiviert d-create-appointment für die Termin-Sync).
+   Aufgabe: + Interne Notizen (zweite Textarea, getrennt vom
+   Beschreibungs-Feld — a-notizen). Projekt: + Nach Aufwand
+   (Checkbox, schreibt in p-nach-aufwand und triggert
+   onProjectPreisModusChange via dispatchEvent('change'), damit das
+   Umsatz-Feld korrekt versteckt/gezeigt wird). Firma: + Auch
+   Lieferant (Checkbox, schreibt in c-ist-lieferant). Render-/
+   Setter-Pfade für Rabatt sind neu; alle anderen nutzen die
+   existierenden Checkbox-/Text-/Textarea-Pfade. Themen-Picker,
+   Bonus-Einlösung und Multi-Select-Chip-Picker (Internes Team,
+   Mehrteilnehmer) bleiben weiterhin im „Mehr Felder"-Drawer-
+   Fallback — die haben kontextabhängige Logik (firmen-Themen-Pool,
+   Entitlements, Junction-Tabellen), die einen eigenen Composer-
+   Picker-Typ braucht.
+   Vorgängerversion 2.32.8 (Composer-Wechsel ohne Welcome-Flicker + neuer
    Desktop-Button in der Rail. (1) Beim Wechsel zwischen zwei
    Anlage-Aktionen wurde der Welcome-Block (KPIs, „Schnell weiter-
    machen", „Fortführen") für 100–300 ms sichtbar, weil `closeInline
@@ -29983,7 +30002,8 @@ const COMPOSER_SCHEMAS = {
       { key: 'firmaKontakt', label: 'Firma & Kontakt', type: 'firma-kontakt', modalInputs: { firmaCombo: 'a-company', firmaList: 'a-company-list', kontaktCombo: 'a-contact', kontaktList: 'a-contact-list' } },
       { key: 'projekt',      label: 'Projekt',         type: 'project-combo', modalInputs: { select: 'a-project' } },
       { key: 'beschreibung', label: 'Beschreibung',    type: 'textarea',      modalInputs: { input: 'a-beschreibung' }, placeholder: 'Was genau ist zu tun?' },
-      { key: 'als_termin',   label: 'Auch als Termin', type: 'checkbox',      modalInputs: { input: 'a-create-appointment' }, hint: 'Erstellt parallel einen Ganztag-Termin am Fälligkeitsdatum.' }
+      { key: 'als_termin',   label: 'Auch als Termin', type: 'checkbox',      modalInputs: { input: 'a-create-appointment' }, hint: 'Erstellt parallel einen Ganztag-Termin am Fälligkeitsdatum.' },
+      { key: 'notizen',      label: 'Interne Notizen', type: 'textarea',      modalInputs: { input: 'a-notizen' }, placeholder: 'Interne Notizen zur Aufgabe …' }
     ]
   },
   // ── EINSATZ ────────────────────────────────────────────────────
@@ -29996,14 +30016,17 @@ const COMPOSER_SCHEMAS = {
     title: { modalInput: 'd-titel', label: 'Titel', placeholder: 'Leer = automatisch aus Leistung × Firma' },
     fields: [
       { key: 'firmaKontakt', label: 'Firma & Kontakt', type: 'firma-kontakt', modalInputs: { firmaCombo: 'd-company', firmaList: 'd-company-list', kontaktCombo: 'd-contact', kontaktList: 'd-contact-list' }, required: true },
-      { key: 'service',   label: 'Leistung',     type: 'select',        modalInputs: { select: 'd-service' } },
-      { key: 'datum',     label: 'Zeitraum',     type: 'date',          mode: 'range', multiAllowed: true, modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
-      { key: 'menge',     label: 'Menge',        type: 'number',        modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
-      { key: 'preis',     label: 'Einzelpreis',  type: 'number',        modalInputs: { input: 'd-einzelpreis' }, step: '0.01', placeholder: '€' },
-      { key: 'projekt',   label: 'Projekt',      type: 'project-combo', modalInputs: { select: 'd-project' } },
-      { key: 'status',    label: 'Status',       type: 'select',        modalInputs: { select: 'd-status' } },
-      { key: 'uhrzeit',   label: 'Uhrzeit',      type: 'time',          modalInputs: { von: 'd-uhrzeit-von', bis: 'd-uhrzeit-bis', ganztag: 'd-ganztag' } },
-      { key: 'ort',       label: 'Ort',          type: 'text',          modalInputs: { input: 'd-ort' }, placeholder: 'Vor Ort, Zoom, Raum …' }
+      { key: 'service',     label: 'Leistung',         type: 'select',        modalInputs: { select: 'd-service' } },
+      { key: 'datum',       label: 'Zeitraum',         type: 'date',          mode: 'range', multiAllowed: true, modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
+      { key: 'menge',       label: 'Menge',            type: 'number',        modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
+      { key: 'preis',       label: 'Einzelpreis',      type: 'number',        modalInputs: { input: 'd-einzelpreis' }, step: '0.01', placeholder: '€' },
+      { key: 'projekt',     label: 'Projekt',          type: 'project-combo', modalInputs: { select: 'd-project' } },
+      { key: 'status',      label: 'Status',           type: 'select',        modalInputs: { select: 'd-status' } },
+      { key: 'uhrzeit',     label: 'Uhrzeit',          type: 'time',          modalInputs: { von: 'd-uhrzeit-von', bis: 'd-uhrzeit-bis', ganztag: 'd-ganztag' } },
+      { key: 'ort',         label: 'Ort',              type: 'text',          modalInputs: { input: 'd-ort' }, placeholder: 'Vor Ort, Zoom, Raum …' },
+      { key: 'rabatt',      label: 'Rabatt',           type: 'rabatt',        modalInputs: { typ: 'd-rabatt-typ', wert: 'd-rabatt-wert' } },
+      { key: 'externe',     label: 'Externe Techniker', type: 'text',          modalInputs: { input: 'd-externe-techniker' }, placeholder: 'z. B. Max Mustermann (extern)' },
+      { key: 'als_termin',  label: 'Auch als Termin',  type: 'checkbox',      modalInputs: { input: 'd-create-appointment' }, hint: 'Legt parallel einen Termin mit gleichen Daten an.' }
     ]
   },
   // ── PROJEKT ────────────────────────────────────────────────────
@@ -30020,7 +30043,8 @@ const COMPOSER_SCHEMAS = {
       { key: 'umsatz',         label: 'Paketpreis',           type: 'number',        modalInputs: { input: 'p-umsatz' }, step: '0.01', placeholder: '€ (Festpreis)' },
       { key: 'verantwortlich', label: 'Verantwortlich',       type: 'select',        modalInputs: { select: 'p-verantwortlicher' } },
       { key: 'zeitraum',       label: 'Zeitraum',             type: 'date',          mode: 'range', modalInputs: { von: 'p-startdatum', bis: 'p-enddatum' } },
-      { key: 'beschreibung',   label: 'Beschreibung',         type: 'textarea',      modalInputs: { input: 'p-beschreibung' }, placeholder: 'Worum geht es bei diesem Projekt?' }
+      { key: 'beschreibung',   label: 'Beschreibung',         type: 'textarea',      modalInputs: { input: 'p-beschreibung' }, placeholder: 'Worum geht es bei diesem Projekt?' },
+      { key: 'nach_aufwand',   label: 'Nach Aufwand',         type: 'checkbox',      modalInputs: { input: 'p-nach-aufwand' }, hint: 'Aktiv = Kundenpreis ergibt sich aus Einsätzen + Produkten (kein Festpreis).' }
     ]
   },
   // ── FIRMA ──────────────────────────────────────────────────────
@@ -30037,9 +30061,10 @@ const COMPOSER_SCHEMAS = {
       { key: 'branche', label: 'Branche', type: 'text',     modalInputs: { input: 'c-branche' }, placeholder: 'z. B. Automotive' },
       { key: 'website', label: 'Website', type: 'text',     modalInputs: { input: 'c-website' }, placeholder: 'www.firma.de' },
       { key: 'adresse', label: 'Adresse', type: 'address',  modalInputs: { strasse: 'c-strasse', plz: 'c-plz', stadt: 'c-stadt', land: 'c-land' } },
-      { key: 'telefon', label: 'Telefon', type: 'text',     modalInputs: { input: 'c-telefon' }, placeholder: '+49 …' },
-      { key: 'email',   label: 'E-Mail',  type: 'text',     modalInputs: { input: 'c-email' }, placeholder: 'info@firma.de' },
-      { key: 'notizen', label: 'Notizen', type: 'textarea', modalInputs: { input: 'c-notizen' } }
+      { key: 'telefon',  label: 'Telefon',     type: 'text',     modalInputs: { input: 'c-telefon' }, placeholder: '+49 …' },
+      { key: 'email',    label: 'E-Mail',      type: 'text',     modalInputs: { input: 'c-email' }, placeholder: 'info@firma.de' },
+      { key: 'notizen',  label: 'Notizen',     type: 'textarea', modalInputs: { input: 'c-notizen' } },
+      { key: 'lieferant',label: 'Auch Lieferant', type: 'checkbox', modalInputs: { input: 'c-ist-lieferant' }, hint: 'Markiert die Firma zusätzlich als Lieferanten — taucht im Produkt-Modal auswählbar auf.' }
     ]
   },
   // ── KONTAKT ────────────────────────────────────────────────────
@@ -30377,6 +30402,15 @@ function _composerClearModalInputsForField(f) {
   } else if (f.type === 'checkbox') {
     const el = document.getElementById(mi.input);
     if (el) el.checked = false;
+  } else if (f.type === 'rabatt') {
+    if (mi.typ) {
+      const el = document.getElementById(mi.typ);
+      if (el) el.value = '';
+    }
+    if (mi.wert) {
+      const el = document.getElementById(mi.wert);
+      if (el) { el.value = ''; el.disabled = true; }
+    }
   } else if (f.type === 'address') {
     ['strasse', 'plz', 'stadt', 'land'].forEach(k => {
       const el = document.getElementById(mi[k]); if (el) el.value = (k === 'land' ? 'Deutschland' : '');
@@ -30453,6 +30487,9 @@ function _composerRenderPickerBody(st, f) {
   }
   if (f.type === 'project-combo') {
     return _composerRenderProjectComboPicker(st, f);
+  }
+  if (f.type === 'rabatt') {
+    return _composerRenderRabattPicker(st, f);
   }
   return '<em>Unbekannter Picker-Typ</em>';
 }
@@ -30737,6 +30774,64 @@ function _composerRenderProjectComboPicker(st, f) {
            onchange="_composerProjectComboInput('${f.key}', this.value)">
     <datalist id="${listId}">${opts.join('')}</datalist>
     <div class="composer-picker-hint">${esc(hint)}</div>`;
+}
+
+/* ─── v2.32.9: Rabatt-Picker (Typ + Wert) ───────────────────────── */
+function _composerRenderRabattPicker(st, f) {
+  const v = st.values[f.key]?.value || {};
+  const typVal  = v.typ  || '';
+  const wertVal = (v.wert ?? '') === '' ? '' : String(v.wert);
+  return `
+    <div class="composer-picker-row">
+      <div>
+        <div class="composer-picker-hint" style="margin-bottom:3px">Typ</div>
+        <select id="composer-pick-${f.key}-typ" onchange="_composerSetRabatt('${f.key}')">
+          <option value="">— kein Rabatt —</option>
+          <option value="prozent"${typVal==='prozent'?' selected':''}>Prozent (%)</option>
+          <option value="betrag"${typVal==='betrag'?' selected':''}>Festbetrag (€)</option>
+        </select>
+      </div>
+      <div>
+        <div class="composer-picker-hint" style="margin-bottom:3px">Wert</div>
+        <input type="number" min="0" step="0.01" id="composer-pick-${f.key}-wert"
+               value="${esc(wertVal)}" placeholder="0"
+               ${typVal?'':'disabled'}
+               oninput="_composerSetRabatt('${f.key}')"
+               onchange="_composerSetRabatt('${f.key}')">
+      </div>
+    </div>
+    <div class="composer-picker-hint">Leer = kein Rabatt. Prozent zwischen 0–100, Betrag in €.</div>`;
+}
+
+function _composerSetRabatt(key) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f) return;
+  const typSel  = document.getElementById(`composer-pick-${key}-typ`);
+  const wertInp = document.getElementById(`composer-pick-${key}-wert`);
+  const typ  = typSel?.value || '';
+  const wertRaw = wertInp?.value || '';
+  // Wert-Input enable/disable je nach Typ
+  if (wertInp) wertInp.disabled = !typ;
+  // Modal-Inputs synchronisieren
+  if (f.modalInputs) {
+    if (f.modalInputs.typ) {
+      const el = document.getElementById(f.modalInputs.typ);
+      if (el) el.value = typ;
+    }
+    if (f.modalInputs.wert) {
+      const el = document.getElementById(f.modalInputs.wert);
+      if (el) { el.value = wertRaw; el.disabled = !typ; }
+    }
+  }
+  if (!typ || wertRaw === '') {
+    delete st.values[key];
+    return;
+  }
+  const wert = Number(wertRaw);
+  const display = typ === 'prozent' ? `${wert} %` : `${wert} €`;
+  st.values[key] = { value: { typ, wert }, displayText: display };
 }
 
 function _composerProjectComboInput(key, val) {
