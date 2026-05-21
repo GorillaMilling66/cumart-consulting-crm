@@ -1,6 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.10 (Multi-Select-Chip-Picker für Junction-Felder im
+   Version 2.32.11 (Themen-Picker im Einsatz-Composer. Neuer
+   „+ Themen"-Chip im Einsatz mit eigenem Picker-Typ `themes` —
+   lädt nach Firma-Wahl `loadCompanyThemesData(firmaId)` und rendert
+   die Firmen-Themen als klickbare Pillen (mit Themen-Farbe als
+   Border). Klick toggelt das Thema in einer globalen Pending-Set-
+   Variable `_pendingComposerThemenIds`. Quick-Add-Input darunter:
+   Themen-Name + Enter legt ad-hoc ein neues `project_themes` mit
+   `company_id` an (case-insensitive Dupe-Check gegen den Pool) und
+   markiert es direkt als ausgewählt — der frische Eintrag landet
+   sofort im Composer-Cache und wird ohne Refresh als Pille
+   gerendert. Save-Hook: `saveDeployment` schreibt nach dem Insert/
+   Update die `deployment_themes`-Junction (delete-then-insert für
+   Edit-Idempotenz), `_composerSaveEinsatzBundle` propagiert die
+   Themen auf alle Tages-Einsätze des Bündels. Beim Composer-Öffnen
+   und Wert-Entfernen wird das Pending-Set genullt — kein Carry-
+   Over zwischen Sessions. Bei Firma-Wechsel im `firmaKontakt`-
+   Picker wird der Themen-Cache neu geladen und die Auswahl
+   genullt, weil Themen firmen-scoped sind. Bonus-Einlösung bleibt
+   weiterhin nur im „Mehr Felder"-Drawer — das wird in v2.32.12
+   separat nachgezogen.
+   Vorgängerversion 2.32.10 (Multi-Select-Chip-Picker für Junction-Felder im
    Composer. Drei neue Chips, die delete-then-insert auf Junction-
    Tabellen schreiben: Termin „+ Internes Team" (User-Pillen aus
    userProfilesCache → appointment_participants), Termin „+ Weitere
@@ -14569,6 +14589,18 @@ async function saveDeployment() {
       const { data, error } = await db.from('deployments').insert(payload).select().single();
       if (error) throw new Error(error.message);
       saved = data;
+    }
+
+    // v2.32.11: Themen aus dem Composer-Picker als deployment_themes-Junction
+    // schreiben, sobald der Einsatz angelegt ist. Pending-Set kommt vom
+    // Inline-Composer (_composerToggleThema / _composerAddThemaAdHoc).
+    if (typeof _pendingComposerThemenIds !== 'undefined' && _pendingComposerThemenIds.size > 0) {
+      // Erst alte Junctions weg (für den Edit-Fall idempotent), dann neu schreiben
+      await db.from('deployment_themes').delete().eq('deployment_id', saved.id);
+      const themeRows = [..._pendingComposerThemenIds].map(tid => ({ deployment_id: saved.id, theme_id: tid }));
+      const { error: tErr } = await db.from('deployment_themes').insert(themeRows);
+      if (tErr) console.warn('Composer deployment_themes insert:', tErr.message);
+      _pendingComposerThemenIds = new Set();  // reset nach Save
     }
 
     // ──────── Techniker-Relations synchronisieren ────────
@@ -30052,6 +30084,7 @@ const COMPOSER_SCHEMAS = {
       { key: 'rabatt',      label: 'Rabatt',           type: 'rabatt',        modalInputs: { typ: 'd-rabatt-typ', wert: 'd-rabatt-wert' } },
       { key: 'techniker',   label: 'Interne Techniker', type: 'multi-pick',   source: 'users',           stateSet: 'selectedTechnikerIds' },
       { key: 'externe',     label: 'Externe Techniker', type: 'text',          modalInputs: { input: 'd-externe-techniker' }, placeholder: 'z. B. Max Mustermann (extern)' },
+      { key: 'themen',      label: 'Themen',           type: 'themes',        companySource: 'firmaKontakt', hint: 'Themen aus dem Firmen-Pool — neuer Themen-Name + Enter legt direkt einen neuen an.' },
       { key: 'als_termin',  label: 'Auch als Termin',  type: 'checkbox',      modalInputs: { input: 'd-create-appointment' }, hint: 'Legt parallel einen Termin mit gleichen Daten an.' }
     ]
   },
@@ -30128,6 +30161,13 @@ const COMPOSER_SCHEMAS = {
 };
 
 let _composerState = null;
+// v2.32.11: Pending-Set für Themen-Picker. Wird vom Composer befüllt und
+// nach erfolgreichem saveDeployment / _composerSaveEinsatzBundle als
+// deployment_themes-Junction geschrieben. Reset bei jedem Composer-Open/Close.
+let _pendingComposerThemenIds = new Set();
+// Cache der Firmen-Themen für den aktuell offenen Composer (vermeidet
+// Doppel-Queries beim Render).
+let _composerThemenCache = [];
 
 /** Öffnet den Inline-Composer für die gegebene Anlage-Aktion in der
  *  Bühne. Initialisiert (außer für Notiz) das zugehörige Drawer-Modal
@@ -30187,6 +30227,10 @@ async function openInlineComposer(typ) {
       }
     } catch (e) { console.warn('Composer-Notiz-Caches:', e); }
   }
+
+  // v2.32.11: Themen-State zurücksetzen, damit kein Carry-Over zwischen Composer-Sessions
+  _pendingComposerThemenIds = new Set();
+  _composerThemenCache = [];
 
   // v2.32.1: Default-Picker pro Entität, der beim Öffnen schon offen ist —
   // nutzt den Platz unter den Chips und gibt direkt etwas zum Anklicken.
@@ -30416,6 +30460,11 @@ function _composerClearModalInputsForField(f) {
     }
     return;
   }
+  // v2.32.11: themes-Picker hat ebenfalls keine modalInputs — Set leeren
+  if (f.type === 'themes') {
+    _pendingComposerThemenIds = new Set();
+    return;
+  }
   const mi = f.modalInputs;
   if (!mi) return;
   if (f.type === 'firma-kontakt') {
@@ -30528,6 +30577,9 @@ function _composerRenderPickerBody(st, f) {
   }
   if (f.type === 'multi-pick') {
     return _composerRenderMultiPickPicker(st, f);
+  }
+  if (f.type === 'themes') {
+    return _composerRenderThemenPicker(st, f);
   }
   return '<em>Unbekannter Picker-Typ</em>';
 }
@@ -30730,6 +30782,11 @@ async function _composerFirmaKontaktSetFirma(key, val) {
     } else if (st.typ === 'einsatz') {
       await rebuildContactDropdownForDeployment(firmaId);  // v2.32.6
       await rebuildProjectDropdownForDeployment(firmaId);
+      // v2.32.11: Themen-Pool der neuen Firma laden, damit Pillen erscheinen
+      await _composerLoadThemenForFirma(firmaId);
+      // Existierende Auswahl zurücksetzen, weil Themen firmen-scoped sind
+      _pendingComposerThemenIds = new Set();
+      _composerSyncThemenValue();
     } else if (st.typ === 'projekt') {
       await rebuildHauptkontaktDropdown(firmaId);
     }
@@ -30812,6 +30869,107 @@ function _composerRenderProjectComboPicker(st, f) {
            onchange="_composerProjectComboInput('${f.key}', this.value)">
     <datalist id="${listId}">${opts.join('')}</datalist>
     <div class="composer-picker-hint">${esc(hint)}</div>`;
+}
+
+/* ─── v2.32.11: Themen-Picker für Einsatz ─────────────────────────
+ * Lädt die Firmen-Themen (project_themes mit company_id, gepflegt zentral
+ * auf der Firma-Themen-Seite). Pillen sind klickbar; Quick-Add-Input + Enter
+ * legt ad-hoc ein neues Firmen-Thema an. Auswahl landet in _pendingComposer
+ * ThemenIds und wird beim Save als deployment_themes-Junction geschrieben.
+ */
+async function _composerLoadThemenForFirma(firmaId) {
+  if (!firmaId) { _composerThemenCache = []; return; }
+  _composerThemenCache = await loadCompanyThemesData(firmaId);
+}
+
+function _composerRenderThemenPicker(st, f) {
+  const fkVal = f.companySource ? st.values[f.companySource] : null;
+  const firmaId = fkVal?.firmaId || null;
+  if (!firmaId) {
+    return '<div class="composer-picker-hint">Wähle erst eine Firma im „Firma & Kontakt"-Chip, dann kannst du Themen taggen.</div>';
+  }
+  const themen = _composerThemenCache || [];
+  const set = _pendingComposerThemenIds;
+
+  const pillen = themen.map(t => {
+    const sel = set.has(t.id);
+    const colorStyle = t.farbe ? ` style="border-color:${esc(t.farbe)}"` : '';
+    return `<button type="button" class="composer-picker-option${sel ? ' is-selected' : ''}"${colorStyle}
+              onclick="_composerToggleThema('${esc(t.id)}')">${esc(t.name)}</button>`;
+  }).join('');
+
+  const emptyHint = themen.length === 0
+    ? '<div class="composer-picker-hint">Noch keine Themen für diese Firma. Tipp unten einen Namen + Enter, um eins anzulegen.</div>'
+    : '';
+  return `
+    ${emptyHint}
+    <div class="composer-picker-options">${pillen}</div>
+    <div style="margin-top:10px">
+      <input type="text" id="composer-themen-quickadd" placeholder="Neues Thema tippen + Enter — z. B. „TNC7 Bahnsteuerung""
+             onkeydown="if(event.key==='Enter'){event.preventDefault();_composerAddThemaAdHoc(this.value);this.value='';}">
+    </div>
+    <div class="composer-picker-hint">${set.size > 0 ? `${set.size} ausgewählt — Klick toggelt.` : 'Klick auf eine Pille zum Hinzufügen.'}</div>`;
+}
+
+function _composerToggleThema(themeId) {
+  const set = _pendingComposerThemenIds;
+  if (set.has(themeId)) set.delete(themeId);
+  else set.add(themeId);
+  _composerSyncThemenValue();
+  _composerRender();
+}
+
+async function _composerAddThemaAdHoc(value) {
+  const name = (value || '').trim();
+  if (!name) return;
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.type === 'themes');
+  if (!f) return;
+  const fkVal = f.companySource ? st.values[f.companySource] : null;
+  const firmaId = fkVal?.firmaId || null;
+  if (!firmaId) { showToast('Bitte zuerst eine Firma im Composer wählen.', true); return; }
+  // Dupe-Check: case-insensitive Namensvergleich im Cache
+  const lower = name.toLowerCase();
+  const existing = _composerThemenCache.find(t => (t.name || '').toLowerCase() === lower);
+  if (existing) {
+    _pendingComposerThemenIds.add(existing.id);
+    showToast(`Thema „${existing.name}" ist schon im Pool — markiert.`);
+    _composerSyncThemenValue();
+    _composerRender();
+    return;
+  }
+  // Neu anlegen
+  const { data, error } = await db.from('project_themes')
+    .insert({ name, company_id: firmaId, status: 'aktiv', erstellt_von: currentProfile?.id || null })
+    .select('id, name, beschreibung, farbe, reihenfolge, library_theme_id, company_id').single();
+  if (error) { showToast('Themen-Anlage fehlgeschlagen: ' + error.message, true); return; }
+  _composerThemenCache.push(data);
+  _pendingComposerThemenIds.add(data.id);
+  showToast(`Thema „${name}" angelegt.`);
+  _composerSyncThemenValue();
+  _composerRender();
+}
+
+function _composerSyncThemenValue() {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.type === 'themes');
+  if (!f) return;
+  const set = _pendingComposerThemenIds;
+  if (set.size === 0) {
+    delete st.values[f.key];
+    return;
+  }
+  const names = [...set]
+    .map(id => _composerThemenCache.find(t => t.id === id)?.name)
+    .filter(Boolean);
+  const head = names.slice(0, 3).join(', ');
+  const rest = names.length > 3 ? ` +${names.length - 3} weitere` : '';
+  st.values[f.key] = {
+    value: { ids: [...set] },
+    displayText: `${set.size} ${set.size === 1 ? 'Thema' : 'Themen'}: ${head}${rest}`
+  };
 }
 
 /* ─── v2.32.10: Multi-Select-Chip-Picker für Junction-Tabellen ──── */
@@ -31645,6 +31803,21 @@ async function _composerSaveEinsatzBundle(st, title) {
       const { error: techErr } = await db.from('deployment_technicians').insert(techRows);
       if (techErr) console.warn('Bündel-Techniker-Junction:', techErr.message);
     }
+  }
+
+  // v2.32.11: Themen pro Tages-Einsatz an deployment_themes hängen
+  if (_pendingComposerThemenIds.size > 0 && Array.isArray(createdDeps)) {
+    const themeRows = [];
+    for (const dep of createdDeps) {
+      for (const tid of _pendingComposerThemenIds) {
+        themeRows.push({ deployment_id: dep.id, theme_id: tid });
+      }
+    }
+    if (themeRows.length > 0) {
+      const { error: tErr } = await db.from('deployment_themes').insert(themeRows);
+      if (tErr) console.warn('Bündel-Themen-Junction:', tErr.message);
+    }
+    _pendingComposerThemenIds = new Set();
   }
 
   showToast(`Einsatz-Bündel „${bundleTitel}" mit ${days.length} Tagen angelegt.`);
