@@ -1,6 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.3 (Hotfix — Firma-Combobox-Eingabe schrieb umgekehrt.
+   Version 2.32.4 (Composer Iteration 4 — Multi-Select-Kalender für
+   Einsatz mit Bündel-Anlage. Beim Einsatz-Composer hat der Zeitraum-
+   Picker einen dritten Modus „Mehrere Tage (Bündel)" zusätzlich zu
+   „Einzelner Tag" und „Zeitraum". Klick auf einen Tag toggelt ihn in
+   der Auswahl; alle gewählten Tage werden im Kalender markiert und
+   unten als „N Tage: Mo 1. Juni · Mi 3. Juni · …" zusammengefasst.
+   Beim Speichern wird statt saveDeployment ein eigener Bundle-Pfad
+   genommen: `deployment_bundles`-Zeile + N `deployments`-Zeilen mit
+   gemeinsamer `bundle_id` (analog zur existierenden saveDeployment
+   Bundle-Logik, aber ohne `currentProjectDetailId`-Kopplung —
+   funktioniert vom Arbeitsplatz aus). Pflicht für ein Bündel: Firma,
+   Leistung, Projekt, mind. 2 Tage. Rollback bei Insert-Fehler:
+   Bundle wird gelöscht, falls die Tages-Einsätze nicht durchgehen.
+   Vorgängerversion 2.32.3 (Hotfix — Firma-Combobox-Eingabe schrieb umgekehrt.
    `_composerFirmaKontaktSetFirma` und `_composerCompanyInput` riefen
    bei jedem oninput-Event `_composerRender()` auf, was das Input-
    Element komplett neu erzeugte; der Browser-Cursor sprang an
@@ -29881,7 +29894,7 @@ const COMPOSER_SCHEMAS = {
     fields: [
       { key: 'firma',     label: 'Firma',        type: 'company',       modalInputs: { combo: 'd-company', list: 'd-company-list' }, required: true },
       { key: 'service',   label: 'Leistung',     type: 'select',        modalInputs: { select: 'd-service' } },
-      { key: 'datum',     label: 'Zeitraum',     type: 'date',          mode: 'range', modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
+      { key: 'datum',     label: 'Zeitraum',     type: 'date',          mode: 'range', multiAllowed: true, modalInputs: { von: 'd-datum-von', bis: 'd-datum-bis' } },
       { key: 'menge',     label: 'Menge',        type: 'number',        modalInputs: { input: 'd-menge' }, step: '0.5', placeholder: 'z. B. 1' },
       { key: 'preis',     label: 'Einzelpreis',  type: 'number',        modalInputs: { input: 'd-einzelpreis' }, step: '0.01', placeholder: '€' },
       { key: 'projekt',   label: 'Projekt',      type: 'project-combo', modalInputs: { select: 'd-project' } },
@@ -30391,7 +30404,8 @@ function _composerRenderDatePicker(st, f) {
     mode: f.mode || 'single',
     refMonth: _composerStartOfMonth(new Date()),
     selectedFrom: null,
-    selectedTo: null
+    selectedTo: null,
+    selectedDays: []   // v2.32.4: für multi-mode
   });
   return _composerCalendarHTML(f, calState);
 }
@@ -30790,13 +30804,22 @@ function _composerFmtDateDE(d) {
 
 function _composerCalendarHTML(f, cal) {
   const months = [cal.refMonth, _composerAddMonths(cal.refMonth, 1)];
-  const modeTabs = f.mode === 'range'
-    ? ''  // bei reinen Range-Feldern kein Mode-Switch
-    : `
+  // v2.32.4: Multi-Modus zusätzlich für Felder mit `multiAllowed`
+  let modeTabs = '';
+  if (f.multiAllowed) {
+    modeTabs = `
+      <div class="composer-cal-modes">
+        <button class="composer-cal-mode ${cal.mode === 'single' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','single')">Einzelner Tag</button>
+        <button class="composer-cal-mode ${cal.mode === 'range' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','range')">Zeitraum</button>
+        <button class="composer-cal-mode ${cal.mode === 'multi' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','multi')">Mehrere Tage (Bündel)</button>
+      </div>`;
+  } else if (f.mode !== 'range') {
+    modeTabs = `
       <div class="composer-cal-modes">
         <button class="composer-cal-mode ${cal.mode === 'single' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','single')">Einzelner Tag</button>
         <button class="composer-cal-mode ${cal.mode === 'range' ? 'is-active' : ''}" onclick="_composerCalSetMode('${f.key}','range')">Zeitraum</button>
       </div>`;
+  }
   const monthsHTML = months.map(m => _composerMonthHTML(f, cal, m)).join('');
   const summary = _composerCalSummary(cal);
   return `
@@ -30810,6 +30833,15 @@ function _composerCalendarHTML(f, cal) {
 }
 
 function _composerCalSummary(cal) {
+  if (cal.mode === 'multi') {
+    const arr = cal.selectedDays || [];
+    if (arr.length === 0) return '';
+    if (arr.length <= 4) {
+      return `${arr.length} Tag${arr.length === 1 ? '' : 'e'}: ` +
+        arr.slice().sort((a, b) => a - b).map(d => _composerFmtDateDE(d)).join(' · ');
+    }
+    return `${arr.length} Tage (${_composerFmtDateDE(arr[0])} – ${_composerFmtDateDE(arr[arr.length-1])})`;
+  }
   if (!cal.selectedFrom) return '';
   if (cal.mode === 'single' || !cal.selectedTo) return _composerFmtDateDE(cal.selectedFrom);
   return `${_composerFmtDateDE(cal.selectedFrom)} → ${_composerFmtDateDE(cal.selectedTo)}`;
@@ -30824,6 +30856,8 @@ function _composerMonthHTML(f, cal, monthDate) {
   const todayKey = _composerDateKey(new Date());
   const fromKey = cal.selectedFrom ? _composerDateKey(cal.selectedFrom) : null;
   const toKey   = cal.selectedTo   ? _composerDateKey(cal.selectedTo)   : null;
+  // v2.32.4: Set für schnellen Multi-Lookup
+  const multiSet = new Set((cal.selectedDays || []).map(d => _composerDateKey(d)));
 
   const cells = [];
   for (let i = 0; i < firstWeekday; i++) cells.push('<div></div>');
@@ -30832,10 +30866,14 @@ function _composerMonthHTML(f, cal, monthDate) {
     const k = _composerDateKey(dayDate);
     let cls = 'composer-cal-day';
     if (k === todayKey) cls += ' is-today';
-    if (k === fromKey)  cls += ' is-range-start';
-    if (k === toKey)    cls += ' is-range-end';
-    if (fromKey && toKey && k > fromKey && k < toKey) cls += ' is-in-range';
-    if (fromKey && !toKey && cal.mode === 'single' && k === fromKey) cls += ' is-selected';
+    if (cal.mode === 'multi') {
+      if (multiSet.has(k)) cls += ' is-selected';
+    } else {
+      if (k === fromKey)  cls += ' is-range-start';
+      if (k === toKey)    cls += ' is-range-end';
+      if (fromKey && toKey && k > fromKey && k < toKey) cls += ' is-in-range';
+      if (fromKey && !toKey && cal.mode === 'single' && k === fromKey) cls += ' is-selected';
+    }
     cells.push(`<button type="button" class="${cls}" onclick="_composerCalPickDay('${f.key}','${k}')">${d}</button>`);
   }
   const weekdays = ['Mo','Di','Mi','Do','Fr','Sa','So']
@@ -30863,7 +30901,9 @@ function _composerCalSetMode(key, mode) {
   const cal = st.calendar[key];
   if (!cal) return;
   cal.mode = mode;
-  if (mode === 'single') cal.selectedTo = null;
+  if (mode === 'single') { cal.selectedTo = null; cal.selectedDays = []; }
+  else if (mode === 'range') { cal.selectedDays = []; }
+  else if (mode === 'multi') { cal.selectedTo = null; cal.selectedFrom = null; }
   _composerCalCommitToValues(key);
   _composerRender();
 }
@@ -30879,6 +30919,14 @@ function _composerCalPickDay(key, isoKey) {
   if (cal.mode === 'single') {
     cal.selectedFrom = picked;
     cal.selectedTo = null;
+  } else if (cal.mode === 'multi') {
+    // v2.32.4: Toggle Tag in/aus der Liste
+    cal.selectedDays = cal.selectedDays || [];
+    const pickedKey = _composerDateKey(picked);
+    const existingIdx = cal.selectedDays.findIndex(d => _composerDateKey(d) === pickedKey);
+    if (existingIdx >= 0) cal.selectedDays.splice(existingIdx, 1);
+    else cal.selectedDays.push(picked);
+    cal.selectedDays.sort((a, b) => a - b);
   } else {
     // Range-Logik: erst „von", dann „bis". Wenn „von" gesetzt und „bis"
     // noch leer und Klick liegt vor „von", als neuen „von" werten.
@@ -30902,6 +30950,32 @@ function _composerCalCommitToValues(key) {
   const f = st.schema.fields.find(x => x.key === key);
   if (!f) return;
   const cal = st.calendar[key];
+
+  // Multi-Modus: Werte für Bundle-Anlage festhalten, Modal-Inputs auf den
+  // ersten Tag setzen (saveDeployment wird ohnehin umgangen — wir steuern
+  // den Bundle-Pfad in composerSave).
+  if (cal && cal.mode === 'multi') {
+    const days = cal.selectedDays || [];
+    if (days.length === 0) {
+      delete st.values[key];
+      if (f.modalInputs) {
+        if (f.modalInputs.von) document.getElementById(f.modalInputs.von).value = '';
+        if (f.modalInputs.bis) document.getElementById(f.modalInputs.bis).value = '';
+      }
+      return;
+    }
+    const isoDays = days.map(d => _composerDateKey(d));
+    if (f.modalInputs) {
+      if (f.modalInputs.von) document.getElementById(f.modalInputs.von).value = isoDays[0];
+      if (f.modalInputs.bis) document.getElementById(f.modalInputs.bis).value = isoDays[isoDays.length - 1];
+    }
+    st.values[key] = {
+      value: { mode: 'multi', days: isoDays },
+      displayText: _composerCalSummary(cal)
+    };
+    return;
+  }
+
   if (!cal || !cal.selectedFrom) {
     delete st.values[key];
     if (f.modalInputs) {
@@ -31040,6 +31114,9 @@ async function composerSave() {
 
     if (st.typ === 'notiz') {
       await _composerSaveNotiz(st, title);
+    } else if (st.typ === 'einsatz' && st.values.datum?.value?.mode === 'multi') {
+      // v2.32.4: Multi-Select-Modus für Einsatz → Bündel anlegen
+      await _composerSaveEinsatzBundle(st, title);
     } else {
       // Validierung delegieren an existierende Save-Funktion
       await st.schema.save();
@@ -31121,6 +31198,88 @@ async function _composerPreSaveCreateNewProject(st) {
   }
   st.values.projekt = { value: data.id, displayText: data.name };
   showToast(`Projekt „${data.name}" angelegt.`);
+}
+
+/** v2.32.4: Einsatz-Composer im Multi-Select-Modus — legt ein
+ *  `deployment_bundles` an und pro gewähltem Tag eine `deployments`-
+ *  Zeile mit gemeinsamer `bundle_id`. Nutzt die existierenden Combobox-
+ *  Resolver für Firma; Service/Projekt müssen Pflicht-IDs sein. */
+async function _composerSaveEinsatzBundle(st, title) {
+  const days = st.values.datum?.value?.days || [];
+  if (days.length < 2) {
+    throw new Error('Bitte mindestens 2 Tage für ein Einsatz-Bündel auswählen (oder Modus auf „Zeitraum" bzw. „Einzelner Tag" stellen).');
+  }
+
+  // Firma auflösen (legt ggf. neue Firma an)
+  let company_id;
+  try {
+    company_id = await resolveCompanyComboboxValue('d-company', 'd-company-list');
+  } catch (e) { throw new Error('Firma fehlt — bitte erst Firma wählen.'); }
+  if (!company_id) throw new Error('Firma ist Pflicht für ein Einsatz-Bündel.');
+
+  const service_id = document.getElementById('d-service').value || null;
+  if (!service_id) throw new Error('Leistung ist Pflicht für ein Einsatz-Bündel.');
+
+  const project_id = document.getElementById('d-project').value || null;
+  if (!project_id) throw new Error('Projekt ist Pflicht für ein Bündel — wähle ein Projekt oder lege eines inline an.');
+
+  const einzelpreis = Number(document.getElementById('d-einzelpreis').value) || 0;
+  const menge       = Number(document.getElementById('d-menge').value) || 1;
+  const ort         = document.getElementById('d-ort').value.trim() || null;
+  const externe     = document.getElementById('d-externe-techniker')?.value?.trim() || null;
+  const uhrzeit_von = document.getElementById('d-uhrzeit-von').value || null;
+  const uhrzeit_bis = document.getElementById('d-uhrzeit-bis').value || null;
+  const ganztag     = !!document.getElementById('d-ganztag')?.checked;
+
+  // Bundle-Titel: aus Composer-Titel-Feld oder aus Service × Firma generieren
+  let bundleTitel = title;
+  if (!bundleTitel) {
+    const svcText = document.getElementById('d-service').options[document.getElementById('d-service').selectedIndex]?.textContent || 'Leistung';
+    const cName = document.getElementById('d-company').value || 'Kunde';
+    bundleTitel = `${svcText} × ${cName} (${days.length} Tage)`;
+  }
+
+  // 1. Bundle anlegen
+  const bundlePayload = {
+    titel: bundleTitel,
+    service_id,
+    einzelpreis,
+    ort,
+    externe_techniker: externe,
+    company_id,
+    project_id,
+    dokumentation: {}
+  };
+  if (currentProfile?.id) bundlePayload.erstellt_von = currentProfile.id;
+  const { data: bundle, error: bundleErr } = await db.from('deployment_bundles')
+    .insert(bundlePayload).select().single();
+  if (bundleErr) throw new Error('Bündel-Anlage fehlgeschlagen: ' + bundleErr.message);
+
+  // 2. Pro Tag einen Einsatz anlegen, gekoppelt an Bundle
+  const deploymentPayloads = days.map(iso => ({
+    bundle_id: bundle.id,
+    company_id, project_id, service_id,
+    datum_von: iso,
+    datum_bis: iso,
+    titel: bundleTitel,
+    menge,
+    einzelpreis,
+    status: DEPLOYMENT_STATUS.GEPLANT,
+    uhrzeit_von, uhrzeit_bis,
+    ganztag,
+    ort,
+    externe_techniker: externe,
+    dokumentation: {},
+    erstellt_von: currentProfile?.id || null
+  }));
+  const { error: depErr } = await db.from('deployments').insert(deploymentPayloads);
+  if (depErr) {
+    // Bundle hängt ohne Einsätze — rollback per Hand
+    await db.from('deployment_bundles').delete().eq('id', bundle.id);
+    throw new Error('Einsätze des Bündels konnten nicht angelegt werden: ' + depErr.message);
+  }
+
+  showToast(`Einsatz-Bündel „${bundleTitel}" mit ${days.length} Tagen angelegt.`);
 }
 
 async function _composerSaveNotiz(st, title) {
