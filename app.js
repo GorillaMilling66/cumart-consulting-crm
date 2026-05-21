@@ -1,6 +1,29 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.9 (Mehr Inline-Felder im Composer — Felder, die
+   Version 2.32.10 (Multi-Select-Chip-Picker für Junction-Felder im
+   Composer. Drei neue Chips, die delete-then-insert auf Junction-
+   Tabellen schreiben: Termin „+ Internes Team" (User-Pillen aus
+   userProfilesCache → appointment_participants), Termin „+ Weitere
+   Teilnehmer" (Kontakt-Pillen aus companyContactsMap[firmaId] →
+   appointment_contacts, Hauptkontakt wird ausgefiltert), Einsatz
+   „+ Interne Techniker" (User-Pillen → deployment_technicians).
+   Neuer Picker-Typ `multi-pick` mit Schema-Feld-Properties `source`
+   (`users` | `companyContacts`) und `stateSet` (global Set-Name,
+   z. B. `selectedAppointmentTeamIds`). Picker rendert die Pillen
+   aus der Quelle, Klick toggelt direkt im globalen Set — saveXxx
+   liest die Sets unverändert. Wert-Display: „3 Personen: Max,
+   Selcuk, Anna +1 weitere". Für `companyContacts` wird firmaId
+   aus dem konfigurierbaren `companySource`-Feld geholt (Standard:
+   `firmaKontakt`); ohne Firma erscheint Hinweis. `_composerClear
+   ModalInputsForField` lernt den multi-pick-Pfad und leert das
+   Set bei Wert-Entfernung. Bei `_composerSaveEinsatzBundle` werden
+   Techniker zusätzlich pro Tages-Einsatz in `deployment_technicians`
+   inserted (analog zur Drawer-Bundle-Logik). Damit sind alle nicht-
+   kontextabhängigen Composer-Felder inline — Themen-Picker und
+   Bonus-Einlösung bleiben weiterhin im „Mehr Felder"-Drawer, weil
+   sie kontextabhängige Auflösung (firmen-Themen-Pool, Entitlements)
+   brauchen.
+   Vorgängerversion 2.32.9 (Mehr Inline-Felder im Composer — Felder, die
    bisher nur über „Mehr Felder →" erreichbar waren, sind jetzt
    direkt als Chips verfügbar. Einsatz: + Externe Techniker (Text),
    + Rabatt (Typ-Dropdown + Wert-Input, neuer Picker-Typ `rabatt`,
@@ -29984,7 +30007,9 @@ const COMPOSER_SCHEMAS = {
       { key: 'projekt',       label: 'Projekt',         type: 'project-combo', modalInputs: { select: 't-project' } },
       { key: 'typ',           label: 'Typ',             type: 'select',       modalInputs: { select: 't-typ' }, required: true },
       { key: 'status',        label: 'Status',          type: 'select',       modalInputs: { select: 't-status' } },
-      { key: 'ort',           label: 'Ort',             type: 'text',         modalInputs: { input: 't-ort' }, placeholder: 'Adresse, Zoom-Link, Raum …' }
+      { key: 'ort',           label: 'Ort',             type: 'text',         modalInputs: { input: 't-ort' }, placeholder: 'Adresse, Zoom-Link, Raum …' },
+      { key: 'team',          label: 'Internes Team',   type: 'multi-pick',   source: 'users',           stateSet: 'selectedAppointmentTeamIds' },
+      { key: 'weitereTeilnehmer', label: 'Weitere Teilnehmer', type: 'multi-pick', source: 'companyContacts', stateSet: 'selectedAppointmentContactIds', companySource: 'firmaKontakt' }
     ]
   },
   // ── AUFGABE ────────────────────────────────────────────────────
@@ -30025,6 +30050,7 @@ const COMPOSER_SCHEMAS = {
       { key: 'uhrzeit',     label: 'Uhrzeit',          type: 'time',          modalInputs: { von: 'd-uhrzeit-von', bis: 'd-uhrzeit-bis', ganztag: 'd-ganztag' } },
       { key: 'ort',         label: 'Ort',              type: 'text',          modalInputs: { input: 'd-ort' }, placeholder: 'Vor Ort, Zoom, Raum …' },
       { key: 'rabatt',      label: 'Rabatt',           type: 'rabatt',        modalInputs: { typ: 'd-rabatt-typ', wert: 'd-rabatt-wert' } },
+      { key: 'techniker',   label: 'Interne Techniker', type: 'multi-pick',   source: 'users',           stateSet: 'selectedTechnikerIds' },
       { key: 'externe',     label: 'Externe Techniker', type: 'text',          modalInputs: { input: 'd-externe-techniker' }, placeholder: 'z. B. Max Mustermann (extern)' },
       { key: 'als_termin',  label: 'Auch als Termin',  type: 'checkbox',      modalInputs: { input: 'd-create-appointment' }, hint: 'Legt parallel einen Termin mit gleichen Daten an.' }
     ]
@@ -30381,6 +30407,15 @@ function _composerRemoveValue(key, subKey) {
 }
 
 function _composerClearModalInputsForField(f) {
+  // v2.32.10: multi-pick hat keine modalInputs — der State wird über
+  // window[stateSet] gepflegt. Pfad ZUERST behandeln, sonst greift der
+  // `if (!mi) return;`-Guard und das Set bleibt befüllt.
+  if (f.type === 'multi-pick') {
+    if (f.stateSet && window[f.stateSet] instanceof Set) {
+      window[f.stateSet].clear();
+    }
+    return;
+  }
   const mi = f.modalInputs;
   if (!mi) return;
   if (f.type === 'firma-kontakt') {
@@ -30490,6 +30525,9 @@ function _composerRenderPickerBody(st, f) {
   }
   if (f.type === 'rabatt') {
     return _composerRenderRabattPicker(st, f);
+  }
+  if (f.type === 'multi-pick') {
+    return _composerRenderMultiPickPicker(st, f);
   }
   return '<em>Unbekannter Picker-Typ</em>';
 }
@@ -30774,6 +30812,99 @@ function _composerRenderProjectComboPicker(st, f) {
            onchange="_composerProjectComboInput('${f.key}', this.value)">
     <datalist id="${listId}">${opts.join('')}</datalist>
     <div class="composer-picker-hint">${esc(hint)}</div>`;
+}
+
+/* ─── v2.32.10: Multi-Select-Chip-Picker für Junction-Tabellen ──── */
+/** Pillen-Picker: zeigt eine Liste klickbarer Pillen aus einer Quelle
+ *  (users → userProfilesCache, companyContacts → companyContactsMap),
+ *  Klick toggelt das Item im globalen Set (`window[stateSet]` —
+ *  selectedAppointmentTeamIds / selectedAppointmentContactIds /
+ *  selectedTechnikerIds). Beim Save liest saveXxx das Set unverändert
+ *  und schreibt die Junction-Tabelle via delete-then-insert. */
+function _composerRenderMultiPickPicker(st, f) {
+  const set = window[f.stateSet];
+  if (!set || !(set instanceof Set)) {
+    return '<div class="composer-picker-hint">Daten-Container noch nicht initialisiert. Schließe den Composer und öffne ihn erneut.</div>';
+  }
+
+  let items = [];
+  if (f.source === 'users') {
+    items = (window.userProfilesCache || []).map(u => ({
+      id: u.id,
+      label: u.name || u.email || '?'
+    }));
+  } else if (f.source === 'companyContacts') {
+    // Firmen-ID aus dem Composer-State holen (companySource gibt das Feld an,
+    // aus dem die ID kommt — z. B. 'firmaKontakt')
+    const fkVal = f.companySource ? st.values[f.companySource] : null;
+    const firmaId = fkVal?.firmaId || null;
+    if (!firmaId) {
+      return '<div class="composer-picker-hint">Wähle erst eine Firma im „Firma & Kontakt"-Chip, um Kontakte als Teilnehmer hinzuzufügen.</div>';
+    }
+    const all = window.companyContactsMap?.[firmaId] || [];
+    // Hauptkontakt der Auswahl ausblenden, damit kein Duplikat entsteht
+    const hauptkontaktId = fkVal?.kontaktId || null;
+    items = all
+      .filter(k => k.id !== hauptkontaktId)
+      .map(k => ({
+        id: k.id,
+        label: `${k.vorname || ''} ${k.nachname || ''}`.trim() || '—'
+      }));
+    if (items.length === 0) {
+      return '<div class="composer-picker-hint">Keine weiteren Kontakte zu dieser Firma. Lege sie über „+ Kontakt" an, dann erscheinen sie hier.</div>';
+    }
+  }
+
+  if (items.length === 0) {
+    return '<div class="composer-picker-hint">Keine Optionen verfügbar.</div>';
+  }
+
+  const pillen = items.map(it => {
+    const sel = set.has(it.id);
+    return `<button type="button" class="composer-picker-option${sel ? ' is-selected' : ''}"
+              onclick="_composerToggleMultiPick('${f.key}', '${esc(it.id)}')">${esc(it.label)}</button>`;
+  }).join('');
+  const count = items.filter(it => set.has(it.id)).length;
+  return `
+    <div class="composer-picker-options">${pillen}</div>
+    <div class="composer-picker-hint">${count > 0 ? `${count} ausgewählt — Klick toggelt.` : 'Klick auf eine Pille zum Hinzufügen.'}</div>`;
+}
+
+function _composerToggleMultiPick(key, id) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.key === key);
+  if (!f || !f.stateSet) return;
+  const set = window[f.stateSet];
+  if (!set || !(set instanceof Set)) return;
+
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+
+  // Display-Text für die Wert-Zeile bauen
+  if (set.size === 0) {
+    delete st.values[key];
+  } else {
+    let labelMap = new Map();
+    if (f.source === 'users') {
+      (window.userProfilesCache || []).forEach(u => labelMap.set(u.id, u.name || u.email || '?'));
+    } else if (f.source === 'companyContacts') {
+      const fkVal = f.companySource ? st.values[f.companySource] : null;
+      const firmaId = fkVal?.firmaId || null;
+      const list = firmaId ? (window.companyContactsMap?.[firmaId] || []) : [];
+      list.forEach(k => labelMap.set(k.id, `${k.vorname || ''} ${k.nachname || ''}`.trim() || '—'));
+    }
+    const names = [...set].map(i => labelMap.get(i) || '—');
+    const head = names.slice(0, 3).join(', ');
+    const rest = names.length > 3 ? ` +${names.length - 3} weitere` : '';
+    st.values[key] = {
+      value: { ids: [...set] },
+      displayText: `${set.size} ${set.size === 1 ? 'Person' : 'Personen'}: ${head}${rest}`
+    };
+  }
+  _composerRender();
+  // Fokus zurück in den Picker
+  setTimeout(() => document.querySelector(`.composer-picker[data-key="${key}"]`)?.scrollIntoView({ block: 'nearest' }), 30);
 }
 
 /* ─── v2.32.9: Rabatt-Picker (Typ + Wert) ───────────────────────── */
@@ -31494,11 +31625,26 @@ async function _composerSaveEinsatzBundle(st, title) {
     dokumentation: {},
     erstellt_von: currentProfile?.id || null
   }));
-  const { error: depErr } = await db.from('deployments').insert(deploymentPayloads);
+  const { data: createdDeps, error: depErr } = await db.from('deployments')
+    .insert(deploymentPayloads).select('id');
   if (depErr) {
     // Bundle hängt ohne Einsätze — rollback per Hand
     await db.from('deployment_bundles').delete().eq('id', bundle.id);
     throw new Error('Einsätze des Bündels konnten nicht angelegt werden: ' + depErr.message);
+  }
+
+  // v2.32.10: Interne Techniker — Junction pro Tages-Einsatz schreiben
+  if (window.selectedTechnikerIds instanceof Set && selectedTechnikerIds.size > 0 && Array.isArray(createdDeps)) {
+    const techRows = [];
+    for (const dep of createdDeps) {
+      for (const uid of selectedTechnikerIds) {
+        techRows.push({ deployment_id: dep.id, user_id: uid });
+      }
+    }
+    if (techRows.length > 0) {
+      const { error: techErr } = await db.from('deployment_technicians').insert(techRows);
+      if (techErr) console.warn('Bündel-Techniker-Junction:', techErr.message);
+    }
   }
 
   showToast(`Einsatz-Bündel „${bundleTitel}" mit ${days.length} Tagen angelegt.`);
