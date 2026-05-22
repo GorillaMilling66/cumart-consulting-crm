@@ -1,6 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.11 (Themen-Picker im Einsatz-Composer. Neuer
+   Version 2.32.12 (Bonus-Einlösung im Einsatz-Composer — letzter
+   Drawer-only-Picker wandert inline. Neuer „+ Bonus einlösen"-Chip
+   für Einsatz, Picker-Typ `bonus`. Lädt offene Entitlements der
+   gewählten Firma (Mitgliedschaft + Projekt), zieht bereits
+   eingelöste Mengen ab und zeigt nur die mit Rest > 0 als Single-
+   Select-Pillen. Auswahl: Klick auf eine Pille markiert sie; bei
+   Mehrfach-Boni (gesamt > 1) erscheint ein Mengen-Input mit
+   `max = rest`. Einzel-Boni (gesamt = 1) werden vollständig
+   eingelöst, Menge-Input ist readonly. Composer-State landet vor
+   dem `saveDeployment` via `_composerCommitBonusToModal` auf den
+   existierenden Modal-Inputs (`d-redeem-check`/`d-redeem-entitlement`/
+   `d-redeem-menge`); der bestehende `syncDeploymentRedemption
+   (saved.id)`-Aufruf in `saveDeployment` schreibt dann die
+   `entitlement_redemptions`-Zeile. Bei Multi-Tage-Bündel wird
+   Bonus aktuell ABGELEHNT — der Picker funktioniert dort nicht,
+   weil die Menge auf mehrere Tage aufgeteilt werden müsste. Toast-
+   Fehlermeldung verweist auf nachträgliches Verbuchen am
+   Einzeleinsatz. Damit ist der Inline-Composer für Einsatz feature-
+   complete; alle Felder, die im Drawer-Modal vorhanden sind, sind
+   auch als Composer-Chip nutzbar.
+   Vorgängerversion 2.32.11 (Themen-Picker im Einsatz-Composer. Neuer
    „+ Themen"-Chip im Einsatz mit eigenem Picker-Typ `themes` —
    lädt nach Firma-Wahl `loadCompanyThemesData(firmaId)` und rendert
    die Firmen-Themen als klickbare Pillen (mit Themen-Farbe als
@@ -30085,6 +30105,7 @@ const COMPOSER_SCHEMAS = {
       { key: 'techniker',   label: 'Interne Techniker', type: 'multi-pick',   source: 'users',           stateSet: 'selectedTechnikerIds' },
       { key: 'externe',     label: 'Externe Techniker', type: 'text',          modalInputs: { input: 'd-externe-techniker' }, placeholder: 'z. B. Max Mustermann (extern)' },
       { key: 'themen',      label: 'Themen',           type: 'themes',        companySource: 'firmaKontakt', hint: 'Themen aus dem Firmen-Pool — neuer Themen-Name + Enter legt direkt einen neuen an.' },
+      { key: 'bonus',       label: 'Bonus einlösen',   type: 'bonus',         companySource: 'firmaKontakt', modalInputs: { check: 'd-redeem-check', select: 'd-redeem-entitlement', menge: 'd-redeem-menge' }, hint: 'Wenn die Firma offene Mitgliedschafts- oder Projekt-Boni hat, wählst du hier einen aus.' },
       { key: 'als_termin',  label: 'Auch als Termin',  type: 'checkbox',      modalInputs: { input: 'd-create-appointment' }, hint: 'Legt parallel einen Termin mit gleichen Daten an.' }
     ]
   },
@@ -30168,6 +30189,8 @@ let _pendingComposerThemenIds = new Set();
 // Cache der Firmen-Themen für den aktuell offenen Composer (vermeidet
 // Doppel-Queries beim Render).
 let _composerThemenCache = [];
+// v2.32.12: Cache der offenen Bonus-Kontingente der gewählten Firma
+let _composerBoniCache = [];
 
 /** Öffnet den Inline-Composer für die gegebene Anlage-Aktion in der
  *  Bühne. Initialisiert (außer für Notiz) das zugehörige Drawer-Modal
@@ -30231,6 +30254,8 @@ async function openInlineComposer(typ) {
   // v2.32.11: Themen-State zurücksetzen, damit kein Carry-Over zwischen Composer-Sessions
   _pendingComposerThemenIds = new Set();
   _composerThemenCache = [];
+  // v2.32.12: Bonus-Cache zurücksetzen
+  _composerBoniCache = [];
 
   // v2.32.1: Default-Picker pro Entität, der beim Öffnen schon offen ist —
   // nutzt den Platz unter den Chips und gibt direkt etwas zum Anklicken.
@@ -30465,6 +30490,22 @@ function _composerClearModalInputsForField(f) {
     _pendingComposerThemenIds = new Set();
     return;
   }
+  // v2.32.12: bonus-Picker — Modal-Inputs (Check/Select/Menge) zurücksetzen
+  if (f.type === 'bonus') {
+    if (f.modalInputs?.check) {
+      const el = document.getElementById(f.modalInputs.check);
+      if (el) el.checked = false;
+    }
+    if (f.modalInputs?.select) {
+      const el = document.getElementById(f.modalInputs.select);
+      if (el) el.value = '';
+    }
+    if (f.modalInputs?.menge) {
+      const el = document.getElementById(f.modalInputs.menge);
+      if (el) el.value = '1';
+    }
+    return;
+  }
   const mi = f.modalInputs;
   if (!mi) return;
   if (f.type === 'firma-kontakt') {
@@ -30580,6 +30621,9 @@ function _composerRenderPickerBody(st, f) {
   }
   if (f.type === 'themes') {
     return _composerRenderThemenPicker(st, f);
+  }
+  if (f.type === 'bonus') {
+    return _composerRenderBonusPicker(st, f);
   }
   return '<em>Unbekannter Picker-Typ</em>';
 }
@@ -30787,6 +30831,10 @@ async function _composerFirmaKontaktSetFirma(key, val) {
       // Existierende Auswahl zurücksetzen, weil Themen firmen-scoped sind
       _pendingComposerThemenIds = new Set();
       _composerSyncThemenValue();
+      // v2.32.12: Offene Boni der neuen Firma laden, alte Auswahl verwerfen
+      await _composerLoadBoniForFirma(firmaId);
+      const bonusField = st.schema.fields.find(x => x.type === 'bonus');
+      if (bonusField) delete st.values[bonusField.key];
     } else if (st.typ === 'projekt') {
       await rebuildHauptkontaktDropdown(firmaId);
     }
@@ -30970,6 +31018,145 @@ function _composerSyncThemenValue() {
     value: { ids: [...set] },
     displayText: `${set.size} ${set.size === 1 ? 'Thema' : 'Themen'}: ${head}${rest}`
   };
+}
+
+/* ─── v2.32.12: Bonus-Einlösung-Picker für Einsatz ────────────────
+ * Lädt die offenen Entitlements der Firma (Mitgliedschafts-Boni + Projekt-
+ * Boni, abzüglich bereits eingelöster Mengen). Auswahl als Single-Select-
+ * Pille, darunter Mengen-Input. Composer-State wird vor `saveDeployment`
+ * auf die existierenden DOM-Inputs `d-redeem-check`/`-entitlement`/`-menge`
+ * gespiegelt — die bestehende `syncDeploymentRedemption(saved.id)` läuft
+ * dann automatisch nach dem Insert.
+ */
+async function _composerLoadBoniForFirma(firmaId) {
+  if (!firmaId) { _composerBoniCache = []; return; }
+  const { data: entitlements, error } = await db.from('entitlements')
+    .select('id, titel, gesamt_menge, verfall_datum, memberships(mitgliedsnummer, membership_programs(name)), projects(name)')
+    .eq('company_id', firmaId)
+    .order('verfall_datum', { ascending: true, nullsFirst: false });
+  if (error || !entitlements) { _composerBoniCache = []; return; }
+  const ids = entitlements.map(e => e.id);
+  const used = {};
+  if (ids.length > 0) {
+    const { data: reds } = await db.from('entitlement_redemptions')
+      .select('entitlement_id, menge_eingeloest').in('entitlement_id', ids);
+    (reds || []).forEach(r => {
+      used[r.entitlement_id] = (used[r.entitlement_id] || 0) + Number(r.menge_eingeloest || 0);
+    });
+  }
+  _composerBoniCache = entitlements.map(e => {
+    const rest = Number(e.gesamt_menge) - (used[e.id] || 0);
+    const quelle = e.memberships
+      ? `Mitgliedschaft: ${e.memberships.membership_programs?.name || '?'}`
+      : e.projects
+        ? `Projekt: ${e.projects.name}`
+        : 'Manuell';
+    return { id: e.id, titel: e.titel, gesamt: Number(e.gesamt_menge), rest, quelle, verfall: e.verfall_datum };
+  }).filter(b => b.rest > 0);
+}
+
+function _composerRenderBonusPicker(st, f) {
+  const fkVal = f.companySource ? st.values[f.companySource] : null;
+  const firmaId = fkVal?.firmaId || null;
+  if (!firmaId) {
+    return '<div class="composer-picker-hint">Wähle erst eine Firma im „Firma & Kontakt"-Chip — dann lade ich die offenen Boni dieser Firma.</div>';
+  }
+  const boni = _composerBoniCache || [];
+  if (boni.length === 0) {
+    return '<div class="composer-picker-hint">Diese Firma hat aktuell keine offenen Boni (alle Mitgliedschafts- und Projekt-Kontingente sind ausgeschöpft).</div>';
+  }
+  const v = st.values[f.key]?.value || {};
+  const selectedId = v.entitlementId || '';
+  const opts = boni.map(b => {
+    const sel = b.id === selectedId;
+    const verfall = b.verfall ? ` · bis ${formatDateDE(b.verfall)}` : '';
+    return `<button type="button" class="composer-picker-option${sel ? ' is-selected' : ''}"
+              style="text-align:left;justify-content:flex-start"
+              onclick="_composerSelectBonus('${esc(b.id)}')">${esc(b.titel)} <span style="opacity:.7">(${b.rest} offen${esc(verfall)}) — ${esc(b.quelle)}</span></button>`;
+  }).join('');
+  let mengeHTML = '';
+  if (selectedId) {
+    const b = boni.find(x => x.id === selectedId);
+    const fix = b && b.gesamt === 1;
+    const cur = v.menge || (fix ? 1 : 1);
+    mengeHTML = `
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--muted);font-weight:600">Einlöse-Menge</label>
+        <input type="number" id="composer-pick-bonus-menge" min="0.01" step="0.01" max="${b?.rest || 1}"
+               value="${cur}" ${fix ? 'readonly' : ''}
+               style="max-width:120px"
+               onchange="_composerSetBonusMenge(this.value)">
+        <span style="font-size:11px;color:var(--muted)">${fix ? 'Einzel-Bonus: wird vollständig eingelöst' : `max. ${b?.rest || 0} von ${b?.gesamt || 0}`}</span>
+      </div>`;
+  }
+  return `
+    <div class="composer-picker-options" style="flex-direction:column;align-items:stretch">${opts}</div>
+    ${mengeHTML}
+    <div class="composer-picker-hint">Beim Speichern wird der Bonus auf diesen Einsatz verbucht. Bei Multi-Tage-Bündel wird Bonus aktuell nicht unterstützt.</div>`;
+}
+
+function _composerSelectBonus(entitlementId) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.type === 'bonus');
+  if (!f) return;
+  const b = _composerBoniCache.find(x => x.id === entitlementId);
+  if (!b) return;
+  const fix = b.gesamt === 1;
+  const prevMenge = st.values[f.key]?.value?.menge;
+  const menge = fix ? 1 : (prevMenge && prevMenge <= b.rest ? prevMenge : Math.min(1, b.rest));
+  st.values[f.key] = {
+    value: { entitlementId, menge },
+    displayText: `${b.titel} (${menge} × von ${b.gesamt}, ${b.quelle})`
+  };
+  _composerRender();
+}
+
+function _composerSetBonusMenge(val) {
+  const st = _composerState;
+  if (!st) return;
+  const f = st.schema.fields.find(x => x.type === 'bonus');
+  if (!f) return;
+  const v = st.values[f.key]?.value;
+  if (!v) return;
+  const menge = Number(val) || 0;
+  const b = _composerBoniCache.find(x => x.id === v.entitlementId);
+  if (!b) return;
+  if (menge <= 0 || menge > b.rest) return;
+  v.menge = menge;
+  st.values[f.key].displayText = `${b.titel} (${menge} × von ${b.gesamt}, ${b.quelle})`;
+}
+
+function _composerCommitBonusToModal(st) {
+  for (const f of st.schema.fields) {
+    if (f.type !== 'bonus' || !f.modalInputs) continue;
+    const v = st.values[f.key]?.value;
+    const checkEl  = document.getElementById(f.modalInputs.check);
+    const selectEl = document.getElementById(f.modalInputs.select);
+    const mengeEl  = document.getElementById(f.modalInputs.menge);
+    if (!v) {
+      if (checkEl) checkEl.checked = false;
+      continue;
+    }
+    if (checkEl) checkEl.checked = true;
+    if (selectEl) {
+      // Falls die Option im Modal-Select fehlt, dynamisch hinzufügen
+      const exists = Array.from(selectEl.options).some(o => o.value === v.entitlementId);
+      if (!exists) {
+        const b = _composerBoniCache.find(x => x.id === v.entitlementId);
+        if (b) {
+          const opt = document.createElement('option');
+          opt.value = b.id;
+          opt.textContent = `${b.titel} (${b.rest} offen) — ${b.quelle}`;
+          opt.setAttribute('data-rest', String(b.rest));
+          opt.setAttribute('data-gesamt', String(b.gesamt));
+          selectEl.appendChild(opt);
+        }
+      }
+      selectEl.value = v.entitlementId;
+    }
+    if (mengeEl) mengeEl.value = v.menge;
+  }
 }
 
 /* ─── v2.32.10: Multi-Select-Chip-Picker für Junction-Tabellen ──── */
@@ -31611,6 +31798,10 @@ async function composerSave() {
     // resolveContactComboboxValue, die legen ggf. neue Datensätze an).
     _composerCommitFirmaKontaktToModal(st);
 
+    // v2.32.12: Bonus-Auswahl auf d-redeem-*-Inputs spiegeln, bevor
+    // saveDeployment darüber syncDeploymentRedemption(saved.id) aufruft.
+    _composerCommitBonusToModal(st);
+
     // v2.32.2: Pre-Save — neue Projekte anlegen (project-combo mit __new__-
     // Marker), damit das Modal-Select beim saveXxx eine reale ID lesen kann.
     await _composerPreSaveCreateNewProject(st);
@@ -31712,6 +31903,12 @@ async function _composerSaveEinsatzBundle(st, title) {
   const days = st.values.datum?.value?.days || [];
   if (days.length < 2) {
     throw new Error('Bitte mindestens 2 Tage für ein Einsatz-Bündel auswählen (oder Modus auf „Zeitraum" bzw. „Einzelner Tag" stellen).');
+  }
+  // v2.32.12: Bonus-Einlösung bei Multi-Tage-Bündel aktuell nicht unterstützt —
+  // sonst müsste die Menge auf mehrere Tage aufgeteilt werden, was eigene
+  // Geschäftslogik braucht. Lieber explizit abweisen als falsch verbuchen.
+  if (st.values.bonus) {
+    throw new Error('Bonus-Einlösung ist bei Multi-Tage-Bündeln aktuell nicht unterstützt. Lege das Bündel ohne Bonus an und verbuche den Bonus später am einzelnen Tag.');
   }
 
   // Firma auflösen (legt ggf. neue Firma an)
