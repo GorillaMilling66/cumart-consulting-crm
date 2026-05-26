@@ -1,25 +1,37 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.12 (Bonus-Einlösung im Einsatz-Composer — letzter
-   Drawer-only-Picker wandert inline. Neuer „+ Bonus einlösen"-Chip
-   für Einsatz, Picker-Typ `bonus`. Lädt offene Entitlements der
-   gewählten Firma (Mitgliedschaft + Projekt), zieht bereits
-   eingelöste Mengen ab und zeigt nur die mit Rest > 0 als Single-
-   Select-Pillen. Auswahl: Klick auf eine Pille markiert sie; bei
-   Mehrfach-Boni (gesamt > 1) erscheint ein Mengen-Input mit
-   `max = rest`. Einzel-Boni (gesamt = 1) werden vollständig
-   eingelöst, Menge-Input ist readonly. Composer-State landet vor
-   dem `saveDeployment` via `_composerCommitBonusToModal` auf den
-   existierenden Modal-Inputs (`d-redeem-check`/`d-redeem-entitlement`/
-   `d-redeem-menge`); der bestehende `syncDeploymentRedemption
-   (saved.id)`-Aufruf in `saveDeployment` schreibt dann die
-   `entitlement_redemptions`-Zeile. Bei Multi-Tage-Bündel wird
-   Bonus aktuell ABGELEHNT — der Picker funktioniert dort nicht,
-   weil die Menge auf mehrere Tage aufgeteilt werden müsste. Toast-
-   Fehlermeldung verweist auf nachträgliches Verbuchen am
-   Einzeleinsatz. Damit ist der Inline-Composer für Einsatz feature-
-   complete; alle Felder, die im Drawer-Modal vorhanden sind, sind
-   auch als Composer-Chip nutzbar.
+   Version 2.32.13 (Kundenbericht-Download — Bericht kann jetzt
+   direkt als HTML-Datei runtergeladen werden, um ihn per E-Mail
+   an den Kunden zu schicken. Neuer Button „Bericht herunterladen"
+   neben „Kundenbericht" in der Projekt-Detail-Hero-Leiste; neue
+   Funktion `downloadCustomerReport(projectId)` wiederverwendet
+   `_loadCustomerReportData` + `_buildCustomerReportHtml`, packt
+   das HTML in einen Blob und triggert einen `<a download>`-Klick.
+   Dateiname `Kundenbericht_{Projektname}_{YYYY-MM-DD}.html` via
+   `_slugifyFilename` (Umlaute → ae/oe/ue, Sonderzeichen → _,
+   maximal 80 Zeichen). Kein Schema-Change, der bestehende Öffnen-
+   im-Tab-Pfad bleibt unverändert.
+   Vorgängerversion 2.32.12 (Bonus-Einlösung im Einsatz-Composer —
+   letzter Drawer-only-Picker wandert inline. Neuer „+ Bonus
+   einlösen"-Chip für Einsatz, Picker-Typ `bonus`. Lädt offene
+   Entitlements der gewählten Firma (Mitgliedschaft + Projekt),
+   zieht bereits eingelöste Mengen ab und zeigt nur die mit Rest >
+   0 als Single-Select-Pillen. Auswahl: Klick auf eine Pille
+   markiert sie; bei Mehrfach-Boni (gesamt > 1) erscheint ein
+   Mengen-Input mit `max = rest`. Einzel-Boni (gesamt = 1) werden
+   vollständig eingelöst, Menge-Input ist readonly. Composer-State
+   landet vor dem `saveDeployment` via `_composerCommitBonusToModal`
+   auf den existierenden Modal-Inputs (`d-redeem-check`/
+   `d-redeem-entitlement`/`d-redeem-menge`); der bestehende
+   `syncDeploymentRedemption(saved.id)`-Aufruf in `saveDeployment`
+   schreibt dann die `entitlement_redemptions`-Zeile. Bei Multi-
+   Tage-Bündel wird Bonus aktuell ABGELEHNT — der Picker
+   funktioniert dort nicht, weil die Menge auf mehrere Tage
+   aufgeteilt werden müsste. Toast-Fehlermeldung verweist auf
+   nachträgliches Verbuchen am Einzeleinsatz. Damit ist der Inline-
+   Composer für Einsatz feature-complete; alle Felder, die im
+   Drawer-Modal vorhanden sind, sind auch als Composer-Chip
+   nutzbar.
    Vorgängerversion 2.32.11 (Themen-Picker im Einsatz-Composer. Neuer
    „+ Themen"-Chip im Einsatz mit eigenem Picker-Typ `themes` —
    lädt nach Firma-Wahl `loadCompanyThemesData(firmaId)` und rendert
@@ -29498,6 +29510,48 @@ async function openCustomerReport(projectId) {
     console.error('Kundenbericht-Fehler:', e);
     showToast('Bericht konnte nicht erzeugt werden: ' + (e?.message || 'Unbekannt'), true);
   }
+}
+
+// v2.32.13: Kundenbericht als eigenständige HTML-Datei herunterladen,
+// damit der Bericht direkt per E-Mail an den Kunden geschickt werden
+// kann. Nutzt denselben Builder wie openCustomerReport, packt das
+// HTML aber in einen Blob und triggert einen <a download>-Klick.
+async function downloadCustomerReport(projectId) {
+  if (!projectId) { showToast('Kein Projekt aktiv.', true); return; }
+  showToast('Kundenbericht wird vorbereitet …');
+  try {
+    const data = await _loadCustomerReportData(projectId);
+    if (!data) return;
+    const html = _buildCustomerReportHtml(data);
+    const projektName = data.project.name || 'Projekt';
+    const datum = toISODate(new Date());
+    const filename = `Kundenbericht_${_slugifyFilename(projektName)}_${datum}.html`;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Kundenbericht heruntergeladen.');
+  } catch (e) {
+    console.error('Kundenbericht-Download-Fehler:', e);
+    showToast('Bericht konnte nicht erzeugt werden: ' + (e?.message || 'Unbekannt'), true);
+  }
+}
+
+// Dateinamen-tauglich machen: Umlaute ersetzen, Sonderzeichen raus,
+// Leerzeichen → Unterstriche, alles auf ≤80 Zeichen kürzen.
+function _slugifyFilename(s) {
+  return String(s || '')
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .substring(0, 80) || 'Projekt';
 }
 
 async function _loadCustomerReportData(projectId) {
