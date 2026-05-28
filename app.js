@@ -1,6 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.1 (QA-Sweep Bugfix #2 — Status-Picker schreibt
+   Version 2.33.2 (QA-Sweep Bugfix #3 — Mitgliedschafts-Phantom-
+   Boni + stornierte Einsätze in der Projekt-Auto-Status-Logik.
+   **Cluster 7:** Eine soft-gelöschte Mitgliedschaft hinterließ
+   ihre Entitlements weiter im Bonus-Picker des Einsatz-Modals
+   — die Bonis waren nach Mitgliedschafts-Löschung noch buchbar
+   und verfälschten die Bilanz. `refreshRedeemSection`
+   (`app.js:14834`) joined jetzt zusätzlich
+   `memberships.deleted_at` und filtert beim Anzeigen alle
+   Entitlements raus, deren Mitgliedschaft soft-gelöscht ist.
+   Projekt-Entitlements (`memberships === null`) bleiben unan-
+   getastet — der Filter ist domain-spezifisch nur für
+   Mitgliedschaft-Bonis aktiv. **Cluster 11:** Der Auto-Projekt-
+   Status-Helper (`checkAndUpdateProjectStatus` und seine Smart-
+   Variante in `app.js:16456` / `:16319`) zählte stornierte
+   Einsätze als „nicht erledigt" — ein Projekt mit z.B. 3
+   durchgeführten + 1 stornierten Einsatz blieb fälschlich in
+   „In Arbeit" hängen, obwohl alle aktiven Einsätze fertig sind.
+   `countsDone` filtert jetzt `status === 'storniert'` raus,
+   bevor die „alles durchgeführt?"-Prüfung läuft. Termine kennen
+   keinen Storniert-Status — der Filter ist für Appointments
+   harmlos neutral. Kein Schema-Change, keine Migration.
+   Vorgängerversion 2.33.1 (QA-Sweep Bugfix #2 — Status-Picker schreibt
    wieder system_keys, plus drei Schema-Drift-Fixes. Der Status-
    Picker (Pillen-Popup, Cluster-1-Befund) las `lookup_values`
    ohne `system_key` und schrieb `o.wert` (das Anzeige-Label) als
@@ -14846,11 +14867,14 @@ async function refreshRedeemSection() {
     return;
   }
 
-  // Offene Entitlements der Firma laden (inkl. bereits-eingeloester Mengen)
+  // Offene Entitlements der Firma laden (inkl. bereits-eingeloester Mengen).
+  // v2.33.2: memberships.deleted_at mit selektieren, damit Bonis einer
+  // soft-gelöschten Mitgliedschaft unten ausgefiltert werden können
+  // (Cluster-7 / Phase A.4 #6 — Phantom-Boni-Bug).
   const { data: entitlements, error } = await db.from('entitlements')
     .select(`
       *,
-      memberships(mitgliedsnummer, membership_programs(name)),
+      memberships(mitgliedsnummer, deleted_at, membership_programs(name)),
       projects(name)
     `)
     .eq('company_id', companyId)
@@ -14876,8 +14900,12 @@ async function refreshRedeemSection() {
     });
   }
 
-  // Nur Entitlements mit offener Menge > 0 ODER bereits verknüpfte bestehende Redemption anzeigen
+  // Nur Entitlements mit offener Menge > 0 ODER bereits verknüpfte bestehende Redemption anzeigen.
+  // v2.33.2: zusätzlich Entitlements einer soft-gelöschten Mitgliedschaft ausblenden —
+  // sie tauchten sonst als Phantom-Boni weiter im Picker auf und waren buchbar.
+  // Projekt-Entitlements (memberships === null) bleiben unangetastet.
   const offen = (entitlements || []).filter(e => {
+    if (e.memberships && e.memberships.deleted_at) return false;
     const rest = Number(e.gesamt_menge) - (redemptionsByEnt[e.id] || 0);
     const istAktuelleRedemption = window._pendingRedemptionEntitlementId === e.id;
     return rest > 0 || istAktuelleRedemption;
@@ -16326,10 +16354,12 @@ async function checkAndUpdateProjectStatusSmart(projectId) {
     .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allAppts = appointments || [];
 
+  // v2.33.2: Storniert ausfiltern — identische Semantik wie in der nicht-Smart-Variante.
   const countsDone = (arr, doneSystemKeys, kategorie) => {
-    if (arr.length === 0) return { hasAny: false, allDone: true };
-    const done = arr.filter(x => doneSystemKeys.includes(x.status)).length;
-    return { hasAny: true, allDone: done === arr.length };
+    const active = arr.filter(x => x.status !== 'storniert');
+    if (active.length === 0) return { hasAny: false, allDone: true };
+    const done = active.filter(x => doneSystemKeys.includes(x.status)).length;
+    return { hasAny: true, allDone: done === active.length };
   };
 
   const depStats  = countsDone(allDeps,  [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET], 'einsatz_status');
@@ -16473,10 +16503,16 @@ async function checkAndUpdateProjectStatus(projectId) {
     .select('status').is('deleted_at', null).eq('project_id', projectId);
   const allAppts = appointments || [];
 
+  // v2.33.2: stornierte Einträge zählen nicht — sie sind aus der Bilanz raus
+  // (Phase A.2 #15 / Cluster 11). Vorher hing ein Projekt mit z.B. 3 durch-
+  // geführten + 1 stornierten Einsatz fälschlich in „In Arbeit", obwohl
+  // fachlich alle aktiven Einsätze fertig sind. Termine kennen keinen
+  // Storniert-Status — der Filter ist für Appointments harmlos neutral.
   const countsDone = (arr, doneSystemKeys, kategorie) => {
-    if (arr.length === 0) return { hasAny: false, allDone: true }; // leer = neutral
-    const done = arr.filter(x => doneSystemKeys.includes(x.status)).length;
-    return { hasAny: true, allDone: done === arr.length };
+    const active = arr.filter(x => x.status !== 'storniert');
+    if (active.length === 0) return { hasAny: false, allDone: true }; // leer = neutral
+    const done = active.filter(x => doneSystemKeys.includes(x.status)).length;
+    return { hasAny: true, allDone: done === active.length };
   };
 
   const depStats  = countsDone(allDeps,  [DEPLOYMENT_STATUS.DURCHGEFUEHRT, DEPLOYMENT_STATUS.ABGERECHNET], 'einsatz_status');
