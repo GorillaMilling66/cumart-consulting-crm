@@ -1,6 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.3 (QA-Sweep Bugfix #4 — RLS-Härtung +
+   Version 2.33.4 (QA-Sweep Bugfix #5 — Datum-Bugs an DST-Über-
+   gängen und nach Mitternacht. **Cluster 10 (Phase A.2 #6+#7):**
+   sechs Stellen nutzten `new Date(YYYY-MM-DD)` (interpretiert
+   den String als UTC, was an DST-Wechseln Off-by-one im
+   Kalender und in Deadline-Berechnungen erzeugt) bzw.
+   `new Date().toISOString().slice(0,10)` (gibt das UTC-Datum,
+   das zwischen 00:00 und 02:00 Uhr Berlin-Sommerzeit den Vortag
+   zeigt). Konsistent auf die existierenden Helper `parseLocalDate`
+   und `toISODate` umgestellt: (1) `app.js:5402` Stornierte-
+   Einsätze-Aside Tage-Berechnung, (2) `app.js:17660` Projekt-
+   Deadline-Card Tagedifferenz, (3) `app.js:19206–19211`
+   Kalender-Render Einsatz-Iteration über monthStart/monthEnd
+   (Audit-Befund #6 explizit), (4) `app.js:10264` Mitgliedschafts-
+   Startdatum-Default, (5) `app.js:10385` Mitgliedschafts-
+   Enddatum-Berechnung im „monate"-Laufzeitmodus, (6) `app.js:15053`
+   Einlösungs-Datum `einloesung_datum`. Damit verschwindet der
+   29.03.-Kalender-Bug (Berlin-DST-Sommer) und der Vortag-Bug
+   bei Mitgliedschaft/Einlösung kurz nach Mitternacht. Kein
+   Schema-Change, keine Migration.
+   Vorgängerversion 2.33.3 (QA-Sweep Bugfix #4 — RLS-Härtung +
    Shortcut-URL-Whitelist. Aus der Phase-A.3-Cluster-5-Verifi-
    kation: `services` und `shortcuts` hatten beide
    `*_all_authenticated` PERMISSIVE-Policies mit `qual=true` /
@@ -5399,7 +5418,9 @@ function renderBriefingMonat(data) {
               const einzel = Number(d.einzelpreis) || 0;
               const tage = (() => {
                 if (!d.datum_von) return 1;
-                const a = new Date(d.datum_von), b = new Date(d.datum_bis || d.datum_von);
+                // v2.33.4: parseLocalDate statt new Date — letzteres interpretiert
+                // YYYY-MM-DD als UTC, was an DST-Übergängen zu Off-by-one führt.
+                const a = parseLocalDate(d.datum_von), b = parseLocalDate(d.datum_bis || d.datum_von);
                 return Math.max(1, Math.round((b - a) / 86400000) + 1);
               })();
               const wert = einzel * tage;
@@ -10258,7 +10279,10 @@ async function openMembershipModal(mode, membershipId = null, companyId = null) 
         .map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
 
   // Felder zurücksetzen
-  document.getElementById('ms-start').value = new Date().toISOString().slice(0, 10);
+  // v2.33.4: toISODate(new Date()) statt toISOString().slice(0,10) — letzteres
+  // gibt das UTC-Datum, das kurz nach Mitternacht in MEZ/MESZ einen Tag früher
+  // sein kann (Vortag-Bug).
+  document.getElementById('ms-start').value = toISODate(new Date());
   document.getElementById('ms-end').value = '';
   document.getElementById('ms-nummer').value = '';
   document.getElementById('ms-preis').value = '';
@@ -10376,7 +10400,9 @@ function recalcMembershipEnd() {
   const end = new Date(start);
   end.setMonth(end.getMonth() + (program.laufzeit_monate || 12));
   end.setDate(end.getDate() - 1); // letzter Tag der Laufzeit
-  endInput.value = end.toISOString().slice(0, 10);
+  // v2.33.4: toISODate statt toISOString().slice(0,10) — `end` ist lokale Date,
+  // letzteres gibt den UTC-Tag, der kurz nach Mitternacht 1 Tag früher liegt.
+  endInput.value = toISODate(end);
 }
 
 /** Speichert die Mitgliedschaft und erzeugt Entitlements bei Neuanlage. */
@@ -15048,7 +15074,8 @@ async function syncDeploymentRedemption(deploymentId) {
     entitlement_id: entitlementId,
     deployment_id: deploymentId,
     menge_eingeloest: menge,
-    einloesung_datum: new Date().toISOString().slice(0, 10),
+    // v2.33.4: toISODate gegen Vortag-Bug (UTC-Versatz).
+    einloesung_datum: toISODate(new Date()),
     erstellt_von: currentProfile?.id || null
   };
 
@@ -17655,7 +17682,8 @@ async function loadProjectDashboard(p) {
       deadlineEl.innerHTML = '<span class="stat-value-muted">Kein Enddatum</span>';
       if (deadlineSublineEl) deadlineSublineEl.textContent = '';
     } else {
-      const days = Math.round((new Date(p.enddatum) - new Date(todayISO)) / 86400000);
+      // v2.33.4: parseLocalDate gegen DST-Off-by-one bei Deadline-Berechnung.
+      const days = Math.round((parseLocalDate(p.enddatum) - parseLocalDate(todayISO)) / 86400000);
       const isClosed = p.status === PROJECT_STATUS.ABGESCHLOSSEN;
       if (isClosed) {
         deadlineEl.innerHTML = '<span style="color:var(--success);font-weight:600">Abgeschlossen</span>';
@@ -19200,8 +19228,11 @@ async function renderCalendarBar() {
   for (const a of apptsInMonth) getDay(a.datum).termine.push(a);
 
   for (const d of deployments) {
-    const from = new Date(d.datum_von);
-    const to   = d.datum_bis ? new Date(d.datum_bis) : from;
+    // v2.33.4: parseLocalDate für Einsatz-Zeitraum, sonst Kalender-Off-by-one
+    // an DST-Tagen (z.B. 29.03., 31.10.). monthStart/monthEnd sind bereits
+    // lokale Dates (new Date(year, month, ...)) — gleiche Zone, sauberer Vergleich.
+    const from = parseLocalDate(d.datum_von);
+    const to   = d.datum_bis ? parseLocalDate(d.datum_bis) : from;
     if (from > monthEnd || to < monthStart) continue;
     const iterStart = from < monthStart ? new Date(monthStart) : new Date(from);
     const iterEnd   = to > monthEnd ? new Date(monthEnd) : new Date(to);
