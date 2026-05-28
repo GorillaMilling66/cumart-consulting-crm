@@ -1,16 +1,38 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.32.13 (Kundenbericht-Download — Bericht kann jetzt
-   direkt als HTML-Datei runtergeladen werden, um ihn per E-Mail
-   an den Kunden zu schicken. Neuer Button „Bericht herunterladen"
-   neben „Kundenbericht" in der Projekt-Detail-Hero-Leiste; neue
-   Funktion `downloadCustomerReport(projectId)` wiederverwendet
-   `_loadCustomerReportData` + `_buildCustomerReportHtml`, packt
-   das HTML in einen Blob und triggert einen `<a download>`-Klick.
-   Dateiname `Kundenbericht_{Projektname}_{YYYY-MM-DD}.html` via
-   `_slugifyFilename` (Umlaute → ae/oe/ue, Sonderzeichen → _,
-   maximal 80 Zeichen). Kein Schema-Change, der bestehende Öffnen-
-   im-Tab-Pfad bleibt unverändert.
+   Version 2.33.0 (QA-Sweep Bugfix #1 — Status-Filter-Strings
+   und Briefing-Block. Drei `.not('status','in',(…))`-Filter
+   nutzten noch Title-Case-Labels (`Storniert`, `Abgeschlossen`,
+   `Abgerechnet`, `Verloren`) und waren seit v2.31 silent
+   unwirksam: KPIs zählten falsch (stornierte Einsätze als
+   „heute aktiv"), abgeschlossene Projekte erschienen im
+   Briefing als „heiß", abgerechnete Einsätze tauchten in der
+   „ungeplant"-Aside auf. Fix: alle drei Filter auf system_keys
+   aus den `*_STATUS`-Konstanten umgestellt — `app.js:4746`
+   (Briefing „heiße Projekte"), `app.js:5432` (Arbeitsplatz-KPI
+   „Heute Einsätze"), `app.js:5794` (Aside „ungeplante Einsätze").
+   **Briefing-Block zusätzlich repariert:** `projects.updated_at`
+   existiert nicht (Phase-C-Befund #5) — der Select warf bisher
+   silent einen 42703-Fehler, der den ganzen „heiße Projekte"-
+   Block kollabieren ließ. Spalte aus Select entfernt, `staleDays`
+   auf `created_at` als Fallback gemappt (gleiches Muster wie die
+   Project-Health-Card). **Daten-Migration**
+   `v2.33.0_project_status_keyfix.sql` heilt 2 Projekte in der
+   Produktion, deren Status fälschlich als Title-Case-Label
+   gespeichert war (`Abgeschlossen`/`Abschlussphase`) — auf den
+   jeweiligen system_key gemappt. Die Code-Ursache dafür (Status-
+   Picker schreibt `lookup_values.wert` statt `system_key`) wird
+   in v2.33.1 behoben. Kein Schema-Change.
+   Vorgängerversion 2.32.13 (Kundenbericht-Download — Bericht
+   kann direkt als HTML-Datei runtergeladen werden, um ihn per
+   E-Mail an den Kunden zu schicken. Neuer Button „Bericht
+   herunterladen" neben „Kundenbericht" in der Projekt-Detail-
+   Hero-Leiste; neue Funktion `downloadCustomerReport(projectId)`
+   wiederverwendet `_loadCustomerReportData` + `_buildCustomerReportHtml`,
+   packt das HTML in einen Blob und triggert einen `<a download>`-
+   Klick. Dateiname `Kundenbericht_{Projektname}_{YYYY-MM-DD}.html`
+   via `_slugifyFilename` (Umlaute → ae/oe/ue, Sonderzeichen → _,
+   maximal 80 Zeichen). Kein Schema-Change.
    Vorgängerversion 2.32.12 (Bonus-Einlösung im Einsatz-Composer —
    letzter Drawer-only-Picker wandert inline. Neuer „+ Bonus
    einlösen"-Chip für Einsatz, Picker-Typ `bonus`. Lädt offene
@@ -4740,10 +4762,13 @@ async function renderBriefingHotItems() {
 
   // 1) Projekte mit naher Deadline
   try {
+    // v2.33.0: Filter auf system_keys statt Title-Case-Labels (v2.31-Konvention).
+    // `updated_at` existiert nicht auf projects → Fallback auf created_at als Stale-Indikator
+    // (gleiches Muster wie in der Project-Health-Card).
     const { data: hotProjects } = await db.from('projects')
-      .select('id, name, enddatum, status, updated_at, company:companies(name)')
+      .select('id, name, enddatum, status, created_at, company:companies(name)')
       .is('deleted_at', null)
-      .not('status', 'in', '(Abgeschlossen,Storniert,Verloren,"Lead-zurück")')
+      .not('status', 'in', `(${PROJECT_STATUS.ABGESCHLOSSEN},${PROJECT_STATUS.STORNIERT},${PROJECT_STATUS.VERLOREN})`)
       .not('enddatum', 'is', null)
       .lte('enddatum', in14ISO)
       .order('enddatum', { ascending: true })
@@ -4751,8 +4776,8 @@ async function renderBriefingHotItems() {
     for (const p of (hotProjects || [])) {
       const enddate = new Date(p.enddatum + 'T00:00:00');
       const days = Math.round((enddate - today) / DAY_MS);
-      const updated = p.updated_at ? new Date(p.updated_at) : null;
-      const staleDays = updated ? Math.round((today - updated) / DAY_MS) : 999;
+      const created = p.created_at ? new Date(p.created_at) : null;
+      const staleDays = created ? Math.round((today - created) / DAY_MS) : 999;
       let badge, sub;
       if (days < 0)  { badge = 'ÜBERZOGEN'; sub = `${-days} T über Deadline${staleDays > 5 ? ` · letzte Akt. vor ${staleDays} T` : ''}`; }
       else if (days === 0) { badge = 'DEADLINE'; sub = 'Deadline heute' + (staleDays > 5 ? ` · letzte Akt. vor ${staleDays} T` : ''); }
@@ -5424,12 +5449,13 @@ async function _renderArbeitsplatzKpis() {
 
   // Vier kleine Count-Queries parallel. Storniert wird bei Einsätzen rausgefiltert,
   // weil das laut neuer Konvention nicht mehr als „Einsatz heute" zählt.
+  // v2.33.0: system_key statt Title-Case-Label (war silent unwirksam).
   const [eRes, tRes, aOpenRes, aOverdueRes] = await Promise.all([
     db.from('deployments').select('id', { count: 'exact', head: true })
       .is('deleted_at', null)
       .lte('datum_von', today)
       .or(`datum_bis.gte.${today},datum_bis.is.null`)
-      .not('status', 'in', '(Storniert)'),
+      .neq('status', DEPLOYMENT_STATUS.STORNIERT),
     db.from('appointments').select('id', { count: 'exact', head: true })
       .is('deleted_at', null).eq('datum', today),
     db.from('tasks').select('id', { count: 'exact', head: true })
@@ -5789,9 +5815,10 @@ async function renderArbeitsplatzInbox() {
     // v2.10.3: Einsätze ohne Datum (Status Ungeplant ODER datum_von leer
     // und nicht abgeschlossen) — damit angefangene Kundendeals nicht aus
     // dem Blick rutschen, solange der Termin noch fehlt.
+    // v2.33.0: system_keys statt Title-Case-Labels (war silent unwirksam).
     db.from('deployments').select('id, titel, status, datum_von, company:companies(name)')
       .is('deleted_at', null).is('datum_von', null)
-      .not('status', 'in', '(Abgerechnet,Storniert)')
+      .not('status', 'in', `(${DEPLOYMENT_STATUS.ABGERECHNET},${DEPLOYMENT_STATUS.STORNIERT})`)
       .order('created_at', { ascending: false }).limit(10)
   ]);
 
