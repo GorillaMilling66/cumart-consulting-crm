@@ -1,6 +1,37 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.0 (QA-Sweep Bugfix #1 — Status-Filter-Strings
+   Version 2.33.1 (QA-Sweep Bugfix #2 — Status-Picker schreibt
+   wieder system_keys, plus drei Schema-Drift-Fixes. Der Status-
+   Picker (Pillen-Popup, Cluster-1-Befund) las `lookup_values`
+   ohne `system_key` und schrieb `o.wert` (das Anzeige-Label) als
+   Status in die DB — exakt die Ursache der zwei Title-Case-
+   Projekte aus v2.33.0. `_loadStatusOptions` selektiert jetzt
+   zusätzlich `system_key`, filtert defensiv Optionen ohne Key
+   raus. `toggleStatusPicker` rendert `o.wert` weiterhin als
+   Anzeige (mandanten-umbenennbar), übergibt aber `o.system_key`
+   an `selectEntityStatus`. `isCurrent`-Vergleich gegen
+   `o.system_key` (war vorher gegen `o.wert`, hätte nach v2.31
+   nie mehr getroffen). `selectEntityStatus` und
+   `advanceEntityStatus` lesen vor dem Update `project_id` der
+   betroffenen deployment/appointment-Zeile und triggern danach
+   `checkAndUpdateProjectStatus(projectId)` — schließt die
+   Trigger-Lücke #2 aus Phase A.4 (Status-Pillen-Klick wanderte
+   nie zum Eltern-Projekt). **Drei Cluster-3-Fixes mitgenommen:**
+   (C#1) `ganztag` aus `_composerSaveEinsatzBundle`-Payload
+   entfernt — Spalte gibt's nicht auf `deployments`, der Multi-
+   Tage-Bündel-Insert crashte bisher mit 42703 und rollback-
+   löschte das bereits angelegte Bundle. (C#3) `app.js:8461`
+   `user_profiles`-User-Dropdown im Template-Editor filtert
+   jetzt `.eq('status','aktiv')` statt `.eq('ist_aktiv',true)`
+   — die Spalte heißt `status` (architecture.md §4.10), der
+   Dropdown war silent leer. (C#4) Termin-Detail-Activity-Stream
+   (`app.js:6535`) fragte `tasks.appointment_id` — Spalte gibt's
+   nicht, die Termin↔Aufgabe-Kopplung läuft umgekehrt via
+   `appointments.task_id` (v1.40). Reverse-Lookup eingebaut:
+   erst `task_id` am Termin holen, dann genau diese Aufgabe
+   nachladen. Activity-Stream zeigt jetzt die gekoppelte Aufgabe.
+   Keine Schema-Änderung, keine Migration.
+   Vorgängerversion 2.33.0 (QA-Sweep Bugfix #1 — Status-Filter-Strings
    und Briefing-Block. Drei `.not('status','in',(…))`-Filter
    nutzten noch Title-Case-Labels (`Storniert`, `Abgeschlossen`,
    `Abgerechnet`, `Verloren`) und waren seit v2.31 silent
@@ -6529,12 +6560,20 @@ async function loadStageCardActivityStream(type, id) {
       click: `downloadAttachment('${esc(a.id)}')`
     }));
   }
-  // Termin: Tasks + Anhänge
+  // Termin: Tasks (über Reverse-Lookup) + Anhänge
   else if (type === 'termin') {
-    const [tasks, atts] = await Promise.all([
-      db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at').is('deleted_at', null).eq('appointment_id', id).order('created_at', { ascending: false }).limit(50),
+    // v2.33.1: tasks.appointment_id existiert nicht — die Termin↔Aufgabe-Kopplung
+    // läuft umgekehrt via appointments.task_id (v1.40). Vorher schlug die Query
+    // mit 42703 fehl, der Activity-Stream war leer (Phase-C-Befund C#4).
+    const [appt, atts] = await Promise.all([
+      db.from('appointments').select('task_id').eq('id', id).maybeSingle(),
       db.from('attachments').select('id, filename, mime_type, size_bytes, created_at, user:user_profiles!attachments_uploaded_by_fkey(name)').is('deleted_at', null).eq('entity_type', 'appointment').eq('entity_id', id).order('created_at', { ascending: false }).limit(50)
     ]);
+    let tasks = { data: [] };
+    if (appt.data?.task_id) {
+      tasks = await db.from('tasks').select('id, titel, faelligkeit, status, erledigt_am, created_at')
+        .is('deleted_at', null).eq('id', appt.data.task_id).limit(1);
+    }
     (tasks.data || []).forEach(t => items.push({
       type: 'AUFGABE', ts: t.created_at, title: t.titel || '—',
       meta: t.status === 'erledigt' ? `Erledigt ${formatDateCompact(t.erledigt_am)}` : `Fällig ${formatDateCompact(t.faelligkeit) || '—'}`,
@@ -8458,7 +8497,9 @@ async function renderTemplateFields(typ, prefilled) {
     serviceOpts = data || [];
   }
   if (schema.some(f => f.type === 'user')) {
-    const { data } = await db.from('user_profiles').select('id, name').eq('ist_aktiv', true).order('name');
+    // v2.33.1: user_profiles hat keine `ist_aktiv`-Spalte — es ist `status='aktiv'`
+    // (architecture.md §4.10). Vorher: Dropdown blieb leer (PostgREST 42703).
+    const { data } = await db.from('user_profiles').select('id, name').eq('status', 'aktiv').order('name');
     userOpts = data || [];
   }
 
@@ -25636,19 +25677,29 @@ function renderStatusAdvanceAction(entityType, entityId, currentStatus, containe
 
 /** Setzt den Status der Entität auf den nächsten Wert und löst ein Refresh
  *  der jeweiligen Detail-Page aus. Die `from`-Bedingung verhindert Race-
- *  Conditions bei Doppelklick / parallelen Tabs. */
+ *  Conditions bei Doppelklick / parallelen Tabs.
+ *
+ *  v2.33.1: ruft `checkAndUpdateProjectStatus` für deployment/appointment,
+ *  damit das Eltern-Projekt nach einem Status-Vorrück-Klick mitwandert
+ *  (Phase-A.4-Trigger-Lücke #2). */
 async function advanceEntityStatus(entityType, entityId, fromStatus, toStatus) {
   const flow = _STATUS_FLOW[entityType];
   if (!flow || !entityId || !toStatus) return;
   const fromLabel = getStatusLabel(flow.kategorie, fromStatus, fromStatus);
   const toLabel   = getStatusLabel(flow.kategorie, toStatus,   toStatus);
   if (!confirm(`Status weiterbringen?\n\n${fromLabel}  →  ${toLabel}`)) return;
-  // Race-Schutz: from-Bedingung als dualStatus, damit auch alte Labels in der DB matchen
+
+  let projectId = null;
+  if (entityType === 'deployment' || entityType === 'appointment') {
+    const { data: row } = await db.from(flow.table).select('project_id').eq('id', entityId).maybeSingle();
+    projectId = row?.project_id || null;
+  }
+
   const { error } = await db.from(flow.table)
     .update({ status: toStatus }).in('status', [fromStatus]).eq('id', entityId);
   if (error) { showToast(error.message, true); return; }
   showToast(`Status: ${toLabel}.`);
-  // Refresh der jeweiligen Detail-Page
+  if (projectId) await checkAndUpdateProjectStatus(projectId);
   if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
   if (entityType === 'deployment' && currentDeploymentDetailId) loadDeploymentDetail(currentDeploymentDetailId);
   if (entityType === 'appointment'&& currentAppointmentDetailId) loadAppointmentDetail(currentAppointmentDetailId);
@@ -25671,11 +25722,15 @@ async function _loadStatusOptions(entityType) {
   if (_statusOptionsCache[entityType]) return _statusOptionsCache[entityType];
   const cat = _STATUS_LOOKUP_CAT[entityType];
   if (!cat) return [];
+  // v2.33.1: system_key MUSS mit selectiert werden — er ist seit v2.31 die
+  // Identitäts-Spalte für Status, `wert` ist nur das Anzeige-Label.
   const { data, error } = await db.from('lookup_values')
-    .select('id, wert, farbe, reihenfolge')
+    .select('id, system_key, wert, farbe, reihenfolge')
     .eq('kategorie', cat).eq('ist_aktiv', true).order('reihenfolge');
   if (error) return [];
-  _statusOptionsCache[entityType] = data || [];
+  // Defensive: nur Optionen mit system_key durchlassen — alte Mandanten-Daten
+  // ohne system_key würden sonst NULL als Status in die DB schreiben.
+  _statusOptionsCache[entityType] = (data || []).filter(o => o.system_key);
   return _statusOptionsCache[entityType];
 }
 
@@ -25700,12 +25755,14 @@ async function toggleStatusPicker(entityType, anchorEl) {
   if (options.length === 0) {
     popup.innerHTML = '<div class="status-pill-popup-empty">Keine Status-Werte hinterlegt.</div>';
   } else {
+    // v2.33.1: Vergleich + onclick-Argument auf system_key umgestellt.
+    // Anzeige-Label bleibt `o.wert` (mandantenfähig umbenennbar).
     popup.innerHTML = options.map(o => {
-      const isCurrent = o.wert === currentStatus;
+      const isCurrent = o.system_key === currentStatus;
       const farbe = o.farbe || 'var(--muted)';
       return `
         <button type="button" class="status-pill-popup-item ${isCurrent ? 'is-current' : ''}"
-                onclick="event.stopPropagation();selectEntityStatus('${esc(entityType)}','${esc(entityId)}','${esc(o.wert)}','${esc(currentStatus)}')">
+                onclick="event.stopPropagation();selectEntityStatus('${esc(entityType)}','${esc(entityId)}','${esc(o.system_key)}','${esc(currentStatus)}')">
           <span class="status-pill-popup-dot" style="background:${esc(farbe)}"></span>
           <span class="status-pill-popup-label">${esc(o.wert)}</span>
           ${isCurrent ? '<span class="status-pill-popup-check">✓</span>' : ''}
@@ -25730,7 +25787,14 @@ document.addEventListener('click', (ev) => {
 
 /** Wählt einen Status aus dem Picker — gleicher Update-Pfad wie
  *  advanceEntityStatus, aber freie Wahl (auch Rückwärts / Storniert /
- *  Verloren). Confirm bestätigt den Sprung; Race-Schutz via from-Status. */
+ *  Verloren). Confirm bestätigt den Sprung; Race-Schutz via from-Status.
+ *
+ *  v2.33.1: `newStatus` ist jetzt ein system_key (vorher Label) — der Picker
+ *  reicht in `toggleStatusPicker` `o.system_key` durch. Außerdem: bei
+ *  deployment/appointment wird die `project_id` vor dem Update geholt und
+ *  nach erfolgreicher Persistierung `checkAndUpdateProjectStatus(...)`
+ *  aufgerufen, damit das Eltern-Projekt mitwandert (Cluster-1-Trigger-Lücke
+ *  aus Phase A.4 #2). */
 async function selectEntityStatus(entityType, entityId, newStatus, currentStatus) {
   if (!entityType || !entityId || !newStatus) return;
   // Picker schließen
@@ -25746,13 +25810,22 @@ async function selectEntityStatus(entityType, entityId, newStatus, currentStatus
   const currentLabel = getStatusLabel(flow.kategorie, currentStatus, currentStatus);
   const newLabel     = getStatusLabel(flow.kategorie, newStatus,     newStatus);
   if (!confirm(`Status ändern?\n\n${currentLabel}  →  ${newLabel}`)) return;
-  // Race-Schutz: from-Bedingung via dualStatus, neuer Wert wird als
-  // gewählter Wert geschrieben (kann Label oder system_key sein —
-  // der Picker übergibt aktuell o.wert, also Label).
+
+  // Vor dem Update project_id holen — wird nach Save für Auto-Projektstatus
+  // gebraucht. Project-Entity selbst hat kein Eltern-Projekt.
+  let projectId = null;
+  if (entityType === 'deployment' || entityType === 'appointment') {
+    const { data: row } = await db.from(table).select('project_id').eq('id', entityId).maybeSingle();
+    projectId = row?.project_id || null;
+  }
+
+  // Race-Schutz: from-Bedingung als Status-Filter, damit Doppelklicks /
+  // parallele Tabs nicht doppelt schreiben.
   const { error } = await db.from(table)
     .update({ status: newStatus }).in('status', [currentStatus]).eq('id', entityId);
   if (error) { showToast(error.message, true); return; }
   showToast(`Status: ${newLabel}.`);
+  if (projectId) await checkAndUpdateProjectStatus(projectId);
   if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
   if (entityType === 'deployment' && currentDeploymentDetailId) loadDeploymentDetail(currentDeploymentDetailId);
   if (entityType === 'appointment'&& currentAppointmentDetailId) loadAppointmentDetail(currentAppointmentDetailId);
@@ -32017,7 +32090,10 @@ async function _composerSaveEinsatzBundle(st, title) {
   const externe     = document.getElementById('d-externe-techniker')?.value?.trim() || null;
   const uhrzeit_von = document.getElementById('d-uhrzeit-von').value || null;
   const uhrzeit_bis = document.getElementById('d-uhrzeit-bis').value || null;
-  const ganztag     = !!document.getElementById('d-ganztag')?.checked;
+  // v2.33.1: `ganztag` aus dem Composer-Payload entfernt — Spalte existiert
+  // nicht auf `deployments` (Phase-C-Befund C#1). Bündel-Insert crashte
+  // bisher mit „column ganztag of relation deployments does not exist",
+  // das vorab angelegte Bundle wurde dann rollback-gelöscht.
 
   // Bundle-Titel: aus Composer-Titel-Feld oder aus Service × Firma generieren
   let bundleTitel = title;
@@ -32055,7 +32131,7 @@ async function _composerSaveEinsatzBundle(st, title) {
     einzelpreis,
     status: DEPLOYMENT_STATUS.GEPLANT,
     uhrzeit_von, uhrzeit_bis,
-    ganztag,
+    // v2.33.1: ganztag entfernt — Spalte gibt's nicht auf deployments.
     ort,
     externe_techniker: externe,
     dokumentation: {},
