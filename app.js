@@ -1,6 +1,31 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.8 (QA-Sweep Bugfix #9 — Membership-Insert-
+   Version 2.33.9 (QA-Sweep Bugfix #10 — Inline-Doku-Race
+   geschlossen, Datenverlust beim Tippen weg. **Phase A.2 #4:**
+   die vier Inline-Doku-Save-Pfade — `saveDocumentationFieldInline`
+   (`app.js:9378`), `saveProjectBriefField` (`app.js:24183`),
+   `saveAppointmentDokuField` (`app.js:25241`),
+   `saveDeploymentDokuField` (`app.js:25925`) — machten jeweils
+   ein klassisches Read-Modify-Write auf der `dokumentation`-
+   jsonb-Spalte: SELECT → merge einen Key ins Objekt → UPDATE
+   das ganze Objekt. Beim schnellen Wechsel zwischen Feld A
+   und Feld B (zwei `blur`-Events in kurzer Folge) startete
+   der zweite Save den SELECT, BEVOR der erste Save sein
+   UPDATE fertig hatte — der zweite sah die alte Doku ohne
+   A's Änderung, und A wurde beim zweiten UPDATE wieder
+   überschrieben. In etwa 50 % der Fälle bei langsamem Netz
+   verschwand eines der Felder. Fix: neuer Helper
+   `_serializeDocUpdate(table, id, mutator)` mit Promise-
+   Chain pro (table, id) in `_docInFlight: Map`. Alle vier
+   Save-Funktionen wrappen ihre Read-Modify-Write-Logik in
+   die Chain — nachfolgende Saves auf dieselbe Entity hängen
+   sich ans Ende an und sehen garantiert den frisch geschriebenen
+   Zustand. Fehler aus früheren Chain-Gliedern werden abgefangen
+   (`prev.catch(() => {})`), damit ein einzelner Fehlschlag
+   nicht alle nachfolgenden Saves blockt. Saubere
+   Map-Aufräumung im `finally`, damit die Map nicht wächst.
+   Kein Schema-Change, keine Migration.
+   Vorgängerversion 2.33.8 (QA-Sweep Bugfix #9 — Membership-Insert-
    Rollback + CSS-Injection per DB-Constraint geschlossen.
    **A.2 #3 saveMembership ohne Rollback:** schlug der
    Entitlement-Insert nach erfolgreicher Mitgliedschafts-
@@ -9375,6 +9400,36 @@ function readDocumentationFromDom(entityType, idPrefix, existingDoc = null) {
 
 /** Inline-Save eines einzelnen Feldes — nutzt JSONB-Update direkt im
  *  jeweiligen Datensatz. Statusanzeige unter dem Feld. */
+// v2.33.9: serialisiert Read-Modify-Write-Updates auf der `dokumentation`-
+// jsonb-Spalte pro (table, id). Vorher (Phase A.2 #4): bei schnellem Wechsel
+// zwischen Feld A und Feld B startete der zweite Save den SELECT, BEVOR der
+// erste Save sein UPDATE fertig hatte → der zweite sah die alte Doku ohne
+// A's Änderung → A wurde beim zweiten UPDATE wieder überschrieben. Resultat:
+// Datenverlust beim Tippen, besonders bei langsamem Netz oder Tab-Wechsel.
+// Mit dieser Queue läuft pro Entity exakt ein Read-Modify-Write zur Zeit;
+// nachfolgende Saves hängen sich an die Promise-Chain.
+const _docInFlight = new Map();
+async function _serializeDocUpdate(table, id, mutator) {
+  const key = `${table}:${id}`;
+  const prev = _docInFlight.get(key) || Promise.resolve();
+  const next = prev.catch(() => {}).then(async () => {
+    const { data, error: fetchErr } = await db.from(table).select('dokumentation').eq('id', id).single();
+    if (fetchErr) throw new Error(fetchErr.message);
+    const dok = (data?.dokumentation && typeof data.dokumentation === 'object') ? { ...data.dokumentation } : {};
+    mutator(dok);
+    const { error } = await db.from(table).update({ dokumentation: dok }).eq('id', id);
+    if (error) throw new Error(error.message);
+  });
+  _docInFlight.set(key, next);
+  try {
+    await next;
+  } finally {
+    if (_docInFlight.get(key) === next) {
+      _docInFlight.delete(key);
+    }
+  }
+}
+
 async function saveDocumentationFieldInline(entityType, id, key, el) {
   const table = DOCUMENTATION_TABLE[entityType];
   if (!table || !id) return;
@@ -9385,26 +9440,19 @@ async function saveDocumentationFieldInline(entityType, id, key, el) {
   const statusEl = document.getElementById(`${el.id}-status`);
   if (statusEl) { statusEl.textContent = 'Speichere ...'; statusEl.style.color = 'var(--muted)'; }
 
-  // Aktuellen JSON holen, key setzen oder löschen, zurückschreiben.
-  const { data, error: fetchErr } = await db.from(table).select('dokumentation').eq('id', id).single();
-  if (fetchErr) {
-    if (statusEl) { statusEl.textContent = 'Fehler beim Laden'; statusEl.style.color = 'var(--danger)'; }
-    return;
-  }
-  const dok = data?.dokumentation && typeof data.dokumentation === 'object' ? { ...data.dokumentation } : {};
-  if (newVal) dok[key] = newVal;
-  else delete dok[key];
-
-  const { error } = await db.from(table).update({ dokumentation: dok }).eq('id', id);
-  if (error) {
-    if (statusEl) { statusEl.textContent = 'Fehler: ' + error.message; statusEl.style.color = 'var(--danger)'; }
-    return;
-  }
-  el.dataset.savedValue = newVal;
-  if (statusEl) {
-    statusEl.textContent = 'Gespeichert';
-    statusEl.style.color = 'var(--status-done-accent)';
-    setTimeout(() => { if (statusEl.textContent === 'Gespeichert') statusEl.textContent = ''; }, 1800);
+  try {
+    await _serializeDocUpdate(table, id, (dok) => {
+      if (newVal) dok[key] = newVal;
+      else delete dok[key];
+    });
+    el.dataset.savedValue = newVal;
+    if (statusEl) {
+      statusEl.textContent = 'Gespeichert';
+      statusEl.style.color = 'var(--status-done-accent)';
+      setTimeout(() => { if (statusEl.textContent === 'Gespeichert') statusEl.textContent = ''; }, 1800);
+    }
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = 'Fehler: ' + err.message; statusEl.style.color = 'var(--danger)'; }
   }
 }
 
@@ -24165,12 +24213,17 @@ function toggleProjectPlanAllSections() {
 
 async function saveProjectBriefField(key, value) {
   if (!currentProjectDetailId) return;
-  const { data: p } = await db.from('projects').select('dokumentation').eq('id', currentProjectDetailId).single();
-  const dok = p?.dokumentation || {};
-  // Mapping: ziel landet als kundenherausforderung (semantisch nah, kompat zu v1.52)
-  if (key === 'ziel') dok.kundenherausforderung = value || '';
-  else dok[key] = value || '';
-  await db.from('projects').update({ dokumentation: dok }).eq('id', currentProjectDetailId);
+  // v2.33.9: über _serializeDocUpdate (Race-Schutz, Phase A.2 #4).
+  const id = currentProjectDetailId;
+  try {
+    await _serializeDocUpdate('projects', id, (dok) => {
+      // Mapping: ziel landet als kundenherausforderung (semantisch nah, kompat zu v1.52)
+      if (key === 'ziel') dok.kundenherausforderung = value || '';
+      else dok[key] = value || '';
+    });
+  } catch (err) {
+    showToast('Speichern fehlgeschlagen: ' + err.message, true);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -25223,10 +25276,15 @@ function switchAppointmentV2Tab(tab) {
 
 async function saveAppointmentDokuField(key, value) {
   if (!currentAppointmentDetailId) return;
-  const { data: a } = await db.from('appointments').select('dokumentation').eq('id', currentAppointmentDetailId).single();
-  const dok = a?.dokumentation || {};
-  dok[key] = (value || '').trim();
-  await db.from('appointments').update({ dokumentation: dok }).eq('id', currentAppointmentDetailId);
+  // v2.33.9: über _serializeDocUpdate (Race-Schutz, Phase A.2 #4).
+  const id = currentAppointmentDetailId;
+  try {
+    await _serializeDocUpdate('appointments', id, (dok) => {
+      dok[key] = (value || '').trim();
+    });
+  } catch (err) {
+    showToast('Speichern fehlgeschlagen: ' + err.message, true);
+  }
 }
 
 async function renderAppointmentActionItems(appointmentId) {
@@ -25904,10 +25962,15 @@ function _clearDepThemeQuickInput() {
 
 async function saveDeploymentDokuField(key, value) {
   if (!currentDeploymentDetailId) return;
-  const { data: d } = await db.from('deployments').select('dokumentation').eq('id', currentDeploymentDetailId).single();
-  const dok = d?.dokumentation || {};
-  dok[key] = (value || '').trim();
-  await db.from('deployments').update({ dokumentation: dok }).eq('id', currentDeploymentDetailId);
+  // v2.33.9: über _serializeDocUpdate (Race-Schutz, Phase A.2 #4).
+  const id = currentDeploymentDetailId;
+  try {
+    await _serializeDocUpdate('deployments', id, (dok) => {
+      dok[key] = (value || '').trim();
+    });
+  } catch (err) {
+    showToast('Speichern fehlgeschlagen: ' + err.message, true);
+  }
 }
 
 async function renderDeploymentActionItems(deploymentId) {
