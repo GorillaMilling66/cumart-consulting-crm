@@ -60,13 +60,18 @@ async function countActiveAdmins(supabaseAdmin: any): Promise<number> {
   return data?.length ?? 0
 }
 
-// Prüft, ob ein bestimmter User Admin ist
+// Prüft, ob ein bestimmter User AKTIVER Admin ist.
+// v2.33.12 (QA-Sweep Phase A.2 #8): inaktive Admin-Rollen wurden vorher als
+// "letzter Admin" gewertet und blockierten legitime Aktionen gegen sie.
+// `countActiveAdmins` filtert bereits auf status='aktiv'; hier nachziehen,
+// damit die Schutzlogik konsistent über aktive Admins urteilt.
 async function isUserAdmin(supabaseAdmin: any, userId: string): Promise<boolean> {
   const { data } = await supabaseAdmin
     .from('user_profiles')
-    .select('roles(name)')
+    .select('status, roles(name)')
     .eq('id', userId)
     .single()
+  if (data?.status !== 'aktiv') return false
   return (data?.roles as any)?.name === 'Admin'
 }
 
@@ -196,7 +201,7 @@ Deno.serve(async (req) => {
       // Aktuellen Zustand des Ziel-Users holen
       const { data: targetUser } = await supabaseAdmin
         .from('user_profiles')
-        .select('id, role_id, roles(name)')
+        .select('id, role_id, status, roles(name)')
         .eq('id', user_id)
         .single()
 
@@ -204,7 +209,10 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'Benutzer nicht gefunden' }, 404)
       }
 
-      const targetIsAdmin = (targetUser.roles as any)?.name === 'Admin'
+      // v2.33.12: nur aktive Admins zählen als "letzter Admin" (konsistent
+      // zu countActiveAdmins und isUserAdmin). Inaktive Admins blockierten
+      // sonst legitime Degradierungen.
+      const targetIsAdmin = targetUser.status === 'aktiv' && (targetUser.roles as any)?.name === 'Admin'
       const roleIsChanging = role_id && role_id !== targetUser.role_id
 
       // ─── SCHUTZ 1: Anti-Self-Demotion ───

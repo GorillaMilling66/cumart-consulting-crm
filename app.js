@@ -1,6 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.11 (QA-Sweep Bugfix #12 — Mitgliedschafts-Update
+   Version 2.33.12 (QA-Sweep Bugfix #13 — Edge Function
+   `manage-users`: Last-Admin-Schutz prüft jetzt
+   `status='aktiv'`. **Phase A.2 #8:** `isUserAdmin` in
+   `supabase/functions/manage-users/index.ts` prüfte nur die
+   Rolle, nicht den Aktiv-Status. Folge: inaktive Admins
+   wurden als „letzter Admin" gewertet und blockierten
+   legitime Aktionen (z.B. Löschen eines inaktiven Admin-
+   Accounts war unmöglich, obwohl ein anderer aktiver Admin
+   existierte). `countActiveAdmins` filtert bereits korrekt
+   auf `status='aktiv'`, `isUserAdmin` zieht jetzt nach;
+   zusätzlich wird `targetIsAdmin` im Update-Pfad (Z. 207)
+   aus `status` + `roles.name` gemeinsam abgeleitet.
+   **WICHTIG — Vercel deployt diese Datei NICHT.** Die
+   Edge Function muss separat über das Supabase-Dashboard
+   (Functions → manage-users → Deploy) oder per CLI
+   `supabase functions deploy manage-users` deployed werden,
+   damit der Fix produktiv wird. Auch nach Deploy: „Verify
+   JWT with legacy secret" muss aus bleiben (siehe CLAUDE.md).
+   Im app.js-Pfad keine Änderungen.
+   Vorgängerversion 2.33.11 (QA-Sweep Bugfix #12 — Mitgliedschafts-Update
    propagiert Entitlement-Verfall + blockt Programm-Wechsel.
    **Phase A.4 #21:** der Update-Pfad von `saveMembership`
    (`app.js:10798`) updated bisher nur die `memberships`-Row.
