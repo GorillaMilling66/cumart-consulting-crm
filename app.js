@@ -1,6 +1,35 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.6 (QA-Sweep Bugfix #7 — Soft-Delete-Dispatcher
+   Version 2.33.7 (QA-Sweep Bugfix #8 — fünf A.2-Reste in einem
+   Sammelpatch. **Phase A.2 #1 saveDeployment Doppelklick-Race:**
+   `btn.disabled = true` stand erst nach den awaits — zwei schnelle
+   Klicks erzeugten zwei Firma-Inserts (`resolveCompanyComboboxValue`)
+   und zwei deployment-Rows. Mit `dataset.busy`-Re-Entry-Guard + 10s-
+   setTimeout-Sicherheitsnetz bail-out wir den zweiten Klick sofort
+   (`app.js:14746`); im bestehenden `finally`-Block wird der Guard
+   sauber freigegeben + Timeout abgebrochen. **Phase A.2 #5
+   togglePin-Race:** schnelles Doppelklicken auf den Pin-Stern führte
+   zur UNIQUE(user_id, entity_type, entity_id)-Verletzung aus
+   `migrations/v2.3.0_pins.sql` mit rotem Fehler-Toast, obwohl der
+   erste Pin schon gesetzt war. Neuer Module-Level `_togglePinInFlight`
+   Set blockt parallele Toggles für dasselbe Entity-Paar
+   (`app.js:5906`). **Phase A.2 #11 addAppointmentActionItem
+   Error-Check:** Insert in `tasks` ignorierte `error` — bei Netz-
+   Abbruch zeigte die Liste leer trotz „Aufgabe hinzugefügt"-Optik.
+   Jetzt explicit Error-Toast + return (`app.js:25168`). **Phase A.2
+   #14 esc() in input.value (4 Stellen):** Folgetermin/Folgeeinsatz/
+   Folgeaufgabe-Prefill und „Aus Termin"-Aufgabe escapten den
+   Original-Titel via `esc()` und schrieben das HTML-encodete
+   Resultat in `input.value` — sichtbar als „Demo &amp;amp; Test"
+   und beim Speichern wörtlich in die DB. `esc()` weggenommen
+   (`app.js:18574, 18933, 19190, 25238`). **Phase A.2 #10
+   `Number(menge) || 1` (6 Stellen):** Display-Honorar zeigte bei
+   `menge=0` (legitimer Storno-Korrektur-Wert) fälschlich
+   `einzelpreis × 1` statt `× 0`. Plus eine Bundle-Insert-Stelle.
+   Konsistent auf `Number(... ?? 1)` umgestellt — `0` bleibt `0`,
+   nur `null/undefined` triggert Default 1. Kein Schema-Change,
+   keine Migration.
+   Vorgängerversion 2.33.6 (QA-Sweep Bugfix #7 — Soft-Delete-Dispatcher
    angeglichen + Phase-B-Müll aufgeräumt. **Cluster 6
    (Phase A.4 #3 #4 #5):** der zentrale Listen-Kebab-Delete
    (`_performSoftDelete` in `app.js:3347`) war bisher „dümmer"
@@ -4876,14 +4905,14 @@ function renderBriefingHeute(data) {
       ...otherDeps.map(d => ({
         eyebrow: 'VOR-ORT', status: d.status, statusCls: d.status === DEPLOYMENT_STATUS.ABGERECHNET ? 'is-dgreen' : 'is-lgreen',
         title: d.company?.name || d.titel || '—',
-        sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
+        sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * Number(d.menge ?? 1))].filter(Boolean).join(' · '),
         click: `navigateTo('einsatz','${d.id}')`,
         done: d.status === DEPLOYMENT_STATUS.ABGERECHNET
       })),
       ...remaining.map(d => ({
         eyebrow: `VOR-ORT · ${formatDateCompact(d.datum_von)}`, status: d.status, statusCls: 'is-lgreen',
         title: d.company?.name || d.titel || '—',
-        sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
+        sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * Number(d.menge ?? 1))].filter(Boolean).join(' · '),
         click: `navigateTo('einsatz','${d.id}')`,
         done: false
       }))
@@ -5903,8 +5932,20 @@ async function isItemPinned(entityType, entityId) {
   return (data || []).length > 0;
 }
 
+// v2.33.7: In-Flight-Set als Race-Guard für togglePin (Phase A.2 #5). Bei
+// schnellem Doppelklick liefen vorher zwei isItemPinned-Reads parallel,
+// beide gaben `false` zurück, beide insertierten → der zweite Insert stieß
+// UNIQUE(user_id, entity_type, entity_id) aus migrations/v2.3.0_pins.sql an
+// und zeigte einen "duplicate key"-Fehler-Toast, obwohl die erste Aktion
+// erfolgreich war.
+const _togglePinInFlight = new Set();
+
 async function togglePin(entityType, entityId, label) {
   if (!currentProfile?.id) return;
+  const inflightKey = `${entityType}:${entityId}`;
+  if (_togglePinInFlight.has(inflightKey)) return;
+  _togglePinInFlight.add(inflightKey);
+  try {
   const pinned = await isItemPinned(entityType, entityId);
   if (pinned) {
     await db.from('pins').delete()
@@ -5932,6 +5973,9 @@ async function togglePin(entityType, entityId, label) {
     btn.dataset.pinned = (!pinned).toString();
     btn.title = !pinned ? 'Angeheftet — klicken zum Entfernen' : 'Anheften';
   });
+  } finally {
+    _togglePinInFlight.delete(inflightKey);
+  }
 }
 
 async function renderArbeitsplatzPins() {
@@ -6696,7 +6740,7 @@ async function loadStageCardActivityStream(type, id) {
     (deps.data || []).forEach(d => items.push({
       type: 'EINSATZ', ts: (d.datum_von || d.created_at?.substring(0, 10)) + 'T00:00:00',
       title: d.titel || '—',
-      meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1)), d.status].filter(Boolean).join(' · '),
+      meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * Number(d.menge ?? 1)), d.status].filter(Boolean).join(' · '),
       kind: 'einsaetze',
       click: `navigateTo('einsatz','${esc(d.id)}')`
     }));
@@ -14745,6 +14789,18 @@ async function saveDeployment() {
   const createAppointment = document.getElementById('d-create-appointment').checked;
   const btn           = document.getElementById('d-save-btn');
 
+  // v2.33.7: Doppelklick-Race-Guard (Phase A.2 #1). Bisher wurde
+  // `btn.disabled = true` erst nach den awaits gesetzt (Z. ~14820),
+  // davor laufen resolveCompanyComboboxValue + resolveContactComboboxValue,
+  // die bei unbekanntem Combobox-Text einen DB-Insert machen → zwei
+  // schnelle Klicks erzeugten zwei Firmen + zwei deployment-Rows.
+  // Mit dataset.busy als Re-Entry-Guard bail-out wir den zweiten Klick
+  // sofort. Sicherheitsnetz (10s setTimeout) räumt auf, falls der Code
+  // vorher per early-return aus den sync-Validierungen rausspringt.
+  if (btn.dataset.busy === '1') return;
+  btn.dataset.busy = '1';
+  const _saveDepReleaseT = setTimeout(() => { btn.dataset.busy = '0'; }, 10000);
+
   // Auto-Titel + Auto-Beschreibung nur beim Neu-Anlegen (nicht beim Edit)
   const isNew = !editingDeploymentId;
   // v1.44.11: Firma-Combobox auflösen — legt ggf. eine neue Firma an.
@@ -14954,6 +15010,9 @@ async function saveDeployment() {
   } finally {
     btn.disabled = false;
     btn.textContent = editingDeploymentId ? 'Speichern' : 'Anlegen';
+    // v2.33.7: Race-Guard freigeben + Sicherheitsnetz-Timeout abbrechen.
+    clearTimeout(_saveDepReleaseT);
+    btn.dataset.busy = '0';
   }
 }
 
@@ -16315,7 +16374,7 @@ async function saveDeploymentBundle() {
         datum_bis: r.datum_von,
         uhrzeit_von: r.uhrzeit_von || null,
         uhrzeit_bis: r.uhrzeit_bis || null,
-        menge: Number(r.menge) || 1,
+        menge: Number(r.menge ?? 1),
         status: r.status || DEPLOYMENT_STATUS.GEPLANT
       };
       if (r.id) {
@@ -18541,7 +18600,9 @@ async function quickAppointmentFollowup(appointmentId) {
   const d = new Date(); d.setDate(d.getDate() + 7);
   document.getElementById('t-datum').value = toISODate(d);
   if (a.ort)   document.getElementById('t-ort').value   = a.ort;
-  if (a.titel) document.getElementById('t-titel').value = `Folgetermin: ${esc(a.titel)}`;
+  // v2.33.7: esc() entfernt — input.value speichert den Roh-String, HTML-
+  // Escape würde "Demo & Test" als "Demo &amp; Test" anzeigen und speichern.
+  if (a.titel) document.getElementById('t-titel').value = `Folgetermin: ${a.titel}`;
   if (a.typ_id) {
     const typSelect = document.getElementById('t-typ');
     if (typSelect) typSelect.value = a.typ_id;
@@ -18900,7 +18961,8 @@ async function quickDeploymentFollowup(deploymentId) {
 
   await openDeploymentModal('new');
   if (d.ort)         document.getElementById('d-ort').value = d.ort;
-  if (d.titel)       document.getElementById('d-titel').value = `Folgeeinsatz: ${esc(d.titel)}`;
+  // v2.33.7: kein esc() in input.value — Roh-String reicht.
+  if (d.titel)       document.getElementById('d-titel').value = `Folgeeinsatz: ${d.titel}`;
   // Service-change-Event kümmert sich um Preis/Uhrzeit; wenn kein Service, behalten wir Menge/Preis
   if (!d.service_id) {
     if (d.menge)       document.getElementById('d-menge').value = d.menge;
@@ -19157,7 +19219,8 @@ async function quickTaskFollowup(taskId) {
   if (t.project_id) taskModalPrefillProjectId = t.project_id;
   await openTaskModal('new');
   const titleInput = document.getElementById('a-titel');
-  if (titleInput && t.titel) titleInput.value = `Folge zu: ${esc(t.titel)}`;
+  // v2.33.7: kein esc() in input.value.
+  if (titleInput && t.titel) titleInput.value = `Folge zu: ${t.titel}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -23813,7 +23876,7 @@ async function loadProjectActivityStream(projectId) {
     title: d.titel || '—',
     // v2.25.9: Status fließt nicht mehr in den Meta-Text — er wird als
     // farbiges Pill direkt neben dem Typ angezeigt.
-    meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * (Number(d.menge) || 1))].filter(Boolean).join(' · '),
+    meta: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * Number(d.menge ?? 1))].filter(Boolean).join(' · '),
     status: d.status,
     kind: 'einsaetze',
     click: `navigateTo('einsatz','${esc(d.id)}')`
@@ -25157,7 +25220,9 @@ async function addAppointmentActionItem() {
   const titel = prompt('Action Item:');
   if (!titel || !titel.trim()) return;
   const { data: a } = await db.from('appointments').select('project_id, company_id, contact_id').eq('id', currentAppointmentDetailId).single();
-  await db.from('tasks').insert({
+  // v2.33.7: Error aus Insert prüfen (Phase A.2 #11) — sonst zeigte die Liste
+  // einen leeren Reload, obwohl der Insert (z.B. offline) gar nicht ankam.
+  const { error } = await db.from('tasks').insert({
     titel: titel.trim(),
     status: 'offen',
     project_id: a?.project_id || null,
@@ -25166,6 +25231,7 @@ async function addAppointmentActionItem() {
     assigned_to: currentProfile?.id || null,
     erstellt_von: currentProfile?.id || null
   });
+  if (error) { showToast('Fehler: ' + error.message, true); return; }
   await renderAppointmentActionItems(currentAppointmentDetailId);
 }
 
@@ -25202,7 +25268,8 @@ async function createTaskFromAppointment() {
   taskModalPrefillContactId = a.contact_id;
   taskModalPrefillProjectId = a.project_id;
   await openTaskModal('new');
-  if (a.titel) document.getElementById('a-titel').value = `Aus Termin: ${esc(a.titel)}`;
+  // v2.33.7: kein esc() in input.value.
+  if (a.titel) document.getElementById('a-titel').value = `Aus Termin: ${a.titel}`;
 }
 
 async function createDeploymentFromAppointment() {
@@ -25271,7 +25338,7 @@ async function loadDeploymentDetail(deploymentId) {
   document.getElementById('dep-hero-datum').textContent = datum;
   document.getElementById('dep-hero-datum-sub').textContent = datumSub || ' ';
 
-  const honorar = (Number(d.einzelpreis) || 0) * (Number(d.menge) || 1);
+  const honorar = (Number(d.einzelpreis) || 0) * Number(d.menge ?? 1);
   document.getElementById('dep-hero-honorar').textContent = formatPreis(honorar);
   document.getElementById('dep-hero-honorar-sub').textContent = `${Number(d.menge || 1)} × ${formatPreis(d.einzelpreis || 0)}`;
 
