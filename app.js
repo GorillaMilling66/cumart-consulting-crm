@@ -1,6 +1,38 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.9 (QA-Sweep Bugfix #10 — Inline-Doku-Race
+   Version 2.33.10 (QA-Sweep Bugfix #11 — Cache-Invalidierung
+   systematisch (Cluster 8). Zentrale `invalidate*Cache`-Helper
+   direkt nach den Cache-Deklarationen (`app.js:3160`), an allen
+   Save/Delete-Pfaden konsequent aufgerufen. Pattern angelehnt
+   an das saubere `invalidateThemesCache` aus v2.16. Behebt 7
+   konkrete Phase-A.4-Findings: (#7) `programsCache` —
+   `saveProgram`/`deleteProgram` aktualisierten den Cache nicht;
+   ein direkt anschließendes `saveMembership` schrieb alte
+   Benefit-Mengen in Entitlements. (#8) Lookup-Caches —
+   `saveLookup`/`deleteLookup` ließen `_statusLabelCache`,
+   `_statusOptionsCache`, `terminTypenCache`, `projektStatusCache`,
+   `einsatzStatusCache`, `aufgabeStatusCache` stehen; Status-
+   Pillen-Farben und Dropdown-Optionen zeigten alten Stand bis
+   F5. Neuer `invalidateLookupCaches(kategorie)`-Helper leert
+   gezielt die betroffenen Caches. (#9) `companiesCache` nach
+   `saveCompany` — Listen-/Combobox-Cache blieb mit altem Namen.
+   (#10) `saveContact` Firma-Wechsel — alter und neuer
+   `companyContactsMap`-Slot werden jetzt beide invalidiert
+   (alter Wert wird vor dem Update mitgelesen). (#11)
+   `resolveContactComboboxValue` patcht jetzt die Caches
+   konsistent zur Firma-Variante (vorher nur Combobox-Datalist
+   sah den neu angelegten Kontakt). (#12 + #13)
+   `companyAppointmentMap` — `saveAppointment`,
+   `_refreshAppointmentContext` und `syncDeploymentAppointment`
+   invalidieren die Map, sodass die „Nächster Termin"-Spalte
+   auf `#/firmen` beim nächsten Besuch frisch geladen wird.
+   (#17) `userProfilesCache` nach `saveUser`/`deleteUser`.
+   (#18) `servicesCache` nach `deleteService` (saveService
+   machte es bereits). Phase-A.4 #20 (Cache-Shape-Drift), #21
+   (Mitgliedschafts-Update vs. Entitlements), #22 (Multi-Tab
+   BroadcastChannel) bleiben für einen separaten Refactor.
+   Kein Schema-Change, keine Migration.
+   Vorgängerversion 2.33.9 (QA-Sweep Bugfix #10 — Inline-Doku-Race
    geschlossen, Datenverlust beim Tippen weg. **Phase A.2 #4:**
    die vier Inline-Doku-Save-Pfade — `saveDocumentationFieldInline`
    (`app.js:9378`), `saveProjectBriefField` (`app.js:24183`),
@@ -3155,6 +3187,52 @@ let selectedAppointmentContactIds   = new Set();
 
 // Map: companyId → { next: {datum, titel, id} | null, last: {datum, titel, id} | null }
 let companyAppointmentMap = {};
+
+// v2.33.10: Zentrale Cache-Invalidierungs-Helper (Cluster 8 / Phase A.4 #7–#23).
+// Vorher waren Cache-Resets dezentral und an vielen Save/Delete-Pfaden vergessen
+// — Stammdaten-Änderungen, Programm-Edits, Mitgliedschaft-Anlagen sahen
+// veraltete Werte bis F5. Pattern angelehnt an das saubere `invalidateThemesCache`
+// (v2.16+): pro Cache ein dedizierter Helper, der die Save/Delete-Funktionen
+// aufrufen. Lazy-Loader (`load*Cache(force=true)`) füllen den Cache nachher
+// beim nächsten Lesepfad oder hier sofort.
+function invalidateCompaniesCache() {
+  companiesCache = [];
+}
+function invalidateContactsCache(companyIds = []) {
+  contactsCache = [];
+  // companyContactsMap-Slots gezielt leeren, damit alte Firma-Detail-Pages
+  // beim nächsten Wechsel frisch nachladen.
+  for (const cid of companyIds) {
+    if (cid && companyContactsMap[cid]) delete companyContactsMap[cid];
+  }
+}
+function invalidateAppointmentMaps() {
+  // companyAppointmentMap wird beim nächsten loadCompanies / loadCompanyAppointmentMap
+  // frisch aufgebaut. Leeren reicht — er ist hot path beim Firmen-Listing.
+  companyAppointmentMap = {};
+}
+function invalidateProgramsCache() {
+  programsCache = [];
+}
+function invalidateServicesCache() {
+  servicesCache = [];
+}
+function invalidateUserProfilesCache() {
+  userProfilesCache = [];
+}
+// Kategorie-abhängige Lookup-Caches. `kategorie` filtert auf das Minimum;
+// bei null werden alle Status-Caches gleichzeitig geleert (z.B. nach
+// Massen-Stammdaten-Migration). _statusOptionsCache wird per Helper-Funktion
+// gemanaged, weil er als Objekt mit Entity-Keys deklariert ist.
+function invalidateLookupCaches(kategorie = null) {
+  _statusLabelCache = null;
+  // Picker-Popup-Cache (Status-Pillen) komplett resetten.
+  Object.keys(_statusOptionsCache).forEach(k => delete _statusOptionsCache[k]);
+  if (!kategorie || kategorie === 'termin_typ')      terminTypenCache = [];
+  if (!kategorie || kategorie === 'projekt_status')  projektStatusCache = [];
+  if (!kategorie || kategorie === 'einsatz_status')  einsatzStatusCache = [];
+  if (!kategorie || kategorie === 'aufgabe_status')  aufgabeStatusCache = [];
+}
 
 // Pending filter für Termine, kommt aus URL-Hash-Parametern
 let pendingAppointmentsFilter = null;
@@ -8070,6 +8148,9 @@ async function saveUser() {
     } else {
       showCredentials({ title: 'Zugangsdaten für ' + name, email: result.email, password: result.password });
     }
+    // v2.33.10: userProfilesCache leeren — Aufgabe-/Termin-/Mitgliedschafts-
+    // Modale griffen sonst auf alte User-Liste zu (Phase A.4 #17).
+    invalidateUserProfilesCache();
     await loadUsers();
   } catch (e) {
     showToast(e.message, true);
@@ -8107,6 +8188,8 @@ async function deleteUser() {
 
     closeUserModal();
     showToast('Benutzer gelöscht.');
+    // v2.33.10: Cache leeren (A.4 #17).
+    invalidateUserProfilesCache();
     await loadUsers();
   } catch (e) {
     showToast(e.message, true);
@@ -8345,6 +8428,9 @@ async function deleteService() {
     }
     closeServiceModal();
     showToast('Leistung gelöscht.');
+    // v2.33.10: Cache leeren — gelöschte Leistung wäre sonst im Einsatz-Modal-
+    // Dropdown weiter sichtbar bis F5 (A.4 #18).
+    invalidateServicesCache();
     await loadServices();
   } catch (e) {
     showToast(e.message, true);
@@ -8487,6 +8573,10 @@ async function saveLookup() {
 
     closeLookupModal();
     showToast(editingLookupId ? 'Wert aktualisiert.' : 'Wert angelegt.');
+    // v2.33.10: alle abhängigen Lookup-Caches der betroffenen Kategorie leeren
+    // — Status-Pillen-Farben, Dropdown-Optionen, Default-Termintyp etc. sahen
+    // sonst alten Stand bis Hard-Reload (Phase A.4 #8).
+    invalidateLookupCaches(kategorie);
     await loadLookupsPage();
     const filterSelect = document.getElementById('lookup-filter-kategorie');
     if ([...filterSelect.options].some(o => o.value === kategorie)) { filterSelect.value = kategorie; await loadLookups(); }
@@ -8521,6 +8611,9 @@ async function deleteLookup() {
     }
     closeLookupModal();
     showToast('Wert gelöscht.');
+    // v2.33.10: alle Lookup-Caches leeren — Kategorie nicht bekannt nach
+    // Delete (editingLookupId ist hier weg), darum konservativ alle (A.4 #8).
+    invalidateLookupCaches();
     await loadLookupsPage();
   } catch (e) {
     showToast(e.message, true);
@@ -10274,6 +10367,10 @@ async function saveProgram() {
 
     closeProgramModal();
     showToast(editingProgramId ? 'Programm aktualisiert.' : 'Programm angelegt.');
+    // v2.33.10: programsCache leeren — sonst sieht ein direkt anschließender
+    // `saveMembership` noch alte Benefit-Mengen und schreibt sie in Entitlements
+    // (Phase A.4 #7).
+    invalidateProgramsCache();
     await loadPrograms();
   } catch (e) {
     showToast(e.message, true);
@@ -10307,6 +10404,8 @@ async function deleteProgram() {
     }
     closeProgramModal();
     showToast('Programm gelöscht.');
+    // v2.33.10: Cache leeren (Phase A.4 #7).
+    invalidateProgramsCache();
     await loadPrograms();
   } catch (e) {
     showToast(e.message, true);
@@ -11099,6 +11198,11 @@ async function saveCompany() {
     closeCompanyModal();
     showToast(savedId ? 'Firma aktualisiert.' : 'Firma angelegt.');
 
+    // v2.33.10: companiesCache leeren — sonst zeigt der Listen-/Combobox-Cache
+    // beim nächsten Modal-Open noch den alten Namen (Phase A.4 #9). Im Detail-
+    // Pfad lädt loadCompanyDetail die einzelne Firma neu, aber der globale
+    // Cache wird nur in loadCompanies aktualisiert.
+    invalidateCompaniesCache();
     if (savedId && currentCompanyDetailId === savedId) {
       await loadCompanyDetail(savedId);
     } else {
@@ -11674,6 +11778,15 @@ async function saveContact() {
       return;
     }
 
+    // v2.33.10: alten company_id mitlesen, damit nach Save beide Map-Slots
+    // sauber invalidiert werden (Phase A.4 #10) — sonst bleibt der Kontakt
+    // bei Firma-Wechsel im alten companyContactsMap-Slot hängen.
+    let prevCompanyId = null;
+    if (editingContactId) {
+      const { data: prev } = await db.from('contacts').select('company_id').eq('id', editingContactId).maybeSingle();
+      prevCompanyId = prev?.company_id || null;
+    }
+
     const payload = {
       vorname, nachname,
       position: position || null, company_id,
@@ -11689,6 +11802,10 @@ async function saveContact() {
 
     closeContactModal();
     showToast(editingContactId ? 'Kontakt aktualisiert.' : 'Kontakt angelegt.');
+
+    // v2.33.10: Caches sauber invalidieren — alter und neuer Firma-Slot.
+    const affectedCompanyIds = [prevCompanyId, company_id].filter(Boolean);
+    invalidateContactsCache(affectedCompanyIds);
 
     const savedId = editingContactId;
     if (savedId && currentContactDetailId === savedId && document.getElementById('page-contact-detail').classList.contains('active')) {
@@ -12542,6 +12659,12 @@ async function saveAppointment() {
       await checkAndUpdateProjectStatus(project_id);
     }
 
+    // v2.33.10: companyAppointmentMap invalidieren — sonst zeigt die „Nächster
+    // Termin"-Spalte auf #/firmen stale Werte, wenn der Save vom Termine-
+    // Listing oder Kontakt-/Projekt-Detail kommt (Phase A.4 #12). Im company-
+    // detail-Branch wird sie direkt nachgeladen, im Rest beim nächsten
+    // loadCompanies neu aufgebaut.
+    invalidateAppointmentMaps();
     // Kontext-sensibles Refresh
     if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
       await loadContactAppointments(currentContactDetailId);
@@ -12609,6 +12732,8 @@ async function deleteAppointment() {
 }
 
 async function _refreshAppointmentContext() {
+  // v2.33.10: Map immer invalidieren (Phase A.4 #12).
+  invalidateAppointmentMaps();
   if (currentContactDetailId && document.getElementById('page-contact-detail').classList.contains('active')) {
     await loadContactAppointments(currentContactDetailId);
   } else if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
@@ -15163,6 +15288,10 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
     payload.erstellt_von = currentUser?.id || null;
     await db.from('appointments').insert(payload);
   }
+  // v2.33.10: Termin-Map invalidieren — der gekoppelte Termin würde sonst
+  // erst nach loadAppointments im `companyAppointmentMap` sichtbar
+  // (Phase A.4 #13). Nächster Firmen-Listen-Besuch baut sie frisch auf.
+  invalidateAppointmentMaps();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -19902,6 +20031,12 @@ async function resolveContactComboboxValue(inputId, datalistId, companyId) {
     showToast('Fehler beim Anlegen des Kontakts: ' + error.message, true);
     throw error;
   }
+  // v2.33.10: Caches mit-aktualisieren (Phase A.4 #11). Vorher wurde der
+  // gerade angelegte Kontakt nicht in contactsCache / companyContactsMap
+  // sichtbar — Folge-Modale sahen ihn erst nach Hard-Reload nicht in der
+  // Datalist. Da resolveCompanyComboboxValue es bereits richtig macht, ist
+  // das hier die Konsistenz-Nachzieharbeit.
+  invalidateContactsCache(companyId ? [companyId] : []);
   showToast(`Kontakt „${value}" angelegt.`);
   return data.id;
 }
