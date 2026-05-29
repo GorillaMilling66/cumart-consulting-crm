@@ -1,6 +1,31 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.4 (QA-Sweep Bugfix #5 — Datum-Bugs an DST-Über-
+   Version 2.33.5 (QA-Sweep Bugfix #6 — drei direkt ausnutzbare
+   XSS-Bypässe geschlossen. Phase A.3 #1/#2/#3: an drei Stellen
+   wurden User-Strings via `esc()` in JS-String-Literale
+   innerhalb von HTML-`onclick`-Attributen eingebettet. Das
+   funktionierte nicht, weil der Browser HTML-Entities in
+   Attribut-Werten VOR dem JS-Parser dekodiert — `esc()`
+   ersetzt `'` zu `&#39;`, das wird zurück zu `'` und bricht
+   das String-Literal. Payload wie `Bob');alert(1);//` im
+   Namen → JS-Ausführung im Origin der App. Alle drei Stellen
+   auf `data-*`-Attribute + Event-Delegation (Document-Level)
+   umgestellt: (1) `app.js:7720` User-Tabelle „Passwort
+   zurücksetzen"-Button (Bypass über `user_profiles.name` —
+   Admin-änderbar, traf alle anderen Admins beim Klick auf den
+   Button); (2) `app.js:25869` Status-Pillen-Popup (`lookup_values`
+   — Status-Pillen sind in JEDER Liste der App präsent, breitester
+   Vektor; v2.33.1 hatte schon das Argument von `wert` auf
+   `system_key` umgestellt, der Bypass-Pfad bestand aber weiter);
+   (3) `app.js:25527` Themen-Suggestion-Button (`project_themes.name`
+   — von beliebigem User anlegbar, traf alle anderen). Neuer
+   Top-Level `document.addEventListener('click', ...)`-Block bei
+   `app.js:23459` dispatcht auf `.js-reset-user-pw`,
+   `.status-pill-popup-item` und `.js-theme-sugg-company` und liest
+   die Argumente aus `dataset.*`. Library-Themen-Button und
+   andere onclick-Stellen mit UUID-Argumenten bleiben unverändert
+   — UUIDs enthalten keine Quotes, kein Bypass möglich.
+   Vorgängerversion 2.33.4 (QA-Sweep Bugfix #5 — Datum-Bugs an DST-Über-
    gängen und nach Mitternacht. **Cluster 10 (Phase A.2 #6+#7):**
    sechs Stellen nutzten `new Date(YYYY-MM-DD)` (interpretiert
    den String als UTC, was an DST-Wechseln Off-by-one im
@@ -7712,7 +7737,13 @@ async function loadUsers() {
     if (canAdminister) {
       actions += `<button class="btn btn-sm" onclick="openUserModal('edit', '${u.id}')">Bearbeiten</button>`;
       if (!isMe) {
-        actions += `<button class="btn btn-sm" onclick="resetUserPassword('${u.id}', '${esc(u.name || '')}')">Passwort zurücksetzen</button>`;
+        // v2.33.5: data-* + Delegation statt String-Argumente im onclick.
+        // Vorher: u.name landete in einem JS-String-Literal innerhalb eines
+        // HTML-Attributs — `esc()` ersetzt `'` zu `&#39;`, der Browser
+        // dekodiert HTML-Entities in Attribut-Werten VOR dem JS-Parser,
+        // also wird `&#39;` zurück zu `'` und bricht das Literal → XSS
+        // (Phase A.3 #1). Listener-Registrierung am Skript-Ende.
+        actions += `<button class="btn btn-sm js-reset-user-pw" data-uid="${esc(u.id)}" data-uname="${esc(u.name || '')}">Passwort zurücksetzen</button>`;
       }
     }
 
@@ -23445,6 +23476,37 @@ async function fabAction(target) {
 }
 
 // Click-outside schließt FAB-Menu
+// v2.33.5: Event-Delegation für XSS-gehärtete Buttons (Phase A.3 #1/#2/#3).
+// Diese drei Stellen rendern Buttons aus User-Input und brauchten Bypass-
+// Schutz für `esc()`-Werte in JS-String-Literalen innerhalb von HTML-
+// Attributen. data-* + Delegation umgeht das Attribut-Decoding-Problem.
+document.addEventListener('click', (ev) => {
+  // #1 — User-Tabelle: Passwort zurücksetzen (Admin-Aktion)
+  const resetPwBtn = ev.target.closest('.js-reset-user-pw');
+  if (resetPwBtn) {
+    resetUserPassword(resetPwBtn.dataset.uid, resetPwBtn.dataset.uname || '');
+    return;
+  }
+  // #2 — Status-Pillen-Popup (in jeder Liste)
+  const statusItem = ev.target.closest('.status-pill-popup-item');
+  if (statusItem && statusItem.dataset.entityType && statusItem.dataset.newStatus) {
+    ev.stopPropagation();
+    selectEntityStatus(
+      statusItem.dataset.entityType,
+      statusItem.dataset.entityId,
+      statusItem.dataset.newStatus,
+      statusItem.dataset.currentStatus
+    );
+    return;
+  }
+  // #3 — Themen-Suggestion (Einsatz-Composer/Modal)
+  const themeSuggBtn = ev.target.closest('.js-theme-sugg-company');
+  if (themeSuggBtn) {
+    addDeploymentThemeFromCompany(themeSuggBtn.dataset.themeId, themeSuggBtn.dataset.themeName);
+    return;
+  }
+});
+
 document.addEventListener('click', (ev) => {
   if (!_fabOpen) return;
   if (ev.target.closest('#fab-menu') || ev.target.closest('#fab')) return;
@@ -25514,9 +25576,13 @@ async function _renderDepThemeQuickSuggestions(value) {
     sugBox.style.display = '';
     return;
   }
+  // v2.33.5: data-* + Delegation statt String-Argumente im onclick (Phase A.3 #3).
+  // r.name ist user-controlled (jeder darf Themen anlegen), Apostroph im Namen
+  // brach das JS-String-Literal nach dem esc()→&#39;-Attribut-Decoding-Roundtrip.
   const companyHTML = companyHits.map(r => `
-    <button type="button" class="theme-suggestion-item"
-            onclick="addDeploymentThemeFromCompany('${esc(r.id)}','${esc(r.name)}')">
+    <button type="button" class="theme-suggestion-item js-theme-sugg-company"
+            data-theme-id="${esc(r.id)}"
+            data-theme-name="${esc(r.name)}">
       <span class="theme-color-dot" style="background:${esc(r.farbe || '#1d4ed8')}"></span>
       <span class="theme-suggestion-body">
         <span class="theme-suggestion-name">${esc(r.name)}</span>
@@ -25849,14 +25915,20 @@ async function toggleStatusPicker(entityType, anchorEl) {
   if (options.length === 0) {
     popup.innerHTML = '<div class="status-pill-popup-empty">Keine Status-Werte hinterlegt.</div>';
   } else {
-    // v2.33.1: Vergleich + onclick-Argument auf system_key umgestellt.
-    // Anzeige-Label bleibt `o.wert` (mandantenfähig umbenennbar).
+    // v2.33.5: data-* + Delegation statt String-Argumenten im onclick
+    // (Phase A.3 #2 — Status-Pillen sind in jeder Liste der App präsent,
+    // war der breiteste XSS-Vektor). v2.33.1 hatte schon system_key statt
+    // wert als Argument — jetzt zusätzlich der Bypass-Pfad geschlossen.
+    // Anzeige-Label bleibt o.wert (mandantenfähig umbenennbar).
     popup.innerHTML = options.map(o => {
       const isCurrent = o.system_key === currentStatus;
       const farbe = o.farbe || 'var(--muted)';
       return `
         <button type="button" class="status-pill-popup-item ${isCurrent ? 'is-current' : ''}"
-                onclick="event.stopPropagation();selectEntityStatus('${esc(entityType)}','${esc(entityId)}','${esc(o.system_key)}','${esc(currentStatus)}')">
+                data-entity-type="${esc(entityType)}"
+                data-entity-id="${esc(entityId)}"
+                data-new-status="${esc(o.system_key)}"
+                data-current-status="${esc(currentStatus)}">
           <span class="status-pill-popup-dot" style="background:${esc(farbe)}"></span>
           <span class="status-pill-popup-label">${esc(o.wert)}</span>
           ${isCurrent ? '<span class="status-pill-popup-check">✓</span>' : ''}
