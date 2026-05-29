@@ -1,6 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.10 (QA-Sweep Bugfix #11 — Cache-Invalidierung
+   Version 2.33.11 (QA-Sweep Bugfix #12 — Mitgliedschafts-Update
+   propagiert Entitlement-Verfall + blockt Programm-Wechsel.
+   **Phase A.4 #21:** der Update-Pfad von `saveMembership`
+   (`app.js:10798`) updated bisher nur die `memberships`-Row.
+   `entitlements.verfall_datum` bleibt am alten `end_datum`
+   stehen — wer die Mitgliedschafts-Laufzeit verlängert, sieht
+   seine Boni nach dem ursprünglichen Enddatum trotzdem als
+   abgelaufen markiert. Außerdem war Programm-Wechsel an einer
+   bestehenden Mitgliedschaft toleriert, würde aber Entitlements
+   gegen ein anderes Programm-Schema haben → fachlich kaputt.
+   Fix: vor dem Update den alten Zustand (`program_id`,
+   `end_datum`) mitlesen; bei Programm-Wechsel sofort throw mit
+   klarem Toast „bitte neue Mitgliedschaft anlegen". Bei
+   `end_datum`-Änderung danach `entitlements.verfall_datum`
+   aller Bonis dieser Mitgliedschaft mit-updaten — bereits
+   eingelöste Boni sind dadurch unbeeinflusst (die Redemption
+   ist schon gebucht). Wenn der Entitlement-Update fehlschlägt,
+   bleibt der Membership-Update erfolgreich (kein Rollback),
+   aber der User sieht einen Warn-Toast „Mitgliedschaft
+   aktualisiert. Hinweis: Verfall der Boni konnte nicht
+   mitgezogen werden: …". Kein Schema-Change, keine Migration.
+   Vorgängerversion 2.33.10 (QA-Sweep Bugfix #11 — Cache-Invalidierung
    systematisch (Cluster 8). Zentrale `invalidate*Cache`-Helper
    direkt nach den Cache-Deklarationen (`app.js:3160`), an allen
    Save/Delete-Pfaden konsequent aufgerufen. Pattern angelehnt
@@ -10796,9 +10817,36 @@ async function saveMembership() {
     };
 
     if (editingMembershipId) {
+      // v2.33.11 (Phase A.4 #21): alten Zustand mitlesen, damit wir
+      // - Programm-Wechsel blocken können (Entitlements wären inkonsistent),
+      // - bei end_datum-Änderung die Entitlement-Verfallsdaten mit-updaten.
+      const { data: prev } = await db.from('memberships')
+        .select('program_id, end_datum')
+        .eq('id', editingMembershipId).maybeSingle();
+      if (prev && prev.program_id && program_id && prev.program_id !== program_id) {
+        throw new Error('Programm-Wechsel an einer bestehenden Mitgliedschaft wird nicht unterstützt — bitte neue Mitgliedschaft anlegen.');
+      }
       const { error } = await db.from('memberships').update(payload).eq('id', editingMembershipId);
       if (error) throw new Error(error.message);
-      showToast('Mitgliedschaft aktualisiert.');
+
+      // Wenn end_datum sich geändert hat, das verfall_datum aller Entitlements
+      // dieser Mitgliedschaft mit-ziehen — sonst werden Boni nach altem Datum
+      // als „abgelaufen" markiert, obwohl die Mitgliedschaft noch läuft.
+      let entUpdateErr = null;
+      if (prev && prev.end_datum !== end_datum) {
+        const { error: entErr } = await db.from('entitlements')
+          .update({ verfall_datum: end_datum })
+          .eq('membership_id', editingMembershipId);
+        if (entErr) entUpdateErr = entErr;
+      }
+
+      if (entUpdateErr) {
+        // Mitgliedschaft ist schon aktualisiert — Warn-Toast statt Throw,
+        // damit der User die Hauptaktion als Erfolg sieht.
+        showToast('Mitgliedschaft aktualisiert. Hinweis: Verfall der Boni konnte nicht mitgezogen werden: ' + entUpdateErr.message, true);
+      } else {
+        showToast('Mitgliedschaft aktualisiert.');
+      }
     } else {
       const { data: newMs, error } = await db.from('memberships').insert(payload).select('id').single();
       if (error) throw new Error(error.message);
