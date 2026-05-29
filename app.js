@@ -1,6 +1,35 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.7 (QA-Sweep Bugfix #8 — fünf A.2-Reste in einem
+   Version 2.33.8 (QA-Sweep Bugfix #9 — Membership-Insert-
+   Rollback + CSS-Injection per DB-Constraint geschlossen.
+   **A.2 #3 saveMembership ohne Rollback:** schlug der
+   Entitlement-Insert nach erfolgreicher Mitgliedschafts-
+   Anlage fehl (FK-Verletzung, RLS, Netz-Abbruch), blieb eine
+   leere `memberships`-Row als „aktive Mitgliedschaft mit 0
+   Boni" zurück und brach die in v1.13 dokumentierte
+   Invariante. Fix in `app.js:10646`: bei `entErr` wird die
+   just-inserted Row hart gelöscht, bevor die Exception
+   bubbelt. Hart-Delete ist sicher, weil die Row im selben
+   Save-Schritt gerade angelegt wurde — kein User-Wert geht
+   verloren. **Cluster 4 #7 CSS-Injection via Farbe (Migration
+   `v2.33.8_color_hex_check.sql`):** Farb-Werte aus
+   `lookup_values.farbe`, `project_themes.farbe` und
+   `theme_library.farbe` werden im Code ~20× über
+   `style="background:${esc(...)}"` ins DOM interpoliert.
+   `esc()` escapt HTML-Spezialzeichen, NICHT CSS-Spezial-
+   zeichen wie `;:()/`. Ein böswilliger Insider hätte als
+   Farbe einen Phishing-Layer (`red;position:fixed;top:0;...`)
+   liefern können, der jede Pillen-Anzeige zum Fullscreen-
+   Overlay macht. UI nutzt `<input type="color">` (gibt nativ
+   nur Hex aus), Vektor war daher nur via DevTools-Direkt-
+   Update erreichbar. Migration ergänzt CHECK-Constraints
+   (`farbe ~* '^#[0-9a-f]{3,8}$'`) auf allen drei Tabellen,
+   blockt #rgb, #rrggbb, #rrggbbaa als einzige zulässige
+   Form. Pre-Check: 0 Nicht-Hex-Werte im Bestand
+   (lookup_values 34/0, project_themes 5/0, theme_library
+   2/0). Damit sind die ~20 Display-Stellen automatisch
+   sicher — was reinkommt ist garantiert Hex.
+   Vorgängerversion 2.33.7 (QA-Sweep Bugfix #8 — fünf A.2-Reste in einem
    Sammelpatch. **Phase A.2 #1 saveDeployment Doppelklick-Race:**
    `btn.disabled = true` stand erst nach den awaits — zwei schnelle
    Klicks erzeugten zwei Firma-Inserts (`resolveCompanyComboboxValue`)
@@ -10642,7 +10671,16 @@ async function saveMembership() {
           reihenfolge: b.reihenfolge || 0
         }));
         const { error: entErr } = await db.from('entitlements').insert(entitlementRows);
-        if (entErr) throw new Error('Mitgliedschaft angelegt, aber Bonis nicht: ' + entErr.message);
+        if (entErr) {
+          // v2.33.8: Rollback der just-inserted Mitgliedschaft (Phase A.2 #3).
+          // Vorher blieb bei Entitlement-Fehler (FK-Verletzung, RLS,
+          // Netz-Abbruch) eine leere `memberships`-Row als "aktive Mitgliedschaft
+          // mit 0 Boni" zurück und brach die in v1.13 dokumentierte Invariante.
+          // Hart-Delete ist sicher: die Row wurde im selben Save gerade
+          // angelegt, kein User-Wert geht verloren.
+          await db.from('memberships').delete().eq('id', newMs.id);
+          throw new Error('Mitgliedschaft konnte nicht angelegt werden (Bonis fehlgeschlagen): ' + entErr.message);
+        }
       }
 
       showToast(`Mitgliedschaft angelegt mit ${benefits.length} Bonus${benefits.length === 1 ? '' : 'sen'}.`);
