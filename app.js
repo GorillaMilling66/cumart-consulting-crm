@@ -1,6 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.12 (QA-Sweep Bugfix #13 — Edge Function
+   Version 2.33.13 (QA-Sweep Bugfix #14 — companiesCache-Shape
+   konsistent + esc()-Quoting-Konsistenz in Click-Templates.
+   **Phase A.4 #20 companiesCache-Shape-Drift:** der Cache
+   wurde von 8 verschiedenen Lazy-Loadern unterschiedlich
+   befüllt — sechs mit `id, name` (Listen-Views), zwei mit
+   `id, name, strasse, plz, stadt` (Termin-/Einsatz-Modal-Auto-
+   Ort). Welcher Loader zuerst dran ist, bestimmt was im Cache
+   liegt; das Einsatz-Modal-Auto-Ort-Auto-Fill liefert
+   `undefined`, wenn vorher ein „dünner" Loader gelaufen ist.
+   Alle 8 Loader auf das kanonische Schema
+   `id, name, strasse, plz, stadt` umgestellt. Bandbreiten-
+   Overhead minimal (~257 Firmen × ein paar Spalten). **Phase
+   A.3 #6 esc()-Quoting-Konsistenz in Click-Templates:** sechs
+   `click:`-Strings in den Today-Cards (`app.js:5081, 5088,
+   5514, 5521`) und im Notiz-Bezug-Helper (`app.js:22975, 22979`)
+   interpolierten Entity-IDs als `${n.project.id}` ohne `esc()`,
+   während Geschwister-Branches im selben File mit `esc()`
+   schreiben. UUIDs sind aktuell quote-frei, der Bypass-
+   Vektor ist nicht akut — der Code-Smell schlägt aber bei
+   Refactors leise um, wenn jemand User-Strings statt UUIDs
+   einsetzt. Konsistente esc()-Quotes überall.
+   Vorgängerversion 2.33.12 (QA-Sweep Bugfix #13 — Edge Function
    `manage-users`: Last-Admin-Schutz prüft jetzt
    `status='aktiv'`. **Phase A.2 #8:** `isUserAdmin` in
    `supabase/functions/manage-users/index.ts` prüfte nur die
@@ -5078,14 +5099,16 @@ function renderBriefingHeute(data) {
         eyebrow: 'VOR-ORT', status: d.status, statusCls: d.status === DEPLOYMENT_STATUS.ABGERECHNET ? 'is-dgreen' : 'is-lgreen',
         title: d.company?.name || d.titel || '—',
         sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * Number(d.menge ?? 1))].filter(Boolean).join(' · '),
-        click: `navigateTo('einsatz','${d.id}')`,
+        // v2.33.13: esc() konsistent (Phase A.3 #6). UUIDs sind aktuell safe,
+        // aber konsistente Quoting hält den Code stabil bei Schema-Änderungen.
+        click: `navigateTo('einsatz','${esc(d.id)}')`,
         done: d.status === DEPLOYMENT_STATUS.ABGERECHNET
       })),
       ...remaining.map(d => ({
         eyebrow: `VOR-ORT · ${formatDateCompact(d.datum_von)}`, status: d.status, statusCls: 'is-lgreen',
         title: d.company?.name || d.titel || '—',
         sub: [d.ort, formatPreis((Number(d.einzelpreis) || 0) * Number(d.menge ?? 1))].filter(Boolean).join(' · '),
-        click: `navigateTo('einsatz','${d.id}')`,
+        click: `navigateTo('einsatz','${esc(d.id)}')`,
         done: false
       }))
     ];
@@ -5511,14 +5534,15 @@ function renderBriefingWoche(data) {
         ts: d.datum_von, type: 'EINSATZ', cls: 'is-amber',
         title: d.titel || '—',
         sub: [d.company?.name, d.ort, formatPreis((Number(d.einzelpreis)||0)*(Number(d.menge)||1))].filter(Boolean).join(' · '),
-        click: `navigateTo('einsatz','${d.id}')`
+        // v2.33.13: esc() konsistent (Phase A.3 #6).
+        click: `navigateTo('einsatz','${esc(d.id)}')`
       })),
       ...(data.appointments || []).filter(a => a.datum > cutoffISO).map(a => ({
         ts: a.datum + 'T' + (a.uhrzeit_von || '00:00'),
         type: 'TERMIN', cls: 'is-blue',
         title: a.titel || '—',
         sub: [a.ort || (a.uhrzeit_von ? `Online · ${formatTime(a.uhrzeit_von)}` : '')].filter(Boolean).join(' · '),
-        click: `navigateTo('termin','${a.id}')`
+        click: `navigateTo('termin','${esc(a.id)}')`
       }))
     ].sort((a, b) => (a.ts || '').localeCompare(b.ts || '')).slice(0, 6);
 
@@ -11664,7 +11688,11 @@ async function loadContacts() {
   tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Lade Kontakte ...</div></td></tr>';
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+    // v2.33.13 (Phase A.4 #20): kanonisches companiesCache-Schema id, name,
+    // strasse, plz, stadt. Vorher waren manche Lazy-Loader auf `id, name`
+    // beschränkt — wenn so ein Loader vor dem Einsatz-Modal lief, fand
+    // dessen Auto-Ort-Auto-Fill keine Adress-Spalten im Cache.
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
   renderTagFilterUI('contact');  // v2.5.1
@@ -11766,7 +11794,11 @@ async function openContactModal(mode, contactId = null) {
   editingContactId = contactId;
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+    // v2.33.13 (Phase A.4 #20): kanonisches companiesCache-Schema id, name,
+    // strasse, plz, stadt. Vorher waren manche Lazy-Loader auf `id, name`
+    // beschränkt — wenn so ein Loader vor dem Einsatz-Modal lief, fand
+    // dessen Auto-Ort-Auto-Fill keine Adress-Spalten im Cache.
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
   // v1.44.11: k-company ist eine Combobox — neue Firmen werden inline angelegt
@@ -11921,7 +11953,11 @@ async function loadAppointments() {
   tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Lade Termine ...</div></td></tr>';
 
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+    // v2.33.13 (Phase A.4 #20): kanonisches companiesCache-Schema id, name,
+    // strasse, plz, stadt. Vorher waren manche Lazy-Loader auf `id, name`
+    // beschränkt — wenn so ein Loader vor dem Einsatz-Modal lief, fand
+    // dessen Auto-Ort-Auto-Fill keine Adress-Spalten im Cache.
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
 
@@ -12852,7 +12888,11 @@ async function loadProjects() {
 
   // Firmen sicherstellen
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+    // v2.33.13 (Phase A.4 #20): kanonisches companiesCache-Schema id, name,
+    // strasse, plz, stadt. Vorher waren manche Lazy-Loader auf `id, name`
+    // beschränkt — wenn so ein Loader vor dem Einsatz-Modal lief, fand
+    // dessen Auto-Ort-Auto-Fill keine Adress-Spalten im Cache.
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
   renderTagFilterUI('project');  // v2.5.1
@@ -12995,7 +13035,11 @@ async function openProjectModal(mode, projectId = null) {
 
   // Firmen laden
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+    // v2.33.13 (Phase A.4 #20): kanonisches companiesCache-Schema id, name,
+    // strasse, plz, stadt. Vorher waren manche Lazy-Loader auf `id, name`
+    // beschränkt — wenn so ein Loader vor dem Einsatz-Modal lief, fand
+    // dessen Auto-Ort-Auto-Fill keine Adress-Spalten im Cache.
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
 
@@ -14238,7 +14282,11 @@ async function loadDeployments() {
 
   // Firmen und Projekte für Filter
   if (companiesCache.length === 0) {
-    const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+    // v2.33.13 (Phase A.4 #20): kanonisches companiesCache-Schema id, name,
+    // strasse, plz, stadt. Vorher waren manche Lazy-Loader auf `id, name`
+    // beschränkt — wenn so ein Loader vor dem Einsatz-Modal lief, fand
+    // dessen Auto-Ort-Auto-Fill keine Adress-Spalten im Cache.
+    const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
     companiesCache = cs || [];
   }
   if (projectsCache.length === 0) {
@@ -22945,11 +22993,12 @@ function _getNotizBezug(n) {
     return { type: 'company', label: n.company.name, click: `navigateTo('firma','${esc(n.company.id)}')` };
   }
   if (n.project_id && n.project && !n.project.deleted_at) {
-    return { type: 'project', label: n.project.name, click: `navigateTo('projekt','${n.project.id}')` };
+    // v2.33.13: esc() konsistent zum company-Branch oben (Phase A.3 #6).
+    return { type: 'project', label: n.project.name, click: `navigateTo('projekt','${esc(n.project.id)}')` };
   }
   if (n.contact_id && n.contact && !n.contact.deleted_at) {
     const name = [n.contact.vorname, n.contact.nachname].filter(Boolean).join(' ') || '—';
-    return { type: 'contact', label: name, click: `navigateTo('kontakt','${n.contact.id}')` };
+    return { type: 'contact', label: name, click: `navigateTo('kontakt','${esc(n.contact.id)}')` };
   }
   // Bezug existiert in Spalte, aber Eltern wurden gelöscht
   if (n.company_id || n.project_id || n.contact_id) {
@@ -23021,7 +23070,8 @@ async function loadTasks() {
     loadUserProfilesCache(),
     (async () => {
       if (companiesCache.length === 0) {
-        const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+        // v2.33.13: kanonisches Cache-Schema, siehe Phase A.4 #20.
+        const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
         companiesCache = cs || [];
       }
     })()
@@ -23195,7 +23245,8 @@ async function openTaskModal(mode, taskId = null) {
     loadUserProfilesCache(),
     (async () => {
       if (companiesCache.length === 0) {
-        const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+        // v2.33.13: kanonisches Cache-Schema, siehe Phase A.4 #20.
+        const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
         companiesCache = cs || [];
       }
     })()
@@ -31031,7 +31082,8 @@ async function openInlineComposer(typ) {
     // Notiz hat kein Drawer — Caches selbst laden, damit Picker bestückt sind.
     try {
       if (!companiesCache || companiesCache.length === 0) {
-        const { data: cs } = await db.from('companies').select('id, name').is('deleted_at', null).order('name');
+        // v2.33.13: kanonisches Cache-Schema, siehe Phase A.4 #20.
+        const { data: cs } = await db.from('companies').select('id, name, strasse, plz, stadt').is('deleted_at', null).order('name');
         companiesCache = cs || [];
       }
       if (typeof projectsCache !== 'undefined' && (!projectsCache || projectsCache.length === 0)) {
