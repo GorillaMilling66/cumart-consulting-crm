@@ -1,6 +1,42 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.5 (QA-Sweep Bugfix #6 — drei direkt ausnutzbare
+   Version 2.33.6 (QA-Sweep Bugfix #7 — Soft-Delete-Dispatcher
+   angeglichen + Phase-B-Müll aufgeräumt. **Cluster 6
+   (Phase A.4 #3 #4 #5):** der zentrale Listen-Kebab-Delete
+   (`_performSoftDelete` in `app.js:3347`) war bisher „dümmer"
+   als die Modal-Delete-Pfade. Drei konkrete Folgen: (a) ein
+   Einsatz-Soft-Delete via Liste löschte die
+   `entitlement_redemptions` nicht — der Bonus blieb als
+   verbraucht gebucht, Mitgliedschafts-Bilanz inkonsistent;
+   (b) nach dem Delete eines Einsatzes/Termins lief kein
+   `checkAndUpdateProjectStatus` — das Eltern-Projekt hing
+   im falschen Status; (c) ein Task-Soft-Delete via Liste
+   verwaiste den über `appointments.task_id` gekoppelten
+   Termin. Fix: Pre-Reads für `project_id` (deployment/
+   appointment) und gekoppelte Termine (deployment via
+   `deployment_id`, task via `task_id`), Redemptions hart
+   löschen (nicht über Undo wiederherstellbar — wie in
+   `deleteDeployment`), gekoppelte Termine soft-deleten,
+   `checkAndUpdateProjectStatus(projectId)` nach Save. Undo
+   reaktiviert Haupt-Entität + Termine + Auto-Status, warnt
+   im Toast, falls Redemptions hart weg sind. `deleteEntityById`
+   passt den Confirm-Text dynamisch an: bei Einsatz mit
+   Redemptions wird die Bonus-Warnung gezeigt, bei Task mit
+   gekoppeltem Termin der Hinweis zur Mit-Soft-Löschung.
+   **Migration `v2.33.6_phase_b_cleanup.sql`** (appliziert
+   29.05.2026) räumt zwei Phase-B-Funde auf: (1) Einsatz
+   `81319be2…` auf soft-deleted Projekt „Testprojekt v3"
+   (genau das Live-Symptom von Cluster 6, war Bestands-Drift
+   vor dem Code-Fix), (2) Müll-Projekt `4d2a6400…`
+   „AWT-Training P2 - ALT!" (`in_arbeit` ohne Einsätze,
+   `preis_nach_aufwand=false` mit `geschaetzter_umsatz=0` —
+   fachlich widersprüchlich, Name signalisiert Müll). Pre-/
+   Post-Check beide Verifikations-Queries: 0 aktive Treffer
+   nach UPDATE. Phase B ist damit bis auf B #2 (2 ifm-GmbH-
+   Einsätze ohne Datum — Klärungs-Bedarf mit Selcuk) und B #3
+   (alle Mitgliedschaftspreise 0 — fachliche Klärung) komplett
+   aufgeräumt.
+   Vorgängerversion 2.33.5 (QA-Sweep Bugfix #6 — drei direkt ausnutzbare
    XSS-Bypässe geschlossen. Phase A.3 #1/#2/#3: an drei Stellen
    wurden User-Strings via `esc()` in JS-String-Literale
    innerhalb von HTML-`onclick`-Attributen eingebettet. Das
@@ -3342,8 +3378,16 @@ function renderDeploymentQuickStatusIcons(d) {
    DISPATCHER: LÖSCHEN & DUPLIZIEREN
    ─────────────────────────────────────────────── */
 
-/** Führt den eigentlichen Soft-Delete durch, inkl. Einsatz→Termin-Kaskade
- *  und Undo-Toast (5s Rückgängig). Ohne Confirm — Caller muss vorher fragen. */
+/** Führt den eigentlichen Soft-Delete durch, inkl. Einsatz→Termin-Kaskade,
+ *  Task→Termin-Kaskade, harten Lösch von Bonus-Einlösungen und Auto-Projekt-
+ *  Status-Recompute. Undo-Toast (5s Rückgängig) stellt alles soft-gelöschte
+ *  wieder her — Redemptions sind hart weg und nicht reaktivierbar.
+ *  Ohne Confirm — Caller muss vorher fragen.
+ *
+ *  v2.33.6 (Cluster 6 / Phase A.4 #3 #4 #5): Listen-Kebab-Delete macht
+ *  jetzt dasselbe wie die Modal-Delete-Pfade. Vorher war der Dispatcher
+ *  „dümmer" als deleteDeployment/deleteTask — Redemptions blieben verbucht,
+ *  Auto-Status wanderte nicht, Task-Termin-Kopplung verwaiste. */
 async function _performSoftDelete(entityType, id) {
   const labels = { company: 'Firma', contact: 'Kontakt', appointment: 'Termin', project: 'Projekt', deployment: 'Einsatz', task: 'Aufgabe' };
   const tables = { company: 'companies', contact: 'contacts', appointment: 'appointments', project: 'projects', deployment: 'deployments', task: 'tasks' };
@@ -3353,6 +3397,42 @@ async function _performSoftDelete(entityType, id) {
 
   try {
     const deletedAt = new Date().toISOString();
+
+    // Pre-Reads für Auto-Status und Kaskaden (vor dem Delete, damit FKs noch greifen).
+    let affectedProjectId = null;
+    if (entityType === 'deployment' || entityType === 'appointment') {
+      const { data: pre } = await db.from(table).select('project_id').eq('id', id).maybeSingle();
+      affectedProjectId = pre?.project_id || null;
+    }
+
+    // Gekoppelte Termine sammeln (deployment: über deployment_id; task: über task_id).
+    let coupledApptIds = [];
+    if (entityType === 'deployment') {
+      const { data: appts } = await db.from('appointments').select('id').is('deleted_at', null).eq('deployment_id', id);
+      coupledApptIds = (appts || []).map(a => a.id);
+    } else if (entityType === 'task') {
+      const { data: appts } = await db.from('appointments').select('id').is('deleted_at', null).eq('task_id', id);
+      coupledApptIds = (appts || []).map(a => a.id);
+    }
+
+    // Bonus-Einlösungen am Einsatz HART löschen (nicht über Undo reaktivierbar).
+    // Pflicht für Bilanz-Konsistenz: sonst zeigt die Mitgliedschaft den Bonus
+    // weiter als verbraucht, obwohl der Einsatz weg ist.
+    let hadRedemptions = false;
+    if (entityType === 'deployment') {
+      const { data: reds } = await db.from('entitlement_redemptions').select('id').eq('deployment_id', id);
+      hadRedemptions = (reds || []).length > 0;
+      if (hadRedemptions) {
+        await db.from('entitlement_redemptions').delete().eq('deployment_id', id);
+      }
+    }
+
+    // Gekoppelte Termine soft-deleten (deployment + task).
+    if (coupledApptIds.length) {
+      await db.from('appointments').update({ deleted_at: deletedAt }).in('id', coupledApptIds);
+    }
+
+    // Eigentliches Soft-Delete der Haupt-Entität.
     const { error } = await db.from(table).update({ deleted_at: deletedAt }).eq('id', id);
     if (error) {
       if (error.message.toLowerCase().includes('foreign key') || error.code === '23503') {
@@ -3361,15 +3441,8 @@ async function _performSoftDelete(entityType, id) {
       throw new Error(error.message);
     }
 
-    // Bei Einsatz: gekoppelten Termin auch soft-deleten. IDs merken für Undo.
-    let coupledApptIds = [];
-    if (entityType === 'deployment') {
-      const { data: appts } = await db.from('appointments').select('id').is('deleted_at', null).eq('deployment_id', id);
-      coupledApptIds = (appts || []).map(a => a.id);
-      if (coupledApptIds.length) {
-        await db.from('appointments').update({ deleted_at: deletedAt }).eq('deployment_id', id);
-      }
-    }
+    // Auto-Projekt-Status nach Delete (deployment/appointment).
+    if (affectedProjectId) await checkAndUpdateProjectStatus(affectedProjectId);
 
     showToast(`${label} gelöscht.`, false, {
       actionLabel: 'Rückgängig',
@@ -3380,7 +3453,10 @@ async function _performSoftDelete(entityType, id) {
           if (coupledApptIds.length) {
             await db.from('appointments').update({ deleted_at: null }).in('id', coupledApptIds);
           }
-          showToast(`${label} wiederhergestellt.`);
+          if (affectedProjectId) await checkAndUpdateProjectStatus(affectedProjectId);
+          showToast(hadRedemptions
+            ? `${label} wiederhergestellt. Bonus-Einlösungen sind nicht wiederherstellbar.`
+            : `${label} wiederhergestellt.`);
           await refreshAfterEntityChange(entityType);
         } catch (err) {
           showToast('Wiederherstellen fehlgeschlagen: ' + err.message, true);
@@ -3411,9 +3487,25 @@ async function deleteEntityById(entityType, id, ev) {
   const { data: ent } = await db.from(table).select(`id, ${nameCol}`).is('deleted_at', null).eq('id', id).single();
   const entName = ent?.[nameCol] || '(ohne Name)';
 
+  // v2.33.6: Confirm-Text dynamisch — wenn deployment Redemptions hat oder
+  // task einen gekoppelten Termin, warnen wir explizit (Konsistenz zu den
+  // Modal-Delete-Pfaden deleteDeployment / deleteTask).
+  let extraNote = '';
+  if (entityType === 'deployment') {
+    const { data: reds } = await db.from('entitlement_redemptions').select('id').eq('deployment_id', id);
+    if ((reds || []).length > 0) {
+      extraNote = '<br><br><strong>Bonus-Einlösungen werden hart gelöscht</strong> und können nicht über Rückgängig wiederhergestellt werden.';
+    }
+  } else if (entityType === 'task') {
+    const { count } = await db.from('appointments').select('id', { count: 'exact', head: true }).is('deleted_at', null).eq('task_id', id);
+    if ((count || 0) > 0) {
+      extraNote = '<br><br>Der gekoppelte Termin wird mit ausgeblendet und kann über Rückgängig wiederhergestellt werden.';
+    }
+  }
+
   const ok = await confirmDialog({
     title: `${label} löschen?`,
-    message: `<strong>${esc(entName)}</strong> wirklich löschen?`,
+    message: `<strong>${esc(entName)}</strong> wirklich löschen?${extraNote}`,
     confirmLabel: 'Löschen', cancelLabel: 'Abbrechen', danger: true
   });
   if (!ok) return;
