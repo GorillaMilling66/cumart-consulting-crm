@@ -1,6 +1,13 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.23 (Bündel-Tage — eine pro-Tag-Leistung (Einheit „Tag")
+   Version 2.33.24 (Daten-Migration — bestehende Tag-Einsätze (Menge>1)
+   in einzelne Werktags-Tage aufgeteilt, analog zur Bündel-Save-Logik
+   aus v2.33.23. 4 Einsätze betroffen (2 Bündel-Member je M5, standalone
+   Haas M10, standalone SHB M2) → je N Werktags-Einsätze (Original wird
+   Tag 1, weitere Tage als Zeilen-Kopien inkl. mitkopierter Techniker).
+   3 datumslose AWT-Trainings + 1 stornierter bewusst ausgelassen.
+   Migration v2.33.24_split_existing_tag_einsaetze.sql. Kein Code-Change.
+   Vorgängerversion 2.33.23 (Bündel-Tage — eine pro-Tag-Leistung (Einheit „Tag")
    mit Menge N wird beim Bündel-Speichern in N einzelne Werktags-
    Einsätze (je 1 Tag) aufgeteilt (von Selcuk gewählt: Option A,
    Werktage Mo–Fr, Wochenende übersprungen, letzter Tag ggf. halber
