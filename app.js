@@ -1,6 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.20 (Phase-D-Bugfix #2 — Composer-Multi-Picker
+   Version 2.33.21 (Daten-Korrektur zum Techniker-Leck — die 9 Solo-
+   Einsätze, die durch den Composer-Bug (v2.33.20) fälschlich David als
+   alleinigen Techniker hatten, auf Selcuk umgestellt. Migration
+   v2.33.21_techniker_leak_datafix.sql, appliziert + verifiziert: auf
+   den 9 jetzt Selcuk, David gesamt nur noch auf 4 Bündel-Co-Tech-
+   Einsätzen (bewusst unangetastet, separat zu prüfen). Kein Code-Change.
+   Vorgängerversion 2.33.20 (Phase-D-Bugfix #2 — Composer-Multi-Picker
    funktionslos + Techniker-Leck; Auto-Titel nimmt jetzt den Techniker.
    Von Selcuk gemeldet: im Briefing erschienen Einsätze unter einem
    Techniker (David), den er nie gewählt hatte. Ursache: die State-Sets
