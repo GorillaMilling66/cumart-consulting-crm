@@ -1,6 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.21 (Daten-Korrektur zum Techniker-Leck — die 9 Solo-
+   Version 2.33.22 (Daten-Korrektur — David auch aus dem SHB-Bündel
+   (4 Einsätze + Bündel-Techniker) entfernt, Selcuk bleibt. David ist
+   damit auf 0 Einsätzen. Migration v2.33.22_techniker_david_buendel_raus.sql,
+   appliziert + verifiziert. Kein Code-Change.
+   Vorgängerversion 2.33.21 (Daten-Korrektur zum Techniker-Leck — die 9 Solo-
    Einsätze, die durch den Composer-Bug (v2.33.20) fälschlich David als
    alleinigen Techniker hatten, auf Selcuk umgestellt. Migration
    v2.33.21_techniker_leak_datafix.sql, appliziert + verifiziert: auf
