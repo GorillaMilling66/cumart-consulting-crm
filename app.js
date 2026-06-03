@@ -1,6 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.17 (QA-Sweep Bugfix #18 — zwei Konsistenz-Fixes.
+   Version 2.33.18 (QA-Sweep Bugfix #19 — Finalisierung: letzte
+   user-sichtbare Status-Anzeige-Befunde + Aufgaben-Status komplett.
+   (A) Drei Stellen zeigten den rohen system_key statt des Labels —
+   Projekt-Header-Badge (updateProjectHeaderStatusBadge), Einsatz-
+   Quick-Toggle-Badge (toggleDeploymentDone) und die Projekt-Modal-
+   Aktivitätsliste (renderProjectModalActivities) nutzen jetzt
+   dispStatus() (Phase A.1 #7/#8/#9). (B) appointmentStatusBg/Color
+   DB-getrieben aus terminStatusCache mit Fallback — Mandanten-Termin-
+   Status bekommen ihre eigene Farbe (Phase A.1 #16). (C) Migration
+   v2.33.18_aufgabe_status_storniert.sql: fehlenden 'storniert'-Lookup
+   ergänzt (Code + CLAUDE.md erwarteten TASK_STATUS.STORNIERT längst,
+   nur die Stammdaten fehlten — Aufgaben jetzt stornierbar) und
+   aufgabe_status-Labels auf Title-Case harmonisiert (Offen/Erledigt),
+   sodass alle vier Status-Kategorien konsistent sind. Damit sind alle
+   High-/Medium- und alle user-sichtbaren Low-Findings des QA-Sweeps
+   geschlossen; der Rest ist der bewusst geparkte interne Konstanten-
+   Sweep ohne User-Impact.
+   Vorgängerversion 2.33.17 (QA-Sweep Bugfix #18 — zwei Konsistenz-Fixes.
    (1) Quick-Status synct den gekoppelten Termin (Phase A.1 #5):
    bisher zog nur der Modal-Save (syncDeploymentAppointment) den
    Status des über deployment_id gekoppelten Termins nach — per
@@ -4266,8 +4283,21 @@ function formatTime(timeStr) {
   return timeStr.substring(0, 5);
 }
 
-function appointmentStatusBg(s)    { return s === 'geplant' ? '#eff6ff' : '#f0fdf4'; }
-function appointmentStatusColor(s) { return s === 'geplant' ? '#1d4ed8' : '#16a34a'; }
+// v2.33.18 (Phase A.1 #16): DB-getrieben aus terminStatusCache, seit termin_status
+// konfigurierbar ist (v2.33.16). Fallback = bisherige 2-Fall-Logik, falls der Cache
+// noch kalt ist — für die Standard-Status sind die Lookup-Farben identisch, daher
+// keine optische Änderung; ein Mandanten-Status (z.B. „abgesagt") bekommt nach dem
+// ersten Termin-Modal-Open seine eigene Farbe.
+function appointmentStatusColor(s) {
+  const m = terminStatusCache.find(x => x.system_key === s);
+  if (m?.farbe) return m.farbe;
+  return s === 'geplant' ? '#1d4ed8' : '#16a34a';
+}
+function appointmentStatusBg(s) {
+  if (s === 'geplant')       return '#eff6ff';
+  if (s === 'durchgefuehrt') return '#f0fdf4';
+  return appointmentStatusColor(s) + '22';  // Mandanten-Status: Farbe leicht getönt
+}
 function appointmentStatusLabel(s) { return getStatusLabel('termin_status', s, s); }
 
 /** Kleines Kalender-Indikator-Icon (v1.40) für Listen-Zeilen — zeigt an, dass
@@ -13504,7 +13534,8 @@ async function renderProjectModalActivities(projectId) {
       <span class="p-activity-kind p-activity-kind-${it.kind.toLowerCase()}">${esc(it.kind)}</span>
       <span class="p-activity-date">${it.datum ? esc(formatDateCompact(it.datum)) : '—'}</span>
       <span class="p-activity-titel">${esc(it.titel)}</span>
-      <span class="p-activity-status">${esc(it.status || '')}</span>
+      <span class="p-activity-status">${esc(dispStatus(it.status))}</span>
+
     </div>
   `).join('');
 }
@@ -17122,7 +17153,7 @@ function updateProjectHeaderStatusBadge(newStatus) {
   const color = projektStatusFarbe(newStatus);
   badge.style.background = color + '22';
   badge.style.color = color;
-  badge.textContent = newStatus;
+  badge.textContent = dispStatus(newStatus);  // v2.33.18 (A.1 #7): Label statt system_key
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -17166,7 +17197,7 @@ async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
       const statusCell = tr.querySelector('.dep-status-cell');
       if (statusCell) {
         const color = einsatzStatusFarbe(newStatus);
-        statusCell.innerHTML = `<span class="badge" style="background:${esc(color)}22;color:${esc(color)}">${esc(newStatus)}</span>`;
+        statusCell.innerHTML = `<span class="badge" style="background:${esc(color)}22;color:${esc(color)}">${esc(dispStatus(newStatus))}</span>`;  // v2.33.18 (A.1 #8): Label statt system_key
       }
     }
 

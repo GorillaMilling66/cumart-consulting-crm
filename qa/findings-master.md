@@ -6,6 +6,24 @@
 
 ---
 
+## ✅ FINALISIERUNGS-STATUS (Stand 03.06.2026, v2.33.18)
+
+Der QA-Sweep ist abgearbeitet. Releases **v2.33.0 – v2.33.18** haben umgesetzt:
+
+- **Alle Critical-Findings** (Cluster 1–12) — geschlossen.
+- **Alle High-Findings** — geschlossen (inkl. A.1 #6 Projekt-Wechsel-Auto-Status, A.4 #15 Termin-Duplikat-Race, A.2 #8 Last-Admin).
+- **Alle Medium-Findings** — geschlossen (Termin-Status DB-getrieben A.1 #4/#14/#24, A.4 #21 Entitlement-Verfall, C #6 Seed-Datei mit system_keys, Schema-Drift C #1/#3/#4/#5).
+- **Alle user-sichtbaren Low-Findings** — geschlossen (Status-Anzeige-Labels A.1 #7/#8/#9, Termin-Farben A.1 #16, A.1 #5 Quick-Status-Termin-Sync, Aufgaben-`storniert` A.1 #10, alle Status-Labels Title-Case-harmonisiert).
+- **Phase B (Live-Daten)** — komplett aufgeräumt: Label-Status geheilt (#1), dateless ifm-Test-Einsätze + Test-Projekt soft-gelöscht (#2, v2.33.14/15), verwaister Einsatz + „ALT!"-Projekt (#4/#5/#6). **B #3 (Mitgliedschaftspreise=0) ist bestätigt Absicht** (externe Abrechnung, reines Tracking).
+
+**Bewusst NICHT umgesetzt (kein Blocker für Testphase):**
+- **Interner Konstanten-Sweep** (~13 Low, A.1 #15/#25/#28/#29 etc.): hartcodierte Status-Strings → Konstanten-Maps. **Kein User-Impact**, reines Code-Smell; gehört in den späteren `app.js`-Modul-Split (Regressionsrisiko ohne Nutzen, daher nicht kurz vor der Testphase).
+- **Phase D** (`qa/test-script.md`): manuelles Klick-Drehbuch — das ist jetzt **dein** Teil der Testphase.
+
+➡️ **Bereit für die Testphase.** Phase D ist der nächste Schritt.
+
+---
+
 ## Bestandsaufnahme
 
 | Phase | Fokus | Findings | davon Critical | davon High | Datei |
