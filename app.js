@@ -1,6 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.14 (QA-Sweep Bugfix #15 — UI-Guard: ein Einsatz
+   Version 2.33.15 (QA-Sweep Bugfix #16 — Aufräumen: Test-Projekt
+   „ifm GmbH" + seine zwei dateless „durchgeführt"-Einsätze soft-
+   gelöscht (Migration v2.33.15_ifm_test_cleanup.sql). Das waren
+   die letzten zwei Phase-B-#2-Altbestände — zusammen mit dem
+   Guard aus v2.33.14 ist Phase B #2 vollständig geschlossen
+   (DB-weit 0 dateless Done-Einsätze). Firma „ifm GmbH" bleibt als
+   leerer CRM-Lead erhalten. Repo-Housekeeping: fiveax-logo.svg
+   entfernt (Absicht), supabase/.temp aus dem Repo + .gitignore.
+   Keine Änderung an der App-Logik.
+   Vorgängerversion 2.33.14 (QA-Sweep Bugfix #15 — UI-Guard: ein Einsatz
    kann nur mit Datum auf „durchgeführt"/„abgerechnet" gesetzt
    werden (Phase B #2). Ein erledigter/abgerechneter Einsatz
    ohne Datum ist fachlich widersprüchlich — Reports können ihn

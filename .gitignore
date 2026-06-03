@@ -6,3 +6,6 @@ node_modules/
 migrations/seed_*.sql
 migrations/cleanup_testdata.sql
 .vercel
+
+# Supabase CLI-Wegwerf-Dateien (lokaler Link-State) — gehören nicht ins Repo
+supabase/.temp/
