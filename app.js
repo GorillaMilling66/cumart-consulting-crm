@@ -1,6 +1,22 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.19 (Phase-D-Bugfix #1 — Kontakt-Picker im Inline-
+   Version 2.33.20 (Phase-D-Bugfix #2 — Composer-Multi-Picker
+   funktionslos + Techniker-Leck; Auto-Titel nimmt jetzt den Techniker.
+   Von Selcuk gemeldet: im Briefing erschienen Einsätze unter einem
+   Techniker (David), den er nie gewählt hatte. Ursache: die State-Sets
+   (selectedTechnikerIds, selectedAppointmentTeamIds/-ContactIds) und
+   die Options-Caches (userProfilesCache, companyContactsMap) sind
+   lexikalische `let`-Bindungen, der Composer griff aber per window[...]
+   darauf zu (= undefined) → Picker „nicht initialisiert"/keine Optionen,
+   kein Reset beim Öffnen, und eine im Modal gesetzte Auswahl leckte in
+   alle danach im Composer angelegten Datensätze. Fix: Resolver
+   _composerStateSetByName + direkte lexikalische Cache-Referenzen statt
+   window[...] (betrifft Einsatz-Techniker UND Termin-Team/-Teilnehmer).
+   Zusätzlich generateDeploymentAutoTitle: nutzt jetzt den/die ANGEWÄHLTEN
+   Techniker (vorher immer den eingeloggten User), ohne Auswahl ohne Namen.
+   Headless gegen prod-Daten verifiziert (Picker rendert Optionen, Öffnen
+   leert die Set, Toggle funktioniert, Titel korrekt). Pre-existing Bug.
+   Vorgängerversion 2.33.19 (Phase-D-Bugfix #1 — Kontakt-Picker im Inline-
    Composer zeigte „Keine Kontakte zu dieser Firma", obwohl Kontakte
    verknüpft sind (von Selcuk beim Testen gemeldet). Ursache:
    _composerFirmaKontaktSetFirma rief loadCompanyContacts(firmaId) —
@@ -14595,9 +14611,15 @@ function generateDeploymentAutoTitle() {
   const companyInput = document.getElementById('d-company');
   const companyName = (companyInput?.value || '').trim();
 
-  const userName = currentProfile?.name || currentUser?.email || '';
+  // v2.33.20 (von Selcuk gemeldet): Der Auto-Titel nimmt den/die ANGEWÄHLTEN
+  // Techniker (nicht mehr den eingeloggten User). Ist kein Techniker gewählt,
+  // bleibt der Titel ohne Technikernamen.
+  const technikerNames = [...selectedTechnikerIds]
+    .map(id => (userProfilesCache.find(u => u.id === id)?.name) || '')
+    .filter(Boolean)
+    .join(', ');
 
-  return [serviceName, companyName, userName].filter(Boolean).join(' × ');
+  return [serviceName, companyName, technikerNames].filter(Boolean).join(' × ');
 }
 
 /**
@@ -31554,14 +31576,30 @@ function _composerRemoveValue(key, subKey) {
   _composerRender();
 }
 
+// v2.33.20 (Phase-D-Bug, von Selcuk gemeldet): Die Multi-Pick-State-Sets sind
+// lexikalische `let`-Bindungen (selectedTechnikerIds / selectedAppointmentTeamIds
+// / selectedAppointmentContactIds) und KEINE window-Properties. Der Composer
+// griff aber über window[f.stateSet] darauf zu (= undefined) → die Composer-
+// Multi-Picker (Interne Techniker, Termin-Team/-Kontakte) waren funktionslos UND
+// wurden beim Öffnen nicht geleert, sodass eine früher (z.B. im Modal) gesetzte
+// Auswahl in alle danach im Composer angelegten Datensätze leckte (z.B. ein
+// Techniker, den man nie im Composer gewählt hatte). Resolver liefert die echte Set.
+function _composerStateSetByName(name) {
+  switch (name) {
+    case 'selectedTechnikerIds':          return selectedTechnikerIds;
+    case 'selectedAppointmentTeamIds':    return selectedAppointmentTeamIds;
+    case 'selectedAppointmentContactIds': return selectedAppointmentContactIds;
+    default: return null;
+  }
+}
+
 function _composerClearModalInputsForField(f) {
-  // v2.32.10: multi-pick hat keine modalInputs — der State wird über
-  // window[stateSet] gepflegt. Pfad ZUERST behandeln, sonst greift der
-  // `if (!mi) return;`-Guard und das Set bleibt befüllt.
+  // multi-pick hat keine modalInputs — der State wird über die lexikalische
+  // Set gepflegt (siehe _composerStateSetByName). Pfad ZUERST behandeln, sonst
+  // greift der `if (!mi) return;`-Guard und das Set bleibt befüllt.
   if (f.type === 'multi-pick') {
-    if (f.stateSet && window[f.stateSet] instanceof Set) {
-      window[f.stateSet].clear();
-    }
+    const setForClear = _composerStateSetByName(f.stateSet);
+    if (setForClear instanceof Set) setForClear.clear();
     return;
   }
   // v2.32.11: themes-Picker hat ebenfalls keine modalInputs — Set leeren
@@ -32258,14 +32296,14 @@ function _composerCommitBonusToModal(st) {
  *  selectedTechnikerIds). Beim Save liest saveXxx das Set unverändert
  *  und schreibt die Junction-Tabelle via delete-then-insert. */
 function _composerRenderMultiPickPicker(st, f) {
-  const set = window[f.stateSet];
+  const set = _composerStateSetByName(f.stateSet);
   if (!set || !(set instanceof Set)) {
     return '<div class="composer-picker-hint">Daten-Container noch nicht initialisiert. Schließe den Composer und öffne ihn erneut.</div>';
   }
 
   let items = [];
   if (f.source === 'users') {
-    items = (window.userProfilesCache || []).map(u => ({
+    items = (userProfilesCache || []).map(u => ({
       id: u.id,
       label: u.name || u.email || '?'
     }));
@@ -32277,7 +32315,7 @@ function _composerRenderMultiPickPicker(st, f) {
     if (!firmaId) {
       return '<div class="composer-picker-hint">Wähle erst eine Firma im „Firma & Kontakt"-Chip, um Kontakte als Teilnehmer hinzuzufügen.</div>';
     }
-    const all = window.companyContactsMap?.[firmaId] || [];
+    const all = companyContactsMap?.[firmaId] || [];
     // Hauptkontakt der Auswahl ausblenden, damit kein Duplikat entsteht
     const hauptkontaktId = fkVal?.kontaktId || null;
     items = all
@@ -32311,7 +32349,7 @@ function _composerToggleMultiPick(key, id) {
   if (!st) return;
   const f = st.schema.fields.find(x => x.key === key);
   if (!f || !f.stateSet) return;
-  const set = window[f.stateSet];
+  const set = _composerStateSetByName(f.stateSet);
   if (!set || !(set instanceof Set)) return;
 
   if (set.has(id)) set.delete(id);
@@ -32323,11 +32361,11 @@ function _composerToggleMultiPick(key, id) {
   } else {
     let labelMap = new Map();
     if (f.source === 'users') {
-      (window.userProfilesCache || []).forEach(u => labelMap.set(u.id, u.name || u.email || '?'));
+      (userProfilesCache || []).forEach(u => labelMap.set(u.id, u.name || u.email || '?'));
     } else if (f.source === 'companyContacts') {
       const fkVal = f.companySource ? st.values[f.companySource] : null;
       const firmaId = fkVal?.firmaId || null;
-      const list = firmaId ? (window.companyContactsMap?.[firmaId] || []) : [];
+      const list = firmaId ? (companyContactsMap?.[firmaId] || []) : [];
       list.forEach(k => labelMap.set(k.id, `${k.vorname || ''} ${k.nachname || ''}`.trim() || '—'));
     }
     const names = [...set].map(i => labelMap.get(i) || '—');
@@ -33083,7 +33121,7 @@ async function _composerSaveEinsatzBundle(st, title) {
   }
 
   // v2.32.10: Interne Techniker — Junction pro Tages-Einsatz schreiben
-  if (window.selectedTechnikerIds instanceof Set && selectedTechnikerIds.size > 0 && Array.isArray(createdDeps)) {
+  if (selectedTechnikerIds instanceof Set && selectedTechnikerIds.size > 0 && Array.isArray(createdDeps)) {
     const techRows = [];
     for (const dep of createdDeps) {
       for (const uid of selectedTechnikerIds) {
