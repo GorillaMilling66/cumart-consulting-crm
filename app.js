@@ -1,6 +1,19 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.18 (QA-Sweep Bugfix #19 — Finalisierung: letzte
+   Version 2.33.19 (Phase-D-Bugfix #1 — Kontakt-Picker im Inline-
+   Composer zeigte „Keine Kontakte zu dieser Firma", obwohl Kontakte
+   verknüpft sind (von Selcuk beim Testen gemeldet). Ursache:
+   _composerFirmaKontaktSetFirma rief loadCompanyContacts(firmaId) —
+   das ist für die Firmen-Detailseite gebaut und bricht durch den
+   Race-Guard isStillOnDetail('company', …) ab, BEVOR es
+   companyContactsMap füllt; im Composer ist diese Detailseite nie
+   aktiv. Der Picker zeigte Kontakte daher nur, wenn vorher der
+   #/firmen-Bulk-Load die Map gefüllt hatte (→ „unzuverlässig"). Fix:
+   Kontakte direkt per Query in companyContactsMap[firmaId] laden,
+   ohne den Detail-Guard. Betrifft alle Composer-Typen. Headless
+   gegen prod-Daten verifiziert (Haas → Stefan Rubes erscheint, Map
+   leer→befüllt, „Keine Kontakte" weg). Kein Schema-Change.
+   Vorgängerversion 2.33.18 (QA-Sweep Bugfix #19 — Finalisierung: letzte
    user-sichtbare Status-Anzeige-Befunde + Aufgaben-Status komplett.
    (A) Drei Stellen zeigten den rohen system_key statt des Labels —
    Projekt-Header-Badge (updateProjectHeaderStatusBadge), Einsatz-
@@ -31880,8 +31893,20 @@ async function _composerFirmaKontaktSetFirma(key, val) {
   // Kontakte + abhängige Dropdowns laden, Composer neu rendern.
   const firmaId = v.firmaId || '';
   try {
-    if (firmaId && !companyContactsMap[firmaId]) {
-      await loadCompanyContacts(firmaId);
+    // v2.33.19 (Phase-D-Bug, von Selcuk gemeldet): Kontakte DIREKT laden statt
+    // über loadCompanyContacts — das ist für die Firmen-Detailseite gebaut und
+    // bricht durch den Race-Guard isStillOnDetail('company', …) ab, BEVOR es
+    // companyContactsMap befüllt, sobald man nicht genau auf dieser Detailseite
+    // ist. Im Composer ist sie nie aktiv → der Kontakt-Picker zeigte fälschlich
+    // „Keine Kontakte" (zuverlässig nur, wenn vorher der Firmen-Listen-Bulk-Load
+    // die Map gefüllt hatte). Direkter Query, immer frisch bei Firma-Wechsel —
+    // nicht hot, die Kaskade läuft nur bei Identitätswechsel (Guard oben).
+    if (firmaId) {
+      const { data: ks } = await db.from('contacts')
+        .select('id, vorname, nachname, company_id, email, telefon')
+        .is('deleted_at', null).eq('company_id', firmaId)
+        .order('nachname').order('vorname');
+      companyContactsMap[firmaId] = ks || [];
     }
     if (st.typ === 'termin') {
       await rebuildContactDropdownForAppointment(firmaId);
