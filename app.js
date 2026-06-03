@@ -1,6 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.16 (QA-Sweep Bugfix #17 — drei Termin/Status-
+   Version 2.33.17 (QA-Sweep Bugfix #18 — zwei Konsistenz-Fixes.
+   (1) Quick-Status synct den gekoppelten Termin (Phase A.1 #5):
+   bisher zog nur der Modal-Save (syncDeploymentAppointment) den
+   Status des über deployment_id gekoppelten Termins nach — per
+   Checkbox-Toggle, Hero-Button oder Status-Pille blieb der Termin
+   auf „Geplant", während der Einsatz schon „Durchgeführt" war.
+   Neuer Helper syncCoupledAppointmentStatus, aufgerufen aus allen
+   sieben Quick-Status-Pfaden (toggleDeploymentDone, quick/mark-
+   DeploymentDone/Billed, selectEntityStatus, advanceEntityStatus).
+   (2) Seed-Datei restore_stammdaten.sql (Phase C #6): die Status-
+   Kategorien führen jetzt die system_key-Identitätsspalte — ein
+   Frisch-Setup ohne system_key hätte seit v2.31 den App-Boot
+   gebrochen. Zusätzlich fehlendes einsatz_status „Ungeplant"
+   ergänzt und termin_status-Label auf Title-Case harmonisiert.
+   Reine Seed-Datei, kein prod-Apply (prod hat die Keys längst).
+   Vorgängerversion 2.33.16 (QA-Sweep Bugfix #17 — drei Termin/Status-
    Konsistenz-Fixes. (1) Termin-Status DB-getrieben: der t-status-
    Select wird dynamisch aus lookup_values (termin_status) befüllt,
    neuer terminStatusCache + loadTerminStatus + Cache-Invalidierung;
@@ -15532,6 +15547,25 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   invalidateAppointmentMaps();
 }
 
+// v2.33.17 (Phase A.1 #5): Quick-Status-Wechsel eines Einsatzes (Checkbox-Toggle
+// auf der Projekt-Detailseite, Hero-Buttons, Status-Pille) auf den gekoppelten
+// Termin spiegeln. Bisher tat das nur der Modal-Save via syncDeploymentAppointment;
+// per Quick-Toggle blieb der Termin auf „Geplant", während der Einsatz schon
+// „Durchgeführt" war (sichtbar inkonsistent in Termin-Liste/Kalender). Mapping
+// wie in syncDeploymentAppointment: durchgeführt/abgerechnet → 'durchgefuehrt',
+// sonst → 'geplant'. Trifft nur einen aktiven gekoppelten Termin; gibt es keinen,
+// matcht das UPDATE 0 Zeilen (No-op). Best-effort — ein Fehler hier soll den
+// bereits persistierten Einsatz-Statuswechsel nicht zurückrollen.
+async function syncCoupledAppointmentStatus(deploymentId, deploymentStatus) {
+  const terminStatus = (deploymentStatus === DEPLOYMENT_STATUS.DURCHGEFUEHRT
+                     || deploymentStatus === DEPLOYMENT_STATUS.ABGERECHNET)
+                     ? 'durchgefuehrt' : 'geplant';
+  await db.from('appointments')
+    .update({ status: terminStatus })
+    .eq('deployment_id', deploymentId)
+    .is('deleted_at', null);
+}
+
 // ═══════════════════════════════════════════════════════════
 //  ENTITLEMENT-EINLÖSUNG IM EINSATZ-MODAL (v1.14.0)
 // ═══════════════════════════════════════════════════════════
@@ -17121,6 +17155,9 @@ async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
       .update({ status: newStatus })
       .eq('id', deploymentId);
     if (error) throw new Error(error.message);
+
+    // v2.33.17 (Phase A.1 #5): gekoppelten Termin mitziehen
+    await syncCoupledAppointmentStatus(deploymentId, newStatus);
 
     // DOM-Update der betroffenen Zeile (ohne Reload)
     const tr = checkboxEl ? checkboxEl.closest('tr') : null;
@@ -19380,6 +19417,7 @@ async function quickDeploymentMarkDone(deploymentId) {
   const { error } = await db.from('deployments')
     .update({ status: DEPLOYMENT_STATUS.DURCHGEFUEHRT }).eq('id', deploymentId);
   if (error) { showToast('Fehler: ' + error.message, true); return; }
+  await syncCoupledAppointmentStatus(deploymentId, DEPLOYMENT_STATUS.DURCHGEFUEHRT);  // v2.33.17 (A.1 #5)
   showToast('Einsatz auf „Durchgeführt" gesetzt.');
   if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
   await preserveExpandedRowAcross(() => refreshCurrentDeploymentList());
@@ -19397,6 +19435,7 @@ async function quickDeploymentMarkBilled(deploymentId) {
   const { error } = await db.from('deployments')
     .update({ status: DEPLOYMENT_STATUS.ABGERECHNET }).eq('id', deploymentId);
   if (error) { showToast('Fehler: ' + error.message, true); return; }
+  await syncCoupledAppointmentStatus(deploymentId, DEPLOYMENT_STATUS.ABGERECHNET);  // v2.33.17 (A.1 #5)
   showToast('Einsatz als „Abgerechnet" markiert.');
   if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
   await preserveExpandedRowAcross(() => refreshCurrentDeploymentList());
@@ -22597,6 +22636,7 @@ async function markDeploymentDone(id) {
     if (!ensureDeploymentDatumForStatus(DEPLOYMENT_STATUS.DURCHGEFUEHRT, !!(dep.datum_von || dep.datum_bis))) return;
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.DURCHGEFUEHRT }).eq('id', id);
     if (error) throw error;
+    await syncCoupledAppointmentStatus(id, DEPLOYMENT_STATUS.DURCHGEFUEHRT);  // v2.33.17 (A.1 #5)
     showToast('Einsatz als „Durchgeführt" markiert.');
     if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
     if (typeof loadBriefing === 'function' && _currentBriefingTab) loadBriefing(_currentBriefingTab);
@@ -22620,6 +22660,7 @@ async function markDeploymentBilled(id) {
     if (!ensureDeploymentDatumForStatus(DEPLOYMENT_STATUS.ABGERECHNET, !!(dep.datum_von || dep.datum_bis))) return;
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.ABGERECHNET }).eq('id', id);
     if (error) throw error;
+    await syncCoupledAppointmentStatus(id, DEPLOYMENT_STATUS.ABGERECHNET);  // v2.33.17 (A.1 #5)
     showToast('Einsatz als „Abgerechnet" markiert.');
     if (dep.project_id) await checkAndUpdateProjectStatus(dep.project_id);
     if (typeof loadBriefing === 'function' && _currentBriefingTab) loadBriefing(_currentBriefingTab);
@@ -26515,6 +26556,8 @@ async function advanceEntityStatus(entityType, entityId, fromStatus, toStatus) {
   const { error } = await db.from(flow.table)
     .update({ status: toStatus }).in('status', [fromStatus]).eq('id', entityId);
   if (error) { showToast(error.message, true); return; }
+  // v2.33.17 (Phase A.1 #5): gekoppelten Termin mitziehen (nur Einsatz)
+  if (entityType === 'deployment') await syncCoupledAppointmentStatus(entityId, toStatus);
   showToast(`Status: ${toLabel}.`);
   if (projectId) await checkAndUpdateProjectStatus(projectId);
   if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
@@ -26651,6 +26694,8 @@ async function selectEntityStatus(entityType, entityId, newStatus, currentStatus
   const { error } = await db.from(table)
     .update({ status: newStatus }).in('status', [currentStatus]).eq('id', entityId);
   if (error) { showToast(error.message, true); return; }
+  // v2.33.17 (Phase A.1 #5): gekoppelten Termin mitziehen (nur Einsatz)
+  if (entityType === 'deployment') await syncCoupledAppointmentStatus(entityId, newStatus);
   showToast(`Status: ${newLabel}.`);
   if (projectId) await checkAndUpdateProjectStatus(projectId);
   if (entityType === 'project'    && currentProjectDetailId)    loadProjectDetail(currentProjectDetailId);
