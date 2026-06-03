@@ -1,6 +1,20 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.22 (Daten-Korrektur — David auch aus dem SHB-Bündel
+   Version 2.33.23 (Bündel-Tage — eine pro-Tag-Leistung (Einheit „Tag")
+   mit Menge N wird beim Bündel-Speichern in N einzelne Werktags-
+   Einsätze (je 1 Tag) aufgeteilt (von Selcuk gewählt: Option A,
+   Werktage Mo–Fr, Wochenende übersprungen, letzter Tag ggf. halber
+   Rest bei z.B. 4,5; nur Tag-Leistungen). Dadurch zeigen Kalender,
+   Auslastung, Umsatz-Verlauf und Briefing alle N Tage als einzelne
+   Einsatztage — ohne Sonderfall-Code, weil jeder Tag ein echter
+   Einsatz ist. Die Tage-Summary im Modal zählt jetzt die Mengen-Summe
+   (Menge 5 → „5 Tage", fraktional „4,5"). Neue Helfer
+   _bundleWorkingDaysFrom / _bundleRowDaySpecs; saveDeploymentBundle
+   teilt pro Zeile auf (erster Tag recycelt einen bestehenden Einsatz,
+   weitere Tage = neue Einsätze). Split-Logik headless verifiziert.
+   Bestehende Bündel einmal neu speichern, um sie aufzuteilen. Gilt
+   für das Bündel-Modal; Einzel-Einsätze sind separat. Kein Schema-Change.
+   Vorgängerversion 2.33.22 (Daten-Korrektur — David auch aus dem SHB-Bündel
    (4 Einsätze + Bündel-Techniker) entfernt, Selcuk bleibt. David ist
    damit auf 0 Einsätzen. Migration v2.33.22_techniker_david_buendel_raus.sql,
    appliziert + verifiziert. Kein Code-Change.
@@ -16826,14 +16840,48 @@ function updateBundleDayField(idx, field, value) {
   if (field === 'datum_von' || field === 'menge') updateBundleDaysSummary();
 }
 
+// v2.33.23 (von Selcuk gewählt: Option A): Tag-Service-Aufteilung. Bei einer
+// pro-Tag-Leistung (Einheit „Tag") bedeutet Menge N = N Tage. Liefert die
+// Werktags-Sequenz ab Startdatum (Wochenende Sa/So übersprungen).
+function _bundleWorkingDaysFrom(startISO, n) {
+  const out = [];
+  let d = parseLocalDate(startISO);
+  while (out.length < n) {
+    const dow = d.getDay();              // 0=So, 6=Sa
+    if (dow !== 0 && dow !== 6) out.push(toISODate(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+// Tages-Specs ({datum, menge}) einer Bündel-Zeile. Bei Tag-Leistung und Menge>1:
+// ceil(N) Werktage — volle Tage Menge 1, letzter ggf. der Rest (z.B. 0,5).
+// Sonst: ein Eintrag mit der Original-Menge (unverändertes Verhalten).
+function _bundleRowDaySpecs(r, isTagService) {
+  const menge = Number(r.menge ?? 1) || 1;
+  if (!isTagService || menge <= 1 || !r.datum_von) {
+    return [{ datum: r.datum_von, menge }];
+  }
+  const n = Math.ceil(menge);
+  const full = Math.floor(menge);
+  return _bundleWorkingDaysFrom(r.datum_von, n)
+    .map((datum, i) => ({ datum, menge: i < full ? 1 : +(menge - full).toFixed(4) }));
+}
+
 function updateBundleDaysSummary() {
   const el = document.getElementById('b-days-summary');
   if (!el) return;
-  const days = _bundleDayRows.filter(r => r.datum_von).length;
+  // v2.33.23: Bei einer Tag-Leistung zählt die Summe der Mengen als Tage
+  // (Menge 5 → „5 Tage", nicht „1 Zeile"); sonst die Anzahl Zeilen. Fraktionale
+  // Tage (z.B. 4,5) werden mit deutschem Komma angezeigt.
   const totalMenge = _bundleDayRows.reduce((s, r) => s + (Number(r.menge) || 0), 0);
+  const rowsWithDate = _bundleDayRows.filter(r => r.datum_von).length;
+  const svc = servicesCache.find(s => s.id === (document.getElementById('b-service')?.value || ''));
+  const isTagService = (svc?.einheit || '').trim().toLowerCase() === 'tag';
+  const dayCount = isTagService ? totalMenge : rowsWithDate;
   const einzel = Number(document.getElementById('b-einzelpreis')?.value || 0);
   const gesamt = totalMenge * einzel;
-  el.textContent = `${days} Tag${days === 1 ? '' : 'e'} · Gesamt-Aufwand: ${formatPreis(gesamt)}`;
+  const dcFmt = Number.isInteger(dayCount) ? String(dayCount) : dayCount.toLocaleString('de-DE');
+  el.textContent = `${dcFmt} Tag${dayCount === 1 ? '' : 'e'} · Gesamt-Aufwand: ${formatPreis(gesamt)}`;
 }
 
 async function saveDeploymentBundle() {
@@ -16931,50 +16979,65 @@ async function saveDeploymentBundle() {
       company_id: companyId,
       project_id: currentProjectDetailId
     };
-    for (const r of valid) {
-      const perDayFields = {
-        datum_von: r.datum_von,
-        datum_bis: r.datum_von,
-        uhrzeit_von: r.uhrzeit_von || null,
-        uhrzeit_bis: r.uhrzeit_bis || null,
-        menge: Number(r.menge ?? 1),
-        status: r.status || DEPLOYMENT_STATUS.GEPLANT
-      };
-      if (r.id) {
-        // Bestehender Einsatz — bundle_overrides respektieren.
-        const { data: existing } = await db.from('deployments')
-          .select('dokumentation, bundle_overrides').eq('id', r.id).single();
-        const overrides = new Set(Array.isArray(existing?.bundle_overrides) ? existing.bundle_overrides : []);
+    // v2.33.23 (von Selcuk gewählt: Option A): Bei einer pro-Tag-Leistung
+    // (Einheit „Tag") wird eine Zeile mit Menge N in N Werktags-Einsätze (je
+    // 1 Tag) aufgeteilt, damit Kalender/Auslastung/Umsatz/Briefing alle N Tage
+    // als einzelne Einsatztage zeigen. Nicht-Tag-Leistungen + Menge ≤ 1 bleiben
+    // ein Einsatz (unverändertes Verhalten).
+    const _bundleSvc = servicesCache.find(s => s.id === payload.service_id);
+    const _isTagService = (_bundleSvc?.einheit || '').trim().toLowerCase() === 'tag';
 
-        const updateFields = {
-          bundle_id: bundle.id,
-          company_id: companyId,
-          project_id: currentProjectDetailId,
-          ...perDayFields
+    for (const r of valid) {
+      const daySpecs = _bundleRowDaySpecs(r, _isTagService);
+      for (let di = 0; di < daySpecs.length; di++) {
+        const spec = daySpecs[di];
+        const perDayFields = {
+          datum_von: spec.datum,
+          datum_bis: spec.datum,
+          uhrzeit_von: r.uhrzeit_von || null,
+          uhrzeit_bis: r.uhrzeit_bis || null,
+          menge: spec.menge,
+          status: r.status || DEPLOYMENT_STATUS.GEPLANT
         };
-        // Shared-Felder nur überschreiben, wenn nicht in overrides.
-        for (const [key, val] of Object.entries(bundleSharedValues)) {
-          if (!overrides.has(key)) updateFields[key] = val;
-        }
-        // Dokumentation: wenn nicht overridden, Schema-Keys vom Bündel
-        // mergen; existierende Nicht-Schema-Keys bleiben erhalten.
-        if (!overrides.has('dokumentation')) {
-          const memberDoc = { ...(existing?.dokumentation || {}) };
-          for (const k of SCHEMA_KEYS) {
-            if (Object.prototype.hasOwnProperty.call(bundleSchemaSlice, k)) memberDoc[k] = bundleSchemaSlice[k];
-            else delete memberDoc[k];
+        // Nur der ERSTE Tag einer Zeile recycelt einen evtl. vorhandenen Einsatz
+        // (r.id); die weiteren Tage der Aufteilung sind neue Einsätze.
+        const recycleId = (di === 0 && r.id) ? r.id : null;
+        if (recycleId) {
+          // Bestehender Einsatz — bundle_overrides respektieren.
+          const { data: existing } = await db.from('deployments')
+            .select('dokumentation, bundle_overrides').eq('id', recycleId).single();
+          const overrides = new Set(Array.isArray(existing?.bundle_overrides) ? existing.bundle_overrides : []);
+
+          const updateFields = {
+            bundle_id: bundle.id,
+            company_id: companyId,
+            project_id: currentProjectDetailId,
+            ...perDayFields
+          };
+          // Shared-Felder nur überschreiben, wenn nicht in overrides.
+          for (const [key, val] of Object.entries(bundleSharedValues)) {
+            if (!overrides.has(key)) updateFields[key] = val;
           }
-          updateFields.dokumentation = memberDoc;
+          // Dokumentation: wenn nicht overridden, Schema-Keys vom Bündel
+          // mergen; existierende Nicht-Schema-Keys bleiben erhalten.
+          if (!overrides.has('dokumentation')) {
+            const memberDoc = { ...(existing?.dokumentation || {}) };
+            for (const k of SCHEMA_KEYS) {
+              if (Object.prototype.hasOwnProperty.call(bundleSchemaSlice, k)) memberDoc[k] = bundleSchemaSlice[k];
+              else delete memberDoc[k];
+            }
+            updateFields.dokumentation = memberDoc;
+          }
+          await db.from('deployments').update(updateFields).eq('id', recycleId);
+        } else {
+          await db.from('deployments').insert({
+            ...baseFieldsForNew,
+            ...perDayFields,
+            dokumentation: bundleSchemaSlice,
+            erstellt_von: currentProfile?.id || null,
+            bundle_overrides: []
+          });
         }
-        await db.from('deployments').update(updateFields).eq('id', r.id);
-      } else {
-        await db.from('deployments').insert({
-          ...baseFieldsForNew,
-          ...perDayFields,
-          dokumentation: bundleSchemaSlice,
-          erstellt_von: currentProfile?.id || null,
-          bundle_overrides: []
-        });
       }
     }
 
