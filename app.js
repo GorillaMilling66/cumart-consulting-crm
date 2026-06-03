@@ -1,6 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.15 (QA-Sweep Bugfix #16 — Aufräumen: Test-Projekt
+   Version 2.33.16 (QA-Sweep Bugfix #17 — drei Termin/Status-
+   Konsistenz-Fixes. (1) Termin-Status DB-getrieben: der t-status-
+   Select wird dynamisch aus lookup_values (termin_status) befüllt,
+   neuer terminStatusCache + loadTerminStatus + Cache-Invalidierung;
+   saveAppointment validiert gegen den Cache statt zwei hartkodierter
+   system_keys — Mandanten-Status (z.B. „abgesagt") sind jetzt setz-
+   und speicherbar (Phase A.1 #4/#14/#24). Migration
+   v2.33.16_termin_status_labels.sql harmonisiert die Anzeige-Labels
+   auf Title-Case (Geplant/Durchgeführt); system_key unverändert.
+   (2) Projekt-Wechsel-Auto-Status: saveDeployment/saveAppointment
+   lesen die alte project_id vor dem Update und rechnen bei Wechsel/
+   Entkopplung auch das ALTE Projekt nach (Phase A.1 #6). (3) Termin-
+   Duplikat-Race: syncDeploymentAppointment reaktiviert die vorhandene
+   (ggf. soft-gelöschte) Termin-Zeile statt eine neue einzufügen — eine
+   Zeile pro deployment_id (Phase A.4 #15).
+   Vorgängerversion 2.33.15 (QA-Sweep Bugfix #16 — Aufräumen: Test-Projekt
    „ifm GmbH" + seine zwei dateless „durchgeführt"-Einsätze soft-
    gelöscht (Migration v2.33.15_ifm_test_cleanup.sql). Das waren
    die letzten zwei Phase-B-#2-Altbestände — zusammen mit dem
@@ -3254,6 +3269,7 @@ let terminTypenCache = [];
 let projektStatusCache = [];
 let einsatzStatusCache = [];
 let aufgabeStatusCache = [];
+let terminStatusCache  = [];   // v2.33.16 (Phase A.1 #24): termin_status hatte als einzige Status-Kategorie keinen Cache
 let servicesCache    = [];
 let userProfilesCache = [];
 
@@ -3317,6 +3333,7 @@ function invalidateLookupCaches(kategorie = null) {
   if (!kategorie || kategorie === 'projekt_status')  projektStatusCache = [];
   if (!kategorie || kategorie === 'einsatz_status')  einsatzStatusCache = [];
   if (!kategorie || kategorie === 'aufgabe_status')  aufgabeStatusCache = [];
+  if (!kategorie || kategorie === 'termin_status')   terminStatusCache = [];  // v2.33.16 (Phase A.1 #24)
 }
 
 // Pending filter für Termine, kommt aus URL-Hash-Parametern
@@ -12146,6 +12163,20 @@ function renderAppointmentsTable(appointments) {
   }).join('');
 }
 
+// v2.33.16 (Phase A.1 #24): Termin-Status lazy laden + cachen — analog zu
+// loadEinsatzStatus/loadProjektStatus/loadAufgabeStatus. Vorher hatte
+// termin_status als einzige Status-Kategorie keinen Cache; der t-status-Select
+// war statisch auf „geplant"/„durchgefuehrt" verdrahtet (index.html), ein
+// Mandanten-Status (z.B. „abgesagt") ließ sich weder anzeigen noch setzen.
+async function loadTerminStatus() {
+  if (terminStatusCache.length > 0) return terminStatusCache;
+  const { data, error } = await db.from('lookup_values')
+    .select('id, wert, farbe, reihenfolge, system_key').eq('kategorie', 'termin_status').eq('ist_aktiv', true).order('reihenfolge');
+  if (error) { return []; }
+  terminStatusCache = data || [];
+  return terminStatusCache;
+}
+
 async function openAppointmentModal(mode, appointmentId = null) {
   editingAppointmentId = appointmentId;
   lastAutoFilledOrt = '';
@@ -12181,6 +12212,16 @@ async function openAppointmentModal(mode, appointmentId = null) {
     typSelect.innerHTML = typen.map(t => `<option value="${esc(t.id)}">${esc(t.wert)}</option>`).join('');
   }
   renderTerminTypIconsPicker();  // v1.34: klickbare Icon-Reihe aus den geladenen Typen
+
+  // v2.33.16 (Phase A.1 #4): Termin-Status-Select dynamisch aus lookup_values
+  // (termin_status) befüllen — analog zu d-status. Fallback: die statischen
+  // HTML-Optionen bleiben stehen, falls keine Lookups vorhanden sind.
+  const terminStatusOpts = await loadTerminStatus();
+  const tStatusSelect = document.getElementById('t-status');
+  if (tStatusSelect && terminStatusOpts.length > 0) {
+    tStatusSelect.innerHTML = terminStatusOpts.map(s =>
+      `<option value="${esc(s.system_key)}">${esc(s.wert)}</option>`).join('');
+  }
 
   document.getElementById('t-titel').value = '';
   document.getElementById('t-datum').value = toISODate(new Date());
@@ -12703,10 +12744,12 @@ async function saveAppointment() {
   // v2.12.1: bestehende Doku reinmergen, damit Detail-Page-Felder (gespraechsinhalt,
   // vereinbarungen, naechste_schritte mit erweitertem Schema) nicht überschrieben werden.
   let _existingTerminDoc = null;
+  let _oldApptProjectId = null;  // v2.33.16 (Phase A.1 #6): altes Projekt für Auto-Status nach Wechsel
   if (editingAppointmentId) {
     const { data: _existing } = await db.from('appointments')
-      .select('dokumentation').eq('id', editingAppointmentId).single();
+      .select('dokumentation, project_id').eq('id', editingAppointmentId).single();
     _existingTerminDoc = _existing?.dokumentation || null;
+    _oldApptProjectId = _existing?.project_id || null;
   }
   const dokumentation = readDocumentationFromDom('termin', 't-doc', _existingTerminDoc);
   const btn          = document.getElementById('t-save-btn');
@@ -12714,7 +12757,13 @@ async function saveAppointment() {
   if (!titel)   { showToast('Bitte Titel eingeben.', true); return; }
   if (!datum)   { showToast('Bitte Datum wählen.', true); return; }
   if (!typ_id)  { showToast('Bitte Typ auswählen.', true); return; }
-  if (!['geplant', 'durchgefuehrt'].includes(status)) { showToast('Status ungültig.', true); return; }
+  // v2.33.16 (Phase A.1 #14): gegen den Lookup-Cache validieren statt der zwei
+  // hartkodierten system_keys — sonst ließe sich ein per Status-Picker gesetzter
+  // Mandanten-Termin-Status (z.B. „abgesagt") im Modal nicht speichern.
+  if (!Object.values(APPOINTMENT_STATUS).includes(status) &&
+      !terminStatusCache.some(s => s.system_key === status)) {
+    showToast('Status ungültig. Bitte aus Liste wählen.', true); return;
+  }
 
   if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
     showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true);
@@ -12784,6 +12833,11 @@ async function saveAppointment() {
     // Auto-Projekt-Status-Check wenn Termin an Projekt gebunden
     if (project_id) {
       await checkAndUpdateProjectStatus(project_id);
+    }
+    // v2.33.16 (Phase A.1 #6): bei Projekt-Wechsel/Entkopplung auch das ALTE
+    // Projekt nachrechnen — sonst bleibt es im veralteten Auto-Status hängen.
+    if (_oldApptProjectId && _oldApptProjectId !== project_id) {
+      await checkAndUpdateProjectStatus(_oldApptProjectId);
     }
 
     // v2.33.10: companyAppointmentMap invalidieren — sonst zeigt die „Nächster
@@ -15147,13 +15201,15 @@ async function saveDeployment() {
   let _existingDeploymentDoc = null;
   let _existingDeploymentBundleId = null;
   let _existingDeploymentOverrides = [];
+  let _oldProjectId = null;  // v2.33.16 (Phase A.1 #6): altes Projekt für Auto-Status nach Wechsel
   if (editingDeploymentId) {
     const { data: _existing } = await db.from('deployments')
-      .select('beschreibung, dokumentation, bundle_id, bundle_overrides').eq('id', editingDeploymentId).single();
+      .select('beschreibung, dokumentation, bundle_id, bundle_overrides, project_id').eq('id', editingDeploymentId).single();
     beschreibungInput = _existing?.beschreibung || '';
     _existingDeploymentDoc = _existing?.dokumentation || null;
     _existingDeploymentBundleId = _existing?.bundle_id || null;
     _existingDeploymentOverrides = Array.isArray(_existing?.bundle_overrides) ? _existing.bundle_overrides : [];
+    _oldProjectId = _existing?.project_id || null;
   }
   const dokumentation = _existingDeploymentDoc || {};
   const externe_techniker = document.getElementById('d-externe-techniker').value.trim();
@@ -15369,6 +15425,11 @@ async function saveDeployment() {
     if (saved.project_id) {
       await checkAndUpdateProjectStatus(saved.project_id);
     }
+    // v2.33.16 (Phase A.1 #6): bei Projekt-Wechsel/Entkopplung auch das ALTE
+    // Projekt nachrechnen — sonst bleibt es im veralteten Auto-Status hängen.
+    if (_oldProjectId && _oldProjectId !== saved.project_id) {
+      await checkAndUpdateProjectStatus(_oldProjectId);
+    }
 
     // Kontext-sensibles Refresh
     if (currentProjectDetailId && document.getElementById('page-project-detail').classList.contains('active')) {
@@ -15402,13 +15463,23 @@ async function saveDeployment() {
  * - Kein Datum am Einsatz              → existierenden Termin löschen (Termin braucht Datum)
  */
 async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
+  // v2.33.16 (Phase A.4 #15): genau EINE Termin-Zeile pro deployment_id halten —
+  // inklusive bereits soft-gelöschter. Vorher filterte der Lookup auf
+  // `deleted_at IS NULL` und legte beim Wieder-Anhaken eine NEUE Zeile an,
+  // während die alte soft-gelöscht liegen blieb; ein Undo der alten konnte dann
+  // zwei aktive Termine auf demselben Einsatz erzeugen. Jetzt wird die
+  // vorhandene (ggf. soft-gelöschte) Zeile reaktiviert/aktualisiert statt neu
+  // eingefügt. nullsFirst priorisiert eine noch aktive Zeile, falls (durch den
+  // alten Bug) mehrere existieren.
   const { data: existing } = await db.from('appointments')
-    .select('id').is('deleted_at', null).eq('deployment_id', deployment.id).limit(1);
-  const existingId = existing?.[0]?.id;
+    .select('id, deleted_at').eq('deployment_id', deployment.id)
+    .order('deleted_at', { nullsFirst: true }).limit(1);
+  const existingId      = existing?.[0]?.id || null;
+  const existingDeleted = !!existing?.[0]?.deleted_at;
 
   // Ohne Datum kann kein Termin angelegt werden (Termine brauchen Datum)
   if (!deployment.datum_von) {
-    if (existingId) {
+    if (existingId && !existingDeleted) {
       await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
     }
     if (shouldHaveAppointment) {
@@ -15418,8 +15489,8 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   }
 
   if (!shouldHaveAppointment) {
-    if (existingId) {
-      // Hart löschen — Entkopplung würde bei erneutem Anhaken Duplikate erzeugen
+    if (existingId && !existingDeleted) {
+      // Soft-löschen — die Zeile bleibt für spätere Reaktivierung erhalten
       await db.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', existingId);
     }
     return;
@@ -15448,6 +15519,8 @@ async function syncDeploymentAppointment(deployment, shouldHaveAppointment) {
   };
 
   if (existingId) {
+    // Vorhandene (ggf. soft-gelöschte) Zeile reaktivieren + aktualisieren
+    payload.deleted_at = null;
     await db.from('appointments').update(payload).eq('id', existingId);
   } else {
     payload.erstellt_von = currentUser?.id || null;
