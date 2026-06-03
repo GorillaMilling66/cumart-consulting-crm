@@ -1,6 +1,21 @@
 /* ═══════════════════════════════════════════════════════════
    CRM – Application Script (Branding pro Mandant via config.js)
-   Version 2.33.13 (QA-Sweep Bugfix #14 — companiesCache-Shape
+   Version 2.33.14 (QA-Sweep Bugfix #15 — UI-Guard: ein Einsatz
+   kann nur mit Datum auf „durchgeführt"/„abgerechnet" gesetzt
+   werden (Phase B #2). Ein erledigter/abgerechneter Einsatz
+   ohne Datum ist fachlich widersprüchlich — Reports können ihn
+   nicht periodisch zuordnen, die Auto-Projektstatus-Logik wird
+   undefiniert; genau so entstanden zwei dateless ifm-GmbH-Sätze.
+   Zentraler Helper `ensureDeploymentDatumForStatus`, aufgerufen
+   aus allen sechs Status-mutierenden Pfaden: `saveDeployment`
+   (Modal + Composer-Delegation), `toggleDeploymentDone` (Quick-
+   Toggle, rollt die Checkbox zurück), `markDeploymentDone` /
+   `markDeploymentBilled` (Hero), `selectEntityStatus` /
+   `advanceEntityStatus` (Status-Pille / Advance). Bündel sind
+   per Konstruktion datiert. Kein Schema-Change, keine Migration;
+   die zwei Altbestände werden separat per Daten-Migration
+   geheilt.
+   Vorgängerversion 2.33.13 (QA-Sweep Bugfix #14 — companiesCache-Shape
    konsistent + esc()-Quoting-Konsistenz in Click-Templates.
    **Phase A.4 #20 companiesCache-Shape-Drift:** der Cache
    wurde von 8 verschiedenen Lazy-Loadern unterschiedlich
@@ -15084,6 +15099,27 @@ function closeDeploymentModal() {
   selectedTechnikerIds = new Set();
 }
 
+// v2.33.14 (QA-Sweep Phase B #2): Ein Einsatz darf nur dann auf
+// „durchgeführt"/„abgerechnet" gesetzt werden, wenn ein Datum hinterlegt ist.
+// Ein erledigter/abgerechneter Einsatz ohne Datum ist fachlich widersprüchlich —
+// Monats-/Auslastungs-Reports können ihn nicht periodisch zuordnen und die
+// Auto-Projektstatus-Logik verhält sich undefiniert. Genau so entstanden die
+// zwei dateless ifm-GmbH-Einsätze. Zentral, weil sechs Pfade den Status auf
+// durchgeführt/abgerechnet setzen können (Modal, Composer→Modal, Quick-Toggle,
+// Hero-Buttons, Status-Pille, Advance).
+function deploymentStatusRequiresDatum(status) {
+  return status === DEPLOYMENT_STATUS.DURCHGEFUEHRT
+      || status === DEPLOYMENT_STATUS.ABGERECHNET;
+}
+/** @returns {boolean} true = Statuswechsel erlaubt; false = blockiert (zeigt Toast). */
+function ensureDeploymentDatumForStatus(status, hasDatum) {
+  if (deploymentStatusRequiresDatum(status) && !hasDatum) {
+    showToast('Status „durchgeführt"/„abgerechnet" braucht ein Datum am Einsatz — bitte zuerst „Datum von" setzen.', true);
+    return false;
+  }
+  return true;
+}
+
 async function saveDeployment() {
   const titel         = document.getElementById('d-titel').value.trim();
   const datum_von     = document.getElementById('d-datum-von').value;
@@ -15172,6 +15208,11 @@ async function saveDeployment() {
       !einsatzStatusCache.some(s => s.system_key === status)) {
     showToast('Status ungültig. Bitte aus Liste wählen.', true); return;
   }
+  // v2.33.14: durchgeführt/abgerechnet verlangt ein Datum (Phase B #2). Greift
+  // auch beim Bearbeiten von Altbeständen — der frühere „Bestandsschutz" (siehe
+  // effStatus-Block unten) ließ dateless Done-Einsätze durch. busy-Flag wird vom
+  // 10s-Sicherheitsnetz (_saveDepReleaseT, oben) zurückgesetzt.
+  if (!ensureDeploymentDatumForStatus(status, vonGesetzt || bisGesetzt)) return;
   if (uhrzeit_von && uhrzeit_bis && uhrzeit_von >= uhrzeit_bis) {
     showToast('„Uhrzeit bis" muss nach „Uhrzeit von" liegen.', true); return;
   }
@@ -16978,6 +17019,18 @@ function updateProjectHeaderStatusBadge(newStatus) {
  */
 async function toggleDeploymentDone(deploymentId, isChecked, checkboxEl) {
   const newStatus = isChecked ? DEPLOYMENT_STATUS.DURCHGEFUEHRT : DEPLOYMENT_STATUS.GEPLANT;
+
+  // v2.33.14: „durchgeführt" nur mit Datum (Phase B #2). Beim Abhaken erst
+  // prüfen, ob der Einsatz ein Datum hat — sonst Toggle zurückrollen und Hinweis.
+  if (isChecked) {
+    const { data: dep } = await db.from('deployments')
+      .select('datum_von, datum_bis').eq('id', deploymentId).maybeSingle();
+    const hasDatum = !!(dep && (dep.datum_von || dep.datum_bis));
+    if (!ensureDeploymentDatumForStatus(newStatus, hasDatum)) {
+      if (checkboxEl) checkboxEl.checked = false;
+      return;
+    }
+  }
 
   if (checkboxEl) checkboxEl.disabled = true;
 
@@ -22453,11 +22506,13 @@ async function markDeploymentDone(id) {
   if (!confirm('Einsatz als durchgeführt markieren?')) return;
   try {
     const { data: dep, error: selErr } = await db.from('deployments')
-      .select('id, project_id, status').eq('id', id).single();
+      .select('id, project_id, status, datum_von, datum_bis').eq('id', id).single();
     if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
     if (dep.status === DEPLOYMENT_STATUS.DURCHGEFUEHRT || dep.status === DEPLOYMENT_STATUS.ABGERECHNET) {
       showToast(`Einsatz ist bereits „${esc(dispStatus(dep.status))}".`, true); return;
     }
+    // v2.33.14: durchgeführt nur mit Datum (Phase B #2)
+    if (!ensureDeploymentDatumForStatus(DEPLOYMENT_STATUS.DURCHGEFUEHRT, !!(dep.datum_von || dep.datum_bis))) return;
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.DURCHGEFUEHRT }).eq('id', id);
     if (error) throw error;
     showToast('Einsatz als „Durchgeführt" markiert.');
@@ -22473,11 +22528,14 @@ async function markDeploymentBilled(id) {
   if (!confirm('Einsatz als abgerechnet markieren?')) return;
   try {
     const { data: dep, error: selErr } = await db.from('deployments')
-      .select('id, project_id, status').eq('id', id).single();
+      .select('id, project_id, status, datum_von, datum_bis').eq('id', id).single();
     if (selErr || !dep) throw new Error('Einsatz nicht gefunden.');
     if (dep.status !== DEPLOYMENT_STATUS.DURCHGEFUEHRT) {
       showToast('Abrechnung nur aus Status „Durchgeführt" möglich.', true); return;
     }
+    // v2.33.14: abgerechnet nur mit Datum (Phase B #2) — fängt Altbestände ab,
+    // die noch als dateless „durchgeführt" in der DB stehen.
+    if (!ensureDeploymentDatumForStatus(DEPLOYMENT_STATUS.ABGERECHNET, !!(dep.datum_von || dep.datum_bis))) return;
     const { error } = await db.from('deployments').update({ status: DEPLOYMENT_STATUS.ABGERECHNET }).eq('id', id);
     if (error) throw error;
     showToast('Einsatz als „Abgerechnet" markiert.');
@@ -26364,8 +26422,12 @@ async function advanceEntityStatus(entityType, entityId, fromStatus, toStatus) {
 
   let projectId = null;
   if (entityType === 'deployment' || entityType === 'appointment') {
-    const { data: row } = await db.from(flow.table).select('project_id').eq('id', entityId).maybeSingle();
+    const sel = entityType === 'deployment' ? 'project_id, datum_von, datum_bis' : 'project_id';
+    const { data: row } = await db.from(flow.table).select(sel).eq('id', entityId).maybeSingle();
     projectId = row?.project_id || null;
+    // v2.33.14: Einsatz nur mit Datum auf durchgeführt/abgerechnet (Phase B #2)
+    if (entityType === 'deployment'
+        && !ensureDeploymentDatumForStatus(toStatus, !!(row?.datum_von || row?.datum_bis))) return;
   }
 
   const { error } = await db.from(flow.table)
@@ -26494,8 +26556,12 @@ async function selectEntityStatus(entityType, entityId, newStatus, currentStatus
   // gebraucht. Project-Entity selbst hat kein Eltern-Projekt.
   let projectId = null;
   if (entityType === 'deployment' || entityType === 'appointment') {
-    const { data: row } = await db.from(table).select('project_id').eq('id', entityId).maybeSingle();
+    const sel = entityType === 'deployment' ? 'project_id, datum_von, datum_bis' : 'project_id';
+    const { data: row } = await db.from(table).select(sel).eq('id', entityId).maybeSingle();
     projectId = row?.project_id || null;
+    // v2.33.14: Einsatz nur mit Datum auf durchgeführt/abgerechnet (Phase B #2)
+    if (entityType === 'deployment'
+        && !ensureDeploymentDatumForStatus(newStatus, !!(row?.datum_von || row?.datum_bis))) return;
   }
 
   // Race-Schutz: from-Bedingung als Status-Filter, damit Doppelklicks /
